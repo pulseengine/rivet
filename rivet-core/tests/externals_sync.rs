@@ -64,7 +64,7 @@ fn sync_spar_external_via_local_path() {
     };
 
     let cache_dir = dir.path().join(".rivet/repos");
-    let result = sync_external(&ext, &cache_dir, dir.path(), true);
+    let result = sync_external(&ext, &cache_dir, dir.path(), true, false);
     assert!(result.is_ok(), "sync_external failed: {:?}", result.err());
 
     // The cache should contain a symlink to the fixture
@@ -164,7 +164,7 @@ fn load_all_externals_with_spar() {
     );
 
     // Sync first so that the cache is populated
-    rivet_core::externals::sync_all(&externals, dir.path(), true).unwrap();
+    rivet_core::externals::sync_all(&externals, dir.path(), true, false).unwrap();
 
     // Then load all externals
     let resolved = load_all_externals(&externals, dir.path()).unwrap();

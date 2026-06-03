@@ -104,6 +104,7 @@ pub fn sync_external(
     cache_dir: &Path,
     project_dir: &Path,
     local_only: bool,
+    force: bool,
 ) -> Result<PathBuf, crate::error::Error> {
     let dest = cache_dir.join(&ext.prefix);
     std::fs::create_dir_all(cache_dir)
@@ -188,6 +189,22 @@ pub fn sync_external(
         let no_hooks = ["-c", "core.hooksPath=/dev/null"];
 
         if dest.join(".git").exists() {
+            // Guard: refuse to fetch+checkout over an external whose cached
+            // working tree has uncommitted, tracked changes. Re-syncing would
+            // move HEAD out from under (or fail cryptically on top of) edits a
+            // user made while co-developing both repos in `.rivet/repos/`,
+            // silently losing their work. The supported way to "work in both"
+            // is to commit & push the changes upstream and re-sync, or use a
+            // `path:` external (a symlink to the live tree). `--force` opts out.
+            if !force && is_working_tree_dirty(&dest) {
+                return Err(crate::error::Error::Io(format!(
+                    "external '{}' has uncommitted changes in {} — refusing to sync over them.\n\
+                     Commit & push them upstream then re-sync, or re-run with `--force` to discard.\n\
+                     (To co-develop both repos, declare this external with `path:` instead of `git:`.)",
+                    ext.prefix,
+                    dest.display()
+                )));
+            }
             // Fetch updates — unshallow if this was a shallow clone and we
             // need a specific commit SHA that may not be in the shallow history.
             let mut fetch_args = vec!["fetch", "origin"];
@@ -334,11 +351,12 @@ pub fn sync_all(
     externals: &BTreeMap<String, ExternalProject>,
     project_dir: &Path,
     local_only: bool,
+    force: bool,
 ) -> Result<Vec<(String, PathBuf)>, crate::error::Error> {
     let cache_dir = project_dir.join(".rivet/repos");
     let mut results = Vec::new();
     for (name, ext) in externals {
-        let path = sync_external(ext, &cache_dir, project_dir, local_only)?;
+        let path = sync_external(ext, &cache_dir, project_dir, local_only, force)?;
         results.push((name.clone(), path));
     }
     Ok(results)
@@ -565,6 +583,28 @@ pub struct LockEntry {
     pub git: Option<String>,
     pub commit: String,
     pub prefix: String,
+}
+
+/// Whether a git working tree has uncommitted, *tracked* modifications.
+///
+/// Returns true if `git status --porcelain` reports any staged or unstaged
+/// change to a tracked file. Untracked files (`??`) are ignored: a re-sync's
+/// `git checkout` preserves them, so they are not "work that sync would
+/// destroy". Returns false if the status cannot be determined (e.g. git is
+/// unavailable) — the caller's checkout will then surface any real conflict
+/// rather than this guard blocking on an indeterminate state.
+pub fn is_working_tree_dirty(repo_dir: &Path) -> bool {
+    let output = match Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(repo_dir)
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return false,
+    };
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| !line.trim_start().is_empty() && !line.starts_with("??"))
 }
 
 /// Read the current commit SHA of a git repository.
@@ -1083,7 +1123,7 @@ mod tests {
         };
 
         let cache_dir = dir.path().join(".rivet/repos");
-        let result = sync_external(&ext, &cache_dir, dir.path(), false);
+        let result = sync_external(&ext, &cache_dir, dir.path(), false, false);
         assert!(result.is_ok());
 
         // For path externals, the cache should contain a symlink or copy
@@ -1102,8 +1142,37 @@ mod tests {
             prefix: "bad".into(),
         };
         let cache_dir = dir.path().join(".rivet/repos");
-        let result = sync_external(&ext, &cache_dir, dir.path(), false);
+        let result = sync_external(&ext, &cache_dir, dir.path(), false, false);
         assert!(result.is_err());
+    }
+
+    // rivet: verifies REQ-169
+    #[test]
+    fn is_working_tree_dirty_detects_tracked_edits_not_untracked() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(repo)
+                .output()
+                .unwrap()
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@t"]);
+        git(&["config", "user.name", "t"]);
+        std::fs::write(repo.join("a.txt"), "one\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "init"]);
+
+        // Pristine checkout → clean.
+        assert!(!is_working_tree_dirty(repo));
+        // An untracked-only file is preserved by checkout → still clean.
+        std::fs::write(repo.join("scratch.tmp"), "x").unwrap();
+        assert!(!is_working_tree_dirty(repo));
+        // A modification to a tracked file → dirty (sync must refuse).
+        std::fs::write(repo.join("a.txt"), "two\n").unwrap();
+        assert!(is_working_tree_dirty(repo));
     }
 
     // rivet: verifies REQ-020
@@ -1162,7 +1231,7 @@ mod tests {
             },
         );
 
-        let results = sync_all(&externals, dir.path(), false).unwrap();
+        let results = sync_all(&externals, dir.path(), false, false).unwrap();
         assert_eq!(results.len(), 2);
         assert!(dir.path().join(".rivet/repos/alpha").exists());
         assert!(dir.path().join(".rivet/repos/beta").exists());

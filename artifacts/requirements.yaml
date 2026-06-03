@@ -5015,3 +5015,40 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-169
+    type: requirement
+    title: "rivet sync refuses to overwrite uncommitted changes in a git external's cached checkout"
+    status: implemented
+    description: |
+      Self-found while triaging a maintainer question about co-developing two
+      synced repos at once. `git:` externals are cloned into
+      `.rivet/repos/<prefix>` and `rivet sync` re-runs `git fetch` + `git
+      checkout <ref>` over that checkout. If you edited files there while
+      working in both repos, the checkout silently moves HEAD out from under
+      your edits (or fails cryptically) — uncommitted work is lost with no
+      warning. `path:` externals are unaffected (they symlink to the live tree;
+      cf. REQ-020), which is the supported way to co-develop both repos.
+
+      Add a guard: before fetch+checkout, `is_working_tree_dirty()` checks `git
+      status --porcelain` for staged/unstaged changes to TRACKED files
+      (untracked `??` entries are preserved by checkout, so they do not block).
+      When dirty and `--force` is not given, `sync` aborts non-zero naming the
+      prefix and path, and points to commit+push / `--force` / `path:`. A new
+      `rivet sync --force` opts out (discard). Loud-fail over silent loss (F2).
+
+      Acceptance:
+        - With a `git:` external whose `.rivet/repos/<prefix>` has an
+          uncommitted tracked edit, `rivet sync` exits non-zero and the message
+          names the prefix and `--force`; `rivet sync --force` proceeds.
+        - `cargo test -p rivet-core --lib
+          is_working_tree_dirty_detects_tracked_edits_not_untracked` passes; the
+          existing externals tests still pass.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [externals, sync, cross-repo, safety, loud-fail, dx, dogfooding, self-found]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-020

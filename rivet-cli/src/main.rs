@@ -796,6 +796,10 @@ enum Command {
         /// Use local path for all externals that have one, skipping git fetch/clone
         #[arg(long)]
         local: bool,
+        /// Discard uncommitted changes in a git external's cached checkout
+        /// (`.rivet/repos/<prefix>`) instead of refusing to sync over them
+        #[arg(long)]
+        force: bool,
     },
 
     /// Pin external dependencies to exact commits in rivet.lock
@@ -2177,7 +2181,7 @@ fn run(cli: Cli) -> Result<bool> {
             rt.block_on(serve::run(app_state, bind, watch))?;
             Ok(true)
         }
-        Command::Sync { local } => cmd_sync(&cli, *local),
+        Command::Sync { local, force } => cmd_sync(&cli, *local, *force),
         Command::Lock { update } => cmd_lock(&cli, *update),
         Command::Externals { action } => match action {
             ExternalsAction::Discover { path, format } => cmd_externals_discover(path, format),
@@ -11579,7 +11583,7 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
     }
 }
 
-fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
+fn cmd_sync(cli: &Cli, local_only: bool, force: bool) -> Result<bool> {
     let config_path = cli.project.join("rivet.yaml");
     if !config_path.exists() {
         let project_dir =
@@ -11601,6 +11605,9 @@ fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
     if local_only {
         eprintln!("Using --local: preferring path externals, skipping git fetch/clone");
     }
+    if force {
+        eprintln!("Using --force: will discard uncommitted changes in git external checkouts");
+    }
 
     // Ensure .rivet/ is gitignored
     let added = rivet_core::externals::ensure_gitignore(&cli.project)?;
@@ -11608,7 +11615,7 @@ fn cmd_sync(cli: &Cli, local_only: bool) -> Result<bool> {
         eprintln!("Added .rivet/ to .gitignore");
     }
 
-    let results = rivet_core::externals::sync_all(externals, &cli.project, local_only)?;
+    let results = rivet_core::externals::sync_all(externals, &cli.project, local_only, force)?;
     for (name, path) in &results {
         eprintln!("  Synced {} → {}", name, path.display());
     }
