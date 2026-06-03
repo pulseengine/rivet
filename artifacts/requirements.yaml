@@ -5167,3 +5167,36 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-109
+
+  - id: REQ-173
+    type: requirement
+    title: "rivet sync ignores only the external cache (.rivet/repos/), never the whole .rivet/ dir"
+    status: implemented
+    description: |
+      Self-found while dogfooding (#433). `ensure_gitignore` (called by `rivet
+      sync`) appended a blanket `.rivet/` to `.gitignore`, and its
+      already-present check only matched an exact `.rivet/`/`.rivet` line. But
+      rivet itself tracks files under `.rivet/` (e.g. `.rivet/agent-context.md`),
+      and the cache it actually writes is the narrower `.rivet/repos/`. So a
+      blanket `.rivet/` would silently un-track those committed files on a fresh
+      checkout, and it was added even when `.rivet/repos/` was already ignored.
+
+      Fix: append `.rivet/repos/` (the cache `sync` writes), and treat the entry
+      as already-present if any of `.rivet/repos/`, `.rivet/repos`, `.rivet/`, or
+      `.rivet` is present (so re-running is a no-op and a pre-existing broad
+      ignore is respected).
+
+      Acceptance:
+        - After `ensure_gitignore` on a fresh dir, `.gitignore` contains
+          `.rivet/repos/` and NO bare `.rivet/` line.
+        - A `.gitignore` already containing `.rivet/repos/` is left unchanged
+          (returns false).
+        - `cargo test -p rivet-core --lib ensure_gitignore` passes; `rivet
+          validate` on the rivet repo still PASS.
+    tags: [externals, sync, gitignore, bugfix, dogfooding, self-found, issue-433]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-020

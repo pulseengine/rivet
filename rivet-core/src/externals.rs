@@ -362,27 +362,33 @@ pub fn sync_all(
     Ok(results)
 }
 
-/// Ensure `.rivet/` is in `.gitignore`. Returns true if added, false if already present.
+/// Ensure the external cache (`.rivet/repos/`) is in `.gitignore`. Returns true
+/// if added, false if already present.
 pub fn ensure_gitignore(project_dir: &Path) -> Result<bool, crate::error::Error> {
     let gitignore = project_dir.join(".gitignore");
     if gitignore.exists() {
         let content = std::fs::read_to_string(&gitignore)
             .map_err(|e| crate::error::Error::Io(format!("read .gitignore: {e}")))?;
-        if content
-            .lines()
-            .any(|l| l.trim() == ".rivet/" || l.trim() == ".rivet")
-        {
+        // Already covered if any line ignores the cache — either the narrow
+        // `.rivet/repos/` we write, or a broad `.rivet/` a user added.
+        if content.lines().any(|l| {
+            let t = l.trim();
+            t == ".rivet/repos/" || t == ".rivet/repos" || t == ".rivet/" || t == ".rivet"
+        }) {
             return Ok(false); // already present
         }
     }
-    // Append
+    // Append. Ignore ONLY the external cache (`.rivet/repos/`), never the whole
+    // `.rivet/` directory — rivet itself tracks files under it (e.g.
+    // `.rivet/agent-context.md`), and a blanket `.rivet/` would silently
+    // un-track them on a fresh checkout (#433).
     use std::io::Write;
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&gitignore)
         .map_err(|e| crate::error::Error::Io(format!("open .gitignore: {e}")))?;
-    writeln!(f, "\n# Rivet external project cache\n.rivet/")
+    writeln!(f, "\n# Rivet external project cache\n.rivet/repos/")
         .map_err(|e| crate::error::Error::Io(format!("write .gitignore: {e}")))?;
     Ok(true) // added
 }
@@ -1221,9 +1227,29 @@ mod tests {
         let added_again = ensure_gitignore(dir.path()).unwrap();
         assert!(!added_again);
 
-        // Verify contents
+        // Verify contents: ignore the narrow cache, NOT the whole .rivet/ dir
+        // (rivet tracks files like .rivet/agent-context.md). #433.
         let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
-        assert!(content.contains(".rivet/"));
+        assert!(content.contains(".rivet/repos/"));
+        assert!(
+            !content
+                .lines()
+                .any(|l| l.trim() == ".rivet/" || l.trim() == ".rivet"),
+            "must not blanket-ignore the whole .rivet/ directory"
+        );
+    }
+
+    // rivet: verifies REQ-173
+    #[test]
+    fn ensure_gitignore_respects_existing_cache_ignore() {
+        // A pre-existing narrow `.rivet/repos/` entry is treated as present —
+        // no duplicate, and no broad `.rivet/` is appended on top.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "target/\n.rivet/repos/\n").unwrap();
+        let added = ensure_gitignore(dir.path()).unwrap();
+        assert!(!added, "existing .rivet/repos/ should count as present");
+        let content = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert_eq!(content, "target/\n.rivet/repos/\n", "unchanged");
     }
 
     // rivet: verifies REQ-020
