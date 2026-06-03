@@ -357,7 +357,7 @@ artifacts:
   - id: DD-014
     type: design-decision
     title: Prefixed IDs over URI-style references
-    status: accepted
+    status: approved
     description: >
       Cross-repo links use prefix:ID syntax (e.g., rivet:REQ-001) rather than
       full URIs. Simpler to type, more readable in YAML.
@@ -377,7 +377,7 @@ artifacts:
   - id: DD-015
     type: design-decision
     title: Mesh topology over hub-and-spoke
-    status: accepted
+    status: approved
     description: >
       Any repo can link to any other repo directly. No central authority required.
     links:
@@ -396,7 +396,7 @@ artifacts:
   - id: DD-016
     type: design-decision
     title: Distributed baselining over centralized manifest
-    status: accepted
+    status: approved
     description: >
       Repos tag themselves with baseline/* tags; consistency verified not enforced.
     links:
@@ -415,7 +415,7 @@ artifacts:
   - id: DD-017
     type: design-decision
     title: Transitive dependency resolution
-    status: accepted
+    status: approved
     description: >
       Declare direct dependencies only; discover transitive deps automatically.
     links:
@@ -1036,7 +1036,7 @@ artifacts:
   - id: DD-041
     type: design-decision
     title: Shared render module for serve, LSP, and export
-    status: active
+    status: approved
     description: >
       HTML rendering extracted from serve/views.rs into a render/ module
       with pure functions taking RenderContext and returning HTML strings.
