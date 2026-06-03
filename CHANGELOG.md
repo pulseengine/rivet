@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **REQ-161 / #408 — `rivet validate --structural`.** Gates only on
+  structural-integrity diagnostics (broken links, duplicate ids, parse errors,
+  bad link targets, cardinality, schema-rule inconsistencies), hiding
+  coverage/lint findings (missing/extra/typo'd fields, orphans, prose-mention,
+  near-duplicates). This gives bulk-edit and status-promotion workflows a
+  meaningful "did I break the graph?" check independent of coverage noise —
+  what spar/sigil hand-rolled as a `0 broken cross-refs` gate. Backed by a new
+  `Diagnostic::is_structural()` classification (explicit allowlist; a unit test
+  enumerates every built-in rule). The rivet repo `validate --structural`
+  PASSes with 0 shown.
+
 ### Fixed
 
 - **REQ-160 / #415 — deterministic `list` / export / migrate output.**

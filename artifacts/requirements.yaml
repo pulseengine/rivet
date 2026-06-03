@@ -4695,3 +4695,53 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-159
+
+  - id: REQ-161
+    type: requirement
+    title: "rivet validate --structural: gate on graph/parse/type integrity only, separate from coverage/lint"
+    status: implemented
+    description: |
+      From issue #408 (and the recurring #353/#355 ask): `rivet validate`'s
+      FAIL/PASS lumps structural integrity (broken graph) together with
+      coverage/lint findings (incomplete/non-compliant), so a bulk status-flip
+      or edit can't tell "did I break the graph?" from "the project is still
+      incomplete". spar and sigil both hand-rolled a `0 broken cross-refs` gate
+      for exactly this.
+
+      Add `Diagnostic::is_structural()` — an explicit allowlist of the
+      structural rule ids: artifact-parse-error, duplicate-artifact-id,
+      known-type, unknown-link-type, link-target-type, cardinality, broken-link,
+      doc-broken-ref, yaml-type-coercion, conditional-rule-consistency,
+      coverage-rule-consistency. Everything else — including required-field,
+      unknown-field, status-allowed-values, prose-mention, near-duplicate-intent,
+      orphan, and all schema-defined coverage/status-gate rules — is coverage/
+      lint. (The three borderline rules required-field / unknown-field /
+      status-allowed-values are classified coverage by design: an
+      incomplete/extra/typo'd field doesn't break the graph.)
+
+      `rivet validate --structural` retains only structural diagnostics before
+      counting/display, so the shown set, counts, and PASS/FAIL exit all reflect
+      structural-only. The classification is a method on Diagnostic (no rename
+      of validate_structural*, per the #408 option-b).
+
+      Acceptance:
+        - `Diagnostic::is_structural()` returns true for exactly the structural
+          rule ids; a unit test enumerates every built-in rule and asserts its
+          class.
+        - On a project whose only error is a broken link, `rivet validate
+          --structural` FAILs and shows the broken-link diagnostic; on a project
+          whose only issues are coverage/lint, `--structural` PASSes.
+        - `rivet validate --structural` on the rivet repo PASSes with 0
+          diagnostics shown (its 200+ warnings are all coverage/lint).
+        - Unit test `is_structural_classifies_every_builtin_rule` + CLI test
+          `validate_structural_gates_on_structural_only` pass.
+
+      Deferred: a per-rule `allow:` config and any rename of the
+      `validate_structural*` functions (their name is unrelated to this gate).
+    tags: [feature, validation, gating, dx, issue-408, issue-353, issue-355]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-004
