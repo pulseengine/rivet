@@ -394,6 +394,17 @@ enum Command {
         /// checking.
         #[arg(long = "with-externals-validate")]
         with_externals_validate: bool,
+
+        /// Gate on STRUCTURAL integrity only — show and fail on just the
+        /// diagnostics that mean the graph/parse/type model is broken
+        /// (broken links, duplicate ids, parse errors, bad link targets,
+        /// cardinality, schema-rule inconsistencies), hiding coverage/lint
+        /// findings (missing fields, orphans, prose-mention, near-duplicates,
+        /// status enums). A status flip or coverage gap can't change the
+        /// structural set, so this is the "did I break the graph?" gate for
+        /// bulk-edit workflows (#408).
+        #[arg(long)]
+        structural: bool,
     },
 
     /// Show a single artifact by ID
@@ -1963,6 +1974,7 @@ fn run(cli: Cli) -> Result<bool> {
             check_remote_sources,
             strict_orphans,
             with_externals_validate,
+            structural,
         } => {
             // REQ-125: `--explain <ID>` is a focused single-artifact view,
             // not a full validate run.
@@ -1987,6 +1999,7 @@ fn run(cli: Cli) -> Result<bool> {
                     *check_remote_sources,
                     *strict_orphans,
                     *with_externals_validate,
+                    *structural,
                 )
             }
         }
@@ -4665,6 +4678,7 @@ fn cmd_validate(
     check_remote_sources: bool,
     strict_orphans: bool,
     with_externals_validate: bool,
+    structural_only: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let fail_on_threshold = parse_fail_on(fail_on)?;
@@ -5178,6 +5192,15 @@ fn cmd_validate(
     // ID and is correctly kept; `artifact-parse-error` diagnostics carry
     // no artifact_id and are kept.
     diagnostics.retain(|d| !d.artifact_id.as_deref().is_some_and(|id| id.contains(':')));
+
+    // REQ-161 / #408: `--structural` gates on graph/parse/type integrity only.
+    // Retain just the structural diagnostics BEFORE counting/display, so the
+    // shown set, the error/warning counts, and the PASS/FAIL exit all reflect
+    // structural-only. Coverage/lint findings (missing fields, orphans,
+    // prose-mention, near-duplicates, status enums) are dropped from this view.
+    if structural_only {
+        diagnostics.retain(|d| d.is_structural());
+    }
 
     let errors = diagnostics
         .iter()
@@ -9040,6 +9063,7 @@ fn cmd_diff(
                     check_remote_sources: false,
                     strict_orphans: false,
                     with_externals_validate: false,
+                    structural: false,
                 },
             };
             let head_cli = Cli {
@@ -9066,6 +9090,7 @@ fn cmd_diff(
                     check_remote_sources: false,
                     strict_orphans: false,
                     with_externals_validate: false,
+                    structural: false,
                 },
             };
             let bc = ProjectContext::load(&base_cli)?;

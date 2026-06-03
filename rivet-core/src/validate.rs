@@ -149,6 +149,43 @@ impl Diagnostic {
             column: None,
         }
     }
+
+    /// REQ-161 / #408: whether this diagnostic reflects a **structural**
+    /// integrity problem (a malformed graph / parse / type — the artifact set
+    /// is broken) as opposed to a **coverage/lint** finding (the project is
+    /// merely incomplete or non-compliant).
+    ///
+    /// Structural failures are the ones a status flip or a coverage gap can
+    /// never touch: a broken link, a duplicate id, an unparseable file, a link
+    /// to a forbidden target type, a cardinality violation, a schema-rule
+    /// inconsistency. `rivet validate --structural` gates only on these, so a
+    /// bulk-edit / status-promotion workflow has a meaningful "did I break the
+    /// graph?" check independent of the coverage/lint noise it can't fix in one
+    /// pass (spar/sigil both hand-rolled a `0 broken cross-refs` gate for
+    /// exactly this — see #353/#355).
+    ///
+    /// This is an explicit allowlist: everything else — including all
+    /// schema-defined coverage/status-gate rules (whose `rule` is the rule's
+    /// own name) — is treated as coverage/lint. `required-field`,
+    /// `unknown-field`, and `status-allowed-values` are deliberately
+    /// classified as coverage (an incomplete/extra/typo'd field doesn't break
+    /// the graph); revisit if a project wants them gated.
+    pub fn is_structural(&self) -> bool {
+        matches!(
+            self.rule.as_str(),
+            "artifact-parse-error"
+                | "duplicate-artifact-id"
+                | "known-type"
+                | "unknown-link-type"
+                | "link-target-type"
+                | "cardinality"
+                | "broken-link"
+                | "doc-broken-ref"
+                | "yaml-type-coercion"
+                | "conditional-rule-consistency"
+                | "coverage-rule-consistency"
+        )
+    }
 }
 
 impl std::fmt::Display for Diagnostic {
@@ -3296,6 +3333,49 @@ then:
             .into_iter()
             .filter(|d| d.rule == "prose-mention-without-typed-link")
             .collect()
+    }
+
+    // rivet: verifies REQ-161
+    #[test]
+    fn is_structural_classifies_every_builtin_rule() {
+        let mk = |rule: &str| Diagnostic::new(Severity::Error, None, rule, "x");
+
+        // STRUCTURAL — a broken graph/parse/type model.
+        for rule in [
+            "artifact-parse-error",
+            "duplicate-artifact-id",
+            "known-type",
+            "unknown-link-type",
+            "link-target-type",
+            "cardinality",
+            "broken-link",
+            "doc-broken-ref",
+            "yaml-type-coercion",
+            "conditional-rule-consistency",
+            "coverage-rule-consistency",
+        ] {
+            assert!(mk(rule).is_structural(), "{rule} must be structural");
+        }
+
+        // COVERAGE / LINT — incomplete or non-compliant, not malformed.
+        for rule in [
+            "required-field",
+            "unknown-field",
+            "allowed-values",
+            "status-allowed-values",
+            "prose-mention-without-typed-link",
+            "near-duplicate-intent",
+            "orphan-artifact",
+            // schema-defined coverage / status-gate rules carry their own
+            // rule name, e.g.:
+            "swe1-has-verification",
+            "must-needs-rationale",
+        ] {
+            assert!(
+                !mk(rule).is_structural(),
+                "{rule} must be classified coverage/lint, not structural"
+            );
+        }
     }
 
     // rivet: verifies REQ-004
