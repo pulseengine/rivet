@@ -5201,6 +5201,38 @@ artifacts:
       - type: traces-to
         target: REQ-020
 
+  - id: REQ-174
+    type: requirement
+    title: "install-hooks.sh pre-commit also runs cargo fmt --check on staged Rust (catch the most common CI Format failure locally)"
+    status: implemented
+    description: |
+      Self-found while dogfooding (#438). The generated pre-commit hook in
+      `scripts/install-hooks.sh` ran only `rivet validate` — not `cargo fmt
+      --check` — so AI-agent/contributor commits passed local hooks but failed
+      the CI Format job (the single most common first-push failure; cf. #437).
+      A separate `scripts/pre-commit` file DID run fmt+clippy but was orphaned
+      (the installer never wired it).
+
+      Add a fast `cargo fmt --all -- --check` step to the installed pre-commit
+      hook, gated on staged Rust files (`git diff --cached … | grep '\.rs$'`),
+      blocking with a clear "run cargo fmt --all" message. Clippy/test stay out
+      of the per-commit hook (too slow) — they remain CI's job. Convenience
+      only; CI is still the real gate (REQ-051).
+
+      Acceptance:
+        - After `scripts/install-hooks.sh`, committing a staged Rust file with a
+          formatting violation is blocked by the pre-commit hook (exit 1); a
+          clean tree (or a commit with no staged `.rs`) is not blocked.
+        - `bash -n scripts/install-hooks.sh` passes; `rivet validate` on the
+          rivet repo still PASS.
+    tags: [ci, hooks, dx, fmt, dogfooding, self-found, issue-438]
+    fields:
+      priority: should
+      category: process
+    links:
+      - type: traces-to
+        target: REQ-051
+
   - id: REQ-175
     type: requirement
     title: "serve /graph integration tests retry on status==0 so they don't flap red on unrelated PRs"
