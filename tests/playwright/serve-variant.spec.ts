@@ -95,4 +95,26 @@ test.describe("Variant selection in rivet serve", () => {
       () => !new URL(window.location.href).searchParams.has("variant"),
     );
   });
+
+  // Regression test for #430: filtering a variant-scoped list must keep the
+  // variant in the pushed URL. The variant <select> lives outside the filter
+  // form, so before the fix the filter request omitted `variant=` and
+  // `hx-push-url` rewrote the URL without it — silently resetting the scope
+  // (and losing it on reload). The fix adds `#variant-selector` to each filter
+  // control's hx-include.
+  test("filtering a variant-scoped list keeps the variant in the URL (#430)", async ({
+    page,
+  }) => {
+    await page.goto("/artifacts?variant=dashboard-only");
+    await expect(page.locator(".variant-banner")).toBeVisible();
+    // Type into the search box (htmx keyup-triggered, pushes a new URL).
+    const search = page.locator("input[name='q']").first();
+    await search.pressSequentially("REQ", { delay: 50 });
+    await page.waitForURL(/q=REQ/);
+    await waitForHtmx(page);
+    // The variant scope must survive the filter — both in the URL and the
+    // server-rendered banner (recomputed from `?variant=`).
+    await expect(page).toHaveURL(/variant=dashboard-only/);
+    await expect(page.locator(".variant-banner")).toBeVisible();
+  });
 });
