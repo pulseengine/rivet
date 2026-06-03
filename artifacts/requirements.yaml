@@ -4981,3 +4981,37 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-125
+
+  - id: REQ-168
+    type: requirement
+    title: "rivet bundle --incoming: follow backlinks so bundling a sink (requirement) includes what realizes it"
+    status: implemented
+    description: |
+      Self-found while dogfooding (#428). `rivet bundle` builds an artifact's
+      link-graph closure for LLM context (#206), but traversed OUTGOING links
+      only. A requirement is a graph SINK — everything links TO it (satisfies /
+      verifies / allocated-to), it links OUT to nothing — so `rivet bundle
+      REQ-001` returned just the bare artifact (count=1), dropping exactly the
+      realizing design-decisions / features / tests you want as context.
+
+      Add `bundle_with_graph(store, graph, root, depth, include_incoming)` and a
+      `rivet bundle --incoming` flag. With it, each node's backlink sources are
+      enqueued too (depth +1). `bundle()` stays outgoing-only (API + MCP
+      stability). Backlink sources are visited in sorted order so the bundle is
+      reproducible across runs (the backlink store is HashMap-backed; cf. #415).
+
+      Acceptance:
+        - `rivet bundle REQ-001` (no flag) is unchanged (just the root for a
+          sink); `rivet bundle REQ-001 --incoming` includes the artifacts that
+          link to it (count > 1) and is byte-identical across runs.
+        - `cargo test -p rivet-core --lib
+          incoming_includes_backlink_sources_deterministically` passes; the
+          existing bundle tests still pass.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [feature, bundle, dx, llm-context, determinism, dogfooding, self-found, issue-428, issue-415]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007

@@ -6,10 +6,12 @@
 //! natural reasoning workflow is `get root -> get neighbour -> get
 //! neighbour-of-neighbour` which is N round-trips for what should be one.
 //!
-//! Traversal is breadth-first over outgoing links and visit-once, so cycles
-//! are inherently safe. Targets that don't exist in the store are emitted
-//! as references inside the parent's `links:` list but are not expanded
-//! (they have no record of their own).
+//! Traversal is breadth-first and visit-once, so cycles are inherently safe.
+//! [`bundle`] follows outgoing links only; [`bundle_with_graph`] additionally
+//! follows incoming links (backlinks) when asked, so bundling a graph sink
+//! like a requirement still pulls in what realizes it (`--incoming`, #428).
+//! Targets that don't exist in the store are emitted as references inside the
+//! parent's `links:` list but are not expanded (they have no record of their own).
 
 use std::collections::{BTreeSet, VecDeque};
 
@@ -114,6 +116,75 @@ pub fn bundle(store: &Store, root: &str, depth: usize) -> Result<Vec<BundleEntry
         for link in &art.links {
             if visited.insert(link.target.clone()) {
                 queue.push_back((link.target.clone(), d + 1));
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+/// Like [`bundle`], but also follows **incoming** links (backlinks) when
+/// `include_incoming` is set.
+///
+/// REQ-168 / #428: [`bundle`] traverses only outgoing links, so bundling a
+/// graph *sink* — a requirement, which everything links TO (`satisfies` /
+/// `verifies` / `allocated-to`) but which links OUT to nothing — yields just
+/// the bare artifact, dropping exactly the realizing design-decisions /
+/// features / tests you want for context. With `include_incoming`, each node's
+/// backlink sources are enqueued too (depth +1), so `rivet bundle <req>
+/// --incoming` returns the requirement *and what realizes it*.
+///
+/// Backlink sources are visited in sorted (`source`) order so the bundle is
+/// deterministic across runs (the graph's backlink store is HashMap-backed;
+/// cf. #415). Outgoing links keep their authored order; within a node,
+/// outgoing neighbours are enqueued before incoming.
+pub fn bundle_with_graph(
+    store: &Store,
+    graph: &crate::links::LinkGraph,
+    root: &str,
+    depth: usize,
+    include_incoming: bool,
+) -> Result<Vec<BundleEntry>, BundleError> {
+    if !include_incoming {
+        return bundle(store, root, depth);
+    }
+    let root_artifact = store
+        .get(root)
+        .ok_or_else(|| BundleError::NotFound(root.to_string()))?;
+
+    let mut visited: BTreeSet<ArtifactId> = BTreeSet::new();
+    let mut queue: VecDeque<(ArtifactId, usize)> = VecDeque::new();
+    let mut out: Vec<BundleEntry> = Vec::new();
+
+    visited.insert(root_artifact.id.clone());
+    queue.push_back((root_artifact.id.clone(), 0));
+
+    while let Some((id, d)) = queue.pop_front() {
+        let Some(art) = store.get(&id) else {
+            continue;
+        };
+        out.push(BundleEntry::from_artifact(art, d));
+        if d >= depth {
+            continue;
+        }
+        // Outgoing neighbours (authored order, like `bundle`).
+        for link in &art.links {
+            if visited.insert(link.target.clone()) {
+                queue.push_back((link.target.clone(), d + 1));
+            }
+        }
+        // Incoming neighbours (backlink sources), sorted + de-duped for a
+        // reproducible bundle regardless of graph (HashMap) iteration order.
+        let mut sources: Vec<&str> = graph
+            .backlinks_to(&id)
+            .iter()
+            .map(|bl| bl.source.as_str())
+            .collect();
+        sources.sort_unstable();
+        sources.dedup();
+        for src in sources {
+            if visited.insert(src.to_string()) {
+                queue.push_back((src.to_string(), d + 1));
             }
         }
     }
@@ -413,5 +484,37 @@ mod tests {
         assert_eq!(BundleFormat::parse("yaml"), Some(BundleFormat::Yaml));
         assert_eq!(BundleFormat::parse("jsonl"), Some(BundleFormat::Jsonl));
         assert_eq!(BundleFormat::parse("xml"), None);
+    }
+
+    // REQ-168 / #428: bundling a graph sink (a requirement that everything
+    // links TO but which links OUT to nothing) must include its realizers
+    // when --incoming is set, and the order must be deterministic.
+    #[test]
+    fn incoming_includes_backlink_sources_deterministically() {
+        use crate::links::LinkGraph;
+        use crate::schema::Schema;
+
+        let store = store_with(vec![
+            make("REQ-SINK", "requirement", "sink", vec![]),
+            make(
+                "DD-1",
+                "design-decision",
+                "dd",
+                vec![("satisfies", "REQ-SINK")],
+            ),
+            make("FEAT-1", "feature", "feat", vec![("satisfies", "REQ-SINK")]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+
+        // Outgoing-only (default / include_incoming=false): just the sink.
+        let out = bundle_with_graph(&store, &graph, "REQ-SINK", 1, false).unwrap();
+        assert_eq!(out.len(), 1, "outgoing-only sink bundle is just the root");
+        assert_eq!(out[0].id, "REQ-SINK");
+
+        // With incoming: root + both realizers, root first, sources sorted.
+        let inc = bundle_with_graph(&store, &graph, "REQ-SINK", 1, true).unwrap();
+        let ids: Vec<&str> = inc.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["REQ-SINK", "DD-1", "FEAT-1"], "got {ids:?}");
     }
 }

@@ -32,6 +32,13 @@
 
 ### Fixed
 
+- **REQ-168 / #428 — `rivet bundle --incoming`.** `bundle` built the closure
+  from *outgoing* links only, so bundling a requirement (a graph sink —
+  everything links *to* it, it links *out* to nothing) returned just the bare
+  artifact, dropping the realizing DDs/features/tests you actually want for LLM
+  context. `--incoming` now also follows backlinks (sorted, so the bundle is
+  reproducible — #415). `bundle()` stays outgoing-only for API/MCP stability.
+
 - **REQ-167 / #426 — `rivet trace <id>`.** Added the discoverable namesake
   verb for the per-artifact traceability view (rules satisfied/missing, incoming
   + outgoing links, diagnostics) — previously reachable only via the
