@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780505588512,
+  "lastUpdate": 1780511111109,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "7a41f0d2655bc7ecad45759b51315b9adda52ce6",
-          "message": "fix(validate): salsa path evaluates status-gate validation-rules (REQ-146, #355) (#393)\n\n`rivet validate` runs the incremental salsa path (`db::validate_all`),\nwhich evaluated structural rules (phases 1-7) and conditional rules\n(phase 8) but NOT the status-gate `validation-rules` (phase 9 — the\n`(implies …)` V-model promotion gates). The direct `validate::validate*`\npath (used by `rivet check gaps-json` and `rivet validate --direct`) DID\nevaluate them. So the default `rivet validate` silently PASSED a project\nwith a status-gate violation that gaps-json / --direct correctly FAILED\n— the divergence reported in #355 Finding 3, and a soundness gap since\nthe default validation surface under-reported.\n\nFix: `db::validate_all` and `validate_all_with_extras` now also call\n`validate::evaluate_validation_rules` against the same materialized\nstore/schema/graph, so every validation surface agrees.\n\nReproduced + verified: a project with an aspice `validation-rules` gate\n(an approved sys-verification verifying a draft system-req) previously\ngave salsa `FAIL (1 error)` vs direct `FAIL (2 errors)`; now both report\n2 including the gate. rivet's own corpus still PASS (181→ unchanged) on\nboth paths. New regression test\n`db::tests::validation_rules_evaluated_in_validate_all`; rivet-core db\n(24) + validation_rule (3) tests pass; clippy --all-targets + fmt clean;\nrivet validate + docs check PASS.\n\nFixes: REQ-146\nRefs: REQ-029, REQ-004\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-02T04:43:07-05:00",
-          "tree_id": "21286356b785b9859c0da9d58a121391bde2e72e",
-          "url": "https://github.com/pulseengine/rivet/commit/7a41f0d2655bc7ecad45759b51315b9adda52ce6"
-        },
-        "date": 1780393798112,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83525,
-            "range": "± 310",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 900312,
-            "range": "± 25882",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16620328,
-            "range": "± 1512508",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2219,
-            "range": "± 44",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26775,
-            "range": "± 332",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 353876,
-            "range": "± 5369",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1444891,
-            "range": "± 20746",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 163861,
-            "range": "± 2396",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1921167,
-            "range": "± 22633",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 33166952,
-            "range": "± 4043120",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 131454,
-            "range": "± 4619",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1148634,
-            "range": "± 30451",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 18635963,
-            "range": "± 1894118",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4488,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 62279,
-            "range": "± 972",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 741233,
-            "range": "± 5587",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62814,
-            "range": "± 1037",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 703553,
-            "range": "± 11893",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 10270186,
-            "range": "± 863184",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 772,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7349,
-            "range": "± 56",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 139414,
-            "range": "± 1007",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22600,
-            "range": "± 85",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 156887,
-            "range": "± 1133",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1475639,
-            "range": "± 42095",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1456846,
             "range": "± 26830",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f6a2862a1fc488239574a5f6ad6992082c5385fa",
+          "message": "fix(externals): ignore only .rivet/repos/ cache, not the whole .rivet/ dir (REQ-173, #433) (#439)\n\nSelf-found while dogfooding (#433). ensure_gitignore (run by `rivet sync`)\nappended a blanket `.rivet/` and only deduped against an exact `.rivet/` line.\nBut rivet tracks files under `.rivet/` (e.g. `.rivet/agent-context.md`), and\nthe cache sync actually writes is the narrower `.rivet/repos/`. So the blanket\nentry would silently un-track committed files on a fresh checkout, and was\nadded even when `.rivet/repos/` was already ignored.\n\nAppend `.rivet/repos/` instead, and treat the entry as present if any of\n`.rivet/repos/`, `.rivet/repos`, `.rivet/`, `.rivet` already appears.\n\nVerified: `cargo test -p rivet-core --lib ensure_gitignore` (2/2, incl. new\nensure_gitignore_respects_existing_cache_ignore); cargo fmt --check clean;\nclippy --all-targets -D warnings clean; `rivet validate` PASS.\n\nImplements: REQ-173\nRefs: REQ-020\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-03T13:15:56-05:00",
+          "tree_id": "9beaf26da65179386b8421e6a6aaf083c0d0c63c",
+          "url": "https://github.com/pulseengine/rivet/commit/f6a2862a1fc488239574a5f6ad6992082c5385fa"
+        },
+        "date": 1780511110318,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83792,
+            "range": "± 705",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 895096,
+            "range": "± 17627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 16956747,
+            "range": "± 757523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2191,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25227,
+            "range": "± 343",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 392430,
+            "range": "± 4274",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1483201,
+            "range": "± 23764",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166975,
+            "range": "± 1207",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1946502,
+            "range": "± 37438",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 43126937,
+            "range": "± 4270315",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 463076,
+            "range": "± 8353",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 18141497,
+            "range": "± 206836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1458501661,
+            "range": "± 18432735",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4325,
+            "range": "± 118",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59787,
+            "range": "± 405",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 762650,
+            "range": "± 11342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61039,
+            "range": "± 221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 712292,
+            "range": "± 3116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 12048368,
+            "range": "± 465792",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1253,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15915,
+            "range": "± 77",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 325256,
+            "range": "± 6144",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22709,
+            "range": "± 229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 155881,
+            "range": "± 1566",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1469529,
+            "range": "± 58319",
             "unit": "ns/iter"
           }
         ]
