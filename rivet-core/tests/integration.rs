@@ -1483,7 +1483,7 @@ artifacts:
   - id: FEAT-001
     type: feature
     title: Cross-file feature
-    status: active
+    status: approved
     links:
       - type: implements
         target: REQ-001

@@ -2360,12 +2360,14 @@ fn warning_only_project() -> tempfile::TempDir {
     );
 
     let artifacts = dir.join("artifacts").join("requirements.yaml");
-    // `active` status keeps rule severity at its declared level
-    // (warning for `requirement-coverage`). Draft would downgrade to info.
+    // A non-draft status keeps rule severity at its declared level
+    // (warning for `requirement-coverage`); draft would downgrade to info.
+    // Must be a canonical lifecycle value (REQ-162) so it doesn't itself
+    // raise a `status-allowed-values` ERROR — `approved` fits.
     std::fs::write(
         &artifacts,
         "artifacts:\n  - id: REQ-001\n    type: requirement\n    \
-         title: Orphan requirement\n    status: active\n    \
+         title: Orphan requirement\n    status: approved\n    \
          description: >\n      Unsatisfied — triggers \
          requirement-coverage warning.\n    tags: [core]\n    \
          fields:\n      priority: must\n      category: functional\n",

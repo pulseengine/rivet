@@ -4759,8 +4759,8 @@ artifacts:
 
       Maintainer decision (this session): declare the canonical lifecycle in
       the shared `schemas/common.yaml` `status` base-field —
-      `[draft, proposed, approved, implemented, verified, deprecated,
-      rejected]`. Ordering for promotion gates: draft -> proposed -> approved
+      `[draft, proposed, approved, implemented, verified, released,
+      deprecated, rejected]`. Ordering for promotion gates: draft -> proposed -> approved
       -> implemented -> verified; deprecated/rejected are terminal off-track.
 
       Migrated the rivet repo's own drift to fit the set (the only 7 artifacts

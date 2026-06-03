@@ -9,7 +9,7 @@
 
 - **REQ-162 / #352, #355 — canonical status lifecycle is now enforced.** The
   shared `schemas/common.yaml` `status` base-field declares
-  `[draft, proposed, approved, implemented, verified, deprecated, rejected]`,
+  `[draft, proposed, approved, implemented, verified, released, deprecated, rejected]`,
   so a typo'd / off-vocabulary status now fails `rivet validate` with a
   `status-allowed-values` ERROR + remediation instead of passing silently, and
   the set is discoverable. Absent status is unaffected. The rivet repo's own 7
