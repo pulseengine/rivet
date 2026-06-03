@@ -4898,3 +4898,47 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-135
+
+  - id: REQ-166
+    type: requirement
+    title: "rivet matrix infers traversal direction (and link) from the from/to pair when --direction is omitted"
+    status: implemented
+    description: |
+      From #402: `rivet matrix --from X --to Y` required the user to also know
+      the right `--direction` (the default `backward` silently rendered an
+      all-empty matrix for a forward relationship like
+      `design-decision --satisfies--> requirement`). REQ-152 added a hint, but
+      the user still had to re-run.
+
+      Make `--direction` optional. When omitted, infer the direction + link
+      type that actually connect `from` -> `to` by probing the graph (the
+      declared source-/target-types on common links like `satisfies` are
+      usually empty, so metadata alone can't decide). Candidate links: the one
+      given via `--link`, else every distinct link type on a from-/to-type
+      artifact; each is scored in both directions and the highest-coverage
+      non-empty pair wins (ties break Forward-first then link name, for
+      determinism). When `--direction` IS given, behaviour is byte-identical to
+      before — inference only affects the omitted path.
+
+      Scope: the CLI `rivet matrix` command. The `{{matrix:from:to}}` embed and
+      the serve render path derive direction from schema rules and are left as
+      a separate follow-up.
+
+      Acceptance:
+        - `rivet matrix --from design-decision --to requirement` (no
+          --direction) is NON-empty and reports `link_type: satisfies`
+          (inferred forward), not the old empty backward default.
+        - `rivet matrix --direction backward …` and `--direction forward …`
+          produce byte-identical output to before (explicit path unchanged).
+        - `cargo test -p rivet-cli --test cli_commands
+          matrix_infers_direction_when_omitted` passes, and the existing
+          matrix tests (incl. the empty-hint test, now using explicit
+          `--direction backward`) still pass.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [feature, matrix, dx, traceability, issue-402]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-152

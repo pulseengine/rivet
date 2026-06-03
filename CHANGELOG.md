@@ -32,6 +32,15 @@
 
 ### Fixed
 
+- **REQ-166 / #402 — `rivet matrix` infers direction + link from the from/to
+  pair.** `--direction` is now optional; omit it and the command probes the
+  graph for the direction and link type that actually connect `--from` to
+  `--to`, so `rivet matrix --from design-decision --to requirement` renders the
+  real `satisfies` matrix instead of the old empty `backward` default. Explicit
+  `--direction forward`/`backward` is byte-identical to before — inference only
+  affects the omitted path. (CLI command only; the `{{matrix:from:to}}` embed is
+  a separate follow-up.) Test `matrix_infers_direction_when_omitted`.
+
 - **REQ-165 / #355 Finding 2 — ASPICE verification gates accept forward target
   status.** The three `V-*-verification-needs-approved-*` status gates hardcoded
   `(forall-linked "verifies" (= status "approved"))`, so an approved/released
