@@ -920,11 +920,45 @@ pub struct CircularDependency {
     pub chain: Vec<String>,
 }
 
+/// Prefixes of externals whose own `rivet.yaml` could not be loaded from the
+/// cache (`.rivet/repos/<prefix>`) — i.e. not yet synced, or present but
+/// unparseable.
+///
+/// The cross-repo cycle graph ([`detect_circular_deps`]) is built by reading
+/// each external's *declared* externals. Any prefix returned here is a HOLE in
+/// that graph: a cycle or broken reference routed through it is invisible, so a
+/// clean "no cycle detected" result cannot be trusted until `rivet sync` has
+/// populated the cache. Surfacing this list lets callers warn instead of
+/// silently reporting a false negative (F2: loud-fail over silent-success).
+///
+/// Returned prefixes are sorted for deterministic reporting.
+pub fn unresolved_externals(
+    externals: &BTreeMap<String, ExternalProject>,
+    project_dir: &Path,
+) -> Vec<String> {
+    let cache_dir = project_dir.join(".rivet/repos");
+    let mut missing = Vec::new();
+    for ext in externals.values() {
+        let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
+        let config_path = ext_dir.join("rivet.yaml");
+        if crate::load_project_config(&config_path).is_err() {
+            missing.push(ext.prefix.clone());
+        }
+    }
+    missing.sort();
+    missing
+}
+
 /// Detect circular dependencies in the externals graph.
 ///
 /// Reads each external's own `rivet.yaml` to discover their declared externals,
 /// then checks for cycles using DFS. Circular deps are warnings (valid in mesh
 /// topology) but should be reported so users are aware.
+///
+/// NOTE: externals absent from the cache are silently skipped while building
+/// the graph, so an empty result only means "no cycle *among synced repos*".
+/// Pair this with [`unresolved_externals`] to tell the user when the graph —
+/// and therefore the acyclicity guarantee — is incomplete.
 pub fn detect_circular_deps(
     externals: &BTreeMap<String, ExternalProject>,
     project_name: &str,
@@ -1563,6 +1597,48 @@ mod tests {
 
         let cycles = detect_circular_deps(&externals, "a", dir.path());
         assert!(cycles.is_empty(), "no cycle expected");
+    }
+
+    // rivet: verifies REQ-170
+    #[test]
+    fn unresolved_externals_lists_only_unsynced_repos() {
+        let dir = tempfile::tempdir().unwrap();
+        // A "synced" path external: target dir exists with a loadable rivet.yaml.
+        let synced = dir.path().join("synced-src");
+        std::fs::create_dir_all(&synced).unwrap();
+        std::fs::write(
+            synced.join("rivet.yaml"),
+            "project:\n  name: synced\n  version: '0.1.0'\n  schemas: [common]\nsources: []\n",
+        )
+        .unwrap();
+
+        let mut externals = BTreeMap::new();
+        externals.insert(
+            "synced".into(),
+            crate::model::ExternalProject {
+                git: None,
+                path: Some(synced.to_str().unwrap().into()),
+                git_ref: None,
+                prefix: "synced".into(),
+            },
+        );
+        // A git external that was never synced => no .rivet/repos/notsynced.
+        externals.insert(
+            "notsynced".into(),
+            crate::model::ExternalProject {
+                git: Some("https://example.invalid/x.git".into()),
+                path: None,
+                git_ref: Some("main".into()),
+                prefix: "notsynced".into(),
+            },
+        );
+
+        let missing = unresolved_externals(&externals, dir.path());
+        assert_eq!(
+            missing,
+            vec!["notsynced".to_string()],
+            "only the un-synced git external is a graph hole; the synced path one is not"
+        );
     }
 
     // rivet: verifies REQ-020
