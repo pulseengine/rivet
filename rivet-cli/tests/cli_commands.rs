@@ -5591,3 +5591,59 @@ fn near_duplicate_intent_validate_and_add() {
         "a distinct title must not emit a near-duplicate note; stderr: {ok_err}"
     );
 }
+
+/// REQ-161 / #408: `rivet validate --structural` gates only on structural
+/// integrity. A broken link (structural) makes it FAIL; a project whose only
+/// problems are coverage/lint (a missing required field) PASSes `--structural`
+/// while normal validate FAILs.
+#[test]
+fn validate_structural_gates_on_structural_only() {
+    let mk = |body: &str| {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let dir = tmp.path().to_path_buf();
+        std::fs::write(
+            dir.join("rivet.yaml"),
+            "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+             sources:\n  - path: artifacts\n    format: generic-yaml\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+        std::fs::write(dir.join("artifacts").join("r.yaml"), body).unwrap();
+        (tmp, dir)
+    };
+    let run = |dir: &std::path::Path, args: &[&str]| {
+        let mut a = vec!["--project", dir.to_str().unwrap(), "validate", "--direct"];
+        a.extend_from_slice(args);
+        Command::new(rivet_bin())
+            .args(&a)
+            .output()
+            .expect("validate")
+    };
+
+    // (a) A broken link is STRUCTURAL -> --structural still FAILs.
+    let (_t1, d1) = mk("artifacts:\n  - id: REQ-1\n    type: requirement\n    \
+         title: One\n    status: draft\n    links:\n      - type: traces-to\n        target: GHOST-1\n");
+    let s1 = run(&d1, &["--structural"]);
+    assert!(
+        !s1.status.success(),
+        "a broken link must FAIL --structural; stdout:\n{}",
+        String::from_utf8_lossy(&s1.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&s1.stdout).contains("does not exist"),
+        "the broken-link diagnostic must be shown under --structural"
+    );
+
+    // (b) A schema-typed missing required field is COVERAGE/LINT. Use a type
+    // with a required field; omit it. --structural PASSes even if normal fails.
+    // (Use an undeclared field which is the unknown-field coverage rule —
+    // simplest cross-schema case that is non-structural by our taxonomy.)
+    let (_t2, d2) = mk("artifacts:\n  - id: REQ-1\n    type: requirement\n    \
+         title: One\n    status: draft\n    fields:\n      bogus_undeclared: x\n");
+    let s2 = run(&d2, &["--structural"]);
+    assert!(
+        s2.status.success(),
+        "a project whose only issues are coverage/lint must PASS --structural; stdout:\n{}",
+        String::from_utf8_lossy(&s2.stdout)
+    );
+}
