@@ -4572,3 +4572,54 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-062
+
+  - id: REQ-158
+    type: requirement
+    title: "Detect near-duplicate intent: flag same-type artifacts with highly similar titles"
+    status: implemented
+    description: |
+      From GitHub issue #397: `rivet add` rejects a duplicate *id* but nothing
+      flags a duplicate *intent* — two artifacts that say the same thing under
+      different ids — so a long-lived backlog accretes near-duplicate
+      requirements.
+
+      Signal (bounded + explainable, per the bounded-composite-score doctrine):
+      Jaccard overlap of significant title tokens (lowercase, alphanumeric
+      split, stopwords + sub-3-char tokens removed), in [0,1]. Threshold 0.6,
+      empirically calibrated against the rivet repo's own 158 requirements,
+      which produce ZERO pairs at 0.6 (1 at 0.5) — the default does not flood a
+      well-differentiated backlog.
+
+      Two surfaces, one shared `rivet_core::similarity` implementation so they
+      can't disagree:
+        - `rivet validate` emits a `near-duplicate-intent` INFO diagnostic for
+          each same-type, non-external artifact pair at/above threshold
+          (within-type O(n^2), titles tokenized once). INFO never blocks. Lives
+          in the shared `validate_structural*` pass so it runs on both the
+          salsa and --direct paths (same-surface parity).
+        - `rivet add` emits a non-blocking `note:` when the new title is similar
+          to an existing same-type artifact, then adds anyway.
+
+      Acceptance:
+        - In a project with REQ-1/REQ-2 (near-identical titles) and REQ-3
+          (distinct), `rivet validate --direct --format json` yields exactly
+          one `near-duplicate-intent` diagnostic, on REQ-2; REQ-3 is not named.
+        - `rivet add` with a title similar to an existing same-type artifact
+          prints a `note: intent is N% similar to …` to stderr and still
+          succeeds; a distinct title prints no note.
+        - `rivet validate` on the rivet repo emits zero `near-duplicate-intent`
+          diagnostics and still PASS.
+        - `cargo test -p rivet-core --lib similarity` and `cargo test -p
+          rivet-cli --test cli_commands near_duplicate_intent_validate_and_add`
+          pass.
+
+      Deferred (noted on #397): per-rule `allow:` suppression in rivet.yaml —
+      rivet has no general diagnostic-suppression config yet; INFO severity
+      keeps the diagnostic non-disruptive until that infra exists.
+    tags: [feature, validation, backlog-hygiene, dx, issue-397]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-004

@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- **REQ-158 / #397 — near-duplicate-intent detection.** `rivet add` rejects a
+  duplicate *id* but nothing flagged a duplicate *intent* — two artifacts that
+  say the same thing under different ids — so a backlog accreted near-dups.
+  A new shared `rivet_core::similarity` signal (Jaccard overlap of significant,
+  stopword-stripped title tokens, bounded `[0,1]`, threshold 0.6 — calibrated
+  to **zero** false positives on the rivet repo's own 158 requirements) now
+  backs two surfaces: `rivet validate` emits a non-blocking `near-duplicate-intent`
+  **INFO** diagnostic for each same-type pair at/above threshold (on both the
+  salsa and `--direct` paths), and `rivet add` prints a non-blocking
+  `note: intent is N% similar to <ID> …` before adding. Per-rule suppression in
+  `rivet.yaml` is a noted follow-up (no diagnostic-suppression config exists
+  yet; INFO keeps it non-disruptive meanwhile).
+
 ### Fixed
 
 - **REQ-157 / #406 — `rivet validate` no longer prints the per-file `skipping
