@@ -5714,3 +5714,49 @@ fn validate_structural_gates_on_structural_only() {
         String::from_utf8_lossy(&s2.stdout)
     );
 }
+
+/// REQ-167 / #426: `rivet trace <id>` is the discoverable namesake verb for the
+/// per-artifact traceability view — it must exit 0, render the artifact + its
+/// links, produce the SAME output as `validate --explain <id>`, and be
+/// deterministic across runs (REQ-167 / #415 sort fix on the link lists).
+#[test]
+fn trace_command_renders_and_is_deterministic() {
+    let root = project_root();
+    let run = |args: &[&str]| {
+        let mut a = vec!["--project", root.to_str().unwrap()];
+        a.extend_from_slice(args);
+        Command::new(rivet_bin()).args(&a).output().expect("rivet")
+    };
+
+    let t1 = run(&["trace", "REQ-001"]);
+    assert!(t1.status.success(), "rivet trace must exit 0");
+    let s1 = String::from_utf8_lossy(&t1.stdout);
+    assert!(
+        s1.contains("REQ-001") && s1.contains("Incoming links:"),
+        "trace output must show the artifact and its links; got:\n{s1}"
+    );
+
+    // Deterministic across runs (link lists sorted, not HashMap-ordered).
+    let t2 = run(&["trace", "REQ-001"]);
+    assert_eq!(
+        s1,
+        String::from_utf8_lossy(&t2.stdout),
+        "rivet trace output must be reproducible run-to-run"
+    );
+
+    // Same view as `validate --explain` (trace wraps cmd_explain).
+    let explain = run(&["validate", "--explain", "REQ-001"]);
+    assert_eq!(
+        s1,
+        String::from_utf8_lossy(&explain.stdout),
+        "rivet trace must match validate --explain"
+    );
+
+    // Unknown subcommand previously; now a real command — unknown ID is a
+    // clean not-found, not a clap error.
+    let missing = run(&["trace", "NOPE-999"]);
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("not found"),
+        "trace of a missing id should report not-found"
+    );
+}

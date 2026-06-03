@@ -4942,3 +4942,42 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-152
+
+  - id: REQ-167
+    type: requirement
+    title: "rivet trace <id>: discoverable per-artifact traceability view (+ deterministic link ordering)"
+    status: implemented
+    description: |
+      Self-found while dogfooding (#426): `rivet`'s tagline is "SDLC artifact
+      traceability and validation", yet `rivet trace <id>` was an unrecognised
+      subcommand. The per-artifact neighbourhood view (rules satisfied/missing,
+      incoming + outgoing links, diagnostics) existed only under the
+      non-obvious `rivet validate --explain <id>` — nobody runs `validate` to
+      navigate traceability.
+
+      Add `rivet trace <id>` as a first-class command that renders that view
+      (it calls the same `cmd_explain`; `validate --explain` stays as an alias).
+
+      While verifying, found the view itself was nondeterministic: incoming
+      links (`graph.backlinks_to`, HashMap order) and the rule-satisfier
+      representative ("...from <X>") varied per run — bad for audit evidence
+      (#415 footgun). Both now sort by (source, link-type), so `trace` /
+      `validate --explain` output is reproducible.
+
+      Acceptance:
+        - `rivet trace REQ-001` exits 0 and prints the artifact + "Incoming
+          links:"; output is byte-identical to `rivet validate --explain
+          REQ-001` and identical across repeated runs.
+        - `rivet trace <missing-id>` reports "not found" (clean, not a clap
+          error).
+        - `cargo test -p rivet-cli --test cli_commands
+          trace_command_renders_and_is_deterministic` passes; the existing
+          `validate_explain_shows_rule_status` test still passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [feature, dx, traceability, determinism, dogfooding, self-found, issue-426, issue-415]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-125
