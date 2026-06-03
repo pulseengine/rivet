@@ -31,7 +31,13 @@ test.describe("Graph View", () => {
   });
 
   test("graph SVG contains custom polygon shapes", async ({ page }) => {
-    await page.goto("/graph?types=requirement,design-decision&depth=2");
+    // ?limit=2000 lifts the default 200-node render budget: the dogfood
+    // dataset grew past 200 requirement+design-decision nodes at depth 2, so
+    // without it the view returns the "above node budget" placeholder (no SVG,
+    // no polygons) and this test fails. The filtered subset still renders fast.
+    await page.goto(
+      "/graph?types=requirement,design-decision&depth=2&limit=2000",
+    );
     await waitForHtmx(page);
     await expect(page.locator("svg").first()).toBeVisible({ timeout: 15_000 });
     // Custom shapes render as polygon elements (diamonds, hexagons, etc.)
