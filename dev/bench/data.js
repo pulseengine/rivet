@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780500381360,
+  "lastUpdate": 1780505588512,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "a37bda6c1a6f72458613689890fbc0102d9143ea",
-          "message": "feat(scripts): Zola export build smoke check (REQ-138, #378) (#391)\n\nAdds scripts/zola-export-smoke.sh: exports the corpus into a scaffolded\nZola site whose base_url is a sub-directory deploy, runs a real\n`zola build`, and fails on a build error OR on any built-HTML\nartifact/document link that drops the deploy sub-path.\n\nThis is the end-to-end gate the string-asserting unit tests can't give —\n\"export succeeded\" now provably implies \"the site builds and its links\nresolve under a sub-directory deploy.\" It catches the REQ-115/116/118\nabsolute-link class that previously shipped undetected. The script skips\ncleanly (exit 0 + notice) when `zola` is absent, so it can gate on\navailability.\n\nVerified locally: passes on the current corpus (1219 pages, 0 leaks);\nthe leak detector fires on the pre-fix `/<prefix>/artifacts/…` pattern\nwhile ignoring correctly-resolved full-URL links. Wiring it as a gated\nCI job (needs a zola install on the runner) is a follow-up.\n\nImplements: REQ-138\nRefs: REQ-115\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-02T03:33:08-05:00",
-          "tree_id": "80d4292bf17c65a7e35426c1596c89362ca719d1",
-          "url": "https://github.com/pulseengine/rivet/commit/a37bda6c1a6f72458613689890fbc0102d9143ea"
-        },
-        "date": 1780389585524,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85531,
-            "range": "± 502",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 890957,
-            "range": "± 5594",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12398686,
-            "range": "± 372468",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2193,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25429,
-            "range": "± 128",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 371437,
-            "range": "± 920",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1432148,
-            "range": "± 20454",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160056,
-            "range": "± 1630",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1876137,
-            "range": "± 8527",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24086899,
-            "range": "± 1136601",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 132245,
-            "range": "± 1149",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1151829,
-            "range": "± 27943",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 12815374,
-            "range": "± 582007",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4255,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 57545,
-            "range": "± 309",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 829558,
-            "range": "± 7393",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62249,
-            "range": "± 1306",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 700128,
-            "range": "± 9984",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7873722,
-            "range": "± 205789",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 777,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6695,
-            "range": "± 22",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 126259,
-            "range": "± 1432",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22267,
-            "range": "± 205",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 154605,
-            "range": "± 753",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1466195,
-            "range": "± 19725",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1342509,
             "range": "± 20887",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8e7608b9a156564d1ba8920fd063aeb06aa0c5f7",
+          "message": "fix(serve): preserve active variant scope when filtering/searching (REQ-172, #430) (#437)\n\n* fix(serve): preserve active variant scope when filtering/searching (REQ-172, #430)\n\nMaintainer-reported (#430). The variant <select id=\"variant-selector\"> lives in\nthe context bar, outside the filter form. Filter controls use hx-include of\nonly their own fields + hx-push-url, so filtering/searching a variant-scoped\nview sent no variant= and the pushed URL dropped ?variant= — silently resetting\nthe scope, and losing it on reload.\n\nAdd #variant-selector to every filter control's hx-include via a shared\nhx_include_with_variant() helper (search_input, type_filter, per_page_select,\nfilter_bar form + inner search, validate status select). The server treats an\nempty variant= as unscoped, so this is safe when none is active; the selector\nis only in the DOM when a variant model exists.\n\nVerified in a real browser: new Playwright regression test \"filtering a\nvariant-scoped list keeps the variant in the URL (#430)\" + the full\nserve-variant spec pass 9/9; `cargo test -p rivet-cli --bins components` 51/51;\nclippy --all-targets clean; `rivet validate` PASS.\n\nImplements: REQ-172\nRefs: REQ-109\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n* style(serve): fix rustfmt + clippy on hx_include_with_variant helper\n\nCI Format + Clippy failed on the #430 fix: rustfmt wanted the iterator chain\nwrapped, and clippy's doc_lazy_continuation fired because the helper had been\ninserted between search_input's doc comment and its signature — orphaning that\ndoc onto the helper. Reorder so the helper carries its own doc and\nsearch_input's doc reattaches to search_input; apply cargo fmt. No behavior\nchange (helper logic untouched; serve-variant Playwright + component tests\nalready green).\n\nRefs: REQ-172\n\nCo-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-03T11:43:59-05:00",
+          "tree_id": "bab07571e4acb8fa4c10d8f4e36ca1bf7907d50c",
+          "url": "https://github.com/pulseengine/rivet/commit/8e7608b9a156564d1ba8920fd063aeb06aa0c5f7"
+        },
+        "date": 1780505587019,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83357,
+            "range": "± 322",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 876849,
+            "range": "± 7977",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13781666,
+            "range": "± 706904",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2174,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25694,
+            "range": "± 122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 393930,
+            "range": "± 2529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1456440,
+            "range": "± 14346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166925,
+            "range": "± 574",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1900063,
+            "range": "± 20515",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 26190334,
+            "range": "± 1809347",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 440847,
+            "range": "± 2915",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16941119,
+            "range": "± 522675",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1413498065,
+            "range": "± 21116862",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4330,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60960,
+            "range": "± 842",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 751202,
+            "range": "± 6139",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61524,
+            "range": "± 219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 707009,
+            "range": "± 7445",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7918953,
+            "range": "± 372421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1248,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15131,
+            "range": "± 114",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 325580,
+            "range": "± 3388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22662,
+            "range": "± 179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 158574,
+            "range": "± 1132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1456846,
+            "range": "± 26830",
             "unit": "ns/iter"
           }
         ]
