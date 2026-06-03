@@ -562,7 +562,9 @@ validation-rules:
       (implies
         (and (= type "sys-verification")
              (or (= status "approved") (= status "released")))
-        (forall-linked "verifies" (= status "approved")))
+        (forall-linked "verifies"
+          (or (= status "approved") (= status "implemented")
+              (= status "verified") (= status "released"))))
     on-unresolved: skip
     severity: error
     message: |
@@ -577,7 +579,9 @@ validation-rules:
       (implies
         (and (= type "sw-verification")
              (or (= status "approved") (= status "released")))
-        (forall-linked "verifies" (= status "approved")))
+        (forall-linked "verifies"
+          (or (= status "approved") (= status "implemented")
+              (= status "verified") (= status "released"))))
     on-unresolved: skip
     severity: error
     message: |
@@ -593,7 +597,9 @@ validation-rules:
       (implies
         (and (= type "unit-verification")
              (or (= status "approved") (= status "released")))
-        (forall-linked "verifies" (= status "approved")))
+        (forall-linked "verifies"
+          (or (= status "approved") (= status "implemented")
+              (= status "verified") (= status "released"))))
     on-unresolved: skip
     severity: error
     message: |

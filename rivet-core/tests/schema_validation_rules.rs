@@ -131,6 +131,49 @@ fn aspice_status_gate_rules_loaded_and_fire() {
     );
 }
 
+/// REQ-165 / #355 Finding 2: the verification status-gate consequent must
+/// accept a target that has moved FORWARD past `approved` (implemented /
+/// verified / released), not only the literal `approved`. Promoting a
+/// verified requirement/design from approved -> implemented must not
+/// re-fire "needs an approved req/design"; only a target still BELOW
+/// approved (draft / proposed) should.
+#[test]
+fn aspice_status_gate_accepts_forward_target_status() {
+    let schema = Schema::merge(&[parse_schema("aspice")]);
+
+    let mut store = Store::default();
+    // approved sys-verification -> implemented system-req (forward of approved)
+    store.upsert(artifact("REQ-IMPL", "system-req", "implemented", &[]));
+    store.upsert(artifact(
+        "V-FWD",
+        "sys-verification",
+        "approved",
+        &[("verifies", "REQ-IMPL")],
+    ));
+    // control: approved sys-verification -> draft system-req (below approved)
+    store.upsert(artifact("REQ-DRAFT", "system-req", "draft", &[]));
+    store.upsert(artifact(
+        "V-BAD",
+        "sys-verification",
+        "approved",
+        &[("verifies", "REQ-DRAFT")],
+    ));
+
+    let graph = LinkGraph::build(&store, &schema);
+    let gate: Vec<_> = validate(&store, &schema, &graph)
+        .into_iter()
+        .filter(|d| d.rule == "V-sys-verification-needs-approved-req")
+        .collect();
+
+    // Exactly one violation — on V-BAD (draft target), NOT V-FWD (implemented).
+    assert_eq!(
+        gate.len(),
+        1,
+        "only the draft-target verifier should fire; got {gate:#?}"
+    );
+    assert_eq!(gate[0].artifact_id.as_deref(), Some("V-BAD"));
+}
+
 /// All status-gate rules across every shipped preset must have a well-
 /// formed s-expression body. Catches typos in rule bodies before they
 /// ship — a malformed `rule:` would otherwise surface only as a runtime

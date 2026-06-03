@@ -32,6 +32,16 @@
 
 ### Fixed
 
+- **REQ-165 / #355 Finding 2 — ASPICE verification gates accept forward target
+  status.** The three `V-*-verification-needs-approved-*` status gates hardcoded
+  `(forall-linked "verifies" (= status "approved"))`, so an approved/released
+  verifier mis-fired when the req/design it verifies had moved *past* approved
+  (implemented / verified / released) — promoting `approved → implemented`
+  wrongly re-raised "needs an approved design". Each consequent now accepts
+  approved-or-beyond `(or approved implemented verified released)`; a target
+  still below approved (draft/proposed) correctly still fires. Schema-only;
+  regression test `aspice_status_gate_accepts_forward_target_status`.
+
 - **REQ-163 / #420 — compliance CI now forwards the version-switcher + back-link
   inputs.** The published report for 0.15.0 lost the version selector and "back"
   nav that 0.1.0 has. `rivet export` still supports them (`--homepage`,
