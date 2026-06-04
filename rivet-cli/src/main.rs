@@ -4394,6 +4394,7 @@ This project uses **Rivet** for SDLC artifact traceability.
 | `rivet list` | List artifacts with filters | `rivet list --type requirement --format json` |
 | `rivet stats` | Show artifact counts by type | `rivet stats --format json` |
 | `rivet add` | Create a new artifact | `rivet add -t requirement --title "..." --link "satisfies:SC-1"` |
+| `rivet next-id` | Next free ID for a type/prefix (scans all files) | `rivet next-id requirement` |
 | `rivet link` | Add a link between artifacts | `rivet link SOURCE -t satisfies --target TARGET` |
 | `rivet serve` | Start the dashboard | `rivet serve --port 3000` |
 | `rivet export` | Generate HTML reports | `rivet export --format html --output ./dist` |
@@ -4412,7 +4413,10 @@ This project uses **Rivet** for SDLC artifact traceability.
 - Documents: {doc_paths}
 
 ### Creating Artifacts
+`rivet add` auto-assigns the next free ID. To see it first — IDs for one type
+can span many files, so don't hand-grep a single file — use `rivet next-id`:
 ```bash
+rivet next-id requirement   # next free REQ id, scanning the whole store
 rivet add -t requirement --title "New requirement" --status draft --link "satisfies:SC-1"
 ```
 
