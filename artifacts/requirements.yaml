@@ -5470,3 +5470,36 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-115
+
+  - id: REQ-182
+    type: requirement
+    title: "export to a directory for a single-file format gives an actionable error, not a raw OS error"
+    status: implemented
+    description: |
+      Self-found by dogfooding exports. `rivet export --format reqif --output
+      <dir>` (and generic-yaml/generic) failed with a cryptic raw OS error
+      "writing <path>: Is a directory (os error 21)". These formats write a
+      single file (the `--help` documents "file for reqif/generic-yaml,
+      directory for html/zola"), so passing a directory is an easy mistake with
+      an unhelpful message.
+
+      Fix (cmd_export): before the single-file `fs::write`, if `--output` is an
+      existing directory, bail with an actionable message naming the format,
+      suggesting a file path (`--output out.reqif`), and pointing at the
+      directory formats (html/zola). File-path export is unchanged.
+
+      Acceptance:
+        - `rivet export --format reqif --output <existing-dir>` exits non-zero
+          with a message containing "is a directory" and "single file", and does
+          NOT leak "os error 21".
+        - `rivet export --format reqif --output out.reqif` still succeeds.
+        - `cargo test -p rivet-cli --test export_reqif_roundtrip
+          export_reqif_to_directory_gives_actionable_error` passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [export, cli, dx, error-ux, dogfooding, self-found]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
