@@ -8043,6 +8043,18 @@ fn cmd_export(
     };
 
     if let Some(path) = output {
+        // The reqif/generic formats write a SINGLE file. If `--output` is an
+        // existing directory the bare `fs::write` fails with a cryptic
+        // "Is a directory (os error 21)"; give an actionable message instead.
+        if path.is_dir() {
+            let ext = if format == "reqif" { "reqif" } else { "yaml" };
+            anyhow::bail!(
+                "--output '{}' is a directory, but the '{format}' format writes a single file. \
+                 Pass a file path (e.g. `--output out.{ext}`), or use a directory format \
+                 (html/zola) for a multi-file site.",
+                path.display(),
+            );
+        }
         std::fs::write(path, &bytes).with_context(|| format!("writing {}", path.display()))?;
         println!(
             "Exported {} artifacts to {}",

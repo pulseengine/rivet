@@ -142,3 +142,36 @@ fn reqif_export_has_specification_and_roundtrips_via_cli() {
         "the satisfies link must survive the ReqIF round-trip"
     );
 }
+
+/// A file-format export (`reqif`/`generic-yaml`) to a directory `--output`
+/// fails with an actionable message, not a raw "Is a directory" OS error.
+/// REQ-182 (self-found by dogfooding).
+#[test]
+fn export_reqif_to_directory_gives_actionable_error() {
+    let proj = tempfile::tempdir().unwrap();
+    write_project(proj.path());
+    let outdir = tempfile::tempdir().unwrap(); // an existing directory
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            proj.path().to_str().unwrap(),
+            "export",
+            "--format",
+            "reqif",
+            "--output",
+            outdir.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("run rivet export --format reqif --output <dir>");
+    assert!(!out.status.success(), "exporting to a directory must fail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("is a directory") && stderr.contains("single file"),
+        "error must explain the file/directory mismatch. Got:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("os error 21"),
+        "must not leak the raw OS error. Got:\n{stderr}"
+    );
+}
