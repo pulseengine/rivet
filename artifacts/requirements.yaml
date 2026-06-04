@@ -5650,3 +5650,39 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-187
+    type: requirement
+    title: "`rivet query` accepts the s-expression as a positional shorthand (not only --sexpr)"
+    status: implemented
+    description: |
+      Dogfooding friction: `rivet query '(= type "requirement")'` — the natural
+      form an agent or human types — errors with "unexpected argument", because
+      `query` only accepts the filter via the required `--sexpr` flag. The sibling
+      command `next-id` already established the positional-shorthand pattern
+      (`rivet next-id requirement` works via an optional positional `target` that
+      defers to the explicit flag), but `query` was never given the same
+      treatment — an avoidable inconsistency on the single most-used agent-facing
+      command.
+
+      Fix: add an optional positional `SEXPR` to the `query` clap struct and make
+      `--sexpr` optional; the explicit flag wins if both are given, and a clear
+      error is raised if neither is supplied. `--sexpr` keeps working unchanged
+      (MCP/docs/scripts depend on it), so the change is purely additive.
+
+      Acceptance:
+        - `rivet query '(= id "REQ-007")' --format ids` (positional, no
+          `--sexpr`) exits 0 and prints `REQ-007`.
+        - The positional form and `--sexpr` form yield identical matches
+          (`cargo test -p rivet-cli --test sexpr_filter_integration
+          query_positional_and_flag_are_equivalent`).
+        - `rivet query` with no filter exits non-zero with an error mentioning
+          "s-expression".
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, query, sexpr, ergonomics, agent-ux, friction, consistency]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-007
