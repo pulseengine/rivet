@@ -527,19 +527,27 @@ fn render_artifact_yaml(artifact: &Artifact) -> String {
     if !artifact.fields.is_empty() {
         lines.push("    fields:".to_string());
         for (key, value) in &artifact.fields {
-            let val_str = match value {
-                serde_yaml::Value::String(s) => s.clone(),
-                serde_yaml::Value::Number(n) => n.to_string(),
-                serde_yaml::Value::Bool(b) => b.to_string(),
-                other => serde_yaml::to_string(other)
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string(),
-            };
-            lines.push(format!(
-                "      {key}: {}",
-                yaml_render_scalar_value(&val_str, 6)
-            ));
+            match value {
+                serde_yaml::Value::String(s) => {
+                    lines.push(format!("      {key}: {}", yaml_render_scalar_value(s, 6)));
+                }
+                serde_yaml::Value::Number(n) => lines.push(format!("      {key}: {n}")),
+                serde_yaml::Value::Bool(b) => lines.push(format!("      {key}: {b}")),
+                // Nested sequence/mapping: emit as properly-indented YAML under
+                // the key (serde produces valid YAML; we just shift it right),
+                // not as a block-scalar string — so a list field stays a list.
+                other => {
+                    lines.push(format!("      {key}:"));
+                    let nested = serde_yaml::to_string(other).unwrap_or_default();
+                    for nl in nested.lines() {
+                        if nl.is_empty() {
+                            lines.push(String::new());
+                        } else {
+                            lines.push(format!("        {nl}"));
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -924,5 +932,33 @@ mod tests {
             Some("Line one.\nLine two with \"quotes\"."),
             "multi-line description must round-trip exactly"
         );
+    }
+
+    #[test]
+    fn render_artifact_yaml_nested_field_value_stays_structured() {
+        // A list/map field value (reachable via batch/MCP) must serialize as an
+        // indented nested structure, not collapse into a block-literal string.
+        // (REQ-199)
+        let mut artifact = artifact_with_links("REQ-099", "requirement", &[]);
+        artifact.title = "T".to_string();
+        artifact.fields.insert(
+            "owners".to_string(),
+            serde_yaml::Value::Sequence(vec![
+                serde_yaml::Value::String("alice".to_string()),
+                serde_yaml::Value::String("bob".to_string()),
+            ]),
+        );
+
+        let body = render_artifact_yaml(&artifact);
+        let doc = format!("schema: dev\nartifacts:\n{body}");
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
+        let owners = &parsed["artifacts"][0]["fields"]["owners"];
+        assert!(
+            owners.is_sequence(),
+            "a list field must stay a sequence, got: {owners:?}"
+        );
+        assert_eq!(owners[0].as_str(), Some("alice"));
+        assert_eq!(owners[1].as_str(), Some("bob"));
     }
 }
