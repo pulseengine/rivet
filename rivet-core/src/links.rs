@@ -214,9 +214,13 @@ impl LinkGraph {
     }
 
     /// Detect orphan artifacts (no incoming or outgoing links).
+    ///
+    /// Returned in deterministic order — ascending by `id` via `iter_sorted` —
+    /// so `rivet stats`/`validate`/`list` orphan output is reproducible across
+    /// runs (the store is HashMap-ordered; #415).
     pub fn orphans<'a>(&self, store: &'a Store) -> Vec<&'a ArtifactId> {
         store
-            .iter()
+            .iter_sorted()
             .filter(|a| !self.forward.contains_key(&a.id) && !self.backward.contains_key(&a.id))
             .map(|a| &a.id)
             .collect()
@@ -453,6 +457,23 @@ mod tests {
             orphans.len(),
         );
         assert_eq!(orphans[0], "LONE");
+    }
+
+    #[test]
+    fn orphans_are_id_sorted_for_deterministic_output() {
+        // #415: orphan output (stats/validate/list) must be reproducible. Insert
+        // isolated artifacts in scrambled id order; orphans() must yield ascending
+        // by id regardless of the HashMap-ordered store.
+        let (_chained, schema) = chain();
+        let store = store_from(vec![
+            minimal_artifact("REQ-030", "node"),
+            minimal_artifact("REQ-002", "node"),
+            minimal_artifact("REQ-100", "node"),
+            minimal_artifact("REQ-001", "node"),
+        ]);
+        let g = LinkGraph::build(&store, &schema);
+        let ids: Vec<&str> = g.orphans(&store).iter().map(|id| id.as_str()).collect();
+        assert_eq!(ids, vec!["REQ-001", "REQ-002", "REQ-030", "REQ-100"]);
     }
 
     // Verifies: REQ-002
