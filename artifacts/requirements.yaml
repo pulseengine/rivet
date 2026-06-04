@@ -5804,3 +5804,34 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-159
+
+  - id: REQ-191
+    type: requirement
+    title: "`LinkGraph::orphans` returns id-sorted output so stats/validate/list orphan lists are reproducible"
+    status: implemented
+    description: |
+      Verified bug (issue #415, sibling of REQ-190): `rivet stats --format json`
+      produced a DIFFERENT `orphans` array order on every run (run1:
+      [spar:SPAR-REQ-001, spar:SPAR-SYS-001, SL-TQ-004, ...]; run2: [SL-AI-003,
+      SL-TQ-004, ..., spar:SPAR-REQ-001] — same set, different order). Root
+      cause: `LinkGraph::orphans` iterated the HashMap-ordered `store.iter()`
+      and collected without sorting. The orphan list feeds `rivet stats`,
+      `rivet validate`, and `rivet list` orphan reporting, so all three were
+      nondeterministic. (matrix/export/coverage/list-body were already stable.)
+
+      Fix: iterate `store.iter_sorted()` in `LinkGraph::orphans` so the orphan
+      list is ascending by id and reproducible across runs.
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib links::tests::orphans_are_id_sorted_for_deterministic_output`
+          passes.
+        - `rivet stats --format json` produces byte-identical output across two
+          consecutive runs.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [stats, validate, orphans, determinism, reproducibility, bugfix]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-159
