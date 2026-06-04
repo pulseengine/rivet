@@ -214,3 +214,81 @@ fn coverage_filter_runs_cleanly() {
     let _: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("coverage JSON must parse");
 }
+
+// ── query: positional s-expression shorthand (REQ-187) ─────────────────
+
+#[test]
+fn query_positional_sexpr_works_without_flag() {
+    // `rivet query '(...)'` must work as a positional, mirroring
+    // `next-id`'s positional shorthand — no `--sexpr` required.
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "query",
+            r#"(= id "REQ-007")"#,
+            "--format",
+            "ids",
+        ])
+        .output()
+        .expect("positional query run");
+    assert!(
+        output.status.success(),
+        "positional `rivet query '(...)'` must succeed. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("REQ-007"),
+        "positional query must return the matching id"
+    );
+}
+
+#[test]
+fn query_positional_and_flag_are_equivalent() {
+    // A single-match filter keeps this independent of result ordering (#415)
+    // and the default --limit.
+    let run = |positional: bool| -> Vec<String> {
+        let root = project_root();
+        let root_str = root.to_str().unwrap().to_string();
+        let mut args: Vec<String> = vec!["--project".into(), root_str, "query".into()];
+        if positional {
+            args.push(r#"(= id "REQ-007")"#.into());
+        } else {
+            args.push("--sexpr".into());
+            args.push(r#"(= id "REQ-007")"#.into());
+        }
+        args.extend(["--format".to_string(), "ids".to_string()]);
+        let out = Command::new(rivet_bin())
+            .args(&args)
+            .output()
+            .expect("query run");
+        assert!(out.status.success());
+        let mut ids: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::to_string)
+            .collect();
+        ids.sort();
+        ids
+    };
+    assert_eq!(
+        run(true),
+        run(false),
+        "positional and --sexpr forms must yield identical matches"
+    );
+}
+
+#[test]
+fn query_without_any_sexpr_is_reported() {
+    let output = Command::new(rivet_bin())
+        .args(["--project", project_root().to_str().unwrap(), "query"])
+        .output()
+        .expect("no-arg query run");
+    assert!(
+        !output.status.success(),
+        "`rivet query` with no filter must error, got exit 0"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("s-expression"),
+        "error must guide the user to supply an s-expression"
+    );
+}

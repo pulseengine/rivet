@@ -1132,9 +1132,16 @@ enum Command {
     /// document embed — all three share `rivet_core::query::execute_sexpr`
     /// so their results agree for the same filter.
     Query {
-        /// The s-expression filter (e.g. '(and (= type "requirement") (has-tag "stpa"))')
-        #[arg(long)]
-        sexpr: String,
+        /// The s-expression filter as a positional shorthand, e.g.
+        /// `rivet query '(= type "requirement")'`. Equivalent to `--sexpr`;
+        /// the explicit `--sexpr` flag wins if both are given.
+        #[arg(value_name = "SEXPR")]
+        sexpr_pos: Option<String>,
+
+        /// The s-expression filter (e.g. '(and (= type "requirement") (has-tag "stpa"))').
+        /// Equivalent to passing it positionally.
+        #[arg(long = "sexpr")]
+        sexpr: Option<String>,
 
         /// Maximum number of results (default: 100)
         #[arg(long, default_value = "100")]
@@ -2465,11 +2472,23 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Batch { file } => cmd_batch(&cli, file),
         Command::Embed { query, format } => cmd_embed(&cli, query, format),
         Command::Query {
+            sexpr_pos,
             sexpr,
             limit,
             format,
             variant,
-        } => cmd_query(&cli, sexpr, *limit, format, variant.as_deref()),
+        } => {
+            // The explicit `--sexpr` flag wins; otherwise use the positional
+            // shorthand (`rivet query '(...)'`). Mirrors `next-id`'s positional.
+            match sexpr.as_deref().or(sexpr_pos.as_deref()) {
+                Some(s) => cmd_query(&cli, s, *limit, format, variant.as_deref()),
+                None => anyhow::bail!(
+                    "specify an s-expression filter, e.g. \
+                     `rivet query '(= type \"requirement\")'` or \
+                     `rivet query --sexpr '(has-tag \"stpa\")'`"
+                ),
+            }
+        }
         Command::Stamp {
             id,
             created_by,
