@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulseengine.github.io/rivet/schemas/json/query-output.schema.json",
+  "title": "rivet query --format json",
+  "description": "Machine-readable output produced by `rivet query --format json`.",
+  "type": "object",
+  "required": ["command", "filter", "count", "total", "truncated", "artifacts"],
+  "additionalProperties": true,
+  "properties": {
+    "command": {
+      "type": "string",
+      "const": "query"
+    },
+    "filter": {
+      "type": "string",
+      "description": "The s-expression filter that produced these matches."
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of artifacts returned (after any --limit truncation)."
+    },
+    "total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of matches before --limit truncation."
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "True if the result set was truncated by --limit."
+    },
+    "variant": {
+      "type": "string",
+      "description": "Active variant name, present only when --variant was passed."
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "title"],
+        "additionalProperties": true,
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "status": {
+            "type": "string",
+            "description": "Status string, or '-' if unset."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "description": { "type": "string" },
+          "links": {
+            "type": "array",
+            "description": "Outgoing links from this artifact.",
+            "items": {
+              "type": "object",
+              "required": ["type", "target"],
+              "additionalProperties": true,
+              "properties": {
+                "type": { "type": "string" },
+                "target": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

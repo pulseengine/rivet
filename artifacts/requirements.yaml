@@ -5730,3 +5730,41 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-189
+    type: requirement
+    title: "`rivet query --format json` carries the `command` envelope field + ships a query-output JSON schema"
+    status: implemented
+    description: |
+      Dogfooding pass on JSON-output consistency: every machine-readable command
+      output carries a top-level `command` field (validate, get, list, stats,
+      coverage, supplier all emit it; list/stats/coverage/validate even ship a
+      `schemas/json/*-output.schema.json` registered in JSON_SCHEMA_REGISTRY and
+      surfaced via `rivet schema list-json`/`get-json`). `rivet query --format
+      json` — a primary agent-facing command with the same artifact-collection
+      shape as `list` — was the lone exception: its envelope was
+      `{filter, count, total, truncated, artifacts}` with NO `command` field and
+      NO published output schema. An agent (or a JSON-schema consumer) keying off
+      `command` finds query anomalous.
+
+      Fix (additive): emit `"command": "query"` in the query JSON envelope; add
+      `schemas/json/query-output.schema.json` (mirroring list-output, with
+      query's `filter/total/truncated` and array-valued `links`); register it in
+      JSON_SCHEMA_REGISTRY so `schema list-json`/`get-json query` work.
+
+      Acceptance:
+        - `rivet query --sexpr '(= type "requirement")' --format json | python3 -c
+          'import sys,json;assert json.load(sys.stdin)["command"]=="query"'`
+          exits 0.
+        - `rivet schema get-json query` prints a path to an existing schema file.
+        - `rivet schema list-json --format json` includes a "query" entry.
+        - `cargo test -p rivet-cli --test cli_commands query_json_output_has_command_envelope`
+          passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, query, json, schema, consistency, agent-ux, machine-readable]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-007
