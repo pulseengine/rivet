@@ -5971,3 +5971,41 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-196
+    type: requirement
+    title: "Static HTML export shows an honest AADL-diagram fallback (no perpetual 'Loading…')"
+    status: implemented
+    description: |
+      User-reported: AADL architecture diagrams in the published compliance
+      report (e.g. .../0.15.0/compliance/documents/ARCH-001.html) are stuck on
+      "Loading AADL diagram..." forever. Root cause: `document::render_to_html`
+      emits a `<div class="aadl-diagram"><p class="aadl-loading">Loading AADL
+      diagram...</p></div>` placeholder that is filled at runtime ONLY by
+      `rivet serve`'s `initAadlDiagrams` JS (rivet-cli/src/serve/js.rs), which
+      fetches server-only routes (`/source-raw/arch`, `/wasm/spar_wasm.js`) and a
+      spar WASM renderer. A static export bundles neither that JS nor those
+      routes, so the placeholder never updates — and even the JS's paths are
+      absolute-from-domain-root, wrong for a report served at a subpath.
+
+      This REQ covers the immediate, honest fix: in the export path
+      (`render_document_body_for_export`), rewrite the perpetual "Loading AADL
+      diagram..." into a static note pointing to the interactive `rivet serve`
+      view, so the report no longer looks hung. Actually inlining the rendered
+      SVG at export time (server-side via the spar wasm_runtime) is the larger
+      follow-up tracked in a separate issue.
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib export::tests::static_export_replaces_perpetual_aadl_loading_with_honest_note`
+          passes.
+        - A document with an ```aadl block, exported via `rivet export --format
+          html`, contains no "Loading AADL diagram..." text and instead points
+          to `rivet serve`.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [export, html, aadl, compliance-report, docs, ux, user-reported, bugfix]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-105

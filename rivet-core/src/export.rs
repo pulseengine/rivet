@@ -2410,7 +2410,22 @@ fn render_document_body_for_export(
     //   <a class="artifact-ref" hx-get="/artifacts/ID" hx-target="#content" href="#">ID</a>
     // We rewrite these to:
     //   <a class="artifact-ref" href="./requirements.html#art-ID">ID</a>
-    rewrite_artifact_links(&raw_html, req_href)
+    static_aadl_fallback(&rewrite_artifact_links(&raw_html, req_href))
+}
+
+/// In a static HTML export there is no `rivet serve` JS/server to fill the
+/// `.aadl-diagram` placeholder (it is rendered at runtime only by the dashboard,
+/// which fetches `/source-raw/...` + the spar WASM module). So the perpetual
+/// "Loading AADL diagram..." text reads as a broken/hung page in compliance
+/// reports. Replace it with an honest static note that points to the
+/// interactive view. (Full server-side SVG inlining at export time is tracked
+/// separately.)
+fn static_aadl_fallback(html: &str) -> String {
+    html.replace(
+        "<p class=\"aadl-loading\">Loading AADL diagram...</p>",
+        "<p class=\"aadl-loading\">AADL architecture diagram — interactive \
+         rendering is available in the <code>rivet serve</code> dashboard.</p>",
+    )
 }
 
 /// Rewrite HTMX artifact links to static relative links for export.
@@ -3826,5 +3841,27 @@ mod tests {
         assert!(nav.contains("results.html"), "nav missing results link");
         assert!(nav.contains(">Source<"), "nav missing Source label");
         assert!(nav.contains(">Results<"), "nav missing Results label");
+    }
+
+    #[test]
+    fn static_export_replaces_perpetual_aadl_loading_with_honest_note() {
+        // A static HTML export has no `rivet serve` JS to fill the
+        // `.aadl-diagram` placeholder, so "Loading AADL diagram..." would hang
+        // forever in a compliance report. The export must rewrite it.
+        let placeholder = "<div class=\"aadl-diagram\" data-root=\"Sys::Arch\">\
+             <p class=\"aadl-loading\">Loading AADL diagram...</p></div>";
+        let out = static_aadl_fallback(placeholder);
+        assert!(
+            !out.contains("Loading AADL diagram..."),
+            "static export must not show a perpetual Loading state; got: {out}"
+        );
+        assert!(
+            out.contains("rivet serve"),
+            "fallback must point to the interactive view; got: {out}"
+        );
+        assert!(
+            out.contains("data-root=\"Sys::Arch\""),
+            "diagram container/context must be preserved; got: {out}"
+        );
     }
 }
