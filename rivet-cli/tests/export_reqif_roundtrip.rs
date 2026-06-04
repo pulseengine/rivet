@@ -175,3 +175,51 @@ fn export_reqif_to_directory_gives_actionable_error() {
         "must not leak the raw OS error. Got:\n{stderr}"
     );
 }
+
+/// `rivet import` is a visible alias for `import-results` (the natural inverse
+/// of `export`) in the default build. #453 / REQ-184.
+#[test]
+fn import_alias_works_for_reqif() {
+    let proj = tempfile::tempdir().unwrap();
+    write_project(proj.path());
+    // Export the project to a reqif file.
+    let reqif = proj.path().join("out.reqif");
+    let st = Command::new(rivet_bin())
+        .args([
+            "--project",
+            proj.path().to_str().unwrap(),
+            "export",
+            "--format",
+            "reqif",
+            "--output",
+            reqif.to_str().unwrap(),
+        ])
+        .status()
+        .expect("run export");
+    assert!(st.success(), "reqif export must succeed");
+
+    // Re-import it via the `import` ALIAS (not `import-results`).
+    let outdir = proj.path().join("imported");
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            proj.path().to_str().unwrap(),
+            "import",
+            "--format",
+            "reqif",
+            reqif.to_str().unwrap(),
+            "--output",
+            outdir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run `rivet import` (alias)");
+    assert!(
+        out.status.success(),
+        "`rivet import` alias must work. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        outdir.join("reqif-import.yaml").exists(),
+        "import alias must produce the imported YAML"
+    );
+}
