@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780604948004,
+  "lastUpdate": 1780605546332,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "92e283dc6610b2b784774f32c173fe395dbaaefd",
-          "message": "feat(bundle): --incoming follows backlinks so sinks bundle their realizers (REQ-168, #428) (#429)\n\nSelf-found while dogfooding (#428). `rivet bundle` builds an artifact's\nlink-graph closure for LLM context (#206) but traversed OUTGOING links\nonly. A requirement is a graph SINK — everything links TO it\n(satisfies/verifies/allocated-to), it links OUT to nothing — so\n`rivet bundle REQ-001` returned just the bare artifact (count=1),\ndropping exactly the realizing design-decisions / features / tests you\nwant as context.\n\nAdd `bundle_with_graph(store, graph, root, depth, include_incoming)` +\na `rivet bundle --incoming` flag that also enqueues each node's backlink\nsources (depth +1). `bundle()` stays outgoing-only (public API + MCP\n`rivet_bundle` stability). Backlink sources are visited in sorted order\nso the bundle is reproducible across runs (backlink store is\nHashMap-backed; cf. #415).\n\nVerified: `bundle REQ-001` unchanged (count=1); `bundle REQ-001\n--incoming` -> count=34, byte-identical across runs. New unit test\n`incoming_includes_backlink_sources_deterministically`; 12 bundle tests\npass; clippy --all-targets + fmt clean; rivet validate PASS, docs PASS.\n\nImplements: REQ-168\nRefs: REQ-007",
-          "timestamp": "2026-06-03T07:35:07-05:00",
-          "tree_id": "cd3e5e927cb0c59c39d51ee9df7f040ce7f6d9cf",
-          "url": "https://github.com/pulseengine/rivet/commit/92e283dc6610b2b784774f32c173fe395dbaaefd"
-        },
-        "date": 1780490653895,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84611,
-            "range": "± 342",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 887008,
-            "range": "± 8793",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12609686,
-            "range": "± 383114",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2103,
-            "range": "± 15",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26909,
-            "range": "± 272",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 386056,
-            "range": "± 2613",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1457444,
-            "range": "± 24640",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161776,
-            "range": "± 816",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1914051,
-            "range": "± 20796",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28099336,
-            "range": "± 2744109",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 460959,
-            "range": "± 26177",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16625798,
-            "range": "± 228729",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1455989913,
-            "range": "± 17292427",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4345,
-            "range": "± 101",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 68071,
-            "range": "± 2489",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 737293,
-            "range": "± 32288",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60974,
-            "range": "± 266",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 688891,
-            "range": "± 5199",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7438104,
-            "range": "± 266915",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1297,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14892,
-            "range": "± 64",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 341558,
-            "range": "± 4867",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22432,
-            "range": "± 73",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 155308,
-            "range": "± 956",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1473018,
-            "range": "± 18724",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1349555,
             "range": "± 23577",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c99c305a75efc47f3c01d3b8a16c0e82ac131277",
+          "message": "fix(export): honest AADL fallback in static HTML (no perpetual \"Loading…\") (REQ-196, #468) (#469)\n\nUser-reported: AADL architecture diagrams in the published compliance report\n(.../0.15.0/compliance/documents/ARCH-001.html) are stuck on \"Loading AADL\ndiagram...\" forever. Root cause: `document::render_to_html` emits an\n`<div class=\"aadl-diagram\"><p class=\"aadl-loading\">Loading AADL diagram...</p>`\nplaceholder that is filled at runtime ONLY by `rivet serve`'s `initAadlDiagrams`\nJS (which fetches server-only `/source-raw/…` + `/wasm/spar_wasm.js` and renders\nvia spar WASM). A static export bundles neither that JS nor those routes, so the\nplaceholder never updates.\n\nThis is the immediate honest fix: `render_document_body_for_export` now rewrites\nthe perpetual \"Loading AADL diagram...\" into a static note pointing to the\ninteractive `rivet serve` view, so the report no longer looks hung. Inlining the\nrendered SVG at export time (server-side via the spar wasm_runtime, which\nalready exists) is the larger follow-up tracked in #468.\n\nTest (export::tests): static_export_replaces_perpetual_aadl_loading_with_honest_note\nasserts the export output drops \"Loading AADL diagram...\" and points to\n`rivet serve`, preserving the diagram container/data-root.\n\nConfirmed with: cargo test -p rivet-core --lib\nexport::tests::static_export_replaces_perpetual_aadl_loading_with_honest_note\n(pass), cargo fmt --check, cargo clippy --all-targets -- -D warnings (exit 0),\nrivet validate PASS.\n\nImplements: REQ-196\nVerifies: REQ-196\nRefs: REQ-105",
+          "timestamp": "2026-06-04T15:23:43-05:00",
+          "tree_id": "94ee97cdf569f33b1a08564b95634de4539fe653",
+          "url": "https://github.com/pulseengine/rivet/commit/c99c305a75efc47f3c01d3b8a16c0e82ac131277"
+        },
+        "date": 1780605544938,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84279,
+            "range": "± 362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 884795,
+            "range": "± 6070",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12398710,
+            "range": "± 477957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2145,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24891,
+            "range": "± 122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 343828,
+            "range": "± 2774",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1452712,
+            "range": "± 18642",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 150398,
+            "range": "± 855",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1733034,
+            "range": "± 17633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 22884006,
+            "range": "± 257682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 444563,
+            "range": "± 5061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15480792,
+            "range": "± 154738",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1297652529,
+            "range": "± 11364725",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4223,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61960,
+            "range": "± 302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 759346,
+            "range": "± 5230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60725,
+            "range": "± 268",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 689782,
+            "range": "± 5020",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7695389,
+            "range": "± 53704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1312,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15160,
+            "range": "± 217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 330988,
+            "range": "± 2399",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23273,
+            "range": "± 835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 163830,
+            "range": "± 1113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1532606,
+            "range": "± 15331",
             "unit": "ns/iter"
           }
         ]
