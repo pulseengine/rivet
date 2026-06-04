@@ -15418,8 +15418,54 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
         (source_set, schema_set)
     };
 
+    // Load cross-repo externals as salsa "extras" so a `traces-to prefix:ID`
+    // link resolves in diagnostics, hover, and go-to-definition — exactly as
+    // `rivet validate` and `rivet serve` resolve it (they compose externals
+    // into the store, see ProjectContext::load). Without this the LSP/VSIX
+    // reported a synced external reference as a broken link and hover couldn't
+    // find it. Externals are static for the session, so load once and reuse the
+    // (Copy) handle at every query site.
+    let extra_artifacts: Vec<rivet_core::model::Artifact> = config_opt
+        .as_ref()
+        .and_then(|c| c.externals.as_ref())
+        .map(|externals| {
+            let mut out = Vec::new();
+            match rivet_core::externals::load_all_externals(externals, &project_dir) {
+                Ok(resolved) => {
+                    for ext in resolved {
+                        let ext_ids: std::collections::HashSet<String> =
+                            ext.artifacts.iter().map(|a| a.id.clone()).collect();
+                        for mut artifact in ext.artifacts {
+                            // Prefix the id (and same-external link targets) so
+                            // `prefix:ID` references resolve, matching the CLI.
+                            artifact.id = format!("{}:{}", ext.prefix, artifact.id);
+                            for link in &mut artifact.links {
+                                if ext_ids.contains(&link.target) {
+                                    link.target = format!("{}:{}", ext.prefix, link.target);
+                                }
+                            }
+                            out.push(artifact);
+                        }
+                    }
+                }
+                Err(e) => eprintln!(
+                    "rivet lsp: could not load externals (cross-repo links may show as broken \
+                     — run `rivet sync`): {e}"
+                ),
+            }
+            out
+        })
+        .unwrap_or_default();
+    if !extra_artifacts.is_empty() {
+        eprintln!(
+            "rivet lsp: loaded {} external artifact(s) for cross-repo link resolution",
+            extra_artifacts.len()
+        );
+    }
+    let extra_set = db.load_extras(extra_artifacts);
+
     // Build supplementary state for rendering
-    let store = db.store(source_set, schema_set);
+    let store = db.store_with_extras(source_set, schema_set, extra_set);
     let render_schema = db.schema(schema_set);
     let mut render_graph = rivet_core::links::LinkGraph::build(&store, &render_schema);
 
@@ -15454,7 +15500,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
     // validation.  validate_documents() checks that every [[ID]] wiki-link in
     // markdown documents points to an artifact that exists in the store;
     // broken refs are surfaced as LSP warnings in the source .md file.
-    let mut diagnostics = db.diagnostics(source_set, schema_set);
+    let mut diagnostics = db.diagnostics_with_extras(source_set, schema_set, extra_set);
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
     let mut prev_diagnostic_files: std::collections::HashSet<std::path::PathBuf> =
         std::collections::HashSet::new();
@@ -15498,7 +15544,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                 match method {
                     "textDocument/hover" => {
                         let params: HoverParams = serde_json::from_value(req.params.clone())?;
-                        let store = db.store(source_set, schema_set);
+                        let store = db.store_with_extras(source_set, schema_set, extra_set);
                         let result = lsp_hover(&params, &store);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
@@ -15509,7 +15555,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                     "textDocument/definition" => {
                         let params: GotoDefinitionParams =
                             serde_json::from_value(req.params.clone())?;
-                        let store = db.store(source_set, schema_set);
+                        let store = db.store_with_extras(source_set, schema_set, extra_set);
                         let result = lsp_goto_definition(&params, &store);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
@@ -15519,7 +15565,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                     }
                     "textDocument/completion" => {
                         let params: CompletionParams = serde_json::from_value(req.params.clone())?;
-                        let store = db.store(source_set, schema_set);
+                        let store = db.store_with_extras(source_set, schema_set, extra_set);
                         let schema = db.schema(schema_set);
                         let result = lsp_completion(&params, &store, &schema);
                         connection.sender.send(Message::Response(Response {
@@ -15829,8 +15875,10 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     }
                                 }
                                 // Publish diagnostics for the opened file
-                                let mut new_diagnostics = db.diagnostics(source_set, schema_set);
-                                let new_store = db.store(source_set, schema_set);
+                                let mut new_diagnostics =
+                                    db.diagnostics_with_extras(source_set, schema_set, extra_set);
+                                let new_store =
+                                    db.store_with_extras(source_set, schema_set, extra_set);
                                 new_diagnostics
                                     .extend(validate::validate_documents(&doc_store, &new_store));
                                 lsp_publish_salsa_diagnostics(
@@ -15868,8 +15916,10 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                 // Re-query diagnostics (salsa recomputes only what changed)
                                 // and append document [[ID]] reference validation so
                                 // broken wiki-links in markdown files are reported.
-                                let mut new_diagnostics = db.diagnostics(source_set, schema_set);
-                                let new_store = db.store(source_set, schema_set);
+                                let mut new_diagnostics =
+                                    db.diagnostics_with_extras(source_set, schema_set, extra_set);
+                                let new_store =
+                                    db.store_with_extras(source_set, schema_set, extra_set);
                                 new_diagnostics
                                     .extend(validate::validate_documents(&doc_store, &new_store));
                                 lsp_publish_salsa_diagnostics(
@@ -15885,13 +15935,15 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                 );
 
                                 // Rebuild render state
-                                render_store = db.store(source_set, schema_set);
+                                render_store =
+                                    db.store_with_extras(source_set, schema_set, extra_set);
                                 let render_schema = db.schema(schema_set);
                                 render_graph = rivet_core::links::LinkGraph::build(
                                     &render_store,
                                     &render_schema,
                                 );
-                                diagnostics_cache = db.diagnostics(source_set, schema_set);
+                                diagnostics_cache =
+                                    db.diagnostics_with_extras(source_set, schema_set, extra_set);
                                 diagnostics_cache.extend(validate::validate_documents(
                                     &doc_store,
                                     &render_store,
@@ -15929,9 +15981,11 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                     );
                                     if updated {
                                         // Re-query diagnostics incrementally
-                                        let mut diagnostics =
-                                            db.diagnostics(source_set, schema_set);
-                                        let fresh_store = db.store(source_set, schema_set);
+                                        let mut diagnostics = db.diagnostics_with_extras(
+                                            source_set, schema_set, extra_set,
+                                        );
+                                        let fresh_store =
+                                            db.store_with_extras(source_set, schema_set, extra_set);
                                         diagnostics.extend(validate::validate_documents(
                                             &doc_store,
                                             &fresh_store,

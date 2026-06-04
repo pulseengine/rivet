@@ -5569,3 +5569,40 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-185
+    type: requirement
+    title: "LSP/VSIX resolves cross-repo external links (no false broken-link; hover works)"
+    status: implemented
+    description: |
+      User-reported: in the VS Code extension (via the LSP), a `traces-to`
+      link to `ulinc-zephyr:SWREQ-AP-007` was flagged "does not exist" and
+      hover over the cross-repo reference showed nothing — even though the
+      external is synced and `rivet serve` resolves it. Root cause: `cmd_lsp`
+      loaded only `config.sources` into the salsa store, never
+      `config.externals`. `rivet validate` (ProjectContext::load) and `rivet
+      serve` compose externals into the store (prefixed `prefix:ID`), so they
+      resolve; the LSP didn't — a diagnostic-consistency gap (#89).
+
+      Fix: in `cmd_lsp`, load the declared externals via `load_all_externals`,
+      prefix their ids + same-external link targets (mirroring
+      ProjectContext::load), and feed them as a salsa `ExtraArtifactSet` via
+      `db.load_extras`. Route every store/diagnostics/graph query through the
+      `_with_extras` variants (the designed mechanism, already used for
+      adapter-only AADL artifacts). This makes diagnostics, hover, and
+      go-to-definition all external-aware, consistent with validate/serve.
+
+      Acceptance:
+        - `cargo test -p rivet-cli --test lsp_integration
+          lsp_resolves_cross_repo_external_link` passes: the LSP, on a project
+          with a path external, does NOT publish a broken-link diagnostic for a
+          `prefix:ID` link into that external.
+        - The full lsp_integration suite still passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [lsp, vsix, externals, cross-repo, diagnostics, consistency, bugfix, user-reported]
+    fields:
+      priority: must
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-089

@@ -699,3 +699,95 @@ fn lsp_diagnostics_for_invalid_artifacts() {
 
     lsp.shutdown();
 }
+
+/// Regression: a cross-repo `prefix:ID` link to a (path) external must NOT be
+/// reported as a broken link by the LSP. Externals are loaded as salsa extras,
+/// matching `rivet validate` / `rivet serve` (which compose externals into the
+/// store). Previously the LSP loaded only local sources, so a synced external
+/// reference like `ext:EXT-1` showed as "does not exist" in VS Code.
+#[test]
+fn lsp_resolves_cross_repo_external_link() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path();
+
+    // External project, loaded via `path:` (no `rivet sync` needed).
+    let ext = dir.join("ext-src");
+    std::fs::create_dir_all(ext.join("artifacts")).unwrap();
+    std::fs::write(
+        ext.join("rivet.yaml"),
+        "project:\n  name: ext\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        ext.join("artifacts/ext.yaml"),
+        "artifacts:\n  - id: EXT-1\n    type: requirement\n    title: External req\n    status: approved\n",
+    )
+    .unwrap();
+
+    // Main project declaring the external + a cross-repo link to it.
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: main\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n\
+         externals:\n  ext:\n    path: ext-src\n    prefix: ext\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    let artifact_path = dir.join("artifacts/req.yaml");
+    let yaml = "artifacts:\n  - id: REQ-LOCAL\n    type: requirement\n    title: Local\n    \
+                status: draft\n    links:\n      - type: traces-to\n        target: ext:EXT-1\n";
+    std::fs::write(&artifact_path, yaml).unwrap();
+
+    let mut lsp = spawn_lsp(dir);
+    let root_uri = format!("file://{}", dir.display());
+    let artifact_uri = format!("file://{}", artifact_path.display());
+    lsp.initialize(&root_uri);
+    std::thread::sleep(Duration::from_secs(2));
+    lsp.send(&serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": { "textDocument": {
+            "uri": artifact_uri, "languageId": "yaml", "version": 1, "text": yaml
+        }}
+    }));
+    lsp.send(&serde_json::json!({
+        "jsonrpc": "2.0", "id": 50, "method": "textDocument/documentSymbol",
+        "params": { "textDocument": { "uri": artifact_uri } }
+    }));
+
+    let mut all = Vec::new();
+    let deadline = std::time::Instant::now() + TIMEOUT;
+    while std::time::Instant::now() < deadline {
+        let rem = deadline.saturating_duration_since(std::time::Instant::now());
+        match lsp.recv(rem) {
+            Some(m) => {
+                let done = m.get("id").and_then(|v| v.as_u64()) == Some(50);
+                all.push(m);
+                if done {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+
+    for m in &all {
+        if m.get("method").and_then(|v| v.as_str()) == Some("textDocument/publishDiagnostics") {
+            if let Some(arr) = m
+                .get("params")
+                .and_then(|p| p.get("diagnostics"))
+                .and_then(|d| d.as_array())
+            {
+                for d in arr {
+                    let msg = d.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                    assert!(
+                        !(msg.contains("ext:EXT-1") && msg.contains("does not exist")),
+                        "LSP must not flag the cross-repo external link as broken: {msg}"
+                    );
+                }
+            }
+        }
+    }
+    lsp.shutdown();
+}
