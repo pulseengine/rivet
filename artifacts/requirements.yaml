@@ -5407,3 +5407,32 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-180
+    type: requirement
+    title: "generated agent guidance (AGENTS.md) surfaces rivet next-id so agents don't hand-grep for IDs"
+    status: implemented
+    description: |
+      Completes #447. `rivet next-id` existed but wasn't discoverable where an
+      agent reaches to create artifacts — the `rivet init --agents` template's
+      command table and "Creating Artifacts" snippet only showed `rivet add`, so
+      an agent (me, last loop) hand-grepped a single file for the next id and
+      collided. Add a `rivet next-id` row to the generated command table and a
+      one-line note in the Creating-Artifacts snippet ("IDs span many files;
+      use `rivet next-id`"). Regenerating the repo's AGENTS.md/CLAUDE.md also
+      resynced their managed sections, which had drifted (518->883 artifacts).
+
+      Acceptance:
+        - `rivet init --agents` output (and the repo's AGENTS.md managed block)
+          contains a `rivet next-id` command-table row and references it in the
+          Creating-Artifacts guidance.
+        - `cargo test -p rivet-cli --test init_bootstrap --test init_integration`
+          passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [docs, agents, dx, discoverability, dogfooding, self-found, issue-447]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
