@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780575960956,
+  "lastUpdate": 1780579822993,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "950c605422aac68c8edb56a9d35ebd309b46f225",
-          "message": "feat(validate): --structural gates on integrity only, via Diagnostic::is_structural() (REQ-161, #408) (#418)\n\nFrom #408 (and the recurring #353/#355 ask): `rivet validate`'s PASS/FAIL\nlumps structural integrity (a broken graph) together with coverage/lint\nfindings, so a bulk status-flip can't tell \"did I break the graph?\" from\n\"the project is still incomplete\". spar/sigil both hand-rolled a\n`0 broken cross-refs` gate for exactly this.\n\nAdd `Diagnostic::is_structural()` — an explicit allowlist of the\nstructural rule ids (broken-link, duplicate-artifact-id,\nartifact-parse-error, link-target-type, cardinality, known-type,\nunknown-link-type, doc-broken-ref, yaml-type-coercion,\nconditional-rule-consistency, coverage-rule-consistency). Everything else\nis coverage/lint, including the three borderline rules required-field /\nunknown-field / status-allowed-values (an incomplete/extra/typo'd field\ndoesn't break the graph) and all schema-defined coverage/status-gate\nrules.\n\n`rivet validate --structural` retains only structural diagnostics before\ncounting/display, so the shown set, counts, and PASS/FAIL exit reflect\nstructural-only. No rename of `validate_structural*` (its name is\nunrelated to this gate) — the classification lives on Diagnostic (#408\noption b).\n\nVerified: rivet repo `validate --structural` PASSes with 0 shown (its\n206 warnings are all coverage/lint); a broken-link fixture FAILs\n--structural; a coverage-only fixture PASSes. Unit test enumerates every\nbuilt-in rule's class; CLI test covers the gate. clippy --all-targets +\nfmt clean; docs check PASS.\n\nImplements: REQ-161",
-          "timestamp": "2026-06-03T00:08:15-05:00",
-          "tree_id": "15926bdb8baca69a2c86fc605c7a8686a07c2a8b",
-          "url": "https://github.com/pulseengine/rivet/commit/950c605422aac68c8edb56a9d35ebd309b46f225"
-        },
-        "date": 1780464006743,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85487,
-            "range": "± 417",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 915451,
-            "range": "± 7990",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13425201,
-            "range": "± 209573",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1948,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25110,
-            "range": "± 388",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 352881,
-            "range": "± 2165",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1460190,
-            "range": "± 30720",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166198,
-            "range": "± 1377",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1912509,
-            "range": "± 17620",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27522343,
-            "range": "± 318383",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 443321,
-            "range": "± 2266",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16654486,
-            "range": "± 241635",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1260940240,
-            "range": "± 24974028",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4255,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44712,
-            "range": "± 163",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 721286,
-            "range": "± 4495",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62792,
-            "range": "± 383",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 702176,
-            "range": "± 3012",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7736329,
-            "range": "± 68004",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1260,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15099,
-            "range": "± 87",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 232623,
-            "range": "± 1748",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20918,
-            "range": "± 43",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 143502,
-            "range": "± 3523",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1336563,
-            "range": "± 13027",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1453284,
             "range": "± 17183",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "daf676bbe4fe9490eb728baa4da8e79393ce6a49",
+          "message": "feat(cli): query --format json carries `command` envelope + ships query-output schema (REQ-189) (#460)\n\nDogfooding JSON-output consistency pass: every machine-readable command output\ncarries a top-level `command` field (validate, get, list, stats, coverage,\nsupplier), and list/stats/coverage/validate each ship a registered\n`schemas/json/*-output.schema.json` surfaced via `rivet schema list-json`/\n`get-json`. `rivet query --format json` — a primary agent command with the same\nartifact-collection shape as `list` — was the lone exception: no `command`\nfield and no published output schema. An agent (or JSON-schema consumer) keying\noff `command` found query anomalous.\n\nFix (additive): emit `\"command\": \"query\"` in the query JSON envelope; add\n`schemas/json/query-output.schema.json` (mirrors list-output, plus query's\nfilter/total/truncated and array-valued links); register it in\nJSON_SCHEMA_REGISTRY so `schema list-json`/`get-json query` work.\n\nTests (cli_commands): query_json_output_has_command_envelope (command=query +\nrequired keys); extended schema_get_json / schema_list_json coverage to include\nquery.\n\nConfirmed with: cargo test -p rivet-cli --test cli_commands (3 incl. new, pass),\ncargo fmt --check, cargo clippy --all-targets -- -D warnings (exit 0; only the\npre-existing MSRV-mismatch warning), rivet validate PASS. Manually verified\n`query --sexpr ... --format json` now has command=\"query\", `schema get-json\nquery` resolves to the schema file, and `schema list-json` lists query.\n\nImplements: REQ-189\nVerifies: REQ-189\nRefs: REQ-007",
+          "timestamp": "2026-06-04T08:19:19-05:00",
+          "tree_id": "5cf58a16e267ae54b14031f621f241874a0d0026",
+          "url": "https://github.com/pulseengine/rivet/commit/daf676bbe4fe9490eb728baa4da8e79393ce6a49"
+        },
+        "date": 1780579822301,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86229,
+            "range": "± 275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 933663,
+            "range": "± 6526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 17030701,
+            "range": "± 1611146",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1912,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25030,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 362851,
+            "range": "± 2344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1438892,
+            "range": "± 24520",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167001,
+            "range": "± 588",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1932615,
+            "range": "± 40199",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 34614861,
+            "range": "± 3485566",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 443744,
+            "range": "± 5119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17198157,
+            "range": "± 292786",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1321170984,
+            "range": "± 12098467",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4125,
+            "range": "± 52",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43837,
+            "range": "± 459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 724147,
+            "range": "± 26629",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63442,
+            "range": "± 437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 728177,
+            "range": "± 11410",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9324568,
+            "range": "± 566066",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1311,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15080,
+            "range": "± 157",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 240003,
+            "range": "± 4127",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20959,
+            "range": "± 255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 143963,
+            "range": "± 516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1352184,
+            "range": "± 15637",
             "unit": "ns/iter"
           }
         ]
