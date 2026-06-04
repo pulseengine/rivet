@@ -3479,7 +3479,7 @@ fn schema_list_json_produces_valid_output() {
         .iter()
         .filter_map(|e| e.get("name").and_then(|v| v.as_str()))
         .collect();
-    for expected in ["validate", "stats", "coverage", "list"] {
+    for expected in ["validate", "stats", "coverage", "list", "query"] {
         assert!(
             names.contains(&expected),
             "expected '{expected}' in list, got {names:?}"
@@ -3502,7 +3502,7 @@ fn schema_get_json_returns_path_and_content() {
     let root_str = project_root();
     let root_str = root_str.to_str().unwrap();
 
-    for name in ["validate", "stats", "coverage", "list"] {
+    for name in ["validate", "stats", "coverage", "list", "query"] {
         // Path mode
         let out = Command::new(rivet_bin())
             .args(["--project", root_str, "schema", "get-json", name])
@@ -6050,4 +6050,40 @@ fn modify_help_has_no_duplicated_summary() {
         !help.contains("Modify an existing artifact Modify an existing artifact"),
         "modify --help must not stutter its summary; got:\n{help}"
     );
+}
+
+/// `rivet query --format json` must carry the same `command` envelope field as
+/// list/stats/coverage/validate, and expose the keys query-output.schema.json
+/// documents. REQ-189 (envelope consistency).
+#[test]
+fn query_json_output_has_command_envelope() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "query",
+            "--sexpr",
+            r#"(= type "requirement")"#,
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("query --format json");
+    assert!(
+        out.status.success(),
+        "query --format json must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    assert_eq!(
+        v.get("command").and_then(|c| c.as_str()),
+        Some("query"),
+        "query JSON must carry command=\"query\" for envelope consistency with list/stats/coverage"
+    );
+    for key in ["filter", "count", "total", "truncated", "artifacts"] {
+        assert!(
+            v.get(key).is_some(),
+            "query JSON must expose '{key}' (per query-output.schema.json)"
+        );
+    }
 }

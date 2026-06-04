@@ -10731,7 +10731,7 @@ fn infer_source_preset(schemas: &[String]) -> String {
         .unwrap_or_else(|| "dev".to_string())
 }
 
-/// The four CLI subcommands that emit machine-readable JSON along with the
+/// The CLI subcommands that emit machine-readable JSON along with the
 /// JSON schema file that describes their output.
 const JSON_SCHEMA_REGISTRY: &[(&str, &str, &str)] = &[
     (
@@ -10753,6 +10753,11 @@ const JSON_SCHEMA_REGISTRY: &[(&str, &str, &str)] = &[
         "list",
         "schemas/json/list-output.schema.json",
         "rivet list --format json",
+    ),
+    (
+        "query",
+        "schemas/json/query-output.schema.json",
+        "rivet query --format json",
     ),
 ];
 
@@ -15303,6 +15308,7 @@ fn cmd_query(
                 })
                 .collect();
             let mut out = serde_json::json!({
+                "command": "query",
                 "filter": sexpr,
                 "count": artifacts.len(),
                 "total": result.total,
