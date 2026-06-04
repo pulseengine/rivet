@@ -638,7 +638,7 @@ fn yaml_plain_scalar_needs_quoting(s: &str) -> bool {
 /// (e.g. `title: <value>`). Never produces a block scalar; multi-line input
 /// is double-quoted with `\n` escapes. Callers that want block scalars for
 /// multi-line text should use [`yaml_render_scalar_value`] instead.
-fn yaml_quote_inline_scalar(s: &str) -> String {
+pub(crate) fn yaml_quote_inline_scalar(s: &str) -> String {
     if yaml_plain_scalar_needs_quoting(s) || s.contains('\n') {
         yaml_double_quote(s)
     } else {
@@ -677,7 +677,7 @@ fn yaml_double_quote(s: &str) -> String {
 /// The returned string begins with the value — for multi-line it starts with
 /// `|\n<indented content>`; for single-line it is the value or its quoted
 /// form. The caller is expected to concatenate `"{key}: "` + result.
-fn yaml_render_scalar_value(s: &str, field_indent: usize) -> String {
+pub(crate) fn yaml_render_scalar_value(s: &str, field_indent: usize) -> String {
     if !s.contains('\n') {
         return yaml_quote_inline_scalar(s);
     }
