@@ -236,8 +236,9 @@ enum Command {
         #[arg(long)]
         name: Option<String>,
 
-        /// Preset: dev (default), aspice, stpa, cybersecurity, aadl, do-178c, en-50128
-        /// Preset: dev (default), aspice, stpa, cybersecurity, aadl, iec-61508, iec-62304
+        /// Preset (default: dev). One of: dev, aspice, stpa, stpa-ai,
+        /// cybersecurity, aadl, eu-ai-act, safety-case, do-178c, en-50128,
+        /// iec-61508, iec-62304, iso-pas-8800, sotif.
         #[arg(long, default_value = "dev")]
         preset: String,
 
@@ -1017,13 +1018,19 @@ enum Command {
         /// Source artifact ID
         source: String,
 
+        /// Target artifact ID. May be given positionally
+        /// (`rivet link <source> <target> --type <type>`) or via `--target`.
+        #[arg(value_name = "TARGET")]
+        target_pos: Option<String>,
+
         /// Link type (e.g., satisfies, implements, derives-from)
         #[arg(short = 't', long = "type")]
         link_type: String,
 
-        /// Target artifact ID
-        #[arg(long)]
-        target: String,
+        /// Target artifact ID (equivalent to the positional form; the flag
+        /// wins if both are given).
+        #[arg(long = "target")]
+        target: Option<String>,
     },
 
     /// Remove a link between two artifacts
@@ -1031,16 +1038,21 @@ enum Command {
         /// Source artifact ID
         source: String,
 
+        /// Target artifact ID. May be given positionally
+        /// (`rivet unlink <source> <target> --type <type>`) or via `--target`.
+        #[arg(value_name = "TARGET")]
+        target_pos: Option<String>,
+
         /// Link type (e.g., satisfies, implements, derives-from)
         #[arg(short = 't', long = "type")]
         link_type: String,
 
-        /// Target artifact ID
-        #[arg(long)]
-        target: String,
+        /// Target artifact ID (equivalent to the positional form; the flag
+        /// wins if both are given).
+        #[arg(long = "target")]
+        target: Option<String>,
     },
 
-    /// Modify an existing artifact
     /// Modify an existing artifact (status, title, description, tags, fields)
     ///
     /// Use the `--set-*` flags, not positionals. Examples:
@@ -2438,14 +2450,30 @@ fn run(cli: Cli) -> Result<bool> {
         ),
         Command::Link {
             source,
+            target_pos,
             link_type,
             target,
-        } => cmd_link(&cli, source, link_type, target),
+        } => match target.as_deref().or(target_pos.as_deref()) {
+            Some(t) => cmd_link(&cli, source, link_type, t),
+            None => anyhow::bail!(
+                "specify a target artifact, e.g. \
+                 `rivet link {source} <target> --type {link_type}` or \
+                 `rivet link {source} --target <target> --type {link_type}`"
+            ),
+        },
         Command::Unlink {
             source,
+            target_pos,
             link_type,
             target,
-        } => cmd_unlink(&cli, source, link_type, target),
+        } => match target.as_deref().or(target_pos.as_deref()) {
+            Some(t) => cmd_unlink(&cli, source, link_type, t),
+            None => anyhow::bail!(
+                "specify a target artifact, e.g. \
+                 `rivet unlink {source} <target> --type {link_type}` or \
+                 `rivet unlink {source} --target <target> --type {link_type}`"
+            ),
+        },
         Command::Modify {
             id,
             where_filter,

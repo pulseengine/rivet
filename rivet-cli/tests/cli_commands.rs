@@ -5951,3 +5951,103 @@ fn trace_command_renders_and_is_deterministic() {
         "trace of a missing id should report not-found"
     );
 }
+
+// ── agent CLI ergonomics (REQ-188) ─────────────────────────────────────
+
+#[test]
+fn link_positional_target_is_parsed() {
+    // Regression: `rivet link <source> <target> --type <t>` (target as a second
+    // positional) previously errored "unexpected argument '<target>'". The
+    // positional must now be parsed (the command may still fail for unrelated
+    // reasons, but never with a clap parse error about the second positional).
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let p = tmp.path().to_str().unwrap().to_string();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", &p])
+        .output()
+        .expect("init");
+    assert!(init.status.success(), "init must succeed");
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            &p,
+            "link",
+            "REQ-001",
+            "REQ-002",
+            "--type",
+            "traces-to",
+        ])
+        .output()
+        .expect("link run");
+    assert!(
+        !String::from_utf8_lossy(&out.stderr).contains("unexpected argument"),
+        "positional target must be parsed, not rejected by clap. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn link_no_target_is_reported() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let p = tmp.path().to_str().unwrap().to_string();
+    Command::new(rivet_bin())
+        .args(["init", "--dir", &p])
+        .output()
+        .expect("init");
+    let out = Command::new(rivet_bin())
+        .args(["--project", &p, "link", "REQ-001", "--type", "traces-to"])
+        .output()
+        .expect("link run");
+    assert!(
+        !out.status.success(),
+        "`rivet link` with no target must error, got exit 0"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("target"),
+        "error must mention the missing target"
+    );
+}
+
+#[test]
+fn init_preset_help_lists_all_presets() {
+    // The --preset help must list every preset `resolve_preset` accepts, with
+    // no duplicated/contradictory lines (the doc-comment had two partial,
+    // conflicting lists). REQ-188.
+    let out = Command::new(rivet_bin())
+        .args(["init", "--help"])
+        .output()
+        .expect("init --help");
+    let help = String::from_utf8_lossy(&out.stdout);
+    for preset in [
+        "aspice",
+        "stpa-ai",
+        "cybersecurity",
+        "aadl",
+        "eu-ai-act",
+        "safety-case",
+        "do-178c",
+        "en-50128",
+        "iec-61508",
+        "iec-62304",
+        "iso-pas-8800",
+        "sotif",
+    ] {
+        assert!(
+            help.contains(preset),
+            "init --help must list preset '{preset}'; got:\n{help}"
+        );
+    }
+}
+
+#[test]
+fn modify_help_has_no_duplicated_summary() {
+    let out = Command::new(rivet_bin())
+        .args(["modify", "--help"])
+        .output()
+        .expect("modify --help");
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !help.contains("Modify an existing artifact Modify an existing artifact"),
+        "modify --help must not stutter its summary; got:\n{help}"
+    );
+}
