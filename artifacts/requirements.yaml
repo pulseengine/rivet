@@ -5768,3 +5768,39 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-190
+    type: requirement
+    title: "`execute_sexpr` returns deterministic (id-sorted) matches so query output + --limit truncation are reproducible"
+    status: implemented
+    description: |
+      Verified bug (issue #415): `rivet query --format json` for the same filter
+      returns results in a DIFFERENT order on every run (run1: REQ-125,166,147...
+      run2: REQ-174,011,117...), because the shared `execute_sexpr` engine
+      iterated the HashMap-ordered `store.iter()`. Two consequences:
+        - match order is nondeterministic across CLI / MCP `rivet_query` / the
+          `{{query:...}}` embed (all three share `execute_sexpr`);
+        - with `--limit`, the kept subset is an arbitrary HashMap-order slice, so
+          an agent paging or sampling gets a different subset each run — a
+          correctness bug, not just cosmetics.
+      `execute` (the non-sexpr path) already sorted by id; `execute_sexpr` was
+      missed. `Store::iter_sorted()` (REQ-159) already exists for exactly this.
+
+      Fix: iterate `store.iter_sorted()` in `execute_sexpr`, making both the
+      match order and the `--limit` truncation deterministic (lowest-id N).
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib query::tests::execute_sexpr_returns_matches_sorted_by_id`
+          passes.
+        - `cargo test -p rivet-core --lib query::tests::execute_sexpr_limit_truncates_to_lowest_ids_deterministically`
+          passes (limit keeps the lowest-id subset).
+        - `rivet query --sexpr '(= type "requirement")' --format ids` produces
+          byte-identical output across two consecutive runs.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [query, determinism, reproducibility, mcp, embed, bugfix, agent-ux]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-159

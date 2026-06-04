@@ -133,6 +133,11 @@ impl std::error::Error for SexprQueryError {}
 /// embed all converge on a single code path.  `limit` caps the returned
 /// `matches` slice; `total` reports the untruncated count so callers can
 /// show "Showing N of M" style footers without re-running the filter.
+///
+/// Matches are returned in a deterministic order — ascending by `id` — so all
+/// three surfaces produce stable output AND `limit` truncates to the same
+/// lowest-`id` subset across runs (the store is HashMap-ordered; REQ-159 /
+/// #415 — `execute` already sorted, `execute_sexpr` was missed).
 pub fn execute_sexpr<'a>(
     store: &'a Store,
     graph: &LinkGraph,
@@ -151,7 +156,9 @@ pub fn execute_sexpr<'a>(
     let cap = limit.unwrap_or(usize::MAX);
     let mut matches: Vec<&Artifact> = Vec::new();
     let mut total = 0usize;
-    for a in store.iter() {
+    // `iter_sorted` (ascending by id) makes both the match order and the
+    // `limit` truncation deterministic across runs (#415).
+    for a in store.iter_sorted() {
         if !sexpr_eval::matches_filter_with_store(&expr, a, graph, store) {
             continue;
         }
@@ -243,6 +250,36 @@ mod tests {
 
         let r = execute_sexpr(&store, &graph, r#"(= type "requirement")"#, Some(3)).unwrap();
         assert_eq!(r.matches.len(), 3);
+        assert_eq!(r.total, 10);
+        assert!(r.truncated);
+    }
+
+    #[test]
+    fn execute_sexpr_returns_matches_sorted_by_id() {
+        // #415: matches must be ascending by id regardless of insertion order
+        // (the store is HashMap-ordered), so CLI/MCP/embed output is stable.
+        let (store, _schema, graph) = build(vec![
+            plain("REQ-030", "requirement", None, &[]),
+            plain("REQ-002", "requirement", None, &[]),
+            plain("REQ-100", "requirement", None, &[]),
+            plain("REQ-001", "requirement", None, &[]),
+        ]);
+        let r = execute_sexpr(&store, &graph, r#"(= type "requirement")"#, None).unwrap();
+        let ids: Vec<&str> = r.matches.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, vec!["REQ-001", "REQ-002", "REQ-030", "REQ-100"]);
+    }
+
+    #[test]
+    fn execute_sexpr_limit_truncates_to_lowest_ids_deterministically() {
+        // #415: with a limit, the kept subset must be the lowest-id `cap`
+        // matches, stable across runs — not a HashMap-order arbitrary subset.
+        let artifacts: Vec<Artifact> = (0..10)
+            .map(|i| plain(&format!("REQ-{i:02}"), "requirement", None, &[]))
+            .collect();
+        let (store, _schema, graph) = build(artifacts);
+        let r = execute_sexpr(&store, &graph, r#"(= type "requirement")"#, Some(3)).unwrap();
+        let ids: Vec<&str> = r.matches.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, vec!["REQ-00", "REQ-01", "REQ-02"]);
         assert_eq!(r.total, 10);
         assert!(r.truncated);
     }
