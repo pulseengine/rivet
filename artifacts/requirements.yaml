@@ -5869,3 +5869,40 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-193
+    type: requirement
+    title: "`{{query:...}}` doc embed renders rows id-sorted so generated docs are reproducible"
+    status: implemented
+    description: |
+      Verified bug (issue #415; sibling of REQ-190): `rivet embed 'query:(= type
+      "requirement")'` rendered a DIFFERENT row order on every run. REQ-190 fixed
+      the shared `execute_sexpr` engine, but the `{{query:...}}` embed has its
+      OWN match loop in `render_query` (rivet-core/src/embed.rs) that iterated
+      the HashMap-ordered `ctx.store.iter()` directly — it never went through
+      `execute_sexpr`. Consequences:
+        - embed table rows render in nondeterministic order, so any document
+          containing a `{{query:...}}` embed (compliance reports, zola sites,
+          `rivet docs`) produces churny, non-reproducible output across builds;
+        - the embed's default row `limit` truncated to an arbitrary HashMap-order
+          subset, so an over-limit embed showed a different (and differently
+          incomplete) set each render.
+      The aggregate embeds (`stats:types`, `stats:status`, etc.) were already
+      deterministic — they accumulate into a `BTreeMap`.
+
+      Fix: iterate `ctx.store.iter_sorted()` in `render_query`, making both row
+      order and limit truncation deterministic (lowest-id N).
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib embed::tests::query_embed_renders_rows_id_sorted_for_deterministic_docs`
+          passes.
+        - `rivet embed 'query:(= type "requirement")'` produces byte-identical
+          output across two consecutive runs.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [embed, docs, query, determinism, reproducibility, bugfix]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-159

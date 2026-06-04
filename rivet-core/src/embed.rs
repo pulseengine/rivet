@@ -1070,7 +1070,11 @@ fn render_query(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<String
 
     let mut matches: Vec<&crate::model::Artifact> = Vec::new();
     let mut total = 0usize;
-    for artifact in ctx.store.iter() {
+    // `iter_sorted` (ascending by id) makes both the rendered row order and the
+    // `limit` truncation deterministic, so `{{query:...}}` doc embeds produce
+    // reproducible output across builds (the store is HashMap-ordered; #415 /
+    // REQ-190, which fixed the parallel `execute_sexpr` path).
+    for artifact in ctx.store.iter_sorted() {
         if crate::sexpr_eval::matches_filter_with_store(&expr, artifact, ctx.graph, ctx.store) {
             total += 1;
             if matches.len() < limit {
@@ -1784,6 +1788,35 @@ mod tests {
             .collect();
         direct_ids.sort();
         assert_eq!(direct_ids, vec!["REQ-1".to_string(), "REQ-2".to_string()]);
+    }
+
+    #[test]
+    fn query_embed_renders_rows_id_sorted_for_deterministic_docs() {
+        // #415 / REQ-190: `{{query:...}}` embeds must render rows ascending by
+        // id (not HashMap order) so generated docs are reproducible across
+        // builds. Insert in scrambled id order; the HTML must list them sorted.
+        let store = make_store(vec![
+            plain("REQ-030", "requirement", None, &[]),
+            plain("REQ-002", "requirement", None, &[]),
+            plain("REQ-100", "requirement", None, &[]),
+            plain("REQ-001", "requirement", None, &[]),
+        ]);
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed(r#"query:(= type "requirement")"#, &store, &schema, &graph).unwrap();
+        let positions: Vec<usize> = ["REQ-001", "REQ-002", "REQ-030", "REQ-100"]
+            .iter()
+            .map(|id| {
+                html.find(id)
+                    .unwrap_or_else(|| panic!("id {id} missing in embed HTML:\n{html}"))
+            })
+            .collect();
+        let mut sorted = positions.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            positions, sorted,
+            "embed rows must appear ascending by id; got HTML:\n{html}"
+        );
     }
 
     #[test]
