@@ -8201,8 +8201,13 @@ sort_by = \"title\"
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
             .replace('\n', " ");
-        // Triple-quoted TOML strings can't contain """ so escape that edge case.
-        let description_toml = description_raw.replace("\"\"\"", "\\\"\\\"\\\"");
+        // TOML multi-line basic strings (""") process backslash escapes, so a
+        // literal `\` in the description (e.g. a regex like `\.rs$`) is an
+        // invalid escape that breaks `zola build`. Escape backslashes first
+        // (like the title does), then the `"""` edge case.
+        let description_toml = description_raw
+            .replace('\\', "\\\\")
+            .replace("\"\"\"", "\\\"\\\"\\\"");
 
         let links_md: String = artifact
             .links
