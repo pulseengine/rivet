@@ -6113,3 +6113,53 @@ fn commits_json_output_has_command_envelope() {
         "commits JSON must carry command=\"commits\" for envelope consistency"
     );
 }
+
+/// `rivet snapshot diff <baseline>` must accept the baseline path positionally
+/// (previously it errored "unexpected argument" — only --baseline worked).
+/// Mirrors the next-id/query/link positional shorthands. REQ-194.
+#[test]
+fn snapshot_diff_accepts_positional_baseline() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let p = tmp.path().to_str().unwrap().to_string();
+    let snap = tmp.path().join("snap.json");
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--dir", &p])
+            .output()
+            .expect("init")
+            .status
+            .success(),
+        "init must succeed"
+    );
+    let cap = Command::new(rivet_bin())
+        .args([
+            "--project",
+            &p,
+            "snapshot",
+            "capture",
+            "--output",
+            snap.to_str().unwrap(),
+        ])
+        .output()
+        .expect("snapshot capture");
+    assert!(
+        cap.status.success(),
+        "capture must succeed: {}",
+        String::from_utf8_lossy(&cap.stderr)
+    );
+    // Positional baseline (no --baseline flag).
+    let out = Command::new(rivet_bin())
+        .args(["--project", &p, "snapshot", "diff", snap.to_str().unwrap()])
+        .output()
+        .expect("snapshot diff");
+    assert!(
+        !String::from_utf8_lossy(&out.stderr).contains("unexpected argument"),
+        "positional baseline must be parsed, not rejected by clap. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.status.success(),
+        "diff against the just-captured snapshot must succeed. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
