@@ -6044,3 +6044,39 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-198
+    type: requirement
+    title: "`rivet add` must emit valid YAML for multi-line/special-char fields (data-integrity bug)"
+    status: implemented
+    description: |
+      Verified data-corruption bug (current main): `rivet add --type requirement
+      --title T --description "Line one.<newline>Line two."` writes INVALID YAML
+      and breaks the whole artifacts file. `render_artifact_yaml`
+      (rivet-core/src/mutate.rs) was a naive serializer:
+        - `description: >` folded scalar with only the FIRST line indented — a
+          newline put line 2 at column 0 → "could not find expected ':'" parse
+          error, so `rivet validate` then FAILs to load the file (2 errors).
+        - `title: {raw}` / tag / field values emitted unquoted — a colon (e.g.
+          "Multi word: with colon") also produced invalid YAML.
+      The `modify`/`set_field` path already serializes safely via
+      `yaml_edit::yaml_render_scalar_value`; only the `add` path diverged.
+
+      Fix: route `add`'s title/status/description/tags/field values through the
+      same `yaml_edit` safe emitters (`yaml_quote_inline_scalar` +
+      `yaml_render_scalar_value`), so newlines become block-literal `|` scalars
+      with correct indentation and special chars are quoted.
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib mutate::tests::render_artifact_yaml_multiline_and_colon_is_valid_parseable_yaml`
+          passes (rendered YAML parses; multi-line description round-trips).
+        - In a temp project, `rivet add --type requirement --title X
+          --description $'a\nb'` then `rivet validate` → PASS (was FAIL).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [mutate, add, yaml, data-integrity, serialization, bugfix, agent-ux]
+    fields:
+      priority: must
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-031

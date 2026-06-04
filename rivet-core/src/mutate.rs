@@ -492,20 +492,35 @@ pub fn append_artifact_to_file(artifact: &Artifact, file_path: &Path) -> Result<
 fn render_artifact_yaml(artifact: &Artifact) -> String {
     let mut lines = Vec::new();
 
+    use crate::yaml_edit::{yaml_quote_inline_scalar, yaml_render_scalar_value};
+
     lines.push(format!("  - id: {}", artifact.id));
     lines.push(format!("    type: {}", artifact.artifact_type));
-    lines.push(format!("    title: {}", artifact.title));
+    // Values are YAML-safe-quoted (colons, leading specials, etc.) and
+    // multi-line values become block-literal scalars — reusing the same emitter
+    // the modify/set path uses, so `add` never writes invalid YAML.
+    lines.push(format!(
+        "    title: {}",
+        yaml_quote_inline_scalar(&artifact.title)
+    ));
 
     if let Some(ref status) = artifact.status {
-        lines.push(format!("    status: {status}"));
+        lines.push(format!("    status: {}", yaml_quote_inline_scalar(status)));
     }
 
     if let Some(ref desc) = artifact.description {
-        lines.push(format!("    description: >\n      {desc}"));
+        lines.push(format!(
+            "    description: {}",
+            yaml_render_scalar_value(desc, 4)
+        ));
     }
 
     if !artifact.tags.is_empty() {
-        let tag_list: Vec<String> = artifact.tags.clone();
+        let tag_list: Vec<String> = artifact
+            .tags
+            .iter()
+            .map(|t| yaml_quote_inline_scalar(t))
+            .collect();
         lines.push(format!("    tags: [{}]", tag_list.join(", ")));
     }
 
@@ -521,7 +536,10 @@ fn render_artifact_yaml(artifact: &Artifact) -> String {
                     .trim()
                     .to_string(),
             };
-            lines.push(format!("      {key}: {val_str}"));
+            lines.push(format!(
+                "      {key}: {}",
+                yaml_render_scalar_value(&val_str, 6)
+            ));
         }
     }
 
@@ -880,5 +898,31 @@ mod tests {
         assert!(yaml.contains("tags: [core, test]"));
         assert!(yaml.contains("- type: satisfies"));
         assert!(yaml.contains("target: REQ-001"));
+    }
+
+    #[test]
+    fn render_artifact_yaml_multiline_and_colon_is_valid_parseable_yaml() {
+        // Regression: a newline in the description emitted a folded `>` scalar
+        // whose continuation lines were unindented (column 0), and a colon in
+        // the title was left unquoted — both produced INVALID YAML that broke
+        // the whole artifacts file on the next load. (REQ-198 / mutate add path)
+        let mut artifact = artifact_with_links("REQ-099", "requirement", &[]);
+        artifact.title = "Multi word: with colon".to_string();
+        artifact.description = Some("Line one.\nLine two with \"quotes\".".to_string());
+        artifact.status = Some("draft".to_string());
+        artifact.tags = vec!["core".to_string()];
+
+        let body = render_artifact_yaml(&artifact);
+        // Must parse as a real artifacts document (the bug failed here).
+        let doc = format!("schema: dev\nartifacts:\n{body}");
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
+        let art = &parsed["artifacts"][0];
+        assert_eq!(art["title"].as_str(), Some("Multi word: with colon"));
+        assert_eq!(
+            art["description"].as_str(),
+            Some("Line one.\nLine two with \"quotes\"."),
+            "multi-line description must round-trip exactly"
+        );
     }
 }
