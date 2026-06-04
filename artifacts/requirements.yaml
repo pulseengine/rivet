@@ -5835,3 +5835,37 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-159
+
+  - id: REQ-192
+    type: requirement
+    title: "`rivet commits --format json` carries the `command` envelope field (consistency with all other JSON commands)"
+    status: implemented
+    description: |
+      Dogfooding JSON-consistency audit (follow-on to REQ-189): every
+      machine-readable command output carries a top-level `command` field —
+      validate, get, list, stats, coverage, query (REQ-189), matrix, diff,
+      impact all do. `rivet commits --format json` was the lone remaining
+      exception: its envelope was `{summary, broken_refs, orphans, unimplemented,
+      artifact_coverage}` with NO `command` field, so an agent keying off
+      `command` to dispatch on output type finds commits anomalous.
+
+      Verified the false-alarm siblings too: `get`/`coverage --format json`
+      parse as valid JSON (an earlier "invalid control character" reading was a
+      shell-quoting artifact, not a rivet bug), and `commits` output is
+      deterministic — so the only real gap is the missing `command` field.
+
+      Fix (additive): emit `"command": "commits"` in `cmd_commits_json`.
+
+      Acceptance:
+        - `rivet commits --format json | python3 -c 'import sys,json;
+          assert json.load(sys.stdin)["command"]=="commits"'` exits 0.
+        - `cargo test -p rivet-cli --test cli_commands commits_json_output_has_command_envelope`
+          passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, commits, json, consistency, agent-ux, machine-readable]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-007

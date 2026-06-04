@@ -11380,6 +11380,7 @@ fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool
         .filter(|br| br.malformed)
         .count();
     let json = serde_json::json!({
+        "command": "commits",
         "summary": {
             "linked": analysis.linked.len(),
             "orphans": analysis.orphans.len(),
