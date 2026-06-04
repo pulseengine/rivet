@@ -5686,3 +5686,47 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-188
+    type: requirement
+    title: "Agent CLI ergonomics: positional link/unlink target + accurate init/modify help"
+    status: implemented
+    description: |
+      Dogfooding pass over agent-facing commands surfaced three friction points,
+      all verified against current main:
+
+      1. `rivet link <source> <target> --type <t>` — the natural form (source and
+         target as an ordered positional pair) — errored "unexpected argument",
+         because `target` was a required `--target` flag. Same friction class as
+         the `query` positional gap (REQ-187) and the `next-id` positional. Same
+         for `unlink`.
+      2. `rivet init --help` showed two duplicated, contradictory `--preset`
+         doc lines (one listing do-178c/en-50128, the other iec-61508/iec-62304)
+         — clap concatenated them into a stuttering string that also OMITTED 5
+         of the 14 presets resolve_preset actually accepts (stpa-ai, eu-ai-act,
+         safety-case, iso-pas-8800, sotif).
+      3. `rivet modify --help` stuttered: "Modify an existing artifact Modify an
+         existing artifact (...)" — a duplicated doc-comment summary line.
+
+      Fix (additive, low-risk): add an optional positional TARGET to link and
+      unlink (the --target flag still works and wins if both given; clear error
+      if neither). Replace the --preset doc-comment with one accurate line
+      listing all 14 presets. Collapse the duplicated modify summary line.
+      Follow-up idea (not done here): make --preset a single source of truth via
+      a clap value-parser to prevent future drift.
+
+      Acceptance:
+        - `cargo test -p rivet-cli --test cli_commands link_positional_target_is_parsed`
+          passes (positional link target no longer a clap parse error).
+        - `cargo test -p rivet-cli --test cli_commands init_preset_help_lists_all_presets`
+          passes (help lists every preset resolve_preset accepts).
+        - `cargo test -p rivet-cli --test cli_commands modify_help_has_no_duplicated_summary`
+          passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, link, unlink, init, modify, help, agent-ux, ergonomics, friction, docs]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-007
