@@ -5937,3 +5937,37 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-195
+    type: requirement
+    title: "`variant` subcommands accept a bare `--variant <name>` (resolve from artifacts/variants/), consistent with `query`"
+    status: implemented
+    description: |
+      Dogfooding friction (issue #466, verified): `--variant` accepted a bare
+      NAME in `query` (resolved from `artifacts/variants/<name>.yaml`, issue
+      #287) but required a PATH in the `variant` subcommands — so an agent that
+      learned `query --variant dashboard-only` hit a confusing
+      `reading dashboard-only: No such file` on `variant solve/explain/...`,
+      even though the SAME file (`artifacts/variants/dashboard-only.yaml`) drives
+      both.
+
+      Fix (additive): route the `--variant` arg of `variant
+      check/solve/features/value/attr/explain/manifest` through the existing
+      `resolve_variant_arg(project, arg)` helper at the dispatch layer (it
+      resolves a direct path first, then `artifacts/variants/<name>.yaml`, then
+      errors with the available names). Handlers are unchanged; a direct path
+      keeps working.
+
+      Acceptance:
+        - `cargo test -p rivet-cli --test cli_commands variant_solve_accepts_bare_variant_name`
+          passes (bare name resolves; direct path still works).
+        - `rivet variant solve --model artifacts/feature-model.yaml --variant
+          dashboard-only` exits 0 (no "No such file" error).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, variant, ergonomics, agent-ux, consistency, friction]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-007
