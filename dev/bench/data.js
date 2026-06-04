@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780590288901,
+  "lastUpdate": 1780594089603,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f66362b377021ff4e39dd52502637589a5ca94d7",
-          "message": "fix(aspice): verification gates accept forward target status (REQ-165, #355) (#424)\n\n#355 Finding 2: the three ASPICE verification status-gates\n(V-sys/sw/unit-verification-needs-approved-*) hardcode\n`(forall-linked \"verifies\" (= status \"approved\"))` in the consequent, so a\nverifier that is approved/released mis-fires when the requirement/design it\nverifies has moved FORWARD past approved (implemented/verified/released).\nThe antecedent already recognises `(or approved released)`; the consequent\ndid not — promoting a verified sw-detail-design approved -> implemented\nwrongly re-raised \"needs an approved design\".\n\nExpand each consequent to approved-or-beyond:\n`(or (= status \"approved\") (= status \"implemented\")\n     (= status \"verified\") (= status \"released\"))`. A target still BELOW\napproved (draft/proposed) correctly still fires. Schema-only (no s-expr\nengine change; a `status-at-least` predicate is a possible future\nsimplification).\n\nVerified behaviorally (approved verifier -> implemented req: no fire;\n-> draft req: fires) + regression test\n`aspice_status_gate_accepts_forward_target_status`; existing\n`aspice_status_gate_rules_loaded_and_fire` still passes; rivet validate\nPASS, docs check PASS.\n\nFixes: REQ-165\nRefs: REQ-135",
-          "timestamp": "2026-06-03T02:54:50-05:00",
-          "tree_id": "02c3f692cac487b928a739d43f1b07be4868bba5",
-          "url": "https://github.com/pulseengine/rivet/commit/f66362b377021ff4e39dd52502637589a5ca94d7"
-        },
-        "date": 1780473825770,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84199,
-            "range": "± 278",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 891626,
-            "range": "± 11232",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13049925,
-            "range": "± 634142",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2156,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26166,
-            "range": "± 108",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 374014,
-            "range": "± 1139",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 93,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1466929,
-            "range": "± 26004",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161096,
-            "range": "± 1307",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1895017,
-            "range": "± 18553",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27069555,
-            "range": "± 1807075",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 439954,
-            "range": "± 1750",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16434701,
-            "range": "± 208565",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1399040064,
-            "range": "± 14145270",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4446,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59829,
-            "range": "± 203",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 743800,
-            "range": "± 1957",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60182,
-            "range": "± 159",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 685010,
-            "range": "± 3849",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7703272,
-            "range": "± 373391",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1278,
-            "range": "± 17",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 16036,
-            "range": "± 202",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 347197,
-            "range": "± 5597",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22133,
-            "range": "± 64",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 159306,
-            "range": "± 1185",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1453133,
-            "range": "± 19102",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1452423,
             "range": "± 21881",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ef32552c4ec868ba17f45489d4b696a52c5d2aa4",
+          "message": "fix(embed): {{query:...}} embed renders rows id-sorted for reproducible docs (REQ-193, #415) (#464)\n\nVerified bug (sibling of REQ-190, #415): `rivet embed 'query:(= type\n\"requirement\")'` rendered a DIFFERENT row order on every run. REQ-190 fixed the\nshared `execute_sexpr` engine, but the `{{query:...}}` embed has its OWN match\nloop in `render_query` that iterated the HashMap-ordered `ctx.store.iter()`\ndirectly — it never went through `execute_sexpr`. Consequences:\n- embed table rows render in nondeterministic order, so any document with a\n  `{{query:...}}` embed (compliance reports, zola sites, `rivet docs`) produces\n  churny, non-reproducible output across builds;\n- the embed's row `limit` truncated to an arbitrary HashMap-order subset.\n(The aggregate embeds `stats:types`/`stats:status`/... were already\ndeterministic — they accumulate into a BTreeMap.)\n\nFix: iterate `ctx.store.iter_sorted()` in `render_query` so both row order and\nlimit truncation are deterministic (lowest-id N).\n\nTest (embed::tests): query_embed_renders_rows_id_sorted_for_deterministic_docs\ninserts artifacts in scrambled id order and asserts the rendered HTML lists ids\nascending.\n\nConfirmed with: cargo test -p rivet-core --lib embed::tests (81/81), cargo fmt\n--check, cargo clippy --all-targets -- -D warnings (exit 0), rivet validate\nPASS. Manually verified `rivet embed 'query:(= type \"requirement\")'` is now\nbyte-identical (md5) across two runs.\n\nImplements: REQ-193\nVerifies: REQ-193\nRefs: REQ-159",
+          "timestamp": "2026-06-04T12:16:25-05:00",
+          "tree_id": "44aa9fb75dc3bfd2308c742341a55421f09f2e54",
+          "url": "https://github.com/pulseengine/rivet/commit/ef32552c4ec868ba17f45489d4b696a52c5d2aa4"
+        },
+        "date": 1780594088881,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84922,
+            "range": "± 197",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 929972,
+            "range": "± 9067",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 19686465,
+            "range": "± 971394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1941,
+            "range": "± 51",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25084,
+            "range": "± 1137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 368598,
+            "range": "± 5972",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1448876,
+            "range": "± 20957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167254,
+            "range": "± 2509",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1938513,
+            "range": "± 52407",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 42584147,
+            "range": "± 5116928",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 443150,
+            "range": "± 1490",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17521139,
+            "range": "± 296392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1296944847,
+            "range": "± 26755204",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4257,
+            "range": "± 21",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43333,
+            "range": "± 215",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 737720,
+            "range": "± 6820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63074,
+            "range": "± 769",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 729907,
+            "range": "± 2182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8300945,
+            "range": "± 468179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1219,
+            "range": "± 67",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14802,
+            "range": "± 52",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 236573,
+            "range": "± 6581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20809,
+            "range": "± 312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 142714,
+            "range": "± 15192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1344809,
+            "range": "± 15565",
             "unit": "ns/iter"
           }
         ]
