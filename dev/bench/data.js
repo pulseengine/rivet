@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780611912725,
+  "lastUpdate": 1780615581504,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "897de6191ab8c7fcbb08dc4ee2ebea86a8b8eb19",
-          "message": "feat(externals): surface un-synced externals so cycle/backlink checks aren't silently incomplete (REQ-170) (#434)\n\nFollow-up to REQ-169. `detect_circular_deps` builds the cross-repo graph by\nreading each external's rivet.yaml from `.rivet/repos/<prefix>` with `if let\nOk(...)` — an un-synced (or unparseable) external is silently skipped, so a\ncycle/broken ref routed through it is invisible and validate reports a clean\n\"0 circular deps\". The acyclicity guarantee is only as good as graph\ncompleteness, and incompleteness was silent (violates F2).\n\nAdd `unresolved_externals()` (sorted prefixes whose cached rivet.yaml won't\nload). `rivet validate` now warns naming them + \"run rivet sync\", and emits an\n`unresolved_externals` array in --format json. Path-resolvable externals are\nnot flagged. Warning only; PASS/FAIL unchanged.\n\nVerified: project with an un-synced git external -> \"INCOMPLETE\" warning +\nJSON lists the prefix while circular_deps=0; new unit test; clippy\n--all-targets clean; `rivet validate` on rivet repo still PASS.\n\nImplements: REQ-170\nRefs: REQ-020, REQ-169\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-03T09:44:16-05:00",
-          "tree_id": "af586d90aa0248ff987a5cfc5938baa790466e3c",
-          "url": "https://github.com/pulseengine/rivet/commit/897de6191ab8c7fcbb08dc4ee2ebea86a8b8eb19"
-        },
-        "date": 1780498412711,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83605,
-            "range": "± 655",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 889561,
-            "range": "± 15898",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13207612,
-            "range": "± 898633",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2156,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 23948,
-            "range": "± 106",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 349574,
-            "range": "± 1206",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1460520,
-            "range": "± 28944",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164501,
-            "range": "± 1605",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1900366,
-            "range": "± 14879",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 29303989,
-            "range": "± 2509896",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 452105,
-            "range": "± 2411",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 18284629,
-            "range": "± 163665",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1483468658,
-            "range": "± 21391984",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4308,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 65584,
-            "range": "± 1239",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 744119,
-            "range": "± 3110",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 59887,
-            "range": "± 521",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 707007,
-            "range": "± 2564",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7792131,
-            "range": "± 194205",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1215,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15204,
-            "range": "± 88",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 325634,
-            "range": "± 1526",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22596,
-            "range": "± 114",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 155097,
-            "range": "± 944",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1462319,
-            "range": "± 9241",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1398020,
             "range": "± 36697",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b7e948c0ecc22dbbb969ea2494b92266d01846fa",
+          "message": "fix(mutate): rivet add emits valid YAML for multi-line/special-char fields (REQ-198) (#471)\n\nData-corruption bug (verified on current main): `rivet add --type requirement\n--title T --description $'a\\nb'` wrote INVALID YAML and broke the whole artifacts\nfile — `rivet validate` afterwards FAILed with a YAML parse error\n(\"could not find expected ':'\"). `render_artifact_yaml` (mutate.rs) was a naive\nserializer:\n- `description: >` folded scalar indented only the FIRST line, so a newline put\n  line 2 at column 0;\n- `title:` / tag / field values were emitted unquoted, so a colon (e.g.\n  \"Multi word: with colon\") also produced invalid YAML.\n\nThe modify/set_field path already serializes safely via yaml_edit; only the add\npath diverged. Fix: route add's title/status/description/tags/field values\nthrough the same emitters (`yaml_quote_inline_scalar` + `yaml_render_scalar_value`,\nnow `pub(crate)`), so newlines become block-literal `|` scalars with correct\nindentation and special chars are quoted.\n\nTest (mutate::tests): render_artifact_yaml_multiline_and_colon_is_valid_parseable_yaml\nrenders an artifact with a multi-line description + colon title and asserts the\nYAML parses and round-trips exactly.\n\nConfirmed with: cargo test -p rivet-core --lib mutate::tests (17/17), cargo fmt\n--check, cargo clippy --all-targets -- -D warnings (exit 0), rivet validate PASS.\nManually verified the original repro now writes a `|-` block scalar + quoted\ntitle and validates PASS (was FAIL with 2 parse errors).\n\nImplements: REQ-198\nVerifies: REQ-198\nRefs: REQ-031",
+          "timestamp": "2026-06-04T18:16:19-05:00",
+          "tree_id": "6fc746fb114b74b4dd35ebeb5e7bcda85e0e30b4",
+          "url": "https://github.com/pulseengine/rivet/commit/b7e948c0ecc22dbbb969ea2494b92266d01846fa"
+        },
+        "date": 1780615580791,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85062,
+            "range": "± 485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 945948,
+            "range": "± 5426",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 21115546,
+            "range": "± 3054346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1939,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24961,
+            "range": "± 99",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 387625,
+            "range": "± 4390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1444724,
+            "range": "± 17888",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 154030,
+            "range": "± 2673",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1789823,
+            "range": "± 9638",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 29267325,
+            "range": "± 1483610",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 435231,
+            "range": "± 4165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15733912,
+            "range": "± 575717",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1158433182,
+            "range": "± 25400272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4096,
+            "range": "± 51",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 51374,
+            "range": "± 388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 756439,
+            "range": "± 16891",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63592,
+            "range": "± 179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 735895,
+            "range": "± 7793",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 14872219,
+            "range": "± 737638",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1341,
+            "range": "± 10",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14757,
+            "range": "± 133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 236511,
+            "range": "± 3838",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21352,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 145816,
+            "range": "± 3569",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1352102,
+            "range": "± 8886",
             "unit": "ns/iter"
           }
         ]
