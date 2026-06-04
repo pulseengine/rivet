@@ -156,3 +156,60 @@ fn zola_shortcode_card_uses_get_url() {
         "shortcode must not hardcode an absolute /<prefix>/artifacts/ href:\n{shortcode}"
     );
 }
+
+/// Regression: a literal backslash in an artifact description (e.g. a regex
+/// like `\.rs$`) must be escaped in the emitted TOML front matter. A
+/// multi-line basic string (""") processes escapes, so a bare `\` is an
+/// invalid escape that makes `zola build` fail to parse the page. #392 / REQ-181.
+// rivet: verifies REQ-181
+#[test]
+fn zola_frontmatter_escapes_backslashes_in_description() {
+    let proj = tempfile::tempdir().unwrap();
+    std::fs::write(
+        proj.path().join("rivet.yaml"),
+        "project:\n  name: t\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(proj.path().join("artifacts")).unwrap();
+    // Single-quoted YAML keeps the backslash literal: description = `matches \.rs$ files`.
+    std::fs::write(
+        proj.path().join("artifacts/a.yaml"),
+        "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: Backslash regex test\n    \
+         description: 'matches \\.rs$ files'\n",
+    )
+    .unwrap();
+
+    let site = tempfile::tempdir().unwrap();
+    std::fs::write(
+        site.path().join("config.toml"),
+        "base_url = \"https://example.test/x\"\ntitle = \"t\"\n[[taxonomies]]\nname = \"tags\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(site.path().join("content")).unwrap();
+
+    let status = Command::new(rivet_bin())
+        .args([
+            "--project",
+            proj.path().to_str().unwrap(),
+            "export",
+            "--format",
+            "zola",
+            "--output",
+            site.path().to_str().unwrap(),
+        ])
+        .status()
+        .expect("run rivet export --format zola");
+    assert!(status.success(), "export exited non-zero: {status:?}");
+
+    let mds = content_markdown(site.path());
+    let md = mds
+        .iter()
+        .find(|m| m.contains("Backslash regex test"))
+        .expect("the REQ-1 page must be exported");
+    // The backslash must be doubled (escaped) in the front matter.
+    assert!(
+        md.contains("\\\\.rs$"),
+        "description backslash must be escaped to \\\\ in TOML front matter:\n{md}"
+    );
+}

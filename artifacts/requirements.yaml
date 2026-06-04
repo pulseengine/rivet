@@ -5436,3 +5436,37 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-181
+    type: requirement
+    title: "zola export escapes backslashes in TOML front matter; gate it with a zola-build smoke CI job"
+    status: implemented
+    description: |
+      Self-found by running #392's candidate gate (scripts/zola-export-smoke.sh)
+      locally: `zola build` failed on the exported corpus because an artifact
+      description containing a regex (`grep '\.rs$'`, in REQ-174) was emitted
+      into a TOML multi-line basic string ("""...""") without escaping the
+      backslash. TOML multi-line basic strings process escapes, so a bare `\` is
+      an invalid escape and breaks the build — any description with a backslash
+      poisons the whole site.
+
+      Fix (cmd_export_zola): escape `\` -> `\\` in the description before the
+      existing `"""` handling, mirroring what the title already does. Plus add
+      the zola-export-smoke CI job (#392, ubuntu-latest, pinned zola, advisory
+      `continue-on-error` to start) so this regression class is caught
+      automatically.
+
+      Acceptance:
+        - `cargo test -p rivet-cli --test export_zola
+          zola_frontmatter_escapes_backslashes_in_description` passes (a `\.rs$`
+          description is emitted as `\\.rs$`).
+        - `RIVET_BIN=… scripts/zola-export-smoke.sh` exits 0 (real zola build of
+          the corpus succeeds).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [export, zola, toml, bugfix, ci, dogfooding, self-found, issue-392]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-115

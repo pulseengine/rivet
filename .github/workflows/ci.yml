@@ -149,6 +149,37 @@ jobs:
           path: tests/playwright/test-results/
           if-no-files-found: ignore
 
+  # ── Zola export build smoke (#392) ───────────────────────────────────
+  # Exports the corpus to a scaffolded Zola site under a sub-directory
+  # base_url, runs a real `zola build`, and fails on a broken shortcode or a
+  # dangling/absolute internal link (the REQ-115/116/118 regression class —
+  # and front-matter escaping bugs like an unescaped `\` in a description).
+  # ubuntu-latest because it downloads a pinned zola release. Advisory
+  # (continue-on-error) until the install proves stable on the runners.
+  zola-export-smoke:
+    name: Zola export smoke
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        run: cargo build --release --bin rivet
+      - name: Install zola
+        env:
+          ZOLA_VERSION: "0.19.2"
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o /tmp/zola.tar.gz \
+            "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          tar -xzf /tmp/zola.tar.gz -C "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          zola --version
+      - name: Run zola export smoke
+        run: RIVET_BIN="$PWD/target/release/rivet" scripts/zola-export-smoke.sh
+
   # ── VS Code Extension ────────────────────────────────────────────────
   vscode-extension:
     name: VS Code Extension
