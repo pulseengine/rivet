@@ -1502,3 +1502,69 @@ artifacts:
     provenance:
       created-by: ai-assisted
       timestamp: 2026-04-07T03:40:26Z
+
+  - id: FEAT-136
+    type: feature
+    title: Externals sync safety
+    status: implemented
+    description: >
+      Cross-repo externals are synced and validated without destroying local
+      work or hiding gaps: `rivet sync` refuses to clobber uncommitted edits in
+      a git external's cache (REQ-169), `rivet validate` surfaces un-synced
+      externals so cycle/backlink checks aren't silently incomplete (REQ-170),
+      and `sync` ignores only the `.rivet/repos/` cache rather than the whole
+      `.rivet/` directory (REQ-173).
+    tags: [externals, sync, cross-repo, safety, dogfooding]
+    links:
+      - type: satisfies
+        target: REQ-169
+      - type: satisfies
+        target: REQ-170
+      - type: satisfies
+        target: REQ-173
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-04T00:42:44Z
+
+  - id: FEAT-137
+    type: feature
+    title: Schema source provenance
+    status: implemented
+    description: >
+      Users can see whether each active schema resolves from a pinned on-disk
+      file or the binary-versioned embedded copy: `rivet schema info` reports the
+      source per schema (REQ-176) and `rivet schema sources` lists the whole
+      active set as on-disk / embedded / missing (REQ-177) — making
+      cross-version schema drift visible instead of surprising.
+    tags: [schema, embedded, provenance, dogfooding]
+    links:
+      - type: satisfies
+        target: REQ-176
+      - type: satisfies
+        target: REQ-177
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-04T00:42:44Z
+
+  - id: FEAT-138
+    type: feature
+    title: Traceability navigation and diagnostic guidance
+    status: implemented
+    description: >
+      Commands that help a user navigate and understand the traceability graph:
+      `rivet bundle --incoming` follows backlinks so bundling a sink requirement
+      includes what realizes it (REQ-168), and `rivet validate --explain` names
+      which required backlink source types can attach directly vs. only via an
+      intermediate design artifact (REQ-178).
+    tags: [traceability, diagnostics, dx, dogfooding]
+    links:
+      - type: satisfies
+        target: REQ-168
+      - type: satisfies
+        target: REQ-178
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-04T00:42:44Z
