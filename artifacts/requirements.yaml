@@ -6009,3 +6009,38 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-105
+
+  - id: REQ-197
+    type: requirement
+    title: "Honest AADL/WASM-unavailable guidance — stop pointing users at broken/unpublished tooling"
+    status: implemented
+    description: |
+      Follow-on to the user-reported AADL bug (#468): when the spar WASM isn't
+      bundled, rivet pointed users at tooling that does not work for them. The
+      serve dashboard fallback said "run ./scripts/build-wasm.sh and rebuild"
+      (that script requires a local spar checkout + wasm32-wasip2 + Node/jco),
+      and `rivet-cli/assets/wasm/README.md` advertised `./scripts/fetch-wasm.sh`
+      under "Downloading from GitHub releases" — but spar publishes NO WASM
+      release asset (pulseengine/spar#259), so fetch-wasm.sh always fails. Both
+      sent users (incl. the reporter) down dead ends.
+
+      Fix (docs + messaging, no behaviour change): the serve `AADL_JS` fallback
+      messages now state the WASM is "not bundled in this build" and reference
+      the tracking issue (#468) instead of the broken script; the README
+      honestly describes the current state (stub fallback, fetch-wasm.sh blocked
+      on spar#259, build-from-source requires a local spar checkout + toolchain).
+
+      Acceptance:
+        - `cargo test -p rivet-cli --bin rivet serve::js::tests::aadl_wasm_fallback_messages_are_honest`
+          passes (fallback no longer instructs running build-wasm.sh; states
+          "not bundled in this build"; references the tracking issue).
+        - `grep -q 'spar does .*not.*publish' rivet-cli/assets/wasm/README.md`
+          (README states the current blocked status).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [serve, aadl, wasm, docs, ux, user-reported, dx]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-007

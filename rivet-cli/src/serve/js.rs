@@ -718,7 +718,7 @@ async function checkWasmAvailable(){
 
 async function getSparRenderer(aadlFiles){
   if(!wasmAvailable){
-    throw new Error('AADL WASM renderer not available (run ./scripts/build-wasm.sh and rebuild)');
+    throw new Error('AADL WASM renderer is not bundled in this build (see rivet-cli/assets/wasm/README.md; tracking: pulseengine/rivet#468)');
   }
   if(!wasmModulePromise){
     wasmModulePromise = import('/wasm/spar_wasm.js');
@@ -748,7 +748,7 @@ async function initAadlDiagrams(){
     containers.forEach(function(c){
       c.setAttribute('data-loaded','true');
       var ld = c.querySelector('.aadl-loading');
-      if(ld) ld.textContent = 'AADL diagram requires spar WASM (run ./scripts/build-wasm.sh and rebuild)';
+      if(ld) ld.textContent = 'AADL diagram unavailable — the spar WASM renderer is not bundled in this build (tracking: pulseengine/rivet#468).';
     });
     return;
   }
@@ -1274,3 +1274,28 @@ document.body.addEventListener('htmx:afterSwap', initMatrixDrilldown);
 document.addEventListener('DOMContentLoaded', initMatrixDrilldown);
 </script>
 "#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The AADL WASM-unavailable fallback messages must not point users at the
+    /// broken/unsupported `build-wasm.sh` (it needs a local spar checkout +
+    /// toolchain). They must give an honest "not bundled in this build" status
+    /// with the tracking issue. REQ-197 / #468.
+    #[test]
+    fn aadl_wasm_fallback_messages_are_honest() {
+        assert!(
+            !AADL_JS.contains("build-wasm.sh and rebuild"),
+            "fallback must not instruct users to run the broken build-wasm.sh"
+        );
+        assert!(
+            AADL_JS.contains("not bundled in this build"),
+            "fallback must state the WASM is not bundled in this build"
+        );
+        assert!(
+            AADL_JS.contains("pulseengine/rivet#468"),
+            "fallback should reference the tracking issue"
+        );
+    }
+}
