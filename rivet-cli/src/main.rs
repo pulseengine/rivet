@@ -938,6 +938,12 @@ enum Command {
     },
 
     /// Import test results or artifacts from external formats
+    //
+    // `import` is the natural name a user reaches for (the inverse of `export`),
+    // so expose it as a visible alias (#453). Only when the `wasm` feature is
+    // OFF — with it on, `import` is the distinct custom-WASM-adapter command
+    // above, and a duplicate alias would conflict.
+    #[cfg_attr(not(feature = "wasm"), command(visible_alias = "import"))]
     ImportResults {
         /// Input format: "junit" (JUnit XML), "needs-json" (sphinx-needs), or "reqif" (OMG ReqIF 1.2)
         #[arg(long)]

@@ -5537,3 +5537,35 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-184
+    type: requirement
+    title: "rivet import is a visible alias for import-results (the natural inverse of export)"
+    status: implemented
+    description: |
+      Self-found (#453) while dogfooding a reqif round-trip. `rivet export
+      --format reqif` exists, so the natural way to bring a file back is `rivet
+      import` — but in the default build that errored ("unrecognized subcommand
+      'import'"). The capability lives in `import-results` (junit/needs-json/
+      reqif). Note: `import` IS a real command but only under the `wasm` feature
+      (a distinct custom-WASM-adapter importer), so it's absent from the
+      default/common build.
+
+      Add `import` as a visible alias of `import-results`, gated to non-wasm
+      builds (`cfg_attr(not(feature = "wasm"), command(visible_alias =
+      "import"))`) so it never collides with the wasm-adapter `import` command.
+
+      Acceptance:
+        - In the default build, `rivet import --format reqif <file> --output
+          <dir>` succeeds (equivalent to `import-results`); `rivet --help` lists
+          `import-results` with `[aliases: import]`.
+        - `cargo test -p rivet-cli --test export_reqif_roundtrip
+          import_alias_works_for_reqif` passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, import, dx, discoverability, dogfooding, self-found, issue-453]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
