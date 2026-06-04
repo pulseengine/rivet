@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780605546332,
+  "lastUpdate": 1780611912725,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "12926c3e92af621f6de9ed70605e23ba8b479279",
-          "message": "feat(externals): rivet sync refuses to clobber uncommitted git-external edits (REQ-169) (#432)\n\nSelf-found while triaging a maintainer question about co-developing two\nsynced repos at once. `git:` externals re-run `git fetch` + `git checkout`\nover `.rivet/repos/<prefix>`, silently losing edits made there while working\nin both repos. Add `is_working_tree_dirty()` (tracked changes only; untracked\nare preserved by checkout) and gate the git fetch/checkout: when dirty and\n`--force` is not given, sync aborts non-zero, names the prefix + path, and\npoints to commit+push / `--force` / using a `path:` external instead. New\n`rivet sync --force` opts out. Loud-fail over silent loss (F2).\n\nVerified end-to-end: dirty cache -> `rivet sync` exits 1 with the guard\nmessage; `rivet sync --force` proceeds. New unit test + existing externals\ntests pass; clippy --all-targets clean; `rivet validate` PASS.\n\nImplements: REQ-169\nRefs: REQ-020\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-03T08:25:08-05:00",
-          "tree_id": "caaaf3c138a937e8188019f1f7abf9f1556af1fc",
-          "url": "https://github.com/pulseengine/rivet/commit/12926c3e92af621f6de9ed70605e23ba8b479279"
-        },
-        "date": 1780493724027,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 78139,
-            "range": "± 666",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 936922,
-            "range": "± 16036",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16058655,
-            "range": "± 2244525",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1660,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 19412,
-            "range": "± 134",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 358760,
-            "range": "± 4788",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 89,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 89,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 89,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1364408,
-            "range": "± 42137",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 158655,
-            "range": "± 370",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1844271,
-            "range": "± 76870",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 39840868,
-            "range": "± 8291827",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 415935,
-            "range": "± 2314",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16389634,
-            "range": "± 778518",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 995232052,
-            "range": "± 13663846",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3933,
-            "range": "± 42",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 41244,
-            "range": "± 151",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 782862,
-            "range": "± 18016",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 53257,
-            "range": "± 208",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 594764,
-            "range": "± 3768",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8939730,
-            "range": "± 1500254",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 964,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 12050,
-            "range": "± 30",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 300725,
-            "range": "± 2703",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20284,
-            "range": "± 52",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 141689,
-            "range": "± 419",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1339283,
-            "range": "± 28474",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1532606,
             "range": "± 15331",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "295f8175b152220d7350c1b948285b9b4434565a",
+          "message": "fix(serve/docs): honest AADL/WASM-unavailable guidance, not broken tooling (REQ-197, #468) (#470)\n\nFollow-on to the user-reported AADL bug (#468): when the spar WASM isn't\nbundled, rivet pointed users at tooling that doesn't work for them. The serve\nfallback said \"run ./scripts/build-wasm.sh and rebuild\" (that script needs a\nlocal spar checkout + wasm32-wasip2 + Node/jco), and the assets README\nadvertised `./scripts/fetch-wasm.sh` under \"Downloading from GitHub releases\" —\nbut spar publishes NO WASM release asset (pulseengine/spar#259), so fetch-wasm.sh\nalways fails. Both sent users (incl. the reporter) down dead ends.\n\nFix (docs + messaging, no behaviour change): the serve `AADL_JS` fallback\nmessages now say the renderer is \"not bundled in this build\" and reference the\ntracking issue #468 instead of the broken script; the README honestly describes\nthe current state (stub fallback, fetch-wasm.sh blocked on spar#259, build from\nsource requires a local spar checkout + toolchain).\n\nTest (serve::js::tests): aadl_wasm_fallback_messages_are_honest asserts the\nfallback no longer instructs running build-wasm.sh, states \"not bundled in this\nbuild\", and references the tracking issue.\n\nConfirmed with: cargo test -p rivet-cli --bin rivet\nserve::js::tests::aadl_wasm_fallback_messages_are_honest (pass), cargo fmt\n--check, cargo clippy --all-targets -- -D warnings (exit 0), rivet validate PASS.\n\nImplements: REQ-197\nVerifies: REQ-197\nRefs: REQ-007",
+          "timestamp": "2026-06-04T17:16:13-05:00",
+          "tree_id": "cd2fc05353b13938a6d73383e0f414f1b4a03980",
+          "url": "https://github.com/pulseengine/rivet/commit/295f8175b152220d7350c1b948285b9b4434565a"
+        },
+        "date": 1780611911054,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 78518,
+            "range": "± 1379",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 951495,
+            "range": "± 20061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15444825,
+            "range": "± 2022019",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1675,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 19265,
+            "range": "± 36",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 372257,
+            "range": "± 1208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 85,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1347832,
+            "range": "± 48970",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 151652,
+            "range": "± 1765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1791433,
+            "range": "± 13755",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 42447286,
+            "range": "± 3008177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 413224,
+            "range": "± 2036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 13934376,
+            "range": "± 203830",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 940556493,
+            "range": "± 5081156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3889,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 40562,
+            "range": "± 646",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 793498,
+            "range": "± 2072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 52573,
+            "range": "± 700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 592709,
+            "range": "± 5200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8537203,
+            "range": "± 398195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 915,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11836,
+            "range": "± 38",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 310123,
+            "range": "± 2813",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20599,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 146514,
+            "range": "± 367",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1398020,
+            "range": "± 36697",
             "unit": "ns/iter"
           }
         ]
