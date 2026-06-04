@@ -6163,3 +6163,56 @@ fn snapshot_diff_accepts_positional_baseline() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+/// `rivet variant solve --variant <name>` must resolve a bare name from
+/// artifacts/variants/<name>.yaml, like `query --variant` already does (#466);
+/// a direct path must still work (additive). REQ-195.
+#[test]
+fn variant_solve_accepts_bare_variant_name() {
+    let root = project_root();
+    let model = root.join("artifacts/feature-model.yaml");
+    let path = root.join("artifacts/variants/dashboard-only.yaml");
+    if !model.is_file() || !path.is_file() {
+        return; // fixtures moved; nothing to assert
+    }
+
+    // Bare name (the regression — previously errored "No such file").
+    let by_name = Command::new(rivet_bin())
+        .args([
+            "--project",
+            root.to_str().unwrap(),
+            "variant",
+            "solve",
+            "--model",
+            model.to_str().unwrap(),
+            "--variant",
+            "dashboard-only",
+        ])
+        .output()
+        .expect("variant solve by name");
+    assert!(
+        by_name.status.success(),
+        "variant solve --variant <name> must resolve the name. stderr: {}",
+        String::from_utf8_lossy(&by_name.stderr)
+    );
+
+    // Direct path still works (additive guarantee).
+    let by_path = Command::new(rivet_bin())
+        .args([
+            "--project",
+            root.to_str().unwrap(),
+            "variant",
+            "solve",
+            "--model",
+            model.to_str().unwrap(),
+            "--variant",
+            path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("variant solve by path");
+    assert!(
+        by_path.status.success(),
+        "variant solve --variant <path> must still work. stderr: {}",
+        String::from_utf8_lossy(&by_path.stderr)
+    );
+}

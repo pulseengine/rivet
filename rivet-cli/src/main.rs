@@ -2256,79 +2256,88 @@ fn run(cli: Cli) -> Result<bool> {
             ),
             SnapshotAction::List => cmd_snapshot_list(&cli),
         },
-        Command::Variant { action } => match action {
-            VariantAction::Init { name, dir, force } => cmd_variant_init(name, dir, *force),
-            VariantAction::Check {
-                model,
-                variant,
-                format,
-            } => cmd_variant_check(model, variant, format),
-            VariantAction::CheckAll {
-                model,
-                binding,
-                format,
-            } => cmd_variant_check_all(model, binding, format),
-            VariantAction::List { model, format } => cmd_variant_list(model, format),
-            VariantAction::Solve {
-                model,
-                variant,
-                binding,
-                format,
-            } => cmd_variant_solve(&cli, model, variant, binding.as_deref(), format),
-            VariantAction::Features {
-                model,
-                variant,
-                format,
-            } => cmd_variant_features(model, variant, format),
-            VariantAction::Value {
-                model,
-                variant,
-                feature,
-            } => cmd_variant_value(model, variant, feature),
-            VariantAction::Attr {
-                model,
-                variant,
-                feature,
-                key,
-            } => cmd_variant_attr(model, variant, feature, key),
-            VariantAction::Explain {
-                model,
-                variant,
-                feature,
-                format,
-            } => cmd_variant_explain(model, variant, feature.as_deref(), format),
-            VariantAction::Manifest {
-                model,
-                variant,
-                binding,
-                format,
-            } => cmd_variant_manifest(model, variant, binding, format),
-            VariantAction::Matrix {
-                model,
-                binding,
-                format,
-                variants,
-                attrs,
-                wrap,
-                default_runner,
-                runner_attr,
-                max_jobs,
-                fail_fast,
-                variants_dir,
-            } => cmd_variant_matrix(
-                model,
-                binding,
-                format,
-                variants,
-                attrs,
-                wrap,
-                default_runner,
-                runner_attr,
-                *max_jobs,
-                *fail_fast,
-                variants_dir.as_deref(),
-            ),
-        },
+        Command::Variant { action } => {
+            // Resolve a `--variant <NAME|path>` uniformly across the variant
+            // subcommands: a bare name maps to `artifacts/variants/<name>.yaml`,
+            // mirroring `query --variant` (#466 / #287). A direct path is used
+            // as-is; an unknown name errors with the available names.
+            let rv = |arg: &std::path::Path| -> Result<std::path::PathBuf> {
+                Ok(resolve_variant_arg(&cli.project, &arg.to_string_lossy())?.0)
+            };
+            match action {
+                VariantAction::Init { name, dir, force } => cmd_variant_init(name, dir, *force),
+                VariantAction::Check {
+                    model,
+                    variant,
+                    format,
+                } => cmd_variant_check(model, &rv(variant)?, format),
+                VariantAction::CheckAll {
+                    model,
+                    binding,
+                    format,
+                } => cmd_variant_check_all(model, binding, format),
+                VariantAction::List { model, format } => cmd_variant_list(model, format),
+                VariantAction::Solve {
+                    model,
+                    variant,
+                    binding,
+                    format,
+                } => cmd_variant_solve(&cli, model, &rv(variant)?, binding.as_deref(), format),
+                VariantAction::Features {
+                    model,
+                    variant,
+                    format,
+                } => cmd_variant_features(model, &rv(variant)?, format),
+                VariantAction::Value {
+                    model,
+                    variant,
+                    feature,
+                } => cmd_variant_value(model, &rv(variant)?, feature),
+                VariantAction::Attr {
+                    model,
+                    variant,
+                    feature,
+                    key,
+                } => cmd_variant_attr(model, &rv(variant)?, feature, key),
+                VariantAction::Explain {
+                    model,
+                    variant,
+                    feature,
+                    format,
+                } => cmd_variant_explain(model, &rv(variant)?, feature.as_deref(), format),
+                VariantAction::Manifest {
+                    model,
+                    variant,
+                    binding,
+                    format,
+                } => cmd_variant_manifest(model, &rv(variant)?, binding, format),
+                VariantAction::Matrix {
+                    model,
+                    binding,
+                    format,
+                    variants,
+                    attrs,
+                    wrap,
+                    default_runner,
+                    runner_attr,
+                    max_jobs,
+                    fail_fast,
+                    variants_dir,
+                } => cmd_variant_matrix(
+                    model,
+                    binding,
+                    format,
+                    variants,
+                    attrs,
+                    wrap,
+                    default_runner,
+                    runner_attr,
+                    *max_jobs,
+                    *fail_fast,
+                    variants_dir.as_deref(),
+                ),
+            }
+        }
         Command::Runs { action } => match action {
             RunsAction::List { limit, format } => runs_cmd::cmd_list(&cli.project, *limit, format),
             RunsAction::Show { run_id, format } => runs_cmd::cmd_show(&cli.project, run_id, format),
