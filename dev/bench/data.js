@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780570352118,
+  "lastUpdate": 1780572269814,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "8e9a9d13c1532e7bd5da8c69735992c21f724f48",
-          "message": "feat(store): deterministic iter_sorted() + document iter() nondeterminism (REQ-159, #415) (#416)\n\nSelf-found while landing REQ-158 (#415). `Store::iter()` returns\n`HashMap::values()`, whose order varies per process — so any caller that\nproduces stable output or picks one representative among ties is silently\nnondeterministic. That is exactly how the REQ-158 `rivet add`\nnear-duplicate note picked REQ-1 locally but REQ-2 in CI (same code,\ndifferent hash seed), making the proptest job flaky on main until #414\nadded an explicit tie-break.\n\nMinimal, non-breaking hardening:\n- Document on `iter()` that order is unspecified and that output/selection\n  callers must sort.\n- Add `Store::iter_sorted()` (ascending by id) so the deterministic path\n  is the easy one.\n\nMigrating existing `store.iter().collect::<Vec>()` output sites and the\nlarger ordered-map-backing option are deferred to #415 (per-site audit;\nsome already sort downstream).\n\nUnit test `iter_sorted_is_deterministic_by_id`; rivet validate PASS, docs\ncheck PASS; clippy --all-targets + fmt clean.\n\nImplements: REQ-159\nRefs: REQ-158",
-          "timestamp": "2026-06-02T22:42:06-05:00",
-          "tree_id": "bcbc5ce545e77aad64bd69b8a417ede063491514",
-          "url": "https://github.com/pulseengine/rivet/commit/8e9a9d13c1532e7bd5da8c69735992c21f724f48"
-        },
-        "date": 1780458623717,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85021,
-            "range": "± 353",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 935575,
-            "range": "± 12362",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16109213,
-            "range": "± 1443490",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1957,
-            "range": "± 11",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25026,
-            "range": "± 752",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 366991,
-            "range": "± 8464",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1423039,
-            "range": "± 29391",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166656,
-            "range": "± 5734",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1935815,
-            "range": "± 14489",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 29385885,
-            "range": "± 1979261",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 432524,
-            "range": "± 6296",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 14523970,
-            "range": "± 369025",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1065511243,
-            "range": "± 16422656",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4149,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44100,
-            "range": "± 430",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 731830,
-            "range": "± 7835",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 65334,
-            "range": "± 495",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 727070,
-            "range": "± 12085",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8587007,
-            "range": "± 909696",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 750,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 6734,
-            "range": "± 133",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 101496,
-            "range": "± 580",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21481,
-            "range": "± 37",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 151073,
-            "range": "± 1387",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1401720,
-            "range": "± 9921",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1338185,
             "range": "± 40553",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b3761956720fe589b6c474ffa4053865fb0a5297",
+          "message": "feat(cli): rivet query accepts the s-expression as a positional shorthand (REQ-187) (#458)\n\nDogfooding friction: `rivet query '(= type \"requirement\")'` — the natural form\nan agent or human types — errored with \"unexpected argument\", because `query`\nonly accepted the filter via the required `--sexpr` flag. The sibling `next-id`\nalready established the positional-shorthand pattern (`rivet next-id requirement`\nworks via an optional positional that defers to the explicit flag); `query`, the\nsingle most-used agent-facing command, lacked it.\n\nFix (additive): add an optional positional SEXPR to the `query` clap struct and\nmake `--sexpr` optional. The explicit `--sexpr` flag wins if both are given; a\nclear, example-bearing error is raised if neither is supplied. `--sexpr` keeps\nworking unchanged, so MCP/docs/scripts are unaffected.\n\nTests (sexpr_filter_integration): positional form works without the flag;\npositional and `--sexpr` yield identical matches (single-match filter to avoid\nthe #415 ordering/limit nondeterminism); no-filter exits non-zero with an\ns-expression hint.\n\nConfirmed with: cargo test -p rivet-cli --test sexpr_filter_integration (9/9),\ncargo fmt --check, cargo clippy --all-targets -- -D warnings (exit 0; only the\npre-existing clippy.toml/Cargo.toml MSRV-mismatch config warning), and\n`rivet validate` PASS. Manually verified positional + --sexpr + no-arg paths\nwith the freshly built binary.\n\nImplements: REQ-187\nVerifies: REQ-187\nRefs: REQ-007",
+          "timestamp": "2026-06-04T06:14:40-05:00",
+          "tree_id": "7c179eaf85d8dc858a73b7523b74c54aa12fac18",
+          "url": "https://github.com/pulseengine/rivet/commit/b3761956720fe589b6c474ffa4053865fb0a5297"
+        },
+        "date": 1780572269198,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85335,
+            "range": "± 661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 936640,
+            "range": "± 17568",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 16606985,
+            "range": "± 1443772",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1981,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24815,
+            "range": "± 61",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 366740,
+            "range": "± 4251",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1436452,
+            "range": "± 16001",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167305,
+            "range": "± 4917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1963946,
+            "range": "± 12203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 42344653,
+            "range": "± 4466056",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 432324,
+            "range": "± 7882",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16792938,
+            "range": "± 126100",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1317127420,
+            "range": "± 27860556",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4110,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43440,
+            "range": "± 128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 724161,
+            "range": "± 9132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 58805,
+            "range": "± 281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 710873,
+            "range": "± 25194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 10665716,
+            "range": "± 928672",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1367,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14768,
+            "range": "± 41",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 235345,
+            "range": "± 3214",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20750,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 142306,
+            "range": "± 346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1339648,
+            "range": "± 32058",
             "unit": "ns/iter"
           }
         ]
