@@ -1431,7 +1431,17 @@ pub fn build_reqif_with_schema(artifacts: &[Artifact], schema: Option<&Schema>) 
 
             SpecObject {
                 identifier: a.id.clone(),
-                long_name: Some(a.title.clone()),
+                // ReqIF SPEC-OBJECTs need a non-empty LONG-NAME, and rivet's own
+                // reqif import rejects a title-less object (REQ-123). Some
+                // artifact types legitimately have an empty title (e.g. an STPA
+                // control-action, identified by id), so fall back to the id —
+                // otherwise `export --format reqif` produces a file rivet can't
+                // re-import (round-trip break).
+                long_name: Some(if a.title.trim().is_empty() {
+                    a.id.clone()
+                } else {
+                    a.title.clone()
+                }),
                 desc: a.description.clone(),
                 object_type_ref: Some(SpecObjectTypeRef {
                     spec_object_type_ref: type_ref_id,
@@ -2059,6 +2069,45 @@ mod tests {
         assert_eq!(re.len(), 1);
         // Null is not present after round-trip (attribute omitted).
         assert!(!re[0].fields.contains_key("deprecated"));
+    }
+
+    /// An artifact with an empty title (valid for some types, e.g. an STPA
+    /// control-action) must still round-trip: export falls back to the id for
+    /// the SPEC-OBJECT LONG-NAME, so re-import doesn't hard-fail on the missing
+    /// title (REQ-123 strictness). Regression: `export --format reqif` used to
+    /// emit an empty LONG-NAME that rivet's own import then rejected. REQ-183.
+    // rivet: verifies REQ-183
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_empty_title_roundtrips_via_id() {
+        let art = Artifact {
+            id: "CA-1".into(),
+            artifact_type: "control-action".into(),
+            title: String::new(),
+            description: None,
+            status: None,
+            tags: vec![],
+            links: vec![],
+            fields: BTreeMap::new(),
+            fields_per_variant: Default::default(),
+            provenance: None,
+            source_file: None,
+        };
+        let adapter = ReqIfAdapter::new();
+        let bytes = adapter.export(&[art], &AdapterConfig::default()).unwrap();
+        // The export must NOT emit an empty LONG-NAME.
+        let xml = String::from_utf8_lossy(&bytes);
+        assert!(
+            xml.contains("LONG-NAME=\"CA-1\""),
+            "title-less artifact must export with the id as LONG-NAME:\n{xml}"
+        );
+        // And it must re-import cleanly (previously errored on the empty title).
+        let re = adapter
+            .import(&AdapterSource::Bytes(bytes), &AdapterConfig::default())
+            .expect("title-less reqif must re-import without error");
+        assert_eq!(re.len(), 1);
+        assert_eq!(re[0].id, "CA-1");
+        assert_eq!(re[0].title, "CA-1");
     }
 
     /// Tags containing commas or leading whitespace must round-trip intact.

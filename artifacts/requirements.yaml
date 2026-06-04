@@ -5503,3 +5503,37 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+
+  - id: REQ-183
+    type: requirement
+    title: "reqif export of a title-less artifact stays re-importable (id fallback for LONG-NAME)"
+    status: implemented
+    description: |
+      Self-found dogfooding a reqif round-trip: `rivet export --format reqif`
+      then `rivet import-results --format reqif` on the same corpus FAILED —
+      "ReqIF SPEC-OBJECT 'CA-CI-1' has neither a ReqIF.Name nor a @LONG-NAME —
+      cannot derive the required `title`". Root cause: some artifact types
+      legitimately have an empty title (an STPA control-action, identified by
+      id; `rivet validate` PASSES with it). The export wrote
+      `long_name = a.title` verbatim → an empty LONG-NAME, which rivet's own
+      import (REQ-123, deliberately strict on title-less objects) then rejected.
+      So rivet produced reqif it couldn't re-import.
+
+      Fix (build_reqif_with_schema): when `a.title` is empty, fall back to the
+      artifact id for the SPEC-OBJECT LONG-NAME (a meaningful name — control
+      actions ARE identified by id). The import strictness is unchanged.
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib test_empty_title_roundtrips_via_id`
+          passes (title-less artifact exports with id as LONG-NAME and
+          re-imports with title = id).
+        - `rivet export --format reqif` of the corpus then `import-results
+          --format reqif` of that file succeeds (previously errored on CA-CI-1).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [export, import, reqif, roundtrip, interop, bugfix, dogfooding, self-found]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
