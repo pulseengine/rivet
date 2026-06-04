@@ -6087,3 +6087,29 @@ fn query_json_output_has_command_envelope() {
         );
     }
 }
+
+/// `rivet commits --format json` must carry the `command` envelope field like
+/// every other machine-readable command (validate/get/list/stats/coverage/
+/// query/matrix/diff/impact). commits was the last one missing it. REQ-192.
+/// (Exit code is not asserted: a repo with broken trailers exits non-zero but
+/// still emits the JSON document.)
+#[test]
+fn commits_json_output_has_command_envelope() {
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "commits",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("commits --format json");
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("commits must emit valid JSON");
+    assert_eq!(
+        v.get("command").and_then(|c| c.as_str()),
+        Some("commits"),
+        "commits JSON must carry command=\"commits\" for envelope consistency"
+    );
+}
