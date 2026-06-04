@@ -5824,7 +5824,7 @@ fn cmd_explain(cli: &Cli, id: &str) -> Result<bool> {
         println!("  (none target this type)");
     }
     for rule in &applicable {
-        let (ok, detail) = explain_rule(rule, id, &ctx.store, &ctx.graph);
+        let (ok, detail) = explain_rule(rule, id, &ctx.store, &ctx.graph, &ctx.schema);
         println!(
             "  [{}] {}",
             if ok { "satisfied" } else { "MISSING  " },
@@ -5881,6 +5881,7 @@ fn explain_rule(
     id: &str,
     store: &Store,
     graph: &LinkGraph,
+    schema: &rivet_core::schema::Schema,
 ) -> (bool, String) {
     if let Some(req) = &rule.required_link {
         // Forward: this artifact must link OUT via `req` to an allowed type.
@@ -5941,13 +5942,50 @@ fn explain_rule(
                 );
             }
         }
-        (
-            false,
-            format!(
-                "needs an incoming '{req}' from one of {:?}",
-                rule.from_types
+        // #350 / REQ-178: the rule may list source types that cannot actually
+        // form this backlink to *this* artifact's type — e.g. aspice sw-req
+        // expects a `verifies` backlink from [sw-verification, unit-verification,
+        // sw-integration-verification], but only sw-verification's `verifies`
+        // targets sw-req; the others verify design artifacts. Listing all three
+        // sends the user to author an impossible direct link. Partition the
+        // from-types by what can attach here directly, and surface that.
+        let target_type = store.get(id).map(|a| a.artifact_type.as_str());
+        match target_type {
+            Some(tt) => {
+                let (direct, indirect): (Vec<&String>, Vec<&String>) = rule
+                    .from_types
+                    .iter()
+                    .partition(|ft| schema.from_type_can_link(ft, req, tt));
+                if direct.is_empty() || indirect.is_empty() {
+                    // All-direct (common case) keeps the original wording; the
+                    // none-direct case has nothing better to suggest than the
+                    // full list, so also leave it unchanged.
+                    (
+                        false,
+                        format!(
+                            "needs an incoming '{req}' from one of {:?}",
+                            rule.from_types
+                        ),
+                    )
+                } else {
+                    (
+                        false,
+                        format!(
+                            "needs an incoming '{req}' from one of {direct:?} \
+                             (note: {indirect:?} can '{req}' other types, not '{tt}' directly — \
+                             attach those via the intermediate design artifact)"
+                        ),
+                    )
+                }
+            }
+            None => (
+                false,
+                format!(
+                    "needs an incoming '{req}' from one of {:?}",
+                    rule.from_types
+                ),
             ),
-        )
+        }
     } else {
         (true, "no link requirement".to_string())
     }

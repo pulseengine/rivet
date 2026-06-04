@@ -2408,6 +2408,48 @@ fn schema_sources_reports_resolution() {
     assert_eq!(made["source"], "missing");
 }
 
+/// `validate --explain` on an aspice `sw-req` with a verification coverage gap
+/// surfaces the verification type that can attach directly (`sw-verification`)
+/// and annotates the ones that can't — instead of listing all three terminal
+/// types as if any could link straight to the req. #350 / REQ-178.
+// rivet: verifies REQ-178
+#[test]
+fn explain_names_directly_linkable_verification_type() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("rivet.yaml"),
+        "project:\n  name: t\n  schemas: [common, aspice]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.path().join("artifacts")).unwrap();
+    std::fs::write(
+        dir.path().join("artifacts/a.yaml"),
+        "artifacts:\n  - id: SWR-1\n    type: sw-req\n    title: Example\n    status: implemented\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.path().to_str().unwrap(),
+            "validate",
+            "--explain",
+            "SWR-1",
+        ])
+        .output()
+        .expect("run validate --explain");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("from one of [\"sw-verification\"]"),
+        "explain should surface the directly-linkable verification type. got:\n{text}"
+    );
+    assert!(
+        text.contains("not 'sw-req' directly"),
+        "explain should note the indirect types attach via the design chain. got:\n{text}"
+    );
+}
+
 // ── JSON validity sweep ────────────────────────────────────────────────
 
 /// Comprehensive sweep: every command that accepts `--format json` must

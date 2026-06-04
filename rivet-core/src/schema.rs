@@ -1321,6 +1321,28 @@ impl Schema {
         self.artifact_types.get(name)
     }
 
+    /// Whether an artifact of `from_type` can form a `link_type` link that
+    /// targets an artifact of `target_type`, per the schema's per-type link
+    /// field target allow-list.
+    ///
+    /// An empty (or absent) `target-types` allow-list means *unconstrained*, so
+    /// the link is permitted — and an unknown `from_type` (or a type that
+    /// doesn't declare this link field) is treated as permitted too, to avoid
+    /// over-asserting impossibility. Used to tell a user, when a required
+    /// backlink lists several source types, which of them can actually attach
+    /// here directly vs. only via an intermediate artifact (#350 / REQ-178).
+    pub fn from_type_can_link(&self, from_type: &str, link_type: &str, target_type: &str) -> bool {
+        let Some(td) = self.artifact_type(from_type) else {
+            return true;
+        };
+        match td.link_fields.iter().find(|lf| lf.link_type == link_type) {
+            Some(lf) => {
+                lf.target_types.is_empty() || lf.target_types.iter().any(|t| t == target_type)
+            }
+            None => true,
+        }
+    }
+
     /// Look up a link type definition by name.
     #[inline]
     pub fn link_type(&self, name: &str) -> Option<&LinkTypeDef> {
@@ -1339,6 +1361,25 @@ mod tests {
     use super::*;
     use crate::test_helpers::minimal_artifact;
     use std::borrow::Cow;
+
+    // rivet: verifies REQ-178
+    #[test]
+    fn from_type_can_link_respects_link_field_targets() {
+        // Use the real embedded aspice schema (the #350 scenario).
+        let schema = crate::embedded::load_schemas_with_fallback(
+            &["common".to_string(), "aspice".to_string()],
+            std::path::Path::new("/nonexistent-schemas-dir"),
+        )
+        .expect("embedded common+aspice must load");
+
+        // sw-verification CAN `verifies` a sw-req (its link-field allows it)…
+        assert!(schema.from_type_can_link("sw-verification", "verifies", "sw-req"));
+        // …but unit-verification CANNOT — its `verifies` only targets sw-detail-design.
+        assert!(!schema.from_type_can_link("unit-verification", "verifies", "sw-req"));
+        assert!(schema.from_type_can_link("unit-verification", "verifies", "sw-detail-design"));
+        // Unknown types / undeclared links are treated as permitted (no over-assert).
+        assert!(schema.from_type_can_link("made-up-type", "verifies", "sw-req"));
+    }
 
     /// Build an artifact with custom fields in the `fields` map.
     fn artifact_with_fields(id: &str, fields: Vec<(&str, serde_yaml::Value)>) -> Artifact {

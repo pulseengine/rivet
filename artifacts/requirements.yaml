@@ -5337,34 +5337,35 @@ artifacts:
 
   - id: REQ-178
     type: requirement
-    title: "coverage-gap diagnostics name the intermediate chain when a required backlink type can't link directly"
-    status: draft
+    title: "validate --explain names which required backlink source types can attach directly vs only via the chain"
+    status: implemented
     description: |
-      From #350 (downstream aspice project). `check_lifecycle_completeness`
-      (rivet-core/src/lifecycle.rs) derives each type's expected backlinks from
-      schema traceability rules: an `sw-req` rule requiring backlinks from
-      `unit-verification` / `sw-integration-verification` yields
-      "missing: unit-verification, sw-integration-verification". But it never
-      cross-checks whether those source types can ACTUALLY form that backlink —
-      in aspice, `unit-verification.verifies` only targets
-      `sw-detail-design` / `sw-arch-component`, never `sw-req`. So the message
-      asks for a link the link schema forbids and points the user at the wrong
-      fix (author a verification linking straight to the req).
+      From #350 (downstream aspice project). A required-backlink rule may list
+      source types that cannot actually form that backlink to THIS artifact's
+      type. Aspice `sw-req` expects a `verifies` backlink from
+      `[sw-verification, unit-verification, sw-integration-verification]`, but
+      only `sw-verification.verifies` targets `sw-req`; `unit-verification` and
+      `sw-integration-verification` verify design artifacts (`sw-detail-design`).
+      `validate --explain` listed all three, sending the user to author an
+      impossible direct link (the friction the reporter hit).
 
-      Fix: when emitting a coverage gap (and in `rivet validate --explain`),
-      cross-check each required source type T against the link schema's
-      allowed-targets for this artifact's type. If T cannot link here directly,
-      walk one hop and print the chain ("T verifies <design-type>; add a
-      <design-type> that satisfies this req, verified by T"), turning
-      "missing: unit-verification" into actionable layered guidance.
+      Fix: add `Schema::from_type_can_link(from_type, link, target_type)`
+      (rivet-core, checks the per-type link-field target allow-list), and in
+      `explain_rule` (rivet-cli) partition the rule's `from_types` by it. Surface
+      the directly-linkable type(s) as the primary fix and annotate the rest:
+      "... from one of [\"sw-verification\"] (note: [unit-verification,
+      sw-integration-verification] can 'verifies' other types, not 'sw-req'
+      directly — attach those via the intermediate design artifact)". The
+      all-direct case (e.g. requirement satisfied by design-decision/feature) is
+      left byte-identical, so existing output is unchanged.
 
       Acceptance:
-        - For an aspice `sw-req` fixture marked `implemented` with no chain,
-          `rivet validate --explain <id>` output names the intermediate
-          `sw-detail-design` / `sw-arch-component` step, not just the terminal
-          verification types.
-        - The plain `requirement` case (design-decision/feature can link
-          directly) is unchanged — no spurious indirection note.
+        - `rivet validate --explain` on an aspice `sw-req` with a verification
+          gap shows `from one of ["sw-verification"]` and the note `not 'sw-req'
+          directly` (integration test
+          `explain_names_directly_linkable_verification_type`).
+        - The plain `requirement` case is unchanged — no spurious note.
+        - `cargo test -p rivet-core --lib from_type_can_link` passes.
         - `rivet validate` on the rivet repo still PASS.
     tags: [validate, lifecycle, diagnostics, dx, aspice, issue-350]
     fields:
