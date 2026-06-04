@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780543434403,
+  "lastUpdate": 1780547053576,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "d00c2c209bf830e4f0ae6425c8b5fef062e80b87",
-          "message": "fix(validate): suppress prose-mention warning when no link type can connect the types (REQ-155, #353) (#407)\n\nTriaged from the #353 thread — the `sigil` project's \"finding B\". After an\nagent edited a `cybersecurity-design` artifact's description to mention\n\"UCA-4\" as rationale, `rivet validate` raised:\n\n    WARN: [CD-22] prose mentions 'UCA-4' but no typed link to it;\n          add a link in `links:` or remove the mention\n\nTwo defects:\n1. Unactionable. `cybersecurity-design` only permits `satisfies ->\n   cybersecurity-req`; the schema defines NO link type that could connect a\n   design to a `uca`. The advised \"add a link in `links:`\" is impossible —\n   the warning can only ever be cleared by rewording prose.\n2. False-trace pressure. The prose \"UCA-4\" referred to a local STPA report's\n   numbering, but `UCA-4` resolves to an unrelated artifact. Following the\n   advice would have fabricated a wrong trace link.\n\nFix: in the prose-mention pass, suppress the diagnostic when the project\nschema permits no link type whose `source-types` allows the mentioning\nartifact's type AND whose `target-types` allows the mentioned artifact's\ntype. Link types with empty source/target (\"any -> any\") keep permissive\nschemas unaffected; only fully-constrained schemas trigger suppression.\nWhen a link IS schema-valid the warning fires unchanged.\n\nNew unit test `prose_mention_suppressed_when_no_schema_valid_link_type`\n(design mentions an unlinkable `uca` and a linkable `requirement` -> exactly\none warning, for the requirement). Existing `prose_mention_*` tests updated\nto declare a permitting link type so the warn-path fixtures still warn.\nclippy --all-targets + fmt clean; rivet validate PASS, docs check PASS.\n\nFixes: REQ-155\nRefs: REQ-004\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-02T17:40:30-05:00",
-          "tree_id": "f4fe5de50307a9092382d2106462b77be3399fdc",
-          "url": "https://github.com/pulseengine/rivet/commit/d00c2c209bf830e4f0ae6425c8b5fef062e80b87"
-        },
-        "date": 1780440435379,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83407,
-            "range": "± 681",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 889510,
-            "range": "± 25045",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15423045,
-            "range": "± 861068",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2136,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25889,
-            "range": "± 151",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 360452,
-            "range": "± 2559",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 92,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 92,
-            "range": "± 15",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 92,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1449525,
-            "range": "± 24002",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 165700,
-            "range": "± 411",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1865164,
-            "range": "± 16528",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28186244,
-            "range": "± 1571130",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 142379,
-            "range": "± 3936",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 1199835,
-            "range": "± 22547",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 15295470,
-            "range": "± 1193637",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4366,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 63585,
-            "range": "± 514",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 776445,
-            "range": "± 11679",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60396,
-            "range": "± 373",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 706547,
-            "range": "± 4206",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9216500,
-            "range": "± 813945",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 763,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7248,
-            "range": "± 54",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 142022,
-            "range": "± 1859",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22845,
-            "range": "± 77",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 158325,
-            "range": "± 3163",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1476017,
-            "range": "± 46283",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1336374,
             "range": "± 17698",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d51943e7281f63aa44ebe6f17d1e216e7eff1c7c",
+          "message": "fix(export): escape backslashes in zola TOML front matter + gate with zola-build smoke (REQ-181, #392) (#450)\n\nRunning #392's candidate gate (scripts/zola-export-smoke.sh) locally caught a\nreal bug: `zola build` failed on the exported corpus because an artifact\ndescription containing a regex (`\\.rs$`, in REQ-174) went into a TOML multi-line\nbasic string (\"\"\"...\"\"\") unescaped. TOML multi-line basic strings process\nescapes, so a bare `\\` is invalid and breaks the whole site build.\n\nEscape `\\` -> `\\\\` in the description (mirroring the title), then add the\nzola-export-smoke CI job (#392, ubuntu-latest, pinned zola, advisory\ncontinue-on-error) so the regression class is caught automatically.\n\nConfirmed with: new zola_frontmatter_escapes_backslashes_in_description test\n(`\\.rs$` -> `\\\\.rs$`); the smoke script now runs a real `zola build` of the\ncorpus to completion (907 pages, 0 link leaks); export_zola suite 3/3; fmt +\nclippy --all-targets -D warnings clean; rivet validate PASS.\n\nImplements: REQ-181\nRefs: REQ-115, REQ-138\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-03T23:15:28-05:00",
+          "tree_id": "aa4abbfae3cb3f134dbe0c0d4024a3f4a5718057",
+          "url": "https://github.com/pulseengine/rivet/commit/d51943e7281f63aa44ebe6f17d1e216e7eff1c7c"
+        },
+        "date": 1780547052906,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 87191,
+            "range": "± 2371",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 934487,
+            "range": "± 8516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15564460,
+            "range": "± 799122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1971,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25025,
+            "range": "± 640",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 377384,
+            "range": "± 1346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1443046,
+            "range": "± 26924",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 168401,
+            "range": "± 632",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1954108,
+            "range": "± 10759",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 29038078,
+            "range": "± 1575902",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 443684,
+            "range": "± 2128",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16853174,
+            "range": "± 404249",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1296015193,
+            "range": "± 17947330",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4448,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 48828,
+            "range": "± 1079",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 757167,
+            "range": "± 6861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59117,
+            "range": "± 498",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 721237,
+            "range": "± 2055",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8143815,
+            "range": "± 307398",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1249,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15407,
+            "range": "± 31",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 244639,
+            "range": "± 4582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21197,
+            "range": "± 104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 143303,
+            "range": "± 3659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1343765,
+            "range": "± 26206",
             "unit": "ns/iter"
           }
         ]
