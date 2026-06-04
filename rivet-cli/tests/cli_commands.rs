@@ -2130,6 +2130,41 @@ fn next_id_json() {
     );
 }
 
+/// `rivet next-id <type>` positional shorthand equals `--type <type>`, and a
+/// bare prefix positional works too (#447 / REQ-179).
+#[test]
+fn next_id_positional_shorthand() {
+    let run = |args: &[&str]| -> String {
+        let out = Command::new(rivet_bin())
+            .args(["--project", project_root().to_str().unwrap()])
+            .args(args)
+            .output()
+            .expect("run rivet next-id");
+        assert!(
+            out.status.success(),
+            "rivet {args:?} must exit 0. stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    // Positional type == --type.
+    assert_eq!(
+        run(&["next-id", "requirement"]),
+        run(&["next-id", "--type", "requirement"])
+    );
+    // A bare prefix positional resolves to that prefix's next id.
+    assert!(run(&["next-id", "FEAT"]).starts_with("FEAT-"));
+    // No argument is a clear error (not a panic / silent success).
+    let out = Command::new(rivet_bin())
+        .args(["--project", project_root().to_str().unwrap(), "next-id"])
+        .output()
+        .expect("run rivet next-id with no arg");
+    assert!(
+        !out.status.success(),
+        "next-id with no type/prefix must fail"
+    );
+}
+
 // ── rivet schema subcommands ───────────────────────────────────────────
 
 /// `rivet schema show requirement --format json` produces valid JSON.

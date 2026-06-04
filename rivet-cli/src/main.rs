@@ -953,6 +953,11 @@ enum Command {
 
     /// Print the next available ID for a given artifact type or prefix
     NextId {
+        /// Artifact type or ID prefix as a positional shorthand, e.g.
+        /// `rivet next-id requirement` or `rivet next-id FEAT`
+        #[arg(value_name = "TYPE_OR_PREFIX")]
+        target: Option<String>,
+
         /// Artifact type (e.g., requirement, feature, design-decision)
         #[arg(short = 't', long, group = "id_source")]
         r#type: Option<String>,
@@ -2387,10 +2392,17 @@ fn run(cli: Cli) -> Result<bool> {
             output,
         } => cmd_import_results(&cli, format, file, output),
         Command::NextId {
+            target,
             r#type,
             prefix,
             format,
-        } => cmd_next_id(&cli, r#type.as_deref(), prefix.as_deref(), format),
+        } => cmd_next_id(
+            &cli,
+            target.as_deref(),
+            r#type.as_deref(),
+            prefix.as_deref(),
+            format,
+        ),
         Command::Add {
             r#type,
             title,
@@ -14168,6 +14180,7 @@ fn parse_link_spec(s: &str) -> Result<(String, String), String> {
 /// Print the next available ID for a given artifact type or prefix.
 fn cmd_next_id(
     cli: &Cli,
+    target: Option<&str>,
     artifact_type: Option<&str>,
     prefix: Option<&str>,
     format: &str,
@@ -14178,10 +14191,18 @@ fn cmd_next_id(
     let ctx = ProjectContext::load(cli)?;
     let store = ctx.store;
 
-    let resolved_prefix = match (artifact_type, prefix) {
+    // The positional `target` is a shorthand for --type (it routes through
+    // prefix_for_type, which also handles a bare prefix via its uppercase
+    // fallback — so `next-id requirement` and `next-id FEAT` both work). The
+    // explicit flags win if both are given.
+    let effective_type = artifact_type.or(target);
+    let resolved_prefix = match (effective_type, prefix) {
         (Some(t), _) => mutate::prefix_for_type(t, &store),
         (_, Some(p)) => p.to_string(),
-        (None, None) => anyhow::bail!("either --type or --prefix must be specified"),
+        (None, None) => anyhow::bail!(
+            "specify an artifact type or prefix, e.g. `rivet next-id requirement`, \
+             `rivet next-id --type feature`, or `rivet next-id --prefix REQ`"
+        ),
     };
 
     let next = mutate::next_id(&store, &resolved_prefix);

@@ -5374,3 +5374,36 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-004
+
+  - id: REQ-179
+    type: requirement
+    title: "rivet next-id accepts a positional type/prefix shorthand (rivet next-id requirement)"
+    status: implemented
+    description: |
+      Self-found (#447): when I needed the next free FEAT id I reached for a
+      manual grep (and collided, since ids span 9+ files) — not realising
+      `rivet next-id` already existed (since #28) and scans the whole store.
+      A discoverability miss, but it surfaced a real papercut: the natural
+      positional form `rivet next-id feature` was rejected with "unexpected
+      argument 'feature'"; you had to know to pass `--type feature`.
+
+      Add an optional positional `TYPE_OR_PREFIX` that is a shorthand for
+      `--type` (routed through `prefix_for_type`, whose uppercase fallback also
+      makes a bare prefix like `FEAT` work). Explicit `--type`/`--prefix` win if
+      given. The no-argument error now lists all three usable forms instead of
+      "either --type or --prefix must be specified".
+
+      Acceptance:
+        - `rivet next-id requirement` equals `rivet next-id --type requirement`;
+          `rivet next-id FEAT` prints a `FEAT-` id; `rivet next-id` with no arg
+          exits non-zero with a message naming the positional + flag forms.
+        - `cargo test -p rivet-cli --test cli_commands next_id_positional_shorthand`
+          passes.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, dx, mutation, discoverability, dogfooding, self-found, issue-447]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
