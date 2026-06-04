@@ -5606,3 +5606,47 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-089
+
+  - id: REQ-186
+    type: requirement
+    title: "CLI supports a minimal build: validate/list/commit without the serve+MCP+LSP dep tree"
+    status: draft
+    description: |
+      Dogfooding friction: `rivet validate`/`list`/`commit-msg-check` are the
+      hook- and CI-critical hot paths, but `rivet-cli` has no minimal build. Its
+      `[features]` are only `default = []` and `wasm`, while `axum`,
+      `tower-http`, `rmcp` (full streamable-HTTP MCP server), `lsp-server`,
+      `lsp-types`, and `notify` are UNCONDITIONAL dependencies. So ANY build from
+      source — `cargo install rivet`, CI's compile step, or a local `cargo build`
+      to test a validate change — compiles the entire web-server + MCP + LSP tree
+      (hundreds of transitive crates), even though validate/list never use it.
+      (Note: the pre-commit hook itself uses the already-installed `rivet` on
+      PATH via `RIVET_BIN:-rivet`, so the hook does NOT rebuild — the cost is on
+      every from-source build, not the hook.) `rivet-core` already gates its
+      heavy deps (`wasm`/`reqwest`/`spar-*` are `optional`); the CLI does not.
+      See GitHub issue #456 (serve/mcp/lsp feature-gating).
+
+      Fix (additive — published binary unchanged): add `serve`/`mcp`/`lsp` cargo
+      features, keep them in `default`, and `#[cfg(feature = ...)]`-gate the
+      corresponding command handlers + module declarations in `main.rs`. Then
+      `--no-default-features` yields a fast `validate`/`list`/`commit-msg-check`
+      build for hooks, CI's validate gate, and the dogfooding loop. The default
+      feature set (and thus `cargo install rivet`) is a maintainer call — filed
+      draft pending that decision; do not change distribution semantics
+      unilaterally.
+
+      Acceptance:
+        - `cargo build -p rivet-cli --no-default-features` succeeds and the
+          resulting `rivet validate` exits 0 on the rivet repo.
+        - `cargo tree -p rivet-cli --no-default-features -i axum` reports axum is
+          NOT in the dependency graph (and likewise for `rmcp`).
+        - The default build is unchanged: `rivet serve --help` and `rivet mcp
+          --help` still succeed under `cargo build -p rivet-cli`.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, build, features, dogfooding, friction, ci, hooks, dependencies]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-007
