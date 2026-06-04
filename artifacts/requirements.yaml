@@ -5906,3 +5906,34 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-159
+
+  - id: REQ-194
+    type: requirement
+    title: "`rivet snapshot diff` accepts the baseline path as a positional shorthand (not only --baseline)"
+    status: implemented
+    description: |
+      Dogfooding friction: `rivet snapshot diff <baseline.json>` — the natural
+      form (mirroring `git diff <ref>`, `diff <file>`) — errored with "unexpected
+      argument", because `snapshot diff` only accepted the baseline via the
+      `--baseline` flag. Same friction class as the `query` (REQ-187), `link`
+      (REQ-188), and `next-id` positional shorthands. An agent capturing then
+      diffing a snapshot naturally writes `snapshot diff <path>`.
+
+      Fix (additive): add an optional positional `BASELINE` to `snapshot diff`;
+      the `--baseline` flag still works and wins if both are given. When neither
+      is supplied, the existing auto-detect (latest snapshot under `snapshots/`)
+      is preserved.
+
+      Acceptance:
+        - `cargo test -p rivet-cli --test cli_commands snapshot_diff_accepts_positional_baseline`
+          passes (capture a snapshot, then `snapshot diff <path>` positionally
+          exits 0 with no clap parse error).
+        - `rivet snapshot diff --baseline <path>` still works unchanged.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, snapshot, diff, ergonomics, agent-ux, friction, consistency]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-007

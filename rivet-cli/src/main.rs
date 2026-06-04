@@ -1390,7 +1390,12 @@ enum SnapshotAction {
     },
     /// Compare current state against a baseline snapshot
     Diff {
-        /// Path to the baseline snapshot JSON file
+        /// Path to the baseline snapshot JSON file. May be given positionally
+        /// (`rivet snapshot diff <baseline>`) or via `--baseline`.
+        #[arg(value_name = "BASELINE")]
+        baseline_pos: Option<PathBuf>,
+        /// Path to the baseline snapshot JSON file (equivalent to the positional
+        /// form; the flag wins if both are given).
         #[arg(long)]
         baseline: Option<PathBuf>,
         /// Output format: "text" (default), "json", or "markdown"
@@ -2240,9 +2245,15 @@ fn run(cli: Cli) -> Result<bool> {
             SnapshotAction::Capture { name, output } => {
                 cmd_snapshot_capture(&cli, name.as_deref(), output.as_deref())
             }
-            SnapshotAction::Diff { baseline, format } => {
-                cmd_snapshot_diff(&cli, baseline.as_deref(), format)
-            }
+            SnapshotAction::Diff {
+                baseline_pos,
+                baseline,
+                format,
+            } => cmd_snapshot_diff(
+                &cli,
+                baseline.as_deref().or(baseline_pos.as_deref()),
+                format,
+            ),
             SnapshotAction::List => cmd_snapshot_list(&cli),
         },
         Command::Variant { action } => match action {
