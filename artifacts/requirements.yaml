@@ -6285,3 +6285,46 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-05T09:38:15Z
+  - id: REQ-204
+    type: requirement
+    title: "Remaining nondeterministic store.iter() ordered-output sites must sort by id (serve /api/search, LSP id-completion)"
+    status: implemented
+    description: |
+      Follow-on audit of issue #415 (Store::iter() is HashMap-ordered). REQ-159
+      already added `Store::iter_sorted()` + the doc warning and migrated the
+      clear-cut sites (query.rs::execute, migrate_cmd, render/externals). This
+      audits the remaining `store.iter()` ordered-output candidates the reporter
+      flagged and fixes the two that genuinely regress:
+
+        1. serve `/api/search` (rivet-cli/src/main.rs): pushed artifact + doc
+           matches in HashMap order, then `results.truncate(50)`. So with >50
+           matches, WHICH 50 survive — not just their order — varied per process.
+           Fix: sort `results` by the `id` field before `truncate(50)`.
+        2. LSP id-completion (`lsp_completion`, the `[[`/`target:` branch):
+           pushed CompletionItems in HashMap order while the sibling `type:`
+           branch already sorted. Fix: extract `artifact_id_completions(store)`
+           that builds the list via `iter_sorted()` (ascending id), matching the
+           sibling branch.
+
+      Audited and confirmed already-safe (no change needed): query.rs::execute,
+      migrate_cmd.rs (iter_sorted), render/externals.rs (sorts), export filter
+      (sorts), serve tree/search-expand (BTreeMap / sort), validate & coverage
+      filter-rebuilds (set membership), HashSet id collects, aggregation loops.
+
+      Acceptance:
+        - `cargo test -p rivet-cli --bin rivet lsp_tests::artifact_id_completions_are_sorted_by_id`
+          passes (ids inserted out of order come back ascending).
+        - `rg "results.sort_by" rivet-cli/src/main.rs` shows the search results
+          sorted before `truncate(50)`.
+        - `rivet validate` PASS.
+    tags: [determinism, store, lsp, serve, search, bugfix, footgun, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-159
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-05T10:20:52Z
