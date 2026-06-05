@@ -50,6 +50,23 @@ jobs:
       - run: pip install yamllint
       - run: yamllint -c .yamllint.yaml schemas/ artifacts/ rivet.yaml .github/
 
+  # ── Schema version-bump advisory (#485) ───────────────────────────────
+  # Warn (don't fail) when a PR changes a schema's rules but leaves its
+  # `version:` untouched — embedded schemas validate silently differently on
+  # upgrade unless the version tracks content (#431). Warn-only matches the
+  # docs-check coverage gate; flip to STRICT=1 once schema versions are
+  # disciplined. PRs only (needs a base to diff against).
+  schema-version-bump:
+    name: Schema version bump
+    runs-on: [self-hosted, linux, x64, light]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # full history so we can diff against the PR base
+      - name: Check schema version bumps (warn-only)
+        run: scripts/check-schema-version-bump.sh "origin/${{ github.base_ref }}" HEAD
+
   # ── Docs-vs-reality gate (REQ-054) ────────────────────────────────────
   # A real gate — no continue-on-error.  Budget <1 minute on cached runs.
   docs-check:

@@ -6150,3 +6150,43 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-196
+  - id: REQ-206
+    type: requirement
+    title: "CI must warn when a schema's rules change without a `version:` bump (schema-version drift discipline)"
+    status: implemented
+    description: |
+      Finding (issue #485, verified). Built-in schemas embed into the rivet
+      binary, so a rules change with the `version:` field left unchanged
+      silently alters validation for every embedded-schema consumer (#431) — and
+      the version surfaced by `rivet validate` / `rivet schema sources` (#483)
+      stays uninformative. Evidence: every shipped schema is `0.1.0` except
+      `aspice` (`0.2.0`); `schemas/common.yaml` was changed by 8 commits
+      (several rule-affecting) with zero version bumps.
+
+      Fix: a `scripts/check-schema-version-bump.sh` that diffs `schemas/*.yaml`
+      (excluding `migrations/`) against a base ref and reports any schema whose
+      content changed but whose `version:` line did not. Warn-only by default
+      (a comment/whitespace edit legitimately needs no bump), `STRICT=1` to
+      enforce — mirroring the docs-check coverage gate. Wired into ci.yml as a
+      `schema-version-bump` job on pull_request (fetch-depth 0 to diff the base),
+      emitting GitHub `::warning::` annotations inline.
+
+      Acceptance:
+        - `scripts/check-schema-version-bump.sh f2ecf31^ f2ecf31` warns about
+          `schemas/common.yaml` (changed without a version bump) and exits 0.
+        - `STRICT=1 scripts/check-schema-version-bump.sh f2ecf31^ f2ecf31` exits 1.
+        - A diff range that changes no schema prints `OK` and exits 0.
+        - `.github/workflows/ci.yml` has a `schema-version-bump` job invoking the
+          script on `pull_request`.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [ci, schema, versioning, drift, advisory-gate, dogfooding]
+    fields:
+      priority: should
+      category: non-functional
+    links:
+      - type: traces-to
+        target: REQ-054
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-05T15:26:15Z
