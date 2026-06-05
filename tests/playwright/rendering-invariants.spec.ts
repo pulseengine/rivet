@@ -204,8 +204,16 @@ test.describe("Rendering invariants — variant scoping coverage", () => {
     // The fixture variant "minimal-ci" binds exactly REQ-001, so the scoped
     // graph ends up with at most a single node — strictly fewer than the
     // unscoped graph for this project's full requirements/features set.
+    // `limit=2000` lifts the default 200-node render budget: the dogfood
+    // dataset grew past 200 requirement nodes (+ neighbours), so the UNSCOPED
+    // `/graph?types=requirement` now returns the "above node budget"
+    // placeholder (0 rendered nodes) instead of an SVG — which made the
+    // `fullNodes >= scopedNodes` invariant fail (fullNodes=0). Lifting the
+    // budget on both fetches keeps the comparison meaningful as the dataset
+    // grows. Same pattern as graph.spec.ts. (#436 — recurring dataset-growth
+    // fragility in the E2E graph views.)
     const respScoped = await page.goto(
-      "/graph?variant=minimal-ci&types=requirement",
+      "/graph?variant=minimal-ci&types=requirement&limit=2000",
     );
     expect(respScoped?.status()).toBe(200);
     await expect(page.locator("h2")).toContainText("Traceability Graph", {
@@ -216,7 +224,7 @@ test.describe("Rendering invariants — variant scoping coverage", () => {
     await expect(page.locator(".variant-banner")).toContainText("minimal-ci");
     const scopedNodes = await page.locator("svg .node, svg g.node").count();
 
-    const respFull = await page.goto("/graph?types=requirement");
+    const respFull = await page.goto("/graph?types=requirement&limit=2000");
     expect(respFull?.status()).toBe(200);
     await expect(page.locator("h2")).toContainText("Traceability Graph", {
       timeout: 30_000,
