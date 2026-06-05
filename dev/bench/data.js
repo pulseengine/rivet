@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780687896197,
+  "lastUpdate": 1780687967297,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "b8c09f40de4031e09930fe5b3c429cad5b11bd39",
-          "message": "feat(schema): add `rivet schema sources` (on-disk vs embedded resolution) (REQ-177, #431) (#443)\n\nCompletes the #431 surfacing started in REQ-176. `schema info` shows one\nschema's source; `schema sources` lists the whole active set so a user can tell\nat a glance whether they're on vendored (pinned) or builtin (embedded,\nbinary-versioned) schemas.\n\nAdds a reusable `embedded::schema_sources()` helper (OnDisk/Embedded/Missing)\nmirroring load_schemas_with_fallback precedence, and a `schema sources` command\n(text + --format json) that resolves WITHOUT loading the schema graph -- so it\nstill works and reports `missing` when a schema can't be loaded.\n\nConfirmed with: schema_sources unit test (rivet-core) + schema_sources_reports_\nresolution integration test (succeeds despite a missing schema); fmt + clippy\n--all-targets -D warnings clean; docs check PASS; rivet validate PASS.\n\nImplements: REQ-177\nRefs: REQ-176, REQ-010\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-03T17:16:01-05:00",
-          "tree_id": "6df723a20ff647ac295e76839d7bc9870ef808e8",
-          "url": "https://github.com/pulseengine/rivet/commit/b8c09f40de4031e09930fe5b3c429cad5b11bd39"
-        },
-        "date": 1780525501012,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 86128,
-            "range": "± 564",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 934612,
-            "range": "± 13226",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 17506090,
-            "range": "± 1191179",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1933,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25015,
-            "range": "± 68",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 356140,
-            "range": "± 1825",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1460145,
-            "range": "± 28614",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 168337,
-            "range": "± 1214",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1993291,
-            "range": "± 70150",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 38505231,
-            "range": "± 4915227",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 447606,
-            "range": "± 1948",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17559138,
-            "range": "± 316627",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1322263121,
-            "range": "± 20237654",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4132,
-            "range": "± 31",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 43166,
-            "range": "± 130",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 733371,
-            "range": "± 40140",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 65372,
-            "range": "± 288",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 727347,
-            "range": "± 4873",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9735950,
-            "range": "± 980350",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1211,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15594,
-            "range": "± 113",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 233202,
-            "range": "± 3783",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21754,
-            "range": "± 357",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 151148,
-            "range": "± 1304",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1392758,
-            "range": "± 19807",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1225112,
             "range": "± 12496",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6ffbdd7e9628108c72893cf0848815dc38022604",
+          "message": "fix(export): node-budget the single-page graph render so it can't hang (REQ-201) (#474)\n\nVerified hang: on the rivet repo (~900 artifacts) `rivet export --format html\n--single-page` runs for MINUTES producing nothing (multi-page finishes in ~6s).\nRoot cause: `render_section_graph` (rivet-core/src/export.rs) lays out the\nentire link graph eagerly via `etch::layout::layout(pg, ...)` with NO node\nbudget; etch's layout is super-linear, so ~900 nodes effectively hangs the\nsingle-page export. The serve path already guards this\n(rivet-cli/src/render/graph.rs `DEFAULT_NODE_BUDGET = 200` + a \"Graph above node\nbudget\" page) — the static export did not.\n\nFix: in `render_section_graph`, if `node_count > 200`, skip the layout and emit\na short note (\"Graph has N nodes, exceeding the 200-node static-render budget —\nview it interactively in `rivet serve`\"), mirroring the serve guard.\n\nTest (export::tests): render_section_graph_over_budget_skips_layout — a\n250-node graph returns the budget note and NO `<svg>` (the layout that hangs).\n\nConfirmed with: cargo test -p rivet-core --lib\nexport::tests::render_section_graph_over_budget_skips_layout (pass), cargo fmt\n--check, cargo clippy --all-targets -- -D warnings (exit 0), rivet validate PASS.\nManually verified `rivet export --format html --single-page` on the rivet repo\nnow completes in ~3s (was minutes/hang) with the budget note present.\n\nImplements: REQ-201\nVerifies: REQ-201\nRefs: REQ-007",
+          "timestamp": "2026-06-05T14:22:53-05:00",
+          "tree_id": "c11c81a40245c6513139fbbc08b4c9fb41ee0843",
+          "url": "https://github.com/pulseengine/rivet/commit/6ffbdd7e9628108c72893cf0848815dc38022604"
+        },
+        "date": 1780687966594,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 87353,
+            "range": "± 556",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 929423,
+            "range": "± 9047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15118032,
+            "range": "± 495578",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2053,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25326,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 375673,
+            "range": "± 2013",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1452642,
+            "range": "± 26342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167133,
+            "range": "± 1288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1939897,
+            "range": "± 14805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30107337,
+            "range": "± 943895",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 434321,
+            "range": "± 2058",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17928608,
+            "range": "± 105850",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1432009431,
+            "range": "± 18462826",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4144,
+            "range": "± 51",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43094,
+            "range": "± 202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 715887,
+            "range": "± 3896",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62908,
+            "range": "± 292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 718813,
+            "range": "± 3450",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8090423,
+            "range": "± 335193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1209,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14660,
+            "range": "± 61",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 235252,
+            "range": "± 2236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23049,
+            "range": "± 48",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 158547,
+            "range": "± 556",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1496952,
+            "range": "± 22484",
             "unit": "ns/iter"
           }
         ]
