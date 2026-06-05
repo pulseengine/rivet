@@ -228,6 +228,32 @@ A one-shot `pre-commit install --install-hooks` also activates the
 `.pre-commit-config.yaml` `cargo-fmt` + `cargo-clippy` hooks if you prefer the
 pre-commit framework. See `docs/pre-commit.md`.
 
+## Parallel-PR friction (avoiding merge conflicts)
+
+When several PRs are in flight at once (the dogfooding loop is the heaviest
+generator of this), two files conflict over and over unless you follow these
+rules. The conflict is **always** the same shape — two PRs adding a new entry
+at the same spot — so it is fully avoidable:
+
+- **`artifacts/requirements.yaml` — append new artifacts at EOF; never insert
+  mid-file.** Use `rivet add` (it appends via `mutate::append_artifact_to_file`),
+  or, if hand-editing, add the new block at the very end. Two EOF-appends from
+  different PRs are trivially resolved by keeping both blocks; a hand-authored
+  *mid-file* insert ("after REQ-160") collides far worse. Pick the next free id
+  by scanning **all** of `artifacts/` (ids span many files, and an id may be
+  reserved by an unmerged PR — see #479), not just the last line of this file.
+- **`CHANGELOG.md` — already conflict-free via `merge=union`.** `.gitattributes`
+  sets `CHANGELOG.md merge=union` (REQ-164 / #423), so git keeps *both* sides'
+  added lines automatically — this is why CHANGELOG merge conflicts disappeared.
+  Keep adding entries at the top of `## [Unreleased]`; the union driver handles
+  the overlap. (The same driver is *not* applied to `requirements.yaml` — union
+  would silently duplicate lines if two PRs edited the *same* artifact — so the
+  EOF-append discipline above is what keeps that file clean. Tracking: #422.)
+
+If you still hit a `requirements.yaml` EOF conflict (e.g. another PR merged
+first), the resolution is mechanical: keep **both** new blocks, then
+`rivet validate` to confirm the merged file is well-formed.
+
 ## Commit Traceability
 
 This project enforces commit-to-artifact traceability. Every non-exempt

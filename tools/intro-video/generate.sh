@@ -25,7 +25,9 @@ cd "$(dirname "$0")"
 OUT="out"
 NARR_DIR="$OUT/narration"
 PW_VIDEO_DIR="$OUT/pw"
-STORYBOARD="storyboard.json"
+# Authored storyboard by default; do_fit reassigns this to the fitted copy.
+# Overridable so individual `capture`/`mux` runs can share a fitted timeline.
+STORYBOARD="${STORYBOARD:-storyboard.json}"
 
 TTS_ENGINE="${TTS_ENGINE:-piper}"
 # Piper voice model (.onnx) + config (.onnx.json). Download once; see README.
@@ -48,7 +50,10 @@ scene_field() { # $1=index $2=field
 do_capture() {
   need npx
   echo ">> capture: running Playwright (this starts/reuses 'rivet serve' on :3003)"
-  npx playwright test --config playwright.config.ts
+  # Pass the (possibly timing-fitted) storyboard through to the spec so the
+  # on-screen pacing matches the narration. STORYBOARD is reassigned to the
+  # fitted file by do_fit when the full pipeline runs.
+  STORYBOARD="$STORYBOARD" npx playwright test --config playwright.config.ts
   # Playwright writes a .webm under out/pw/<test-dir>/video.webm
   local webm
   webm="$(find "$PW_VIDEO_DIR" -name '*.webm' -print -quit || true)"
@@ -66,6 +71,29 @@ do_capture() {
 # ---------------------------------------------------------------------------
 synth_one() { # $1=text $2=outfile.wav
   case "$TTS_ENGINE" in
+    speaches)
+      # Self-hosted OpenAI-compatible TTS (https://github.com/speaches-ai/speaches).
+      # Local/LAN server, no API key, no committed voice model — and reachable
+      # from self-hosted CI runners, so a narrated release video can run
+      # unattended. Configure via env: SPEACHES_URL / SPEACHES_MODEL / SPEACHES_VOICE.
+      need curl
+      need node
+      need ffprobe
+      local url model voice body
+      url="${SPEACHES_URL:-http://192.168.178.28:8000}"
+      model="${SPEACHES_MODEL:-speaches-ai/Kokoro-82M-v1.0-ONNX}"
+      voice="${SPEACHES_VOICE:-af_nicole}"
+      # Build the JSON body with node so the narration text is safely escaped
+      # (quotes, apostrophes, newlines) — never string-concatenate into JSON.
+      body="$(SP_TEXT="$1" SP_MODEL="$model" SP_VOICE="$voice" node -e \
+        'process.stdout.write(JSON.stringify({model:process.env.SP_MODEL,voice:process.env.SP_VOICE,input:process.env.SP_TEXT,response_format:"wav"}))')"
+      curl -fsS -m 120 "$url/v1/audio/speech" \
+        -H "Content-Type: application/json" -d "$body" -o "$2" \
+        || { echo "ERROR: speaches TTS request to $url failed."; exit 1; }
+      # Loud-fail if the server returned JSON/an error instead of audio.
+      ffprobe -v error "$2" >/dev/null 2>&1 \
+        || { echo "ERROR: speaches returned non-audio for: $1"; head -c 300 "$2"; echo; exit 1; }
+      ;;
     piper)
       need piper
       if [ ! -f "$PIPER_VOICE" ]; then
@@ -83,7 +111,7 @@ synth_one() { # $1=text $2=outfile.wav
       ffmpeg -y -i "$2.aiff" "$2" && rm -f "$2.aiff"
       ;;
     *)
-      echo "ERROR: unknown TTS_ENGINE='$TTS_ENGINE' (expected: piper | say)"; exit 1;;
+      echo "ERROR: unknown TTS_ENGINE='$TTS_ENGINE' (expected: speaches | piper | say)"; exit 1;;
   esac
 }
 
@@ -99,6 +127,40 @@ do_tts() {
     synth_one "$text" "$out"
   done
   echo ">> tts: done -> $NARR_DIR/*.wav"
+}
+
+# ---------------------------------------------------------------------------
+# 2b. FIT — widen each scene's hold_ms to its actual narration duration so the
+#           on-screen scene never cuts off mid-sentence and adjacent narration
+#           clips (laid at cumulative offsets) never overlap. Writes a derived
+#           storyboard; the authored storyboard.json (nominal timings) is left
+#           untouched. After this, $STORYBOARD points at the fitted copy so both
+#           capture and mux share one timeline. PAD_MS controls breathing room.
+# ---------------------------------------------------------------------------
+TIMED_STORYBOARD="$OUT/storyboard.timed.json"
+do_fit() {
+  need node; need ffprobe
+  local n; n="$(scene_count)"
+  local durs=() i wav
+  for ((i=0; i<n; i++)); do
+    wav="$(printf '%s/%02d.wav' "$NARR_DIR" "$i")"
+    [ -f "$wav" ] || { echo "ERROR: missing narration clip $wav — run tts first."; exit 1; }
+    durs+=("$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$wav")")
+  done
+  STORYBOARD_SRC="$STORYBOARD" PAD_MS="${PAD_MS:-700}" DURS="${durs[*]}" \
+  TIMED_OUT="$TIMED_STORYBOARD" node -e '
+    const fs=require("fs");
+    const sb=JSON.parse(fs.readFileSync(process.env.STORYBOARD_SRC,"utf8"));
+    const durs=process.env.DURS.trim().split(/\s+/).map(Number);
+    const pad=Number(process.env.PAD_MS);
+    sb.scenes.forEach((s,i)=>{ const need=Math.ceil(durs[i]*1000)+pad;
+      s.hold_ms=Math.max(s.hold_ms||0, need); });
+    fs.writeFileSync(process.env.TIMED_OUT, JSON.stringify(sb,null,2));
+    const total=sb.scenes.reduce((a,s)=>a+s.hold_ms,0);
+    console.error(">> fit: total "+(total/1000).toFixed(1)+"s -> "+process.env.TIMED_OUT);
+  '
+  # Subsequent capture + mux read the fitted timeline.
+  STORYBOARD="$TIMED_STORYBOARD"
 }
 
 # ---------------------------------------------------------------------------
@@ -121,33 +183,44 @@ do_mux() {
     [ -f "$wav" ] || { echo "ERROR: missing narration clip $wav — run tts first."; exit 1; }
     inputs+=(-i "$wav")
     # adelay in ms (per channel); pad each clip to start at the scene boundary.
-    filters+=("[$idx:a]adelay=${offset}|${offset}[a$idx];")
+    # ffmpeg input 0 is screen.mp4 (video, no audio), so the narration wavs are
+    # inputs 1..n — the filter input specifier is therefore idx+1, not idx.
+    # (Output labels [a$idx] stay 0-based and feed amix below.)
+    filters+=("[$((idx + 1)):a]adelay=${offset}|${offset}[a$idx];")
     offset=$((offset + hold))
     idx=$((idx + 1))
   done
   # amix all delayed clips into one track.
   local mixins="" j
   for ((j=0; j<n; j++)); do mixins+="[a$j]"; done
+  # Freeze the last video frame for a few seconds (tpad clone) so the screen
+  # never ends before the narration: Playwright's recorded length can come in a
+  # second or two under the summed scene holds, and with -shortest that would
+  # clip the tail of the outro narration. Padding the video longer than any
+  # audio tail makes -shortest clip to the (full) AUDIO length instead.
   local filtergraph
-  filtergraph="$(printf '%s' "${filters[@]}")${mixins}amix=inputs=${n}:normalize=0[narr]"
+  filtergraph="[0:v]tpad=stop_mode=clone:stop_duration=5[v];$(printf '%s' "${filters[@]}")${mixins}amix=inputs=${n}:normalize=0[narr]"
 
   echo ">> mux: building narration track ($n clips) and muxing with screen.mp4"
   ffmpeg -y -i "$OUT/screen.mp4" "${inputs[@]}" \
     -filter_complex "$filtergraph" \
-    -map 0:v -map "[narr]" \
+    -map "[v]" -map "[narr]" \
     -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest \
     "$OUT/rivet-intro.mp4"
   echo ">> mux: done -> $OUT/rivet-intro.mp4"
   echo
-  echo "NOTE: timing is nominal (narration laid at scene boundaries). If a clip"
-  echo "      runs long, bump that scene's hold_ms in $STORYBOARD and re-run"
-  echo "      'capture' + 'mux'. Final fine-sync still benefits from a human pass."
+  echo
+  echo "NOTE: scene timings were auto-fitted to narration length (see 'fit')."
+  echo "      A human review pass on the final cut is still recommended."
 }
 
+# Pipeline order: narration first, then fit timings to it, then capture the
+# screen at those timings, then mux. (tts -> fit -> capture -> mux.)
 case "${1:-all}" in
   capture) do_capture ;;
   tts)     do_tts ;;
+  fit)     do_fit ;;
   mux)     do_mux ;;
-  all)     do_capture; do_tts; do_mux ;;
-  *) echo "usage: $0 [all|capture|tts|mux]"; exit 2 ;;
+  all)     do_tts; do_fit; do_capture; do_mux ;;
+  *) echo "usage: $0 [all|tts|fit|capture|mux]"; exit 2 ;;
 esac
