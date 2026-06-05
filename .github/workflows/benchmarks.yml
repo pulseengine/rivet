@@ -1,8 +1,10 @@
 name: Benchmarks
 
-# Cancel superseded PR runs; protect main + scheduled runs.
+# Cancel superseded PR runs; keep every main commit's run conclusive.
+# On push the group falls back to `github.sha` (not `github.ref`) so a later
+# main push never supersedes an earlier main run (incl. queued ones) — #436.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:

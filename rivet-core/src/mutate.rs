@@ -559,6 +559,28 @@ fn render_artifact_yaml(artifact: &Artifact) -> String {
         }
     }
 
+    // Provenance (issue #476): when `rivet add --created-by` stamps an
+    // artifact at creation, emit the block here — otherwise the field would be
+    // silently dropped on write (the serializer is the single source of truth
+    // for `add` output). Field order matches yaml_edit::set_provenance so the
+    // add-path and stamp-path produce identical blocks.
+    if let Some(ref prov) = artifact.provenance {
+        lines.push("    provenance:".to_string());
+        lines.push(format!("      created-by: {}", prov.created_by));
+        if let Some(ref m) = prov.model {
+            lines.push(format!("      model: {m}"));
+        }
+        if let Some(ref sid) = prov.session_id {
+            lines.push(format!("      session-id: {sid}"));
+        }
+        if let Some(ref ts) = prov.timestamp {
+            lines.push(format!("      timestamp: {ts}"));
+        }
+        if let Some(ref rb) = prov.reviewed_by {
+            lines.push(format!("      reviewed-by: {rb}"));
+        }
+    }
+
     lines.join("\n") + "\n"
 }
 
@@ -960,5 +982,49 @@ mod tests {
         );
         assert_eq!(owners[0].as_str(), Some("alice"));
         assert_eq!(owners[1].as_str(), Some("bob"));
+    }
+
+    #[test]
+    fn render_artifact_yaml_emits_provenance_when_present() {
+        // Issue #476: `rivet add --created-by` stamps provenance at creation;
+        // the serializer must emit it (else the field is silently dropped on
+        // write — the REQ-196/200 class of no-op). Verify the block round-trips
+        // with the canonical kebab-case keys.
+        use crate::model::Provenance;
+        let mut artifact = artifact_with_links("REQ-099", "requirement", &[]);
+        artifact.title = "T".to_string();
+        artifact.provenance = Some(Provenance {
+            created_by: "ai-assisted".to_string(),
+            model: Some("claude-opus-4-8".to_string()),
+            session_id: None,
+            timestamp: Some("2026-06-05T00:00:00Z".to_string()),
+            reviewed_by: None,
+            federation: None,
+        });
+
+        let body = render_artifact_yaml(&artifact);
+        let doc = format!("schema: dev\nartifacts:\n{body}");
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
+        let prov = &parsed["artifacts"][0]["provenance"];
+        assert_eq!(prov["created-by"].as_str(), Some("ai-assisted"));
+        assert_eq!(prov["model"].as_str(), Some("claude-opus-4-8"));
+        assert_eq!(prov["timestamp"].as_str(), Some("2026-06-05T00:00:00Z"));
+        // Omitted optional fields must not appear at all.
+        assert!(prov.get("session-id").is_none());
+        assert!(prov.get("reviewed-by").is_none());
+    }
+
+    #[test]
+    fn render_artifact_yaml_omits_provenance_when_absent() {
+        // Default behavior preserved: no provenance block when none is set.
+        let mut artifact = artifact_with_links("REQ-099", "requirement", &[]);
+        artifact.title = "T".to_string();
+        artifact.provenance = None;
+        let body = render_artifact_yaml(&artifact);
+        assert!(
+            !body.contains("provenance:"),
+            "unstamped add must not emit a provenance block, got:\n{body}"
+        );
     }
 }
