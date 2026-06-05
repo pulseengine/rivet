@@ -6183,3 +6183,55 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-007
+  - id: REQ-202
+    type: requirement
+    title: "rivet-cli must support a minimal `--no-default-features` build (validate/list/commit-msg-check) that excludes the serve+MCP+LSP stack"
+    status: draft
+    description: |
+      Finding (issue #456, AI-agent dogfooding, verified against
+      rivet-cli/Cargo.toml). `rivet validate` is the hook-critical and
+      CI-critical hot path, yet rivet-cli has NO way to build a minimal binary:
+      `[features]` is `default = []` (only `wasm` is non-trivial), and `axum`,
+      `tower-http`, `notify` (serve), `lsp-server`/`lsp-types` (LSP), and `rmcp`
+      (full streamable-HTTP MCP server) are UNCONDITIONAL dependencies. So every
+      from-source build — `cargo install rivet`, CI's compile step, and a local
+      build to test a one-line validate change — compiles the entire web/MCP/LSP
+      tree even though validate/list/commit-msg-check never use it. rivet-core
+      already gates its heavy deps (`wasm`, `reqwest`, `spar-*` are
+      `optional = true`); the coupling is specific to rivet-cli.
+
+      Fix (additive, preserves published behavior): introduce cargo features and
+      KEEP them in `default`, so the released binary is byte-for-byte unchanged:
+        default = ["serve", "mcp", "lsp"]
+        serve = ["dep:axum", "dep:tower-http", "dep:notify"]
+        mcp   = ["dep:rmcp", "dep:tokio"]
+        lsp   = ["dep:lsp-server", "dep:lsp-types"]
+      …with `#[cfg(feature = ...)]` gating the corresponding command handlers and
+      `mod serve`/`mod mcp`/`mod lsp` declarations in main.rs. The code-side
+      gating across the serve/mcp/lsp command dispatch is the bulk of the work
+      and needs care so `--no-default-features` still compiles cleanly. The
+      default-feature set is a maintainer call (filed as draft).
+
+      Acceptance:
+        - `rivet-cli/Cargo.toml` declares `serve`/`mcp`/`lsp` features, all in
+          `default`, with the corresponding deps marked `optional = true`
+          (`dep:` syntax).
+        - `cargo build -p rivet-cli --no-default-features` succeeds and the
+          resulting binary runs `validate`, `list`, and `commit-msg-check`.
+        - `cargo build -p rivet-cli --no-default-features` does NOT compile
+          `axum`, `rmcp`, or `lsp-server` (verify via
+          `cargo tree -p rivet-cli --no-default-features` absence).
+        - Default build (`cargo build -p rivet-cli`) is unchanged: serve, mcp,
+          and lsp subcommands all present.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, build, cargo-features, minimal-build, friction, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-05T09:23:14Z
