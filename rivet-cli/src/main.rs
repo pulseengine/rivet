@@ -15919,6 +15919,11 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                 }
                             }
 
+                            // Deterministic order before truncation: render_store
+                            // / doc_store iterate in HashMap order, so without a
+                            // sort *which* 50 results survive truncate(50) — not
+                            // just their order — would vary per process (#415).
+                            results.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
                             results.truncate(50);
                         }
 
@@ -16369,6 +16374,24 @@ fn lsp_goto_definition(
     })
 }
 
+/// Build artifact-ID completion items in deterministic (ascending-id) order.
+///
+/// `Store::iter()` is HashMap-ordered, so completing over it directly yielded
+/// suggestions in a per-process-random order (the `type:` branch already
+/// sorted; the ID branch did not — #415). Using `iter_sorted()` makes the
+/// completion list stable and matches the sibling branch's behavior.
+fn artifact_id_completions(store: &Store) -> Vec<lsp_types::CompletionItem> {
+    store
+        .iter_sorted()
+        .map(|art| lsp_types::CompletionItem {
+            label: art.id.clone(),
+            kind: Some(lsp_types::CompletionItemKind::REFERENCE),
+            detail: Some(format!("{} ({})", art.title, art.artifact_type)),
+            ..Default::default()
+        })
+        .collect()
+}
+
 fn lsp_completion(
     params: &lsp_types::CompletionParams,
     store: &Store,
@@ -16385,15 +16408,8 @@ fn lsp_completion(
 
     if trimmed.starts_with("target:") || trimmed.starts_with("- target:") || trimmed.contains("[[")
     {
-        // Suggest artifact IDs
-        for art in store.iter() {
-            items.push(lsp_types::CompletionItem {
-                label: art.id.clone(),
-                kind: Some(lsp_types::CompletionItemKind::REFERENCE),
-                detail: Some(format!("{} ({})", art.title, art.artifact_type)),
-                ..Default::default()
-            });
-        }
+        // Suggest artifact IDs (sorted — see artifact_id_completions; #415).
+        items.extend(artifact_id_completions(store));
     } else if trimmed.starts_with("type:") || trimmed.starts_with("- type:") {
         // Suggest artifact types seen in the store
         let mut types: Vec<String> = store.types().map(|t| t.to_string()).collect();
@@ -16762,6 +16778,41 @@ mod stamp_glob_tests {
 #[cfg(test)]
 mod lsp_tests {
     use super::*;
+
+    // ── artifact_id_completions (deterministic ordering, #415) ─────────
+
+    #[test]
+    fn artifact_id_completions_are_sorted_by_id() {
+        // Insert ids out of order; the completion list must come back
+        // ascending regardless of HashMap iteration order (#415 footgun).
+        let mut store = Store::new();
+        for id in ["REQ-003", "REQ-001", "REQ-010", "REQ-002"] {
+            store
+                .insert(rivet_core::model::Artifact {
+                    id: id.into(),
+                    artifact_type: "requirement".into(),
+                    title: format!("title {id}"),
+                    description: None,
+                    status: None,
+                    tags: vec![],
+                    links: vec![],
+                    fields: std::collections::BTreeMap::new(),
+                    fields_per_variant: Default::default(),
+                    provenance: None,
+                    source_file: None,
+                })
+                .unwrap();
+        }
+        let labels: Vec<String> = artifact_id_completions(&store)
+            .into_iter()
+            .map(|c| c.label)
+            .collect();
+        assert_eq!(
+            labels,
+            vec!["REQ-001", "REQ-002", "REQ-003", "REQ-010"],
+            "id completions must be deterministically sorted by id"
+        );
+    }
 
     // ── lsp_word_at_position ───────────────────────────────────────────
 
