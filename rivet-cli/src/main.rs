@@ -4850,6 +4850,14 @@ fn cmd_validate(
         ..
     } = ctx;
 
+    // #431: resolve which schema set (and version, and embedded-vs-vendored
+    // source) this run validates against, so an upgrade-induced change in a
+    // builtin schema is visible rather than silent. Surfaced in both outputs.
+    let schema_provenance = rivet_core::embedded::resolve_schema_provenance(
+        &config.project.schemas,
+        &resolve_schemas_dir(cli),
+    );
+
     // REQ-062 / F2: `load_artifacts` swallows per-file YAML parse failures
     // to a stderr `log::warn!`, so a malformed artifact file produced a
     // green `Result: PASS` over an effectively-empty load. Re-walk every
@@ -5480,6 +5488,7 @@ fn cmd_validate(
             "version_conflict_details": conflicts_json,
             "lifecycle_coverage": lifecycle_json,
             "cross_repo_diagnostics": cross_repo_diagnostics_json,
+            "schemas": serde_json::to_value(&schema_provenance).unwrap_or(serde_json::Value::Null),
         });
         if let Some((ref vname, bound_count)) = variant_scope_name {
             output["variant"] = serde_json::json!({
@@ -5634,6 +5643,18 @@ fn cmd_validate(
             );
         } else {
             println!("Result: PASS ({} warnings)", warnings);
+        }
+
+        // #431: show the schema set this run validated against — name@version
+        // and whether each is vendored (pinned in-project) or embedded (from
+        // this binary, so it can change silently on a rivet upgrade).
+        if !schema_provenance.is_empty() {
+            let list = schema_provenance
+                .iter()
+                .map(|s| format!("{}@{} ({})", s.name, s.version, s.source))
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!("Schemas: {list}");
         }
     }
 
@@ -10726,6 +10747,10 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
     } else {
         vec!["common".to_string()]
     };
+    // #484: report the full effective set (requested names + auto-discovered
+    // bridges) and each schema's version — so this dedicated command is at
+    // least as informative as the `Schemas:` line `rivet validate` now prints.
+    let names = rivet_core::embedded::schema_names_with_bridges(&names);
     let sources = rivet_core::embedded::schema_sources(&names, &schemas_dir);
 
     if format == "json" {
@@ -10734,6 +10759,7 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
             .map(|(name, src)| {
                 serde_json::json!({
                     "name": name,
+                    "version": rivet_core::embedded::schema_version_of(name, src),
                     "source": src.kind(),
                     "path": match src {
                         SchemaSource::OnDisk(p) => Some(p.display().to_string()),
@@ -10751,6 +10777,12 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
     } else {
         println!("Schema sources ({}):", sources.len());
         for (name, src) in &sources {
+            let version = rivet_core::embedded::schema_version_of(name, src);
+            let ver = if version.is_empty() {
+                "-".to_string()
+            } else {
+                version
+            };
             let detail = match src {
                 SchemaSource::OnDisk(p) => format!("on-disk   {}", p.display()),
                 SchemaSource::Embedded => "embedded  (compiled into rivet — changes on \
@@ -10760,7 +10792,7 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
                      embedded schema)"
                     .to_string(),
             };
-            println!("  {name:<18} {detail}");
+            println!("  {name:<28} {ver:<8} {detail}");
         }
     }
     Ok(true)
