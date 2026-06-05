@@ -1842,6 +1842,24 @@ fn render_section_graph(store: &Store, link_graph: &LinkGraph) -> String {
     )
     .unwrap();
 
+    // A static export lays the whole graph out eagerly, but etch's layout is
+    // super-linear — a real project (~900 nodes) makes `rivet export --format
+    // html --single-page` HANG. Mirror the serve path's node budget
+    // (render/graph.rs `DEFAULT_NODE_BUDGET`): above it, skip the layout and
+    // show a note instead of hanging. (REQ-201)
+    const GRAPH_RENDER_BUDGET: usize = 200;
+    if pg.node_count() > GRAPH_RENDER_BUDGET {
+        writeln!(
+            out,
+            "<p class=\"graph-too-large\">Graph has {} nodes, exceeding the \
+             {GRAPH_RENDER_BUDGET}-node static-render budget — view it \
+             interactively in the <code>rivet serve</code> dashboard.</p>",
+            pg.node_count(),
+        )
+        .unwrap();
+        return out;
+    }
+
     let colors = export_type_color_map();
     let svg_opts = SvgOptions {
         type_colors: colors.clone(),
@@ -3083,6 +3101,31 @@ mod tests {
         let graph = LinkGraph::build(&store, &schema);
         let diagnostics = crate::validate::validate(&store, &schema, &graph);
         (store, schema, graph, diagnostics)
+    }
+
+    #[test]
+    fn render_section_graph_over_budget_skips_layout() {
+        // REQ-201: a graph above the node budget must NOT be laid out (etch's
+        // layout is super-linear and hangs the single-page export on real
+        // projects); render a budget note instead.
+        let schema = test_schema();
+        let mut store = Store::new();
+        for i in 0..250 {
+            store
+                .insert(make_artifact(&format!("REQ-{i:03}"), "requirement", &[]))
+                .unwrap();
+        }
+        let graph = LinkGraph::build(&store, &schema);
+        let html = render_section_graph(&store, &graph);
+        assert!(
+            html.contains("exceeding the 200-node"),
+            "must show the budget note for a >200-node graph; got: {}",
+            &html[..html.len().min(400)]
+        );
+        assert!(
+            !html.contains("<svg"),
+            "must NOT emit a laid-out SVG above the budget (that's the hang)"
+        );
     }
 
     fn default_config() -> ExportConfig {
