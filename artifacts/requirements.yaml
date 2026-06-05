@@ -6417,3 +6417,41 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-05T15:26:15Z
+  - id: REQ-207
+    type: requirement
+    title: "`rivet serve` must offer a presentation/clean mode that hides working-state chrome for recordings/screenshots"
+    status: implemented
+    description: |
+      Finding (issue #482). The `rivet serve` dashboard header (context bar)
+      always shows the working-state chrome — branch@sha, an `N uncommitted`
+      badge, the absolute project path, and Reload/Print buttons. That chrome
+      leaks into any recorded video or screenshot (it was visible in every
+      frame of the intro-video capture), looking unprofessional and exposing
+      in-progress branch names / machine-specific paths in published media.
+
+      Fix: a `?presentation=1` (alias `?clean=1`) query param adds a
+      `presentation` class on the document root, and CSS hides `.context-bar`
+      while it is set. Client-side and set once on load, so it survives HTMX
+      navigations (which only swap `#content`); the capture spec / a user just
+      appends the param to the URL. No server plumbing; default (no param) is
+      unchanged.
+
+      Acceptance:
+        - `cargo build -p rivet-cli` succeeds; `rivet serve` page source for
+          `/artifacts?presentation=1` contains the `presentation` toggle script
+          and the `.presentation .context-bar{display:none}` rule.
+        - Playwright `presentation-mode.spec.ts` passes: `.context-bar` is
+          visible without the param and hidden with `?presentation=1` (and
+          `?clean=1`), and the class survives an HTMX nav.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [serve, dashboard, presentation, screenshots, video, ux, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: FEAT-001
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-05T21:19:32Z

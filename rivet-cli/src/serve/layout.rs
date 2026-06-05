@@ -297,7 +297,15 @@ pub(crate) fn page_layout_with_variant(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Rivet Dashboard</title>
-<style>{fonts_css}{css}</style>
+<style>{fonts_css}{css}.presentation .context-bar{{display:none!important}}</style>
+<script>
+// Presentation/clean mode (#482): `?presentation=1` (or `?clean=1`) hides the
+// working-state chrome (branch, SHA, "N uncommitted", path, Reload/Print) so
+// recorded video / screenshots show a clean dashboard. Set once on load on the
+// root element so it survives HTMX swaps (which only replace #content). Inline
+// in <head> to avoid a flash of the context bar before CSS applies.
+try{{var sp=new URLSearchParams(location.search);if(sp.has('presentation')||sp.has('clean'))document.documentElement.classList.add('presentation')}}catch(e){{}}
+</script>
 <script src="/assets/htmx.js"></script>
 <script src="/assets/mermaid.js"></script>
 <script>
