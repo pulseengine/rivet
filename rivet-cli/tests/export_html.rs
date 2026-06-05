@@ -160,3 +160,38 @@ fn export_html_filter_narrows_per_artifact_pages() {
          got {filtered_count} pages"
     );
 }
+
+/// #468 / REQ-200: a static export has no JS to fill the `.aadl-diagram`
+/// placeholder, so it must not ship the perpetual "Loading AADL diagram..."
+/// across ANY page. (REQ-196 patched a rivet-core fn the multi-page exporter
+/// never calls, so the bug stayed live until fixed in `wrap_page`.)
+#[test]
+fn export_html_replaces_perpetual_aadl_loading_placeholder() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("dist");
+    run_export(&out, None);
+    let needle = "<p class=\"aadl-loading\">Loading AADL diagram...</p>";
+    let mut offenders: Vec<std::path::PathBuf> = Vec::new();
+    let mut stack = vec![out.clone()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in rd.filter_map(Result::ok) {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("html")
+                && std::fs::read_to_string(&p)
+                    .unwrap_or_default()
+                    .contains(needle)
+            {
+                offenders.push(p.strip_prefix(&out).unwrap_or(&p).to_path_buf());
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "static export still ships the perpetual AADL placeholder in: {offenders:?}"
+    );
+}
