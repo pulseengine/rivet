@@ -39,9 +39,12 @@ type Storyboard = {
   scenes: Scene[];
 };
 
-const storyboard: Storyboard = JSON.parse(
-  readFileSync(join(__dirname, "storyboard.json"), "utf8"),
-);
+// generate.sh writes a timing-fitted storyboard (hold_ms widened to each
+// narration clip's real duration) to out/storyboard.timed.json and points us
+// at it via $STORYBOARD, so the capture pacing matches the narration exactly.
+// Falls back to the authored storyboard.json for a standalone `playwright test`.
+const storyboardPath = process.env.STORYBOARD || join(__dirname, "storyboard.json");
+const storyboard: Storyboard = JSON.parse(readFileSync(storyboardPath, "utf8"));
 
 const BRAND_BG = "#0d1117";
 const BRAND_FG = "#e6edf3";
