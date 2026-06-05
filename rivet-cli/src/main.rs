@@ -1011,6 +1011,20 @@ enum Command {
         /// Target YAML file to append the artifact to
         #[arg(long)]
         file: Option<PathBuf>,
+
+        /// Stamp AI provenance at creation: origin of the artifact
+        /// ("human", "ai", or "ai-assisted"). When omitted, no provenance
+        /// block is written (matching prior behavior). Defaults its value
+        /// from the RIVET_PROVENANCE_CREATED_BY env var when the flag is
+        /// absent, so CI / agent environments can set it once.
+        #[arg(long)]
+        created_by: Option<String>,
+
+        /// AI model identifier to record in provenance (e.g.
+        /// "claude-opus-4-8"). Only used when --created-by is set (or
+        /// defaulted from the environment).
+        #[arg(long)]
+        model: Option<String>,
     },
 
     /// Add a link between two artifacts
@@ -2457,6 +2471,8 @@ fn run(cli: Cli) -> Result<bool> {
             fields,
             links,
             file,
+            created_by,
+            model,
         } => cmd_add(
             &cli,
             r#type,
@@ -2467,6 +2483,8 @@ fn run(cli: Cli) -> Result<bool> {
             fields,
             links,
             file.as_deref(),
+            created_by.as_deref(),
+            model.as_deref(),
         ),
         Command::Link {
             source,
@@ -14344,10 +14362,37 @@ fn cmd_add(
     fields: &[(String, String)],
     links: &[(String, String)],
     file: Option<&std::path::Path>,
+    created_by: Option<&str>,
+    model: Option<&str>,
 ) -> Result<bool> {
-    use rivet_core::model::{Artifact, Link};
+    use rivet_core::model::{Artifact, Link, Provenance};
     use rivet_core::mutate;
     use std::collections::BTreeMap;
+
+    // Provenance stamping at creation (issue #476). `--created-by` falls back
+    // to the RIVET_PROVENANCE_CREATED_BY env var so CI / agent environments can
+    // set it once. When neither is present, no provenance block is written
+    // (prior behavior preserved). Validate the value up front, before any work.
+    let created_by_owned = created_by
+        .map(str::to_string)
+        .or_else(|| std::env::var("RIVET_PROVENANCE_CREATED_BY").ok())
+        .filter(|s| !s.is_empty());
+    if let Some(cb) = created_by_owned.as_deref() {
+        match cb {
+            "human" | "ai" | "ai-assisted" => {}
+            other => anyhow::bail!(
+                "invalid --created-by value '{other}'. Must be one of: human, ai, ai-assisted"
+            ),
+        }
+    }
+    let provenance = created_by_owned.map(|cb| Provenance {
+        created_by: cb,
+        model: model.map(str::to_string),
+        session_id: None,
+        timestamp: Some(current_utc_timestamp()),
+        reviewed_by: None,
+        federation: None,
+    });
 
     let ctx = ProjectContext::load(cli)?;
     let (store, schema) = (ctx.store, ctx.schema);
@@ -14384,7 +14429,7 @@ fn cmd_add(
         links: link_vec,
         fields: fields_map,
         fields_per_variant: Default::default(),
-        provenance: None,
+        provenance,
         source_file: None,
     };
 
@@ -14693,6 +14738,35 @@ fn files_changed_since(project: &std::path::Path, git_ref: &str) -> Result<Vec<S
     Ok(paths)
 }
 
+/// Current UTC time as an ISO 8601 `YYYY-MM-DDTHH:MM:SSZ` string, computed
+/// with std only (no chrono dependency). Shared by `cmd_stamp` and
+/// `cmd_add`'s provenance stamping so the two surfaces emit identical
+/// timestamps.
+fn current_utc_timestamp() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let secs = now.as_secs();
+    // Convert to UTC date-time components
+    let days = secs / 86400;
+    let day_secs = secs % 86400;
+    let hours = day_secs / 3600;
+    let minutes = (day_secs % 3600) / 60;
+    let seconds = day_secs % 60;
+    // Civil date from days since epoch (algorithm from Howard Hinnant)
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_stamp(
     cli: &Cli,
@@ -14718,29 +14792,7 @@ fn cmd_stamp(
     let ctx = ProjectContext::load(cli)?;
     let store = ctx.store;
 
-    // Generate ISO 8601 timestamp using std (no chrono dependency)
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap();
-    let secs = now.as_secs();
-    // Convert to UTC date-time components
-    let days = secs / 86400;
-    let day_secs = secs % 86400;
-    let hours = day_secs / 3600;
-    let minutes = (day_secs % 3600) / 60;
-    let seconds = day_secs % 60;
-    // Civil date from days since epoch (algorithm from Howard Hinnant)
-    let z = days as i64 + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = (z - era * 146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    let timestamp = format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z");
+    let timestamp = current_utc_timestamp();
 
     // Collect artifact IDs to stamp.
     // Filter pipeline (applied in order, each shrinks the candidate set):

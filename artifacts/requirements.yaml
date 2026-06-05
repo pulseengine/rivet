@@ -6235,3 +6235,53 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-05T09:23:14Z
+  - id: REQ-203
+    type: requirement
+    title: "`rivet add` must stamp AI provenance at creation (--created-by/--model + RIVET_PROVENANCE_CREATED_BY), and the add-path serializer must emit the provenance block"
+    status: implemented
+    description: |
+      Finding (issue #476, AI-agent dogfooding). The AI-provenance system was
+      wired to the editor, not to rivet's mutation commands, so the SANCTIONED
+      creation path produced UNSTAMPED artifacts: `cmd_add`
+      (rivet-cli/src/main.rs) built the `Artifact` with `provenance: None`, and
+      the `.claude/settings.json` stamp hook only matches Edit/Write — a heredoc
+      append or `rivet add` (both Bash calls) never fired it. For a tool whose
+      pitch is AI-artifact auditability, AI-created artifacts silently missing
+      provenance is a correctness gap.
+
+      Compounding (caught during implementation): `mutate::render_artifact_yaml`
+      — the single serializer for the add path — did NOT emit the `provenance`
+      block at all, so merely setting `artifact.provenance` would have been a
+      silent no-op (the REQ-196/200 class of bug). Both halves are required.
+
+      Fix:
+        - Add `--created-by <human|ai|ai-assisted>` and `--model <M>` to
+          `rivet add`; `--created-by` falls back to the
+          `RIVET_PROVENANCE_CREATED_BY` env var so CI/agent environments can set
+          it once. Value validated up front (before project load). When absent,
+          no provenance block is written (prior behavior preserved).
+        - Extract `current_utc_timestamp()` (shared by cmd_stamp and cmd_add) so
+          both surfaces emit identical ISO-8601 timestamps with no chrono dep.
+        - Teach `render_artifact_yaml` to emit the `provenance:` block (field
+          order matches yaml_edit::set_provenance: created-by, model, session-id,
+          timestamp, reviewed-by).
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib render_artifact_yaml_` passes
+          (emits-when-present + omits-when-absent).
+        - `rivet add -t requirement --title T --created-by ai-assisted --model M`
+          writes a `provenance:` block with created-by/model/timestamp; a plain
+          `rivet add` writes none; `RIVET_PROVENANCE_CREATED_BY=ai rivet add`
+          stamps from the env; `--created-by robot` errors.
+        - `rivet validate` PASS on the resulting project.
+    tags: [cli, provenance, ai-provenance, rivet-add, friction, dogfooding, bugfix]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-05T09:38:15Z
