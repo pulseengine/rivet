@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780648470677,
+  "lastUpdate": 1780687795801,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f6a2862a1fc488239574a5f6ad6992082c5385fa",
-          "message": "fix(externals): ignore only .rivet/repos/ cache, not the whole .rivet/ dir (REQ-173, #433) (#439)\n\nSelf-found while dogfooding (#433). ensure_gitignore (run by `rivet sync`)\nappended a blanket `.rivet/` and only deduped against an exact `.rivet/` line.\nBut rivet tracks files under `.rivet/` (e.g. `.rivet/agent-context.md`), and\nthe cache sync actually writes is the narrower `.rivet/repos/`. So the blanket\nentry would silently un-track committed files on a fresh checkout, and was\nadded even when `.rivet/repos/` was already ignored.\n\nAppend `.rivet/repos/` instead, and treat the entry as present if any of\n`.rivet/repos/`, `.rivet/repos`, `.rivet/`, `.rivet` already appears.\n\nVerified: `cargo test -p rivet-core --lib ensure_gitignore` (2/2, incl. new\nensure_gitignore_respects_existing_cache_ignore); cargo fmt --check clean;\nclippy --all-targets -D warnings clean; `rivet validate` PASS.\n\nImplements: REQ-173\nRefs: REQ-020\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-03T13:15:56-05:00",
-          "tree_id": "9beaf26da65179386b8421e6a6aaf083c0d0c63c",
-          "url": "https://github.com/pulseengine/rivet/commit/f6a2862a1fc488239574a5f6ad6992082c5385fa"
-        },
-        "date": 1780511110318,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83792,
-            "range": "± 705",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 895096,
-            "range": "± 17627",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16956747,
-            "range": "± 757523",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2191,
-            "range": "± 11",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25227,
-            "range": "± 343",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 392430,
-            "range": "± 4274",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1483201,
-            "range": "± 23764",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166975,
-            "range": "± 1207",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1946502,
-            "range": "± 37438",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 43126937,
-            "range": "± 4270315",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 463076,
-            "range": "± 8353",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 18141497,
-            "range": "± 206836",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1458501661,
-            "range": "± 18432735",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4325,
-            "range": "± 118",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59787,
-            "range": "± 405",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 762650,
-            "range": "± 11342",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61039,
-            "range": "± 221",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 712292,
-            "range": "± 3116",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 12048368,
-            "range": "± 465792",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1253,
-            "range": "± 53",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15915,
-            "range": "± 77",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 325256,
-            "range": "± 6144",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22709,
-            "range": "± 229",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 155881,
-            "range": "± 1566",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1469529,
-            "range": "± 58319",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1662653,
             "range": "± 26293",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "55769bec157e8d5c7b66d1b11f7eb067afc3fe58",
+          "message": "ci: key main concurrency group per-sha so main runs stay conclusive (#436) (#481)\n\nIssue #436: Playwright E2E (and Criterion benchmarks) were red/cancelled across\nconsecutive main merges and nobody noticed, because main never reached a\nconclusive result. Root cause (verified): the concurrency group fell back to\n`github.ref` on push, so every main commit shared one group\n(`<workflow>-refs/heads/main`). With `cancel-in-progress` false the *running*\njob completes, but GitHub still supersedes *queued* runs in the group — so in a\nPR-merge train each new main push cancelled the previous queued run, and main\nrarely produced a conclusive Playwright/benchmark result. A real regression in\nany covered view would have looked identical to the benign dataset-growth\nfailures (#435).\n\nFix: fall back to `github.sha` (not `github.ref`) on push, so every main commit\ngets its own concurrency group and is never superseded. PRs are unchanged —\n`head_ref` still groups per source branch, so cancel-in-progress keeps\nsuperseding stale PR runs. Applied to both workflows that shared the pattern\n(ci.yml, benchmarks.yml).\n\nThis is the pure-hygiene half of #436; whether to promote Playwright to a\nrequired status check remains a separate maintainer decision.",
+          "timestamp": "2026-06-05T14:21:00-05:00",
+          "tree_id": "b8bd5578b534708b3296b553dae4e5768cae3365",
+          "url": "https://github.com/pulseengine/rivet/commit/55769bec157e8d5c7b66d1b11f7eb067afc3fe58"
+        },
+        "date": 1780687794247,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85291,
+            "range": "± 623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 926939,
+            "range": "± 46742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15662036,
+            "range": "± 994009",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1981,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24852,
+            "range": "± 203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 354447,
+            "range": "± 2103",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 98,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1451601,
+            "range": "± 21513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 165633,
+            "range": "± 2832",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1942974,
+            "range": "± 27262",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 33600459,
+            "range": "± 4104401",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 445437,
+            "range": "± 2264",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17345980,
+            "range": "± 241292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1319574053,
+            "range": "± 20947720",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4341,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44060,
+            "range": "± 140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 748142,
+            "range": "± 10152",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64983,
+            "range": "± 127",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 715456,
+            "range": "± 2559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8592599,
+            "range": "± 594695",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1178,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15049,
+            "range": "± 78",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 230077,
+            "range": "± 3068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23546,
+            "range": "± 83",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 168817,
+            "range": "± 632",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1584258,
+            "range": "± 19825",
             "unit": "ns/iter"
           }
         ]
