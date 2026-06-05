@@ -8995,6 +8995,18 @@ fn cmd_export_html(
         .count();
 
     let wrap_page = |title: &str, content: &str, rel_path: &str| -> String {
+        // A static export has no `rivet serve` JS to fill the `.aadl-diagram`
+        // placeholder, so the perpetual "Loading AADL diagram..." reads as a
+        // hung page in compliance reports (#468). Replace it with an honest
+        // note. (REQ-196 patched rivet-core's render_document_page, which this
+        // multi-page exporter does not use — so it never reached the real
+        // output; REQ-200 fixes it here, the universal per-page wrapper.)
+        let content = content.replace(
+            "<p class=\"aadl-loading\">Loading AADL diagram...</p>",
+            "<p class=\"aadl-loading\">AADL architecture diagram — interactive \
+             rendering is available in the <code>rivet serve</code> dashboard.</p>",
+        );
+        let content = content.as_str();
         // REQ-088: depth-adjusted prefix so per-page asset and nav hrefs
         // work for pages at any nesting (root, depth-1, depth-2, …).
         // `rel_path` is the page's path relative to `out_dir`, e.g.

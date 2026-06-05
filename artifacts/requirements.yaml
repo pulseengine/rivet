@@ -6111,3 +6111,42 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-198
+
+  - id: REQ-200
+    type: requirement
+    title: "`rivet export --format html` shows honest AADL fallback (REQ-196 patched the wrong path — bug still live)"
+    status: implemented
+    description: |
+      Verified by dogfooding the real export (build + `rivet export --format
+      html` + scan): the multi-page HTML export STILL ships the perpetual
+      `<p class="aadl-loading">Loading AADL diagram...</p>` placeholder in 2 of
+      987 pages — `documents/ARCH-001.html` (the exact #468 page) and
+      `artifacts/ARCH-SYS-001.html` (an aadl-component artifact). Neither has the
+      honest fallback.
+
+      Root cause: REQ-196 patched `static_aadl_fallback` inside
+      `rivet_core::export::render_document_body_for_export`, but `rivet export
+      --format html` is implemented by `cmd_export_html` (rivet-cli), which
+      renders pages via the rivet-cli `render/` serve renderers and wraps them in
+      a `wrap_page` layout — it never calls the rivet-core function REQ-196
+      fixed. So REQ-196 was effectively a no-op for the real export (and the
+      published compliance report), even though it was marked implemented (on a
+      unit test of the helper, not an e2e export check).
+
+      Fix: apply the same placeholder→honest-note replacement in `wrap_page`, the
+      universal per-page wrapper in `cmd_export_html`, so every exported page is
+      covered.
+
+      Acceptance:
+        - `rivet export --format html` produces ZERO pages containing
+          `<p class="aadl-loading">Loading AADL diagram...</p>`.
+        - The honest "rivet serve dashboard" note appears on pages that had an
+          AADL diagram.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [export, html, aadl, compliance-report, user-reported, bugfix, regression]
+    fields:
+      priority: must
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-196
