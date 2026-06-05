@@ -199,6 +199,35 @@ Exempt artifact types (no trailer required): `chore`, `style`, `ci`, `docs`, `bu
 To skip traceability for a commit, add: `Trace: skip`
 <!-- END rivet-managed -->
 
+## Before You Push (Rust)
+
+`Format` and `Clippy` are the two most common first-push CI failures, and
+neither has a fast guard in the default agent workflow unless you have run
+`./scripts/install-hooks.sh` (which installs a git `pre-commit` that runs
+`cargo fmt --all -- --check` on staged `.rs` files). Even with the hook,
+clippy is not checked per-commit (too slow). So before every push that
+touches Rust, run the **exact CI gates** by hand:
+
+```sh
+cargo fmt --all -- --check          # CI "Format" gate (ci.yml)
+cargo clippy --all-targets -- -D warnings   # CI "Clippy" gate — note --all-targets and -D warnings
+```
+
+Pitfalls (verified against CI):
+- `cargo clippy ... | grep '^error'` is **deceptive** — CI uses `-D warnings`,
+  so a *warning* (e.g. `doc_lazy_continuation`) fails CI while that grep reports
+  clean. Always run the full `-D warnings` form, no grep.
+- `cargo clippy -p <crate>` skips test code; CI runs `--all-targets`, which
+  lints tests too. Test-only lints pass locally but fail CI without
+  `--all-targets`.
+- The commit-msg hook rejects body lines shaped like `Word:` as malformed
+  trailers — phrase verification prose as "Confirmed with …", and keep real
+  trailers (`Implements`/`Verifies`/`Refs`) in the final block.
+
+A one-shot `pre-commit install --install-hooks` also activates the
+`.pre-commit-config.yaml` `cargo-fmt` + `cargo-clippy` hooks if you prefer the
+pre-commit framework. See `docs/pre-commit.md`.
+
 ## Commit Traceability
 
 This project enforces commit-to-artifact traceability. Every non-exempt
