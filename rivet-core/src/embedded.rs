@@ -296,6 +296,75 @@ pub fn load_schema_contents(
     result
 }
 
+/// Provenance of a resolved schema: which version was used and whether it came
+/// from a vendored (on-disk) file or the embedded (compiled-into-the-binary)
+/// copy. Surfaced by `rivet validate` so an upgrade-induced validation change —
+/// a builtin schema that tightened or added rules between rivet releases —
+/// becomes visible instead of silent (issue #431).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SchemaProvenance {
+    pub name: String,
+    pub version: String,
+    /// `"vendored"` (on-disk, pinned in the project's git) or `"embedded"`
+    /// (compiled into this rivet binary, so it changes when rivet is upgraded).
+    pub source: &'static str,
+    /// Path to the on-disk schema when `source == "vendored"`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Resolve the provenance (name, version, source) of every schema `validate`
+/// will use for the given names — including auto-discovered bridges. Builds on
+/// [`schema_sources`] (the single on-disk/embedded classifier, REQ-177) and adds
+/// the schema `version` plus the bridge set, so the CLI can surface exactly
+/// which schema set, and which version of each, a given `rivet validate` ran
+/// against (issue #431). `Missing` schemas are omitted (already warned about by
+/// the loader). The `source` string matches [`SchemaSource::kind`]
+/// (`"on-disk"` / `"embedded"`) for one vocabulary across `validate` and
+/// `rivet schema sources`.
+pub fn resolve_schema_provenance(
+    schema_names: &[String],
+    schemas_dir: &std::path::Path,
+) -> Vec<SchemaProvenance> {
+    // Expand to the same name set the loader uses: requested names + bridges.
+    let mut names: Vec<String> = schema_names.to_vec();
+    for bridge in discover_bridges(schema_names) {
+        if !names.iter().any(|n| n == bridge) {
+            names.push(bridge.to_string());
+        }
+    }
+
+    schema_sources(&names, schemas_dir)
+        .into_iter()
+        .filter_map(|(name, source)| {
+            let (version, path) = match &source {
+                SchemaSource::OnDisk(p) => {
+                    let version = std::fs::read_to_string(p)
+                        .ok()
+                        .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+                        .map(|s| s.schema.version)
+                        .unwrap_or_default();
+                    (version, Some(p.display().to_string()))
+                }
+                SchemaSource::Embedded => {
+                    let version = load_embedded_schema(&name)
+                        .ok()
+                        .map(|s| s.schema.version)
+                        .unwrap_or_default();
+                    (version, None)
+                }
+                SchemaSource::Missing => return None,
+            };
+            Some(SchemaProvenance {
+                name,
+                version,
+                source: source.kind(),
+                path,
+            })
+        })
+        .collect()
+}
+
 /// Load and merge schemas, falling back to embedded when files are not found.
 ///
 /// Automatically discovers and appends applicable bridge schemas.
@@ -379,5 +448,40 @@ mod tests {
             got.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(),
             vec!["common", "stpa", "made-up"]
         );
+    }
+
+    // rivet: verifies REQ-205
+    #[test]
+    fn resolve_schema_provenance_reports_version_and_source() {
+        let dir = tempfile::tempdir().unwrap();
+        // An on-disk schema with an explicit version shadows any embedded copy.
+        std::fs::write(
+            dir.path().join("common.yaml"),
+            "schema:\n  name: common\n  version: 9.9.9\n",
+        )
+        .unwrap();
+
+        let names = vec![
+            "common".to_string(),  // on-disk (file present, version 9.9.9)
+            "stpa".to_string(),    // embedded (known builtin)
+            "made-up".to_string(), // missing -> omitted
+        ];
+        let prov = resolve_schema_provenance(&names, dir.path());
+
+        let common = prov.iter().find(|p| p.name == "common").unwrap();
+        assert_eq!(common.source, "on-disk");
+        assert_eq!(common.version, "9.9.9");
+        assert!(common.path.as_deref().unwrap().ends_with("common.yaml"));
+
+        let stpa = prov.iter().find(|p| p.name == "stpa").unwrap();
+        assert_eq!(stpa.source, "embedded");
+        assert!(
+            !stpa.version.is_empty(),
+            "embedded schema must report its compiled-in version"
+        );
+        assert!(stpa.path.is_none());
+
+        // Missing schemas are not surfaced (the loader already warns).
+        assert!(prov.iter().all(|p| p.name != "made-up"));
     }
 }

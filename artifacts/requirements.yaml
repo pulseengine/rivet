@@ -6150,3 +6150,48 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-196
+  - id: REQ-205
+    type: requirement
+    title: "`rivet validate` must surface the schema set it used (name@version + embedded/on-disk source) so upgrade-induced validation changes are visible"
+    status: implemented
+    description: |
+      Finding (issue #431). A project using a builtin schema (no local
+      `schemas/` dir) validates against whatever schema copy is compiled into
+      the rivet binary: `embedded::load_schema_contents` prefers an on-disk
+      `<schemas_dir>/<name>.yaml`, else falls back to the embedded copy. So every
+      release that tightens or adds rules to a builtin schema silently changes
+      validation semantics for embedded-schema consumers — `rivet validate` that
+      passed before now flags unchanged artifacts, with nothing indicating the
+      schema changed. Schemas carry a cosmetic `version:` field that was never
+      surfaced.
+
+      Fix (surfacing — option 3 of #431): `rivet validate` now reports the schema
+      set it ran against. Added `embedded::resolve_schema_provenance` (builds on
+      the existing `schema_sources` classifier from REQ-177, adding the parsed
+      `version` and auto-discovered bridges); validate prints a
+      `Schemas: <name>@<version> (embedded|on-disk), …` line (text) and a
+      `schemas` array (json). This makes an upgrade-induced change visible at the
+      point it bites, without changing any validation semantics. (Pinning/gating
+      — option 2 — remains a separate maintainer call on syntax.)
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib embedded::tests::resolve_schema_provenance_reports_version_and_source`
+          passes (on-disk reports its version + source "on-disk"; embedded
+          reports a non-empty compiled-in version + source "embedded"; missing
+          omitted).
+        - `rivet validate` text output contains a line starting `Schemas: ` that
+          lists each schema as `name@version (embedded|on-disk)`.
+        - `rivet validate --format json` output contains a top-level `schemas`
+          array of objects with `name`, `version`, `source`.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [validate, schema, versioning, reproducibility, surfacing, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-177
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-05T13:29:57Z
