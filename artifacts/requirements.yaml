@@ -6080,3 +6080,34 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-031
+
+  - id: REQ-199
+    type: requirement
+    title: "`rivet add`/batch/MCP serialize nested (list/map) field values as structures, not block-scalar strings"
+    status: implemented
+    description: |
+      Follow-on to REQ-198 (found while verifying its comprehensiveness): in
+      `render_artifact_yaml` (rivet-core/src/mutate.rs), a non-scalar field value
+      (a sequence or mapping — reachable via `rivet batch` or the MCP add tool,
+      where field values aren't restricted to CLI `--field key=value` strings)
+      hit the `other =>` arm, which `serde_yaml::to_string`-ed the structure
+      (multi-line) and then — after REQ-198 — wrapped it in
+      `yaml_render_scalar_value`, collapsing the list/map into a block-literal
+      STRING (`owners: |-\n  - alice\n  - bob`). Pre-REQ-198 it was instead
+      INVALID YAML (unindented continuation); neither preserved the structure.
+
+      Fix: emit nested field values as properly-indented YAML under the key
+      (serde produces valid YAML; shift it right by the field-content indent), so
+      a list field round-trips as a list and a map as a map.
+
+      Acceptance:
+        - `cargo test -p rivet-core --lib mutate::tests::render_artifact_yaml_nested_field_value_stays_structured`
+          passes (a sequence field round-trips as a sequence, not a string).
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [mutate, add, batch, mcp, yaml, data-integrity, serialization, bugfix]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-198
