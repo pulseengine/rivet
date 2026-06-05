@@ -6183,6 +6183,10 @@ artifacts:
           lists each schema as `name@version (embedded|on-disk)`.
         - `rivet validate --format json` output contains a top-level `schemas`
           array of objects with `name`, `version`, `source`.
+        - `rivet schema sources` reports the same effective set (requested
+          schemas + auto-discovered bridges) WITH each schema's version, so the
+          dedicated command is consistent with the validate surfacing (#484);
+          text shows `name version source`, json entries include `version`.
         - `rivet validate` on the rivet repo still PASS.
     tags: [validate, schema, versioning, reproducibility, surfacing, dogfooding]
     fields:

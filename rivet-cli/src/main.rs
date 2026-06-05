@@ -10729,6 +10729,10 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
     } else {
         vec!["common".to_string()]
     };
+    // #484: report the full effective set (requested names + auto-discovered
+    // bridges) and each schema's version — so this dedicated command is at
+    // least as informative as the `Schemas:` line `rivet validate` now prints.
+    let names = rivet_core::embedded::schema_names_with_bridges(&names);
     let sources = rivet_core::embedded::schema_sources(&names, &schemas_dir);
 
     if format == "json" {
@@ -10737,6 +10741,7 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
             .map(|(name, src)| {
                 serde_json::json!({
                     "name": name,
+                    "version": rivet_core::embedded::schema_version_of(name, src),
                     "source": src.kind(),
                     "path": match src {
                         SchemaSource::OnDisk(p) => Some(p.display().to_string()),
@@ -10754,6 +10759,12 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
     } else {
         println!("Schema sources ({}):", sources.len());
         for (name, src) in &sources {
+            let version = rivet_core::embedded::schema_version_of(name, src);
+            let ver = if version.is_empty() {
+                "-".to_string()
+            } else {
+                version
+            };
             let detail = match src {
                 SchemaSource::OnDisk(p) => format!("on-disk   {}", p.display()),
                 SchemaSource::Embedded => "embedded  (compiled into rivet — changes on \
@@ -10763,7 +10774,7 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
                      embedded schema)"
                     .to_string(),
             };
-            println!("  {name:<18} {detail}");
+            println!("  {name:<28} {ver:<8} {detail}");
         }
     }
     Ok(true)

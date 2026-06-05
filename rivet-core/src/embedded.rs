@@ -313,6 +313,39 @@ pub struct SchemaProvenance {
     pub path: Option<String>,
 }
 
+/// Parse the declared `version:` of a resolved schema. Returns an empty string
+/// when the version can't be determined (unparseable on-disk file, or a
+/// `Missing` schema). Shared by [`resolve_schema_provenance`] and the
+/// `rivet schema sources` command so both surfaces report the same version.
+pub fn schema_version_of(name: &str, source: &SchemaSource) -> String {
+    match source {
+        SchemaSource::OnDisk(p) => std::fs::read_to_string(p)
+            .ok()
+            .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+            .map(|s| s.schema.version)
+            .unwrap_or_default(),
+        SchemaSource::Embedded => load_embedded_schema(name)
+            .ok()
+            .map(|s| s.schema.version)
+            .unwrap_or_default(),
+        SchemaSource::Missing => String::new(),
+    }
+}
+
+/// Expand a requested schema-name list to the full effective set the loader
+/// uses: the requested names plus any auto-discovered bridge schemas (dedup'd,
+/// order-preserving). Shared by `validate` and `rivet schema sources` so both
+/// report the same set.
+pub fn schema_names_with_bridges(schema_names: &[String]) -> Vec<String> {
+    let mut names: Vec<String> = schema_names.to_vec();
+    for bridge in discover_bridges(schema_names) {
+        if !names.iter().any(|n| n == bridge) {
+            names.push(bridge.to_string());
+        }
+    }
+    names
+}
+
 /// Resolve the provenance (name, version, source) of every schema `validate`
 /// will use for the given names — including auto-discovered bridges. Builds on
 /// [`schema_sources`] (the single on-disk/embedded classifier, REQ-177) and adds
@@ -326,34 +359,18 @@ pub fn resolve_schema_provenance(
     schema_names: &[String],
     schemas_dir: &std::path::Path,
 ) -> Vec<SchemaProvenance> {
-    // Expand to the same name set the loader uses: requested names + bridges.
-    let mut names: Vec<String> = schema_names.to_vec();
-    for bridge in discover_bridges(schema_names) {
-        if !names.iter().any(|n| n == bridge) {
-            names.push(bridge.to_string());
-        }
-    }
+    let names = schema_names_with_bridges(schema_names);
 
     schema_sources(&names, schemas_dir)
         .into_iter()
         .filter_map(|(name, source)| {
-            let (version, path) = match &source {
-                SchemaSource::OnDisk(p) => {
-                    let version = std::fs::read_to_string(p)
-                        .ok()
-                        .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
-                        .map(|s| s.schema.version)
-                        .unwrap_or_default();
-                    (version, Some(p.display().to_string()))
-                }
-                SchemaSource::Embedded => {
-                    let version = load_embedded_schema(&name)
-                        .ok()
-                        .map(|s| s.schema.version)
-                        .unwrap_or_default();
-                    (version, None)
-                }
-                SchemaSource::Missing => return None,
+            if matches!(source, SchemaSource::Missing) {
+                return None;
+            }
+            let version = schema_version_of(&name, &source);
+            let path = match &source {
+                SchemaSource::OnDisk(p) => Some(p.display().to_string()),
+                _ => None,
             };
             Some(SchemaProvenance {
                 name,
@@ -483,5 +500,41 @@ mod tests {
 
         // Missing schemas are not surfaced (the loader already warns).
         assert!(prov.iter().all(|p| p.name != "made-up"));
+    }
+
+    // rivet: verifies REQ-205
+    #[test]
+    fn schema_version_of_reads_on_disk_embedded_and_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("common.yaml"),
+            "schema:\n  name: common\n  version: 9.9.9\n",
+        )
+        .unwrap();
+
+        let on_disk = SchemaSource::OnDisk(dir.path().join("common.yaml"));
+        assert_eq!(schema_version_of("common", &on_disk), "9.9.9");
+
+        // A known embedded schema reports its compiled-in version.
+        assert!(!schema_version_of("stpa", &SchemaSource::Embedded).is_empty());
+
+        // Missing -> empty.
+        assert_eq!(schema_version_of("made-up", &SchemaSource::Missing), "");
+    }
+
+    // rivet: verifies REQ-205
+    #[test]
+    fn schema_names_with_bridges_appends_discovered_bridges() {
+        // stpa + dev should pull in the stpa-dev bridge (auto-discovered).
+        let names = vec!["common".to_string(), "stpa".to_string(), "dev".to_string()];
+        let expanded = schema_names_with_bridges(&names);
+        // Original names are preserved and come first.
+        assert_eq!(&expanded[..3], &names[..]);
+        // At least one bridge was appended beyond the requested names.
+        assert!(
+            expanded.len() > names.len(),
+            "expected bridge schemas to be appended, got {expanded:?}"
+        );
+        assert!(expanded.iter().any(|n| n.contains("bridge")));
     }
 }
