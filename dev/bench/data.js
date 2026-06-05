@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780688790548,
+  "lastUpdate": 1780689072552,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "de324eac44d687b0b5b94f838baf3fe7bc6943d9",
-          "message": "feat(cli): rivet next-id accepts a positional type/prefix shorthand (REQ-179, #447) (#448)\n\n`rivet next-id` already existed (since #28) and scans the whole store for the\nmax id — but the natural `rivet next-id feature` was rejected (\"unexpected\nargument\"); you had to pass `--type feature`. Add an optional positional\nTYPE_OR_PREFIX shorthand for --type (prefix_for_type's uppercase fallback also\nmakes a bare `FEAT` work); explicit flags still win. The no-arg error now lists\nall three forms.\n\nConfirmed with: next_id_positional_shorthand test (positional == --type, bare\nprefix works, no-arg fails) + existing next_id_json; fmt + clippy --all-targets\n-D warnings clean; rivet validate PASS.\n\nImplements: REQ-179\nRefs: REQ-007\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-03T21:15:10-05:00",
-          "tree_id": "a47e5fd11dc242edcd0a45740ce49812c9273450",
-          "url": "https://github.com/pulseengine/rivet/commit/de324eac44d687b0b5b94f838baf3fe7bc6943d9"
-        },
-        "date": 1780539847157,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84777,
-            "range": "± 473",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 925168,
-            "range": "± 17012",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13762956,
-            "range": "± 573712",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1964,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24914,
-            "range": "± 230",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 364839,
-            "range": "± 1302",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1456480,
-            "range": "± 19282",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166863,
-            "range": "± 830",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1929542,
-            "range": "± 10996",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27085422,
-            "range": "± 221697",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 443094,
-            "range": "± 5912",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17104977,
-            "range": "± 248721",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1316870522,
-            "range": "± 12813802",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4143,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46188,
-            "range": "± 931",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 714163,
-            "range": "± 3446",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 64644,
-            "range": "± 206",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 724860,
-            "range": "± 2761",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8108264,
-            "range": "± 96383",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1241,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15167,
-            "range": "± 48",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 230817,
-            "range": "± 2774",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21118,
-            "range": "± 111",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 142739,
-            "range": "± 285",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1340574,
-            "range": "± 10810",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1585191,
             "range": "± 32010",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e50c99592c2f1ae0206a9e136bf06877faab3110",
+          "message": "feat(validate+schema): surface schema set name@version + source everywhere (#431, closes #484) (#483)\n\n* feat(validate): surface the schema set (name@version + source) so upgrades aren't silent (REQ-205, #431)\n\nIssue #431: a project on builtin schemas validates against whatever schema copy\nis compiled into the rivet binary (the loader prefers on-disk, else falls back\nto embedded). Every release that tightens a builtin schema silently changes\nvalidation for embedded-schema consumers — a `rivet validate` that passed now\nflags unchanged artifacts, with nothing indicating the schema moved. The\n`version:` field existed but was never surfaced.\n\nThis implements the surfacing (option 3): `rivet validate` now reports the schema\nset it ran against.\n\n- rivet-core: `embedded::resolve_schema_provenance` builds on the existing\n  `schema_sources` classifier (REQ-177) — one on-disk/embedded vocabulary — and\n  adds the parsed `version` plus auto-discovered bridges. Returns\n  `SchemaProvenance { name, version, source, path }`.\n- rivet-cli: validate prints `Schemas: <name>@<version> (embedded|on-disk), …`\n  (text) and a top-level `schemas` array (json). No validation semantics change.\n\nPinning/gating (turning the cosmetic version into a hard gate, option 2) remains\na separate maintainer call on syntax.\n\nTest (embedded::tests): resolve_schema_provenance_reports_version_and_source —\non-disk reports its version + \"on-disk\"; embedded reports a non-empty compiled-in\nversion + \"embedded\"; missing omitted.\n\nConfirmed with: cargo test -p rivet-core --lib\nembedded::tests::resolve_schema_provenance_reports_version_and_source (pass);\n`rivet validate` prints `Schemas: common@0.1.0 (on-disk), …` (incl. bridges);\n`rivet validate --format json` emits the `schemas` array; rivet validate PASS;\ncargo fmt --check + cargo clippy --all-targets -- -D warnings (exit 0).\n\nImplements: REQ-205\nVerifies: REQ-205\nRefs: REQ-177\n\n* feat(schema): rivet schema sources shows version + bridges, consistent with validate (REQ-205, closes #484)\n\nFollow-on within the same #431 surfacing work. After the previous commit made\n`rivet validate` print the schema set as name@version (on-disk|embedded), the\ndedicated `rivet schema sources` command was left LESS informative — it showed\nneither the version nor the auto-discovered bridge schemas (7 entries vs\nvalidate's 9). #484.\n\n- rivet-core: factored the version lookup into `schema_version_of(name, source)`\n  and the name-set expansion into `schema_names_with_bridges(names)`, both shared\n  by `resolve_schema_provenance` and the CLI so the two surfaces can't drift.\n- rivet-cli: `cmd_schema_sources` now reports the full effective set (requested\n  + bridges) with each schema's version, in both text and json. It keeps\n  reporting `MISSING` schemas (the dedicated command's diagnostic value, which\n  the validate surfacing intentionally omits).\n\nTests (embedded::tests): schema_version_of_reads_on_disk_embedded_and_missing,\nschema_names_with_bridges_appends_discovered_bridges.\n\nConfirmed with: cargo test -p rivet-core --lib embedded::tests (4 pass);\n`rivet schema sources` now lists 9 schemas with versions incl. the two bridges,\nmatching `rivet validate`'s Schemas line; cargo fmt --check + cargo clippy\n--all-targets -- -D warnings (exit 0); rivet validate PASS.\n\nImplements: REQ-205\nVerifies: REQ-205\nRefs: REQ-177",
+          "timestamp": "2026-06-05T14:32:31-05:00",
+          "tree_id": "a89296147efefcabc266a380aa499d9601b1211c",
+          "url": "https://github.com/pulseengine/rivet/commit/e50c99592c2f1ae0206a9e136bf06877faab3110"
+        },
+        "date": 1780689071888,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86191,
+            "range": "± 834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 920270,
+            "range": "± 7275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14567326,
+            "range": "± 388416",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1967,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25225,
+            "range": "± 281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 360106,
+            "range": "± 3443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1454392,
+            "range": "± 46493",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166840,
+            "range": "± 744",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1946694,
+            "range": "± 16312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 33099531,
+            "range": "± 1439061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 447778,
+            "range": "± 2217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 18384629,
+            "range": "± 139028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1467343369,
+            "range": "± 18647301",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4165,
+            "range": "± 69",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 43974,
+            "range": "± 1577",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 753048,
+            "range": "± 8736",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62444,
+            "range": "± 163",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 720400,
+            "range": "± 2548",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9766072,
+            "range": "± 555537",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1244,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14746,
+            "range": "± 29",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 238415,
+            "range": "± 4682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22553,
+            "range": "± 69",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 158347,
+            "range": "± 1421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1486269,
+            "range": "± 15959",
             "unit": "ns/iter"
           }
         ]
