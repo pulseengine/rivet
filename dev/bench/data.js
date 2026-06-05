@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780688281679,
+  "lastUpdate": 1780688414086,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "0ce81897f90e00fddbc73c23f0522f11ed73038b",
-          "message": "feat(validate): --explain names which backlink source types can attach directly (REQ-178, #350) (#445)\n\nA required-backlink rule may list source types that can't form that backlink to\nthis artifact's type. Aspice sw-req expects a `verifies` backlink from\n[sw-verification, unit-verification, sw-integration-verification], but only\nsw-verification's `verifies` targets sw-req — the others verify design\nartifacts. `validate --explain` listed all three, sending the user to author an\nimpossible direct link (#350).\n\nAdd Schema::from_type_can_link() (checks the per-type link-field target\nallow-list) and partition the rule's from_types by it in explain_rule: surface\nthe directly-linkable type(s), annotate the rest (\"... can 'verifies' other\ntypes, not 'sw-req' directly — attach via the intermediate design artifact\").\nAll-direct case (requirement <- design-decision/feature) is byte-identical.\n\nConfirmed with: from_type_can_link unit test (real embedded aspice schema) +\nexplain_names_directly_linkable_verification_type integration test; explain +\nlifecycle suites green; fmt + clippy --all-targets -D warnings clean; validate PASS.\n\nImplements: REQ-178\nRefs: REQ-004\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-03T19:15:19-05:00",
-          "tree_id": "2ba06caed84b5e13d11922181be00b3cdc07c870",
-          "url": "https://github.com/pulseengine/rivet/commit/0ce81897f90e00fddbc73c23f0522f11ed73038b"
-        },
-        "date": 1780532649521,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84560,
-            "range": "± 362",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 918799,
-            "range": "± 19509",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15360520,
-            "range": "± 1990158",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1928,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25152,
-            "range": "± 103",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 371120,
-            "range": "± 2236",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1439611,
-            "range": "± 15260",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 169212,
-            "range": "± 1842",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1931156,
-            "range": "± 14310",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 29501918,
-            "range": "± 1581788",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 443053,
-            "range": "± 6121",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17595155,
-            "range": "± 222539",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1316131833,
-            "range": "± 19548287",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4134,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 43239,
-            "range": "± 118",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 770713,
-            "range": "± 19286",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 57004,
-            "range": "± 157",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 719224,
-            "range": "± 4435",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7965272,
-            "range": "± 438383",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1241,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14772,
-            "range": "± 279",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 235012,
-            "range": "± 2104",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20678,
-            "range": "± 70",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 143281,
-            "range": "± 513",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1342585,
-            "range": "± 17936",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1158417,
             "range": "± 14629",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6f12e0f8722b9318a748962d6598ab53a49df069",
+          "message": "feat(add): stamp AI provenance at creation + emit provenance in the add serializer (REQ-203) (#477)\n\nCloses #476. The AI-provenance system was wired to the editor, not to rivet's\nown mutation commands, so the sanctioned creation path produced UNSTAMPED\nartifacts: cmd_add built the Artifact with `provenance: None`, and the\n.claude/settings.json stamp hook only matches Edit/Write — a heredoc append or\n`rivet add` (both Bash calls) never fired it. For a tool whose pitch is\nAI-artifact auditability, AI-created artifacts silently missing provenance is a\ncorrectness gap.\n\nCompounding bug caught during implementation: `mutate::render_artifact_yaml`\n(the single serializer for the add path) did NOT emit the `provenance` block at\nall, so merely setting `artifact.provenance` would have been a silent no-op (the\nREQ-196/200 class of bug). Both halves are fixed:\n\n- `rivet add` gains `--created-by <human|ai|ai-assisted>` and `--model <M>`;\n  `--created-by` falls back to the RIVET_PROVENANCE_CREATED_BY env var so\n  CI/agent environments can set it once. Value validated up front. Absent =>\n  no provenance block (prior behavior preserved).\n- Extract `current_utc_timestamp()`, shared by cmd_stamp and cmd_add, so both\n  emit identical ISO-8601 timestamps with no chrono dependency.\n- `render_artifact_yaml` now emits the `provenance:` block (field order matches\n  yaml_edit::set_provenance).\n\nTests (rivet-core): render_artifact_yaml_emits_provenance_when_present and\nrender_artifact_yaml_omits_provenance_when_absent.\n\nConfirmed with: cargo test -p rivet-core --lib render_artifact_yaml_ (4 passed);\nend-to-end on a fresh `rivet init` project — `rivet add --created-by ai-assisted\n--model claude-opus-4-8` wrote the provenance block, plain add wrote none,\nRIVET_PROVENANCE_CREATED_BY=ai stamped from env, --created-by robot errored,\nrivet validate PASS; cargo fmt --all -- --check (exit 0); cargo clippy\n--all-targets -- -D warnings (exit 0, only pre-existing MSRV-config warning).\n\nImplements: REQ-203\nVerifies: REQ-203\nRefs: REQ-007",
+          "timestamp": "2026-06-05T14:29:41-05:00",
+          "tree_id": "55b15872fe4551c2a1c6e897900d9d4b24c0768f",
+          "url": "https://github.com/pulseengine/rivet/commit/6f12e0f8722b9318a748962d6598ab53a49df069"
+        },
+        "date": 1780688413024,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84336,
+            "range": "± 822",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 899904,
+            "range": "± 7145",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12209239,
+            "range": "± 454176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2121,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25494,
+            "range": "± 56",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 388231,
+            "range": "± 7599",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1439571,
+            "range": "± 15891",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 161061,
+            "range": "± 1358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1923004,
+            "range": "± 4714",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24024627,
+            "range": "± 226497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 457355,
+            "range": "± 2298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16712377,
+            "range": "± 116907",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1400043608,
+            "range": "± 14871949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4271,
+            "range": "± 21",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59479,
+            "range": "± 207",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 747329,
+            "range": "± 2297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64022,
+            "range": "± 164",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 703341,
+            "range": "± 2550",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7577641,
+            "range": "± 70985",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1295,
+            "range": "± 12",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15593,
+            "range": "± 109",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 341020,
+            "range": "± 1075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23667,
+            "range": "± 93",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 167033,
+            "range": "± 1984",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1577449,
+            "range": "± 17010",
             "unit": "ns/iter"
           }
         ]
