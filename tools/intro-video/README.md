@@ -34,14 +34,26 @@ Playwright scene pacing (`hold_ms`, `action`) and the TTS narration
   asciinema/vhs real-terminal recordings — they'd add a second capture tool
   and a second sync problem. The scene contract makes swapping one in later
   trivial (replace `show_cli_help`).
-- **TTS: piper (default).** Local, MIT-licensed, no API key, runs in CI,
-  license-clean for a published artifact. Rejected: cloud TTS (better prosody,
-  but proprietary lock-in, per-render cost, and a secret in CI — avoid where
-  avoidable, matching the project's reproducibility stance). `TTS_ENGINE=say`
-  (macOS) exists only for a quick local preview and must **not** ship the
-  published video (Apple voice license).
-- **Mux + timing: ffmpeg.** Narration clips are delayed (`adelay`) to each
-  scene's cumulative offset and mixed (`amix`) onto the silent screen capture.
+- **TTS: `speaches` (project default) or `piper`.** Both are local /
+  self-hosted, no cloud API key, license-clean for a published artifact.
+  - `TTS_ENGINE=speaches` (recommended) calls a self-hosted
+    [Speaches](https://github.com/speaches-ai/speaches) server's
+    OpenAI-compatible `/v1/audio/speech` endpoint (e.g. Kokoro-82M, voice
+    `af_nicole`). Configure via `SPEACHES_URL` / `SPEACHES_MODEL` /
+    `SPEACHES_VOICE`. Because it is just an HTTP call to a LAN/host service, a
+    **self-hosted CI runner can reach it**, so a narrated release video can
+    regenerate unattended — no voice model committed to the repo.
+  - `TTS_ENGINE=piper` is the offline fallback (needs a downloaded `.onnx`
+    voice; see "Install piper").
+  - Rejected: cloud TTS (proprietary lock-in, per-render cost, a secret in CI).
+    `TTS_ENGINE=say` (macOS) is a quick local preview only and must **not**
+    ship the published video (Apple voice license).
+- **Mux + timing: ffmpeg.** Narration is synthesized first; the `fit` step then
+  widens each scene's `hold_ms` to its actual narration duration (so a scene
+  never cuts off mid-sentence and adjacent clips never overlap), and capture
+  runs at those fitted timings. Narration clips are delayed (`adelay`) to each
+  scene's cumulative offset and mixed (`amix`) onto the silent screen capture;
+  the final video frame is held (`tpad`) so the outro narration never clips.
 
 ## Prerequisites
 
@@ -79,13 +91,19 @@ npx playwright install chromium  # once: browser
 ./generate.sh                    # capture -> tts -> mux  =>  out/rivet-intro.mp4
 ```
 
-Sub-steps (when iterating):
+The full pipeline runs **tts → fit → capture → mux** (narration first, so scene
+timings can be fitted to it). Sub-steps (when iterating):
 
 ```sh
-./generate.sh capture   # re-record screen only (after a UI change)
-./generate.sh tts        # re-synthesize narration only (after a script edit)
-./generate.sh mux        # re-combine existing capture + narration
+TTS_ENGINE=speaches ./generate.sh tts   # synthesize narration (Speaches/Kokoro)
+./generate.sh fit                        # widen scene hold_ms to narration length
+STORYBOARD=out/storyboard.timed.json ./generate.sh capture   # record at fitted timings
+STORYBOARD=out/storyboard.timed.json ./generate.sh mux       # combine capture + narration
 ```
+
+When running sub-steps individually, point `capture`/`mux` at the fitted
+`out/storyboard.timed.json` that `fit` writes (the full `./generate.sh` does this
+automatically).
 
 Quick local preview without piper (macOS, not for publishing):
 

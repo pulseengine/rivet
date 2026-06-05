@@ -1011,6 +1011,20 @@ enum Command {
         /// Target YAML file to append the artifact to
         #[arg(long)]
         file: Option<PathBuf>,
+
+        /// Stamp AI provenance at creation: origin of the artifact
+        /// ("human", "ai", or "ai-assisted"). When omitted, no provenance
+        /// block is written (matching prior behavior). Defaults its value
+        /// from the RIVET_PROVENANCE_CREATED_BY env var when the flag is
+        /// absent, so CI / agent environments can set it once.
+        #[arg(long)]
+        created_by: Option<String>,
+
+        /// AI model identifier to record in provenance (e.g.
+        /// "claude-opus-4-8"). Only used when --created-by is set (or
+        /// defaulted from the environment).
+        #[arg(long)]
+        model: Option<String>,
     },
 
     /// Add a link between two artifacts
@@ -2457,6 +2471,8 @@ fn run(cli: Cli) -> Result<bool> {
             fields,
             links,
             file,
+            created_by,
+            model,
         } => cmd_add(
             &cli,
             r#type,
@@ -2467,6 +2483,8 @@ fn run(cli: Cli) -> Result<bool> {
             fields,
             links,
             file.as_deref(),
+            created_by.as_deref(),
+            model.as_deref(),
         ),
         Command::Link {
             source,
@@ -4832,6 +4850,14 @@ fn cmd_validate(
         ..
     } = ctx;
 
+    // #431: resolve which schema set (and version, and embedded-vs-vendored
+    // source) this run validates against, so an upgrade-induced change in a
+    // builtin schema is visible rather than silent. Surfaced in both outputs.
+    let schema_provenance = rivet_core::embedded::resolve_schema_provenance(
+        &config.project.schemas,
+        &resolve_schemas_dir(cli),
+    );
+
     // REQ-062 / F2: `load_artifacts` swallows per-file YAML parse failures
     // to a stderr `log::warn!`, so a malformed artifact file produced a
     // green `Result: PASS` over an effectively-empty load. Re-walk every
@@ -5462,6 +5488,7 @@ fn cmd_validate(
             "version_conflict_details": conflicts_json,
             "lifecycle_coverage": lifecycle_json,
             "cross_repo_diagnostics": cross_repo_diagnostics_json,
+            "schemas": serde_json::to_value(&schema_provenance).unwrap_or(serde_json::Value::Null),
         });
         if let Some((ref vname, bound_count)) = variant_scope_name {
             output["variant"] = serde_json::json!({
@@ -5616,6 +5643,18 @@ fn cmd_validate(
             );
         } else {
             println!("Result: PASS ({} warnings)", warnings);
+        }
+
+        // #431: show the schema set this run validated against — name@version
+        // and whether each is vendored (pinned in-project) or embedded (from
+        // this binary, so it can change silently on a rivet upgrade).
+        if !schema_provenance.is_empty() {
+            let list = schema_provenance
+                .iter()
+                .map(|s| format!("{}@{} ({})", s.name, s.version, s.source))
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!("Schemas: {list}");
         }
     }
 
@@ -10708,6 +10747,10 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
     } else {
         vec!["common".to_string()]
     };
+    // #484: report the full effective set (requested names + auto-discovered
+    // bridges) and each schema's version — so this dedicated command is at
+    // least as informative as the `Schemas:` line `rivet validate` now prints.
+    let names = rivet_core::embedded::schema_names_with_bridges(&names);
     let sources = rivet_core::embedded::schema_sources(&names, &schemas_dir);
 
     if format == "json" {
@@ -10716,6 +10759,7 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
             .map(|(name, src)| {
                 serde_json::json!({
                     "name": name,
+                    "version": rivet_core::embedded::schema_version_of(name, src),
                     "source": src.kind(),
                     "path": match src {
                         SchemaSource::OnDisk(p) => Some(p.display().to_string()),
@@ -10733,6 +10777,12 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
     } else {
         println!("Schema sources ({}):", sources.len());
         for (name, src) in &sources {
+            let version = rivet_core::embedded::schema_version_of(name, src);
+            let ver = if version.is_empty() {
+                "-".to_string()
+            } else {
+                version
+            };
             let detail = match src {
                 SchemaSource::OnDisk(p) => format!("on-disk   {}", p.display()),
                 SchemaSource::Embedded => "embedded  (compiled into rivet — changes on \
@@ -10742,7 +10792,7 @@ fn cmd_schema_sources(cli: &Cli, format: &str) -> Result<bool> {
                      embedded schema)"
                     .to_string(),
             };
-            println!("  {name:<18} {detail}");
+            println!("  {name:<28} {ver:<8} {detail}");
         }
     }
     Ok(true)
@@ -14344,10 +14394,37 @@ fn cmd_add(
     fields: &[(String, String)],
     links: &[(String, String)],
     file: Option<&std::path::Path>,
+    created_by: Option<&str>,
+    model: Option<&str>,
 ) -> Result<bool> {
-    use rivet_core::model::{Artifact, Link};
+    use rivet_core::model::{Artifact, Link, Provenance};
     use rivet_core::mutate;
     use std::collections::BTreeMap;
+
+    // Provenance stamping at creation (issue #476). `--created-by` falls back
+    // to the RIVET_PROVENANCE_CREATED_BY env var so CI / agent environments can
+    // set it once. When neither is present, no provenance block is written
+    // (prior behavior preserved). Validate the value up front, before any work.
+    let created_by_owned = created_by
+        .map(str::to_string)
+        .or_else(|| std::env::var("RIVET_PROVENANCE_CREATED_BY").ok())
+        .filter(|s| !s.is_empty());
+    if let Some(cb) = created_by_owned.as_deref() {
+        match cb {
+            "human" | "ai" | "ai-assisted" => {}
+            other => anyhow::bail!(
+                "invalid --created-by value '{other}'. Must be one of: human, ai, ai-assisted"
+            ),
+        }
+    }
+    let provenance = created_by_owned.map(|cb| Provenance {
+        created_by: cb,
+        model: model.map(str::to_string),
+        session_id: None,
+        timestamp: Some(current_utc_timestamp()),
+        reviewed_by: None,
+        federation: None,
+    });
 
     let ctx = ProjectContext::load(cli)?;
     let (store, schema) = (ctx.store, ctx.schema);
@@ -14384,7 +14461,7 @@ fn cmd_add(
         links: link_vec,
         fields: fields_map,
         fields_per_variant: Default::default(),
-        provenance: None,
+        provenance,
         source_file: None,
     };
 
@@ -14693,6 +14770,35 @@ fn files_changed_since(project: &std::path::Path, git_ref: &str) -> Result<Vec<S
     Ok(paths)
 }
 
+/// Current UTC time as an ISO 8601 `YYYY-MM-DDTHH:MM:SSZ` string, computed
+/// with std only (no chrono dependency). Shared by `cmd_stamp` and
+/// `cmd_add`'s provenance stamping so the two surfaces emit identical
+/// timestamps.
+fn current_utc_timestamp() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap();
+    let secs = now.as_secs();
+    // Convert to UTC date-time components
+    let days = secs / 86400;
+    let day_secs = secs % 86400;
+    let hours = day_secs / 3600;
+    let minutes = (day_secs % 3600) / 60;
+    let seconds = day_secs % 60;
+    // Civil date from days since epoch (algorithm from Howard Hinnant)
+    let z = days as i64 + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_stamp(
     cli: &Cli,
@@ -14718,29 +14824,7 @@ fn cmd_stamp(
     let ctx = ProjectContext::load(cli)?;
     let store = ctx.store;
 
-    // Generate ISO 8601 timestamp using std (no chrono dependency)
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap();
-    let secs = now.as_secs();
-    // Convert to UTC date-time components
-    let days = secs / 86400;
-    let day_secs = secs % 86400;
-    let hours = day_secs / 3600;
-    let minutes = (day_secs % 3600) / 60;
-    let seconds = day_secs % 60;
-    // Civil date from days since epoch (algorithm from Howard Hinnant)
-    let z = days as i64 + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = (z - era * 146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    let timestamp = format!("{y:04}-{m:02}-{d:02}T{hours:02}:{minutes:02}:{seconds:02}Z");
+    let timestamp = current_utc_timestamp();
 
     // Collect artifact IDs to stamp.
     // Filter pipeline (applied in order, each shrinks the candidate set):
@@ -15919,6 +16003,11 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                 }
                             }
 
+                            // Deterministic order before truncation: render_store
+                            // / doc_store iterate in HashMap order, so without a
+                            // sort *which* 50 results survive truncate(50) — not
+                            // just their order — would vary per process (#415).
+                            results.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
                             results.truncate(50);
                         }
 
@@ -16369,6 +16458,24 @@ fn lsp_goto_definition(
     })
 }
 
+/// Build artifact-ID completion items in deterministic (ascending-id) order.
+///
+/// `Store::iter()` is HashMap-ordered, so completing over it directly yielded
+/// suggestions in a per-process-random order (the `type:` branch already
+/// sorted; the ID branch did not — #415). Using `iter_sorted()` makes the
+/// completion list stable and matches the sibling branch's behavior.
+fn artifact_id_completions(store: &Store) -> Vec<lsp_types::CompletionItem> {
+    store
+        .iter_sorted()
+        .map(|art| lsp_types::CompletionItem {
+            label: art.id.clone(),
+            kind: Some(lsp_types::CompletionItemKind::REFERENCE),
+            detail: Some(format!("{} ({})", art.title, art.artifact_type)),
+            ..Default::default()
+        })
+        .collect()
+}
+
 fn lsp_completion(
     params: &lsp_types::CompletionParams,
     store: &Store,
@@ -16385,15 +16492,8 @@ fn lsp_completion(
 
     if trimmed.starts_with("target:") || trimmed.starts_with("- target:") || trimmed.contains("[[")
     {
-        // Suggest artifact IDs
-        for art in store.iter() {
-            items.push(lsp_types::CompletionItem {
-                label: art.id.clone(),
-                kind: Some(lsp_types::CompletionItemKind::REFERENCE),
-                detail: Some(format!("{} ({})", art.title, art.artifact_type)),
-                ..Default::default()
-            });
-        }
+        // Suggest artifact IDs (sorted — see artifact_id_completions; #415).
+        items.extend(artifact_id_completions(store));
     } else if trimmed.starts_with("type:") || trimmed.starts_with("- type:") {
         // Suggest artifact types seen in the store
         let mut types: Vec<String> = store.types().map(|t| t.to_string()).collect();
@@ -16762,6 +16862,41 @@ mod stamp_glob_tests {
 #[cfg(test)]
 mod lsp_tests {
     use super::*;
+
+    // ── artifact_id_completions (deterministic ordering, #415) ─────────
+
+    #[test]
+    fn artifact_id_completions_are_sorted_by_id() {
+        // Insert ids out of order; the completion list must come back
+        // ascending regardless of HashMap iteration order (#415 footgun).
+        let mut store = Store::new();
+        for id in ["REQ-003", "REQ-001", "REQ-010", "REQ-002"] {
+            store
+                .insert(rivet_core::model::Artifact {
+                    id: id.into(),
+                    artifact_type: "requirement".into(),
+                    title: format!("title {id}"),
+                    description: None,
+                    status: None,
+                    tags: vec![],
+                    links: vec![],
+                    fields: std::collections::BTreeMap::new(),
+                    fields_per_variant: Default::default(),
+                    provenance: None,
+                    source_file: None,
+                })
+                .unwrap();
+        }
+        let labels: Vec<String> = artifact_id_completions(&store)
+            .into_iter()
+            .map(|c| c.label)
+            .collect();
+        assert_eq!(
+            labels,
+            vec!["REQ-001", "REQ-002", "REQ-003", "REQ-010"],
+            "id completions must be deterministically sorted by id"
+        );
+    }
 
     // ── lsp_word_at_position ───────────────────────────────────────────
 

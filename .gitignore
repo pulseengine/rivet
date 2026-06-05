@@ -40,3 +40,14 @@ mutants.out*/
 # committed. (Tracked .rivet/ files like agent-context.md stay tracked.)
 .rivet/repos/
 .claude/scheduled_tasks.lock
+
+# Recorded / generated video — never commit. The intro/release video pipeline
+# (tools/intro-video/) already ignores its own out/ dir; this is a repo-wide
+# safety net so a stray capture can't be committed from anywhere (e.g. a
+# future release-demo recording). Video only — committed docs images
+# (png/jpg/gif/svg) are intentionally NOT ignored.
+*.mp4
+*.webm
+*.mov
+*.mkv
+*.m4v
