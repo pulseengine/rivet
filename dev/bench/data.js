@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780687795801,
+  "lastUpdate": 1780687822984,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "411449a3baa836e95266d4f0b649af1f3f5367d9",
-          "message": "test(serve): /graph tests retry on status==0 to stop flapping on unrelated PRs (REQ-175) (#441)\n\nTriaging a red CI Test job on an artifact/script-only PR (#440): nextest exit\n100 -> JUnit named serve_integration::graph_type_filter_renders_when_under_budget,\nwhich asserted /graph?types=requirement returns 200 but got status=0 (transient\nconnection drop after the health probe -- a transport failure, not a content\nmismatch). Passed locally; the PR was shell+YAML only.\n\nThe file already had fetch_page_with_retry (15s + one retry on status==0) for\nexactly this flake class, but graph_focused_view_renders_svg and\ngraph_type_filter_renders_when_under_budget called fetch_with_timeout directly,\nbypassing it. Switch both to fetch_page_with_retry.\n\nConfirmed with `cargo test -p rivet-cli --test serve_integration graph_` (4/4),\n`cargo fmt --check` clean, and `rivet validate` PASS.\n\nVerifies: REQ-175\nRefs: FEAT-001\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-03T15:17:31-05:00",
-          "tree_id": "cb2c32ca9dc3b83a6791d6c9bac78973c3190baa",
-          "url": "https://github.com/pulseengine/rivet/commit/411449a3baa836e95266d4f0b649af1f3f5367d9"
-        },
-        "date": 1780518428497,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83757,
-            "range": "± 3162",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 883328,
-            "range": "± 17046",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16627059,
-            "range": "± 1080019",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2239,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26339,
-            "range": "± 113",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 385458,
-            "range": "± 2415",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 101,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 100,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 100,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1475801,
-            "range": "± 23950",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164365,
-            "range": "± 3862",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1904256,
-            "range": "± 16987",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 40005192,
-            "range": "± 2482095",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 449775,
-            "range": "± 2555",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17802202,
-            "range": "± 118060",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1490554427,
-            "range": "± 25789904",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4337,
-            "range": "± 22",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60213,
-            "range": "± 829",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 745188,
-            "range": "± 5147",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61910,
-            "range": "± 395",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 714333,
-            "range": "± 3415",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9827591,
-            "range": "± 464434",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1132,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 16231,
-            "range": "± 323",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 330451,
-            "range": "± 1845",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22346,
-            "range": "± 118",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 155723,
-            "range": "± 944",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1462047,
-            "range": "± 31300",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1584258,
             "range": "± 19825",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "21a41d965fba94d11801022c714b8a2e9f4acd0c",
+          "message": "fix(tools/intro-video): make the video pipeline actually produce a video (#480)\n\nFound while generating the first real intro video end-to-end. The freshly\nscaffolded pipeline had a blocking bug plus timing/engine gaps:\n\n1. MUX OFF-BY-ONE (blocker): the ffmpeg filtergraph referenced the narration\n   clips as `[0:a]`, `[1:a]`, … but ffmpeg input 0 is screen.mp4 (video, muxed\n   with `-an` so it has NO audio). The wavs are inputs 1..n. Result:\n   \"Stream specifier ':a' … matches no streams\" and a 0-byte output — the\n   scaffold could not produce a video for anyone. Fixed: filter input index is\n   idx+1; output labels stay 0-based.\n\n2. SPEACHES TTS ENGINE: added `TTS_ENGINE=speaches`, calling a self-hosted\n   OpenAI-compatible /v1/audio/speech endpoint (Kokoro-82M, voice via\n   SPEACHES_URL/SPEACHES_MODEL/SPEACHES_VOICE). No piper binary, no committed\n   voice model, no cloud secret — and reachable from self-hosted CI runners, so\n   a narrated release video can regenerate unattended. JSON body is built with\n   node (safe escaping); non-audio responses loud-fail via ffprobe.\n\n3. AUTO-FIT TIMING: the nominal hold_ms (5-6s) were ~half the real narration\n   (9-15s), so clips overran their scenes and talked over each other. New `fit`\n   step measures each narration wav and writes out/storyboard.timed.json with\n   hold_ms widened to fit; capture + mux read that one timeline (capture.spec.ts\n   now honors the STORYBOARD env). Pipeline reordered tts -> fit -> capture -> mux.\n\n4. NO OUTRO CLIP: Playwright's recorded length can land a second under the\n   summed holds; with `-shortest` that clipped the outro narration. The last\n   frame is now held (`tpad`) so audio defines length and the signature line\n   plays in full.\n\nConfirmed by producing out/rivet-intro.mp4 (1280x720 h264 + aac, ~90s), all 7\nscenes rendering (intro card, CLI help, dashboard, artifacts, artifact detail,\ncoverage, outro). Generated media stays gitignored (out/).\n\nRefs: FEAT-001",
+          "timestamp": "2026-06-05T14:21:43-05:00",
+          "tree_id": "bc4f4b9dad68acb42682667dc228b30d39365914",
+          "url": "https://github.com/pulseengine/rivet/commit/21a41d965fba94d11801022c714b8a2e9f4acd0c"
+        },
+        "date": 1780687822298,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85683,
+            "range": "± 219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 923574,
+            "range": "± 18059",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14225882,
+            "range": "± 868143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1957,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25119,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 365736,
+            "range": "± 1798",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1447038,
+            "range": "± 19630",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 168552,
+            "range": "± 14422",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1922295,
+            "range": "± 18169",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 29001141,
+            "range": "± 362795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 451613,
+            "range": "± 10108",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16719707,
+            "range": "± 757521",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1255707870,
+            "range": "± 17606066",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4197,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44335,
+            "range": "± 1231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 736980,
+            "range": "± 4730",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64853,
+            "range": "± 203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 729316,
+            "range": "± 9592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8137205,
+            "range": "± 203209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1209,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14761,
+            "range": "± 403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 230787,
+            "range": "± 2930",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23400,
+            "range": "± 382",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 165834,
+            "range": "± 471",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1580354,
+            "range": "± 56917",
             "unit": "ns/iter"
           }
         ]
