@@ -1,9 +1,14 @@
 name: CI
 
-# Cancel superseded PR runs; protect main + scheduled runs.
-# `head_ref || ref` keys per-PR-source-branch on PRs, falls back to ref on push.
+# Cancel superseded PR runs; keep every main commit's run conclusive.
+# On PRs, `head_ref` groups per source branch so cancel-in-progress supersedes
+# stale runs. On push, the fallback is `github.sha` (NOT `github.ref`): keying
+# every main commit to its own group means a later push never supersedes an
+# earlier main run — even queued ones (#436). With a shared `refs/heads/main`
+# group, rapid merges left main's runs `cancelled` and Playwright never reached
+# a conclusive result, hiding real regressions.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
