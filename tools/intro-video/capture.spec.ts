@@ -100,6 +100,10 @@ async function cliPanel(page: import("@playwright/test").Page) {
 test("rivet intro video capture", async ({ page }) => {
   test.setTimeout(120_000);
   const { base_url } = storyboard.meta;
+  // Record the dashboard in presentation mode (REQ-207 / #482): hides the
+  // branch / "N uncommitted" / path / Reload+Print chrome so the published
+  // video has clean frames regardless of the recording machine's git state.
+  const CLEAN = "?presentation=1";
 
   for (const scene of storyboard.scenes) {
     switch (scene.action) {
@@ -110,21 +114,21 @@ test("rivet intro video capture", async ({ page }) => {
         await cliPanel(page);
         break;
       case "open_dashboard":
-        await page.goto(`${base_url}/`);
+        await page.goto(`${base_url}/${CLEAN}`);
         await page.waitForLoadState("networkidle").catch(() => {});
         break;
       case "browse_artifacts":
-        await page.goto(`${base_url}/artifacts`);
+        await page.goto(`${base_url}/artifacts${CLEAN}`);
         await page.locator("table").first().waitFor().catch(() => {});
         // Gentle scroll to show the list is long / real.
         await page.mouse.wheel(0, 400);
         break;
       case "open_artifact":
-        await page.goto(`${base_url}/artifacts/REQ-001`);
+        await page.goto(`${base_url}/artifacts/REQ-001${CLEAN}`);
         await page.waitForLoadState("networkidle").catch(() => {});
         break;
       case "show_coverage":
-        await page.goto(`${base_url}/coverage`);
+        await page.goto(`${base_url}/coverage${CLEAN}`);
         await page.waitForLoadState("networkidle").catch(() => {});
         break;
       case "outro_card":
