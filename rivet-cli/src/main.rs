@@ -348,6 +348,15 @@ enum Command {
         #[arg(long = "min-severity")]
         min_severity: Option<String>,
 
+        /// Show ONLY diagnostics that are NEW relative to a git ref — the
+        /// answer to "did my change add any warnings?" (#488). Validates the
+        /// current tree and a worktree of <REF>, then prints the set-difference
+        /// (by severity+artifact+rule+message). Exits non-zero if any NEW
+        /// diagnostic is at or above `--fail-on` — a ready "this PR adds no new
+        /// diagnostics" gate (e.g. `rivet validate --new-since origin/main`).
+        #[arg(long = "new-since", value_name = "REF")]
+        new_since: Option<String>,
+
         /// Explain ONE artifact: which traceability rules apply to it,
         /// whether each is satisfied (and via which link/backlink), its
         /// incoming/outgoing links, and its own diagnostics with
@@ -2046,6 +2055,7 @@ fn run(cli: Cli) -> Result<bool> {
             strict_variants,
             fail_on,
             min_severity,
+            new_since,
             explain,
             strict_cited_sources,
             strict_cited_source_stale,
@@ -2058,6 +2068,9 @@ fn run(cli: Cli) -> Result<bool> {
             // not a full validate run.
             if let Some(id) = explain {
                 cmd_explain(&cli, id)
+            } else if let Some(since) = new_since {
+                // #488: show only diagnostics NEW relative to a git ref.
+                cmd_validate_new_since(&cli, since, fail_on)
             } else {
                 cmd_validate(
                     &cli,
@@ -4808,6 +4821,157 @@ fn cmd_stpa(
         println!("Result: PASS");
         Ok(true)
     }
+}
+
+/// Pure set-difference of validate-JSON diagnostics: returns the entries in
+/// `current` whose `(severity, artifact_id, rule, message)` identity is not
+/// present in `baseline`. Factored out for unit testing (#488).
+fn diff_new_diagnostics(
+    current: &[serde_json::Value],
+    baseline: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    fn key(d: &serde_json::Value) -> String {
+        let f = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("");
+        // Unit separator between fields so values can't collide across columns.
+        format!(
+            "{}\u{1f}{}\u{1f}{}\u{1f}{}",
+            f("severity"),
+            f("artifact_id"),
+            f("rule"),
+            f("message")
+        )
+    }
+    let base: std::collections::HashSet<String> = baseline.iter().map(key).collect();
+    current
+        .iter()
+        .filter(|d| !base.contains(&key(d)))
+        .cloned()
+        .collect()
+}
+
+/// `rivet validate --new-since <REF>` (#488): print only the diagnostics that
+/// are NEW relative to a git ref — "did my change add any warnings?".
+///
+/// Validates the current project and a detached worktree of `<REF>` (each via a
+/// `rivet validate --format json` subprocess of this same binary), then prints
+/// the set-difference. Returns `Ok(false)` (→ exit 1) when any NEW diagnostic is
+/// at or above the `--fail-on` threshold — a ready "this PR adds no new
+/// diagnostics" CI gate.
+fn cmd_validate_new_since(cli: &Cli, since_ref: &str, fail_on: &str) -> Result<bool> {
+    let threshold = parse_fail_on(fail_on)?;
+    let exe = std::env::current_exe().context("locating the rivet executable")?;
+    let project = &cli.project;
+
+    // Run `rivet validate --format json --project <dir>` and return its
+    // `diagnostics` array. validate exits non-zero when errors exist; we parse
+    // stdout regardless — only the diagnostic SET matters here.
+    let run_validate = |dir: &std::path::Path| -> Result<Vec<serde_json::Value>> {
+        // `--project` is a top-level (non-global) arg, so it must precede the
+        // `validate` subcommand.
+        let out = std::process::Command::new(&exe)
+            .arg("--project")
+            .arg(dir)
+            .arg("validate")
+            .args(["--format", "json"])
+            .output()
+            .with_context(|| format!("running rivet validate in {}", dir.display()))?;
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).with_context(|| {
+            format!(
+                "parsing validate JSON from {} (stderr: {})",
+                dir.display(),
+                String::from_utf8_lossy(&out.stderr).trim()
+            )
+        })?;
+        Ok(v.get("diagnostics")
+            .and_then(|d| d.as_array())
+            .cloned()
+            .unwrap_or_default())
+    };
+
+    // Resolve the ref up front so a typo fails fast (before the expensive runs).
+    let rev = std::process::Command::new("git")
+        .arg("-C")
+        .arg(project)
+        .args(["rev-parse", "--verify", "--quiet"])
+        .arg(format!("{since_ref}^{{commit}}"))
+        .output()
+        .context("running git rev-parse")?;
+    if !rev.status.success() {
+        anyhow::bail!(
+            "git ref '{since_ref}' could not be resolved in {}",
+            project.display()
+        );
+    }
+
+    let current = run_validate(project)?;
+
+    // Baseline = the project as it was at <REF>, via a detached worktree.
+    // Use a PID-scoped path under the system temp dir (no `tempfile` runtime
+    // dep, per #456); `git worktree add` creates it, so it must not pre-exist.
+    let wt = std::env::temp_dir().join(format!("rivet-new-since-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&wt);
+    let add = std::process::Command::new("git")
+        .arg("-C")
+        .arg(project)
+        .args(["worktree", "add", "--detach", "-q"])
+        .arg(&wt)
+        .arg(since_ref)
+        .output()
+        .context("running git worktree add")?;
+    if !add.status.success() {
+        anyhow::bail!(
+            "git worktree add failed: {}",
+            String::from_utf8_lossy(&add.stderr).trim()
+        );
+    }
+    let baseline = run_validate(&wt);
+    // Always remove the worktree, even if its validation errored.
+    let _ = std::process::Command::new("git")
+        .arg("-C")
+        .arg(project)
+        .args(["worktree", "remove", "--force"])
+        .arg(&wt)
+        .output();
+    let _ = std::fs::remove_dir_all(&wt);
+    let baseline = baseline?;
+
+    let new = diff_new_diagnostics(&current, &baseline);
+
+    let sev = |d: &serde_json::Value| -> Severity {
+        match d.get("severity").and_then(|v| v.as_str()).unwrap_or("") {
+            "error" => Severity::Error,
+            "warning" => Severity::Warning,
+            _ => Severity::Info,
+        }
+    };
+    let ne = new.iter().filter(|d| sev(d) == Severity::Error).count();
+    let nw = new.iter().filter(|d| sev(d) == Severity::Warning).count();
+    let ni = new.iter().filter(|d| sev(d) == Severity::Info).count();
+
+    println!(
+        "New diagnostics since {since_ref}: {} ({ne} errors, {nw} warnings, {ni} infos)",
+        new.len()
+    );
+    for d in &new {
+        println!(
+            "  [{}] {} [{}] {}",
+            d.get("severity")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_uppercase(),
+            d.get("artifact_id").and_then(|v| v.as_str()).unwrap_or("-"),
+            d.get("rule").and_then(|v| v.as_str()).unwrap_or("?"),
+            d.get("message").and_then(|v| v.as_str()).unwrap_or("")
+        );
+    }
+
+    // Mirror cmd_validate's --fail-on semantics (threshold is a floor, not Ord).
+    let hit = match threshold {
+        Severity::Error => ne > 0,
+        Severity::Warning => ne > 0 || nw > 0,
+        Severity::Info => ne > 0 || nw > 0 || ni > 0,
+    };
+    Ok(!hit)
 }
 
 /// Validate a full project (with rivet.yaml).
@@ -9406,6 +9570,7 @@ fn cmd_diff(
                     strict_variants: false,
                     fail_on: "error".to_string(),
                     min_severity: None,
+                    new_since: None,
                     explain: None,
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
@@ -9433,6 +9598,7 @@ fn cmd_diff(
                     strict_variants: false,
                     fail_on: "error".to_string(),
                     min_severity: None,
+                    new_since: None,
                     explain: None,
                     strict_cited_sources: false,
                     strict_cited_source_stale: false,
@@ -16823,6 +16989,48 @@ fn print_diagnostics_with_remediation(
 }
 
 // ── LSP unit tests ─────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod new_since_diff_tests {
+    use super::diff_new_diagnostics;
+    use serde_json::json;
+
+    // rivet: verifies REQ-208
+    #[test]
+    fn diff_returns_only_diagnostics_absent_in_baseline() {
+        let d = |sev: &str, id: &str, rule: &str, msg: &str| json!({"severity": sev, "artifact_id": id, "rule": rule, "message": msg});
+        let baseline = vec![
+            d("warning", "REQ-001", "prose-mention", "mentions REQ-002"),
+            d("error", "REQ-003", "broken-link", "no such target"),
+        ];
+        let current = vec![
+            // unchanged (present in baseline) — must be excluded
+            d("warning", "REQ-001", "prose-mention", "mentions REQ-002"),
+            d("error", "REQ-003", "broken-link", "no such target"),
+            // genuinely new
+            d("warning", "REQ-009", "required-field", "missing priority"),
+            // same artifact+rule but DIFFERENT message → new
+            d("error", "REQ-003", "broken-link", "no such target XYZ"),
+        ];
+        let new = diff_new_diagnostics(&current, &baseline);
+        assert_eq!(new.len(), 2, "exactly the two new entries, got {new:?}");
+        assert!(new.iter().any(|x| x["artifact_id"] == "REQ-009"));
+        assert!(new.iter().any(|x| x["message"] == "no such target XYZ"));
+        // The two unchanged baseline entries are not reported as new.
+        assert!(new.iter().all(|x| x["message"] != "mentions REQ-002"));
+    }
+
+    #[test]
+    fn diff_empty_when_current_subset_of_baseline() {
+        let d = json!({"severity":"warning","artifact_id":"A","rule":"r","message":"m"});
+        let baseline = vec![
+            d.clone(),
+            json!({"severity":"info","artifact_id":"B","rule":"r2","message":"m2"}),
+        ];
+        let current = vec![d];
+        assert!(diff_new_diagnostics(&current, &baseline).is_empty());
+    }
+}
 
 #[cfg(test)]
 mod stamp_glob_tests {
