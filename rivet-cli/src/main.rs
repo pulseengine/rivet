@@ -193,15 +193,17 @@ fn check_for_updates() {
 #[derive(Parser)]
 #[command(name = "rivet", about = "SDLC artifact traceability and validation", version = build_version())]
 struct Cli {
-    /// Path to the project directory (containing rivet.yaml).
-    /// NOTE: not `global` — clap debug-asserts when a global arg coexists with
-    /// subcommands that take positionals (next-id/link/snapshot diff/…), so
-    /// `--project` must precede the subcommand: `rivet -p X validate`, not
-    /// `rivet validate -p X`. See #500 (reverted REQ-209).
+    // Not `global`: clap debug-asserts when a global arg coexists with
+    // subcommands that take positionals (next-id <type>, link <a> <b>,
+    // snapshot diff <x>, …). So this must precede the subcommand. See #500
+    // (REQ-209 attempted `global = true` and was reverted in #502).
+    /// Path to the project directory (containing rivet.yaml). Pass it BEFORE the
+    /// subcommand: `rivet -p <dir> validate` (not `rivet validate -p <dir>`).
     #[arg(short, long, default_value = ".")]
     project: PathBuf,
 
-    /// Path to schemas directory (precedes the subcommand, like `--project`).
+    /// Path to schemas directory. Like `--project`, pass it BEFORE the
+    /// subcommand (`rivet --schemas <dir> validate`).
     #[arg(long)]
     schemas: Option<PathBuf>,
 
