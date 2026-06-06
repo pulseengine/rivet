@@ -404,6 +404,20 @@ jobs:
         run: cargo test --all
         env:
           PROPTEST_CASES: "1000"
+      # The extended run uses 1000 random cases, so it can surface a rare
+      # counterexample that the default Test job (100 cases) misses. proptest
+      # writes the failing seed to `<crate>/proptest-regressions/*.txt` — upload
+      # it so the failure is REPRODUCIBLE after the fact (drop the file in the
+      # tree + `cargo test`). Without this, a CI-only proptest red is
+      # undiagnosable once the log rotates (and unreachable while a run is stuck
+      # queued on self-hosted runner capacity). #495
+      - name: Upload proptest regressions (failing seeds, for reproduction)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proptest-regressions
+          path: "**/proptest-regressions/*.txt"
+          if-no-files-found: warn
 
   # ── Mutation testing ─────────────────────────────────────────────────
   # Split per-crate into parallel jobs so each has its own 45-min budget.
