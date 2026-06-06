@@ -16,6 +16,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Nightly + manual: drives the runner-heavy rivet-core mutation matrix
+  # (mutants-core) off the every-push path so it stops saturating the
+  # self-hosted pool and queueing the gating jobs for hours (#498).
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -427,20 +433,21 @@ jobs:
   # lib.rs (collect_yaml_files, import_with_schema branches) and bazel.rs
   # lex(). Need targeted tests before this can be flipped. See the
   # per-crate `continue-on-error` below.
-  mutants:
-    name: Mutation Testing (${{ matrix.crate }})
+  mutants-core:
+    name: Mutation Testing (rivet-core ${{ matrix.shard_id }})
     needs: [test]
-    # lean-mem: parallel cargo invocations under -j; RAM-aggressive.
+    # NON-GATING (continue-on-error) and runner-heavy: 16 shards x 45min on the
+    # self-hosted lean-mem pool. Run it NIGHTLY (+ manual) only, not every push —
+    # on every push it saturated the pool and queued the gating jobs for hours
+    # (#498). The hard-gate rivet-cli mutants run per-push in `mutants-cli` below.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, linux, x64, lean-mem]
     timeout-minutes: 45
-    # Hard gate only for rivet-cli; rivet-core is still surfacing real
-    # coverage gaps that need tests written. Flip to `false` once killed.
-    continue-on-error: ${{ matrix.crate == 'rivet-core' }}
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { crate: rivet-cli, shard: '0/1', shard_id: '0-of-1' }
           - { crate: rivet-core, shard: '0/16', shard_id: '00-of-16' }
           - { crate: rivet-core, shard: '1/16', shard_id: '01-of-16' }
           - { crate: rivet-core, shard: '2/16', shard_id: '02-of-16' }
@@ -518,6 +525,55 @@ jobs:
           name: mutants-report-${{ matrix.crate }}-${{ matrix.shard_id }}
           # Only human-readable reports; skip per-mutant target dirs that
           # bloat the artifact to GB-scale and trigger ENOSPC on upload.
+          path: |
+            mutants-out/*.txt
+            mutants-out/*.json
+            mutants-out/outcomes.json
+          if-no-files-found: warn
+
+  # rivet-cli mutation — HARD GATE (0 surviving mutants), single shard, every
+  # push + PR. Split from the rivet-core matrix (mutants-core) so the gate stays
+  # fast and per-push while the heavy 16-shard rivet-core sweep moved to nightly
+  # (#498). Tuning rationale (timeout 30 / --jobs 2) is documented on
+  # mutants-core's identical step.
+  mutants-cli:
+    name: Mutation Testing (rivet-cli)
+    needs: [test]
+    runs-on: [self-hosted, linux, x64, lean-mem]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: mutants-rivet-cli-0-of-1
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      - name: Prune stale mutants artefacts
+        run: |
+          rm -rf mutants-out
+          find target -maxdepth 2 -name 'mutants.out*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+      - name: Run cargo-mutants
+        run: cargo mutants -p rivet-cli --shard 0/1 --timeout 30 --jobs 2 --output mutants-out -- --lib || true
+      - name: Check surviving mutants
+        run: |
+          MISSED=0
+          if [ -f "mutants-out/missed.txt" ]; then
+            MISSED=$(wc -l < "mutants-out/missed.txt" | tr -d ' ')
+          fi
+          echo "Surviving mutants in rivet-cli: $MISSED"
+          if [ "$MISSED" -gt 0 ]; then
+            echo "::error::$MISSED mutant(s) survived in rivet-cli — add tests to kill them"
+            head -30 mutants-out/missed.txt
+            exit 1
+          fi
+      - name: Upload mutants report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report-rivet-cli-0-of-1
           path: |
             mutants-out/*.txt
             mutants-out/*.json
