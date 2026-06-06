@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780713006530,
+  "lastUpdate": 1780718261759,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "10fcca9dc5dd79e5990b5e981aab5515bb383673",
-          "message": "feat(cli): positional link/unlink target + accurate init/modify help (REQ-188) (#459)\n\nDogfooding pass over agent-facing commands surfaced three verified friction\npoints on main:\n\n1. `rivet link <source> <target> --type <t>` — the natural ordered-pair form —\n   errored \"unexpected argument\", because target was a required `--target` flag\n   (same class as the query/next-id positional gaps). Added an optional\n   positional TARGET to link AND unlink; the `--target` flag still works and\n   wins if both are given; a clear error is raised if neither is supplied.\n2. `rivet init --help` showed two duplicated, contradictory `--preset` doc lines\n   that clap concatenated into a stutter AND that omitted 5 of the 14 presets\n   resolve_preset accepts. Replaced with one accurate line (all 14 presets).\n3. `rivet modify --help` stuttered \"Modify an existing artifact Modify an\n   existing artifact (...)\" — collapsed the duplicated summary doc-comment.\n\nTests (cli_commands): link positional parsed (not a clap error); link no-target\nerrors; init --help lists every preset; modify --help has no duplicated summary.\n\nConfirmed with: cargo test -p rivet-cli --test cli_commands (4 new, all pass),\ncargo fmt --check, cargo clippy --all-targets -- -D warnings (exit 0; only the\npre-existing clippy.toml/Cargo.toml MSRV-mismatch warning), rivet validate PASS.\nManually verified `rivet link REQ-001 REQ-002 --type traces-to` (positional)\ncreates the real link (get REQ-001 shows `traces-to -> REQ-002`).\n\nImplements: REQ-188\nVerifies: REQ-188\nRefs: REQ-007",
-          "timestamp": "2026-06-04T07:15:41-05:00",
-          "tree_id": "049218dbae790b737d6a2ef87da85b0d2f851a91",
-          "url": "https://github.com/pulseengine/rivet/commit/10fcca9dc5dd79e5990b5e981aab5515bb383673"
-        },
-        "date": 1780575960311,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84717,
-            "range": "± 349",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 892790,
-            "range": "± 14234",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16339407,
-            "range": "± 1262126",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2200,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27155,
-            "range": "± 109",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 386063,
-            "range": "± 4155",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1484076,
-            "range": "± 24625",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167835,
-            "range": "± 3564",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1930668,
-            "range": "± 20803",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 30904818,
-            "range": "± 1112345",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 449977,
-            "range": "± 12778",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16814523,
-            "range": "± 705712",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1419220910,
-            "range": "± 15337551",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4382,
-            "range": "± 33",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60350,
-            "range": "± 490",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 747332,
-            "range": "± 6497",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63288,
-            "range": "± 372",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 683410,
-            "range": "± 3371",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7518949,
-            "range": "± 302690",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1192,
-            "range": "± 53",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15042,
-            "range": "± 77",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 323328,
-            "range": "± 4201",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23063,
-            "range": "± 110",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 157509,
-            "range": "± 955",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1453284,
-            "range": "± 17183",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1577547,
             "range": "± 13203",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e94ac9542a839c4942b1f5129605c5a700ac0209",
+          "message": "fix(cli): revert --project/--schemas global — clap debug-asserts with positional subcommands (reverts REQ-209/#501) (#502)\n\nREQ-209 / #501 marked --project/--schemas `global = true` to fix #500, but that\nbroke main: 3 cli_commands integration tests (next_id_json,\nnext_id_positional_shorthand, all_json_outputs_are_valid) panicked in clap's\ndebug_asserts — clap does NOT allow a `global` arg to coexist with subcommands\nthat take positionals (next-id <type>, link <src> <tgt>, snapshot diff\n<baseline>, …). My pre-merge check only exercised `validate` (no positional), so\nit passed; the full suite would have caught it.\n\nReverts the `global = true` on both args, removes the now-invalid\ncli_global_args_tests and the REQ-209 artifact. #500's premise (args after the\nsubcommand) is therefore a clap limitation, not fixable this way — the workaround\nis the standard convention: put --project before the subcommand\n(`rivet -p X validate`). Documented on the arg + reopening #500.\n\nConfirmed with: cargo test -p rivet-cli --test cli_commands (127 passed, 0\nfailed — the 3 regressions fixed); cargo fmt --check + clippy --all-targets -- -D\nwarnings (exit 0); rivet validate PASS.\n\nRefs: REQ-007",
+          "timestamp": "2026-06-05T22:49:37-05:00",
+          "tree_id": "7df54c545a9aa82da2aa9af4f4c895cf7e05dc92",
+          "url": "https://github.com/pulseengine/rivet/commit/e94ac9542a839c4942b1f5129605c5a700ac0209"
+        },
+        "date": 1780718260913,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 67654,
+            "range": "± 3608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 724588,
+            "range": "± 3390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13016161,
+            "range": "± 833543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1544,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 18836,
+            "range": "± 320",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 263616,
+            "range": "± 2700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1116285,
+            "range": "± 18770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 127342,
+            "range": "± 429",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1485700,
+            "range": "± 14208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24740238,
+            "range": "± 1227213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 339829,
+            "range": "± 1166",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 14380052,
+            "range": "± 167404",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1146681493,
+            "range": "± 7596817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3230,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 33990,
+            "range": "± 530",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 578137,
+            "range": "± 2534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 44967,
+            "range": "± 425",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 518272,
+            "range": "± 2497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 6244657,
+            "range": "± 325897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 882,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11308,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 175603,
+            "range": "± 2580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 17265,
+            "range": "± 41",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 121441,
+            "range": "± 356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1148895,
+            "range": "± 10832",
             "unit": "ns/iter"
           }
         ]
