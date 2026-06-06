@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780732765545,
+  "lastUpdate": 1780733813626,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ddc9b0e114d3b071418e9f32879c79b2f384a969",
-          "message": "fix(links): LinkGraph::orphans returns id-sorted output for deterministic stats/validate (REQ-191, #415) (#462)\n\nVerified bug (sibling of REQ-190, #415): `rivet stats --format json` produced a\nDIFFERENT `orphans` array order on every run (same set, shuffled) because\n`LinkGraph::orphans` iterated the HashMap-ordered `store.iter()` and collected\nwithout sorting. The orphan list feeds `rivet stats`, `rivet validate`, and\n`rivet list` orphan reporting, so all three were nondeterministic.\n(matrix/export/coverage/list-body were already stable — tested.)\n\nFix: iterate `store.iter_sorted()` in `LinkGraph::orphans` so the list is\nascending by id and reproducible.\n\nTest (links::tests): orphans_are_id_sorted_for_deterministic_output — inserts\nisolated artifacts in scrambled id order, asserts orphans() yields ascending.\n\nConfirmed with: cargo test -p rivet-core --lib links::tests (8/8), cargo fmt\n--check, cargo clippy --all-targets -- -D warnings (exit 0), rivet validate\nPASS. Manually verified `rivet stats --format json` is now byte-identical (md5)\nacross two runs with the orphans array sorted ascending.\n\nImplements: REQ-191\nVerifies: REQ-191\nRefs: REQ-159",
-          "timestamp": "2026-06-04T10:16:15-05:00",
-          "tree_id": "3d32eafade1d2b5fcf7061069e91f4e47d82d7d8",
-          "url": "https://github.com/pulseengine/rivet/commit/ddc9b0e114d3b071418e9f32879c79b2f384a969"
-        },
-        "date": 1780586773790,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83464,
-            "range": "± 1266",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 900951,
-            "range": "± 10416",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 19384047,
-            "range": "± 1302173",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2152,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25755,
-            "range": "± 136",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 382297,
-            "range": "± 949",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1459259,
-            "range": "± 11081",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164690,
-            "range": "± 1880",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1896595,
-            "range": "± 12530",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 33878740,
-            "range": "± 2520112",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 456308,
-            "range": "± 2413",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16635286,
-            "range": "± 120565",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1418085205,
-            "range": "± 13370469",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4276,
-            "range": "± 77",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60938,
-            "range": "± 647",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 741846,
-            "range": "± 4432",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60582,
-            "range": "± 276",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 687651,
-            "range": "± 3265",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7929106,
-            "range": "± 1155569",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1212,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 18543,
-            "range": "± 673",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 337389,
-            "range": "± 949",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22286,
-            "range": "± 127",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 153750,
-            "range": "± 5410",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1446486,
-            "range": "± 6583",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1595628,
             "range": "± 18009",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ecb073a08e2a326f9a6b6bcf0a06a4d3a992399c",
+          "message": "fix(init): pre-commit hook runs cargo fmt --check on staged Rust (REQ-210, #438) (#505)\n\n`rivet init --hooks` installed a pre-commit hook that ran only `rivet\nvalidate` — no formatting gate. A misformatted-Rust diff is the most common\nfirst-push CI failure, and AI agents kept hitting it: commit \"passes\"\nlocally, then CI's `cargo fmt --check` job goes red (#438). The fmt-checking\nhook that lives in THIS repo was installed by the dev-only\nscripts/install-hooks.sh, which `rivet init --hooks` does not use — so every\nproject adopting hooks the shipped way got no formatting gate.\n\ncmd_init_hooks now writes a pre-commit hook that runs `cargo fmt --all --\n--check` before `rivet validate`, guarded so it stays language-agnostic:\nthe fmt step runs only when `command -v cargo` succeeds AND the commit\nstages at least one `.rs` file (`git diff --cached … | grep -q '\\.rs$'`).\nNon-Rust rivet projects and cargo-less machines skip it silently and are\nnever blocked. Mirrors scripts/install-hooks.sh. Convenience only; CI is the\nreal gate (REQ-051) and `--no-verify` still bypasses it.\n\nConfirmed with a temp-repo `rivet init --hooks` (generated hook contains the\nfmt step + both guards, passes `bash -n`, preserves the validate step);\ncargo test -p rivet-cli --test cli_commands (127 passed, 0 failed — the full\nsuite); cargo fmt --check + cargo clippy -p rivet-cli --all-targets -- -D\nwarnings (exit 0); rivet validate PASS.\n\nImplements: REQ-210\nRefs: REQ-051\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-06T02:37:54-05:00",
+          "tree_id": "2b23fd11dd833c566c4f204740cef8da02bc8598",
+          "url": "https://github.com/pulseengine/rivet/commit/ecb073a08e2a326f9a6b6bcf0a06a4d3a992399c"
+        },
+        "date": 1780733812588,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 77661,
+            "range": "± 184",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 944287,
+            "range": "± 9074",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13423776,
+            "range": "± 538101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1755,
+            "range": "± 130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 19344,
+            "range": "± 32",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 357335,
+            "range": "± 1708",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1365513,
+            "range": "± 26571",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 159245,
+            "range": "± 310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1861927,
+            "range": "± 32095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 29598034,
+            "range": "± 1749662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 420065,
+            "range": "± 3246",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 14088386,
+            "range": "± 242969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 949773803,
+            "range": "± 6493087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3951,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 40279,
+            "range": "± 134",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 780117,
+            "range": "± 7843",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 52775,
+            "range": "± 999",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 601429,
+            "range": "± 2712",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 6936963,
+            "range": "± 440776",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 884,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11248,
+            "range": "± 15",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 306774,
+            "range": "± 5038",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22468,
+            "range": "± 99",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 160258,
+            "range": "± 236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1519450,
+            "range": "± 27825",
             "unit": "ns/iter"
           }
         ]
