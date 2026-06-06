@@ -6547,3 +6547,52 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-06T10:30:00Z
+
+  - id: REQ-211
+    type: requirement
+    title: "`rivet list --format json --full` emits description/tags/fields in bulk so machine-readable queries don't need N× `get` or a raw YAML parse"
+    status: implemented
+    description: |
+      Finding (#506, dogfooding). AGENTS.md/CLAUDE.md direct agents to
+      `rivet list --format json` for "machine-readable artifact queries", but
+      that output is summary-only — `id`, `type`, `title`, `status`, `links`.
+      It omits `description`, `tags`, and `fields`, so the values agents most
+      often need (e.g. a `priority` field, the acceptance text) are not
+      reachable in bulk. The full per-artifact view exists via
+      `rivet get <ID> --format json`, but recovering fields for the whole
+      store means one subprocess per artifact (917 in this repo) or parsing
+      the raw YAML — which is exactly the fallback the next-id memory had to
+      use. `--variant` emits a merged `fields:` view but requires a variant
+      config and applies overlays, so it is not a clean "all fields" export.
+
+      Fix: a `--full` flag on `rivet list`. When set with `--format json`,
+      each artifact entry also carries `description`, `tags`, and `fields`,
+      mirroring `get`'s JSON shape. Additive and opt-in: default output is
+      unchanged, so existing consumers are unaffected
+      (`list-output.schema.json` is `additionalProperties: true`). The same
+      change corrects long-standing drift in that schema: `links` was still
+      typed as an integer count, but the actual output has been an array of
+      `{type,target}` objects since #358 — the schema now matches.
+
+      Acceptance:
+        - `rivet list --format json --full` emits, for each artifact,
+          `description` (string), `tags` (array), and `fields` (object) in
+          addition to the summary keys; plain `rivet list --format json`
+          still emits only the summary keys (no `description`/`tags`/`fields`).
+        - The `--full` `fields` object for a given id equals the `fields`
+          object from `rivet get <id> --format json`.
+        - `cargo test -p rivet-cli --test cli_commands` passes (full suite),
+          including a new test asserting the presence/absence of the rich keys.
+        - `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` clean.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [list, json, query, machine-readable, dogfooding, dx]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-06T11:00:00Z
