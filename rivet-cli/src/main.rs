@@ -505,6 +505,15 @@ enum Command {
         /// by id.
         #[arg(long)]
         rank_by_backlinks: bool,
+
+        /// Include full artifact fields in JSON output — `description`,
+        /// `tags`, and `fields` — matching `rivet get <ID> --format json`,
+        /// but in bulk. Without it `--format json` emits only the summary
+        /// (id/type/title/status/links), so a machine-readable query for a
+        /// field value (e.g. `priority`) otherwise needs one `get` call per
+        /// artifact or a raw YAML parse (#506). No effect on text output.
+        #[arg(long)]
+        full: bool,
     },
 
     /// Show artifact summary statistics
@@ -2109,6 +2118,7 @@ fn run(cli: Cli) -> Result<bool> {
             variant,
             orphans,
             rank_by_backlinks,
+            full,
         } => cmd_list(
             &cli,
             r#type.as_deref(),
@@ -2119,6 +2129,7 @@ fn run(cli: Cli) -> Result<bool> {
             variant.as_deref(),
             *orphans,
             *rank_by_backlinks,
+            *full,
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
         // REQ-167 / #426: `trace` is the discoverable namesake verb for the
@@ -6457,6 +6468,7 @@ fn cmd_list(
     variant_arg: Option<&str>,
     orphans_only: bool,
     rank_by_backlinks: bool,
+    full: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
@@ -6541,6 +6553,32 @@ fn cmd_list(
                     if let serde_json::Value::Object(ref mut map) = entry {
                         let n = inbound_counts.get(&a.id).copied().unwrap_or(0);
                         map.insert("inbound_links".into(), serde_json::json!(n));
+                    }
+                }
+                // `--full` (#506): include the same rich fields as
+                // `get <ID> --format json` — description/tags/fields — so a
+                // bulk machine-readable query can read a field value without
+                // N× `get` or a raw YAML parse. Inserted BEFORE the variant
+                // block so a `--variant` merged `fields:` view still wins.
+                if full {
+                    if let serde_json::Value::Object(ref mut map) = entry {
+                        let fields_json: serde_json::Value = a
+                            .fields
+                            .iter()
+                            .map(|(k, v)| {
+                                (
+                                    k.clone(),
+                                    serde_json::to_value(v).unwrap_or(serde_json::Value::Null),
+                                )
+                            })
+                            .collect::<serde_json::Map<String, serde_json::Value>>()
+                            .into();
+                        map.insert(
+                            "description".into(),
+                            serde_json::json!(a.description.as_deref().unwrap_or("")),
+                        );
+                        map.insert("tags".into(), serde_json::json!(a.tags));
+                        map.insert("fields".into(), fields_json);
                     }
                 }
                 if let Some(ref name) = variant_name {

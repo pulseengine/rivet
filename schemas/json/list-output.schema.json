@@ -30,9 +30,34 @@
             "description": "Status string, or '-' if unset."
           },
           "links": {
+            "type": "array",
+            "description": "Outgoing links (issue #358): each is an object with the link `type` and `target`. Count is recoverable as `.links | length`.",
+            "items": {
+              "type": "object",
+              "required": ["type", "target"],
+              "properties": {
+                "type": { "type": "string" },
+                "target": { "type": "string" }
+              }
+            }
+          },
+          "inbound_links": {
             "type": "integer",
             "minimum": 0,
-            "description": "Number of outgoing links from this artifact."
+            "description": "Inbound-link count; present only with --rank-by-backlinks."
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description; present only with --full (#506)."
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tags; present only with --full (#506)."
+          },
+          "fields": {
+            "type": "object",
+            "description": "Custom field map; present with --full (#506) or --variant (merged view)."
           }
         }
       }

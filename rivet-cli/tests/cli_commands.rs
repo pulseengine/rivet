@@ -1243,6 +1243,74 @@ fn list_json_artifact_fields() {
     }
 }
 
+/// REQ-211 / #506: `rivet list --format json` is summary-only (no
+/// description/tags/fields); `--full` adds them in bulk, matching the
+/// `get <ID> --format json` shape. Verify the presence/absence split and
+/// that `--full`'s `fields` equals `get`'s `fields` for the same id.
+#[test]
+fn list_json_full_includes_rich_fields() {
+    let root = project_root();
+    let root_str = root.to_str().unwrap();
+    let run = |args: &[&str]| {
+        let mut full_args = vec!["--project", root_str];
+        full_args.extend_from_slice(args);
+        let out = Command::new(rivet_bin())
+            .args(&full_args)
+            .output()
+            .expect("execute rivet");
+        assert!(
+            out.status.success(),
+            "rivet {:?} must exit 0. stderr: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).expect("valid JSON")
+    };
+
+    // Plain list: summary-only — no rich keys.
+    let plain = run(&["list", "--format", "json"]);
+    let plain_first = plain["artifacts"]
+        .as_array()
+        .and_then(|a| a.first())
+        .expect("at least one artifact");
+    assert!(
+        plain_first.get("description").is_none()
+            && plain_first.get("tags").is_none()
+            && plain_first.get("fields").is_none(),
+        "plain `list --format json` must NOT carry description/tags/fields"
+    );
+
+    // --full: every artifact carries description (string), tags (array),
+    // fields (object).
+    let full = run(&["list", "--format", "json", "--full"]);
+    let full_arts = full["artifacts"].as_array().expect("artifacts array");
+    assert!(!full_arts.is_empty());
+    for a in full_arts {
+        assert!(
+            a.get("description").map(|v| v.is_string()).unwrap_or(false),
+            "--full artifact {} must have a string 'description'",
+            a.get("id").and_then(|v| v.as_str()).unwrap_or("?")
+        );
+        assert!(
+            a.get("tags").map(|v| v.is_array()).unwrap_or(false),
+            "--full artifact must have an array 'tags'"
+        );
+        assert!(
+            a.get("fields").map(|v| v.is_object()).unwrap_or(false),
+            "--full artifact must have an object 'fields'"
+        );
+    }
+
+    // --full's `fields` for a known id must equal `get`'s `fields`.
+    let id = full_arts[0]["id"].as_str().expect("id");
+    let got = run(&["get", id, "--format", "json"]);
+    assert_eq!(
+        full_arts[0].get("fields"),
+        got.get("fields"),
+        "list --full fields must equal get fields for {id}"
+    );
+}
+
 // ── rivet init then validate roundtrip ──────────────────────────────────
 
 /// Initialize a project, then validate it — the sample artifacts should pass.
