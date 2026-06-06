@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780707536194,
+  "lastUpdate": 1780711431052,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "fe908743b7ff0b83837534d63101cb25cc24aa20",
-          "message": "docs(artifacts): file REQ-186 — CLI minimal-build feature (validate without serve+MCP+LSP) (#457)\n\nDogfooding friction finding (issue #456): rivet-cli has no minimal build —\n`[features]` is only `default = []` + `wasm`, while axum/tower-http/rmcp\n(streamable-HTTP MCP server)/lsp-server/lsp-types/notify are unconditional\ndeps. So every from-source build (`cargo install rivet`, CI compile, local\n`cargo build` to test a validate change) compiles the whole web+MCP+LSP tree\neven though validate/list never use it. rivet-core already gates its heavy\ndeps; the CLI does not.\n\nFiled draft: the fix is additive (serve/mcp/lsp cargo features kept in\n`default`, `#[cfg]`-gated handlers; `--no-default-features` = fast minimal\nbuild), but the default feature set is a distribution-semantics call for the\nmaintainer, so implementation is deferred rather than decided unilaterally.\n\nVerified the pre-commit hook itself uses the installed `rivet` (RIVET_BIN:-rivet)\nand does NOT rebuild — corrected an overstated impact claim in both the REQ and\nissue #456 for accuracy.\n\nConfirmed with: rivet validate → PASS (234 pre-existing coverage warnings).\n\nRefs: REQ-186, REQ-007",
-          "timestamp": "2026-06-04T05:43:36-05:00",
-          "tree_id": "74bbbe38881c4978a00faf42a9699f9c960ea052",
-          "url": "https://github.com/pulseengine/rivet/commit/fe908743b7ff0b83837534d63101cb25cc24aa20"
-        },
-        "date": 1780570351493,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84296,
-            "range": "± 318",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 918550,
-            "range": "± 13474",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 18635673,
-            "range": "± 980612",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1959,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24951,
-            "range": "± 102",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 366196,
-            "range": "± 3378",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1445010,
-            "range": "± 17208",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166326,
-            "range": "± 897",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1943673,
-            "range": "± 63800",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 38679925,
-            "range": "± 2684407",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 439678,
-            "range": "± 4185",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16887359,
-            "range": "± 184908",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1314313433,
-            "range": "± 17147612",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4206,
-            "range": "± 23",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44122,
-            "range": "± 622",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 721960,
-            "range": "± 7458",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63825,
-            "range": "± 963",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 710408,
-            "range": "± 6444",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7990736,
-            "range": "± 123056",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1272,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14990,
-            "range": "± 154",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 230187,
-            "range": "± 1682",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20881,
-            "range": "± 102",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 142742,
-            "range": "± 866",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1338185,
-            "range": "± 40553",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1480037,
             "range": "± 23210",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ed8612bb7d673b1478d6b8e7646580a487914a9b",
+          "message": "feat(validate): `--new-since <ref>` shows only diagnostics new vs a git ref (REQ-208, closes #488) (#499)\n\nAnswers \"did MY change add any diagnostics?\" without jq over hundreds of lines.\n`rivet validate --new-since <REF>` validates the current tree and a detached git\nworktree of <REF> (each via a `rivet validate --format json` subprocess of the\nsame binary), then prints the set-difference keyed on\n(severity, artifact_id, rule, message). Exits non-zero when any NEW diagnostic is\nat/above `--fail-on` — a ready \"this PR adds no new diagnostics\" CI gate\n(e.g. `rivet validate --new-since origin/main --fail-on warning`).\n\n- Pure diff factored into `diff_new_diagnostics` (unit-tested: current-minus-\n  baseline by the 4-field key; empty when current is a subset).\n- `--new-since` short-circuits in the Validate dispatch (like `--explain`).\n- Worktree always cleaned up; no new runtime dep (PID-scoped temp dir, not the\n  dev-only `tempfile`, per #456).\n\nConfirmed with: cargo test -p rivet-cli --bin rivet new_since_diff_tests (2 pass);\n`rivet validate --new-since f7fc2d0` on this repo correctly reports the 8 new\ndiagnostics introduced by REQ-201..207 (their requirement-coverage warnings),\n`--new-since HEAD` reports 0, no worktree left behind; cargo fmt --check +\nclippy --all-targets -- -D warnings (exit 0); rivet validate PASS.\n\nImplements: REQ-208\nVerifies: REQ-208\nRefs: REQ-007",
+          "timestamp": "2026-06-05T20:54:39-05:00",
+          "tree_id": "6ec7bcbfa05aa0479aad2e7aac3ff3dfd79862d9",
+          "url": "https://github.com/pulseengine/rivet/commit/ed8612bb7d673b1478d6b8e7646580a487914a9b"
+        },
+        "date": 1780711430401,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85034,
+            "range": "± 286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 940759,
+            "range": "± 5167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 19266279,
+            "range": "± 1566408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1990,
+            "range": "± 20",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 23060,
+            "range": "± 600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 356510,
+            "range": "± 3177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1448970,
+            "range": "± 14890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167143,
+            "range": "± 865",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2111617,
+            "range": "± 89649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 51243381,
+            "range": "± 3104799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 447061,
+            "range": "± 1861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 19361494,
+            "range": "± 184438",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1500272603,
+            "range": "± 44622407",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4145,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 44047,
+            "range": "± 480",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 740330,
+            "range": "± 34042",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 67295,
+            "range": "± 305",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 771710,
+            "range": "± 2834",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 11280029,
+            "range": "± 338678",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1455,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 16786,
+            "range": "± 125",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 255954,
+            "range": "± 4223",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22586,
+            "range": "± 67",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 157956,
+            "range": "± 856",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1512347,
+            "range": "± 11420",
             "unit": "ns/iter"
           }
         ]
