@@ -6497,3 +6497,53 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-06T01:49:27Z
+
+  - id: REQ-210
+    type: requirement
+    title: "`rivet init --hooks` pre-commit runs `cargo fmt --check` (language-agnostic) so AI/dev commits don't pass locally and fail CI Format"
+    status: implemented
+    description: |
+      Finding (issue #438). The single most common first-push CI failure is a
+      formatting diff, and AI agents routinely hit it: they edit Rust, commit,
+      and the commit "passes" locally because the only pre-commit gate is
+      `rivet validate` — then CI's `cargo fmt --check` job goes red.
+
+      Root cause: the hook installed by the SHIPPED command `rivet init --hooks`
+      (`cmd_init_hooks`, rivet-cli/src/main.rs) only runs `rivet validate`. It
+      does NOT run `cargo fmt --check`. The fmt-checking pre-commit hook that
+      lives in THIS repo was installed by the dev-only `scripts/install-hooks.sh`
+      (and the `templates/pre-commit/.pre-commit-config.yaml`), neither of which
+      `rivet init --hooks` uses. So every project that adopts hooks the shipped
+      way gets no formatting gate.
+
+      Fix: `cmd_init_hooks` writes a pre-commit hook that, BEFORE the existing
+      `rivet validate` step, runs `cargo fmt --all -- --check` — but only when
+      both (a) `cargo` is on PATH and (b) the commit stages at least one `.rs`
+      file (`git diff --cached --name-only --diff-filter=ACM | grep -q '\.rs$'`).
+      The guard keeps the hook language-agnostic: a non-Rust rivet project (or a
+      machine without cargo) skips the fmt step silently, so the hook never
+      blocks commits in unrelated repositories. Mirrors the proven logic already
+      in `scripts/install-hooks.sh`. Convenience only; CI remains the real gate
+      (REQ-051) and `--no-verify` still bypasses it.
+
+      Acceptance:
+        - In a temp git repo with a `rivet.yaml`, `rivet init --hooks` writes a
+          `.git/hooks/pre-commit` whose body contains `cargo fmt --all -- --check`
+          guarded by a staged-`.rs` check (`grep -q '\.rs$'`) and a
+          `command -v cargo` test.
+        - The generated hook still runs `rivet validate --format json` and blocks
+          on `errors > 0` (existing behaviour preserved).
+        - `cargo test -p rivet-cli --test cli_commands` passes (full CLI suite).
+        - `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` clean.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [hooks, init, cargo-fmt, ci-parity, dogfooding, dx]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-051
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-06T10:30:00Z

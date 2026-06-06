@@ -4198,13 +4198,21 @@ fn cmd_init_hooks(dir: &std::path::Path) -> Result<bool> {
     // survives relocation of the project within the working tree (a
     // hard-coded `-p <path>` would silently validate the wrong directory
     // or skip validation after a move).
+    //
+    // Formatting gate (REQ-210, #438): a misformatted-Rust diff is the most
+    // common first-push CI failure, and AI agents kept hitting it because the
+    // hook only ran `rivet validate`. Run `cargo fmt --all -- --check` BEFORE
+    // validate — but only when cargo is on PATH and the commit actually stages
+    // a `.rs` file, so the hook stays language-agnostic and never blocks
+    // commits in non-Rust rivet projects. Convenience only; CI is the real
+    // gate (REQ-051) and `--no-verify` still bypasses this.
     let pre_commit_path = hooks_dir.join("pre-commit");
     install_hook(
         &pre_commit_path,
         &format!(
             r#"#!/usr/bin/env bash
 # Installed by: rivet init --hooks
-# Runs rivet validate and blocks on errors.
+# Runs cargo fmt --check (staged Rust) + rivet validate; blocks on errors.
 #
 # Marker discovery: walk up from $PWD until we find rivet.yaml, then cd
 # into that directory before running rivet. This keeps the hook working
@@ -4219,6 +4227,18 @@ if [ ! -f "$dir/rivet.yaml" ]; then
     exit 0
 fi
 cd "$dir" || exit 0
+
+# Formatting gate: only when cargo is present AND the commit stages Rust.
+# A misformatted diff is the most common first-push CI failure; catching it
+# here (~1s) keeps local commits in parity with the CI Format job. Skipped
+# silently for non-Rust projects.
+if command -v cargo >/dev/null 2>&1 \
+    && git diff --cached --name-only --diff-filter=ACM | grep -q '\.rs$'; then
+    if ! cargo fmt --all -- --check; then
+        echo "cargo fmt: formatting issues. Run 'cargo fmt --all', then re-stage."
+        exit 1
+    fi
+fi
 
 output=$("{rivet_bin}" validate --format json 2>/dev/null)
 errors=$(echo "$output" | python3 -c "import json,sys; print(json.load(sys.stdin).get('errors',0))" 2>/dev/null || echo "0")
