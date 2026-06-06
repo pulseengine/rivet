@@ -98,6 +98,54 @@ jobs:
       - name: Subcommand-coverage gate (warn-only)
         run: cargo run --release -p rivet-cli -- docs check --coverage --warn-only
 
+  # ── Traceability gate (REQ-051) ───────────────────────────────────────
+  # The project that BUILDS the traceability tool must gate its own PRs on
+  # traceability — dogfooding, and the CI half REQ-051 mandates (local git
+  # hooks are convenience only; only CI enforcement is auditor-grade).
+  #
+  # NOTE (operator step): this job RUNS on every push/PR, but it only
+  # *blocks* a merge once it is added to branch protection's required status
+  # checks (currently empty — see #436). The job is the mechanism; marking it
+  # required is a repo-settings action that cannot live in this file.
+  traceability:
+    name: Traceability (rivet validate + commits)
+    runs-on: [self-hosted, linux, x64, rust-cpu]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # `commits --range base..HEAD` needs real history, not a shallow clone.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Gate 1: the trace graph must carry no ERRORs (broken links, duplicate
+      # ids, bad link targets, cardinality, schema-rule inconsistencies).
+      # Coverage/lint WARNINGS do not fail — `validate` exits 1 only at or
+      # above `--fail-on` (default: error).
+      - name: rivet validate (fail on errors)
+        run: cargo run --release -p rivet-cli -- validate
+      # Gate 2: no ORPHAN commits and no BROKEN trailer refs introduced by
+      # THIS PR. Scoped to the PR's own commits (base..HEAD). NOT `--strict`,
+      # which promotes whole-store "artifact has no commit coverage" findings
+      # to errors and so can never pass on a narrow range. CLAUDE.md makes
+      # artifact trailers mandatory for rivet-core/src + rivet-cli/src: an
+      # orphan is a non-exempt code commit missing them; a broken ref is a
+      # trailer pointing at an unknown id (e.g. a reverted REQ).
+      - name: rivet commits — no orphan/broken trailers in this PR
+        if: github.event_name == 'pull_request'
+        run: |
+          range="${{ github.event.pull_request.base.sha }}..HEAD"
+          echo "Commit traceability over ${range}"
+          json="$(cargo run --release -q -p rivet-cli -- commits --range "${range}" --format json)"
+          counts="$(printf '%s' "${json}" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d.get("orphans",[])), len(d.get("broken_refs",[])))')"
+          orphans="${counts% *}"
+          broken="${counts#* }"
+          echo "orphan commits: ${orphans}, broken trailer refs: ${broken}"
+          if [ "${orphans}" -gt 0 ] || [ "${broken}" -gt 0 ]; then
+            echo "::error::Commit traceability gate failed: ${orphans} orphan commit(s), ${broken} broken trailer ref(s). Add artifact trailers (Implements/Fixes/Verifies/Refs) or 'Trace: skip'. See CLAUDE.md 'Commit Traceability'."
+            cargo run --release -q -p rivet-cli -- commits --range "${range}"
+            exit 1
+          fi
+
   # ── Tests ─────────────────────────────────────────────────────────────
   test:
     name: Test
