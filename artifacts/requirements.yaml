@@ -6497,35 +6497,3 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-06T01:49:27Z
-  - id: REQ-209
-    type: requirement
-    title: "Top-level path args (`--project`/`--schemas`) must be position-independent (clap `global`)"
-    status: implemented
-    description: |
-      Finding (issue #500, hit while implementing #488). `--project`/`-p` and
-      `--schemas` were declared on the top-level Cli without `global = true`, so
-      they only parsed BEFORE the subcommand: `rivet -p X validate` worked but
-      `rivet validate -p X` errored — and with `--format json` produced empty
-      stdout (error on stderr), a confusing failure for anything shelling out to
-      rivet (it cost a debug cycle in the #488 `--new-since` subprocess).
-
-      Fix: mark both args `global = true` so they work in any position. Additive
-      and low-risk — the pre-subcommand form still parses.
-
-      Acceptance:
-        - `cargo test -p rivet-cli --bin rivet cli_global_args_tests` passes
-          (`--project`/`--schemas` parse after the subcommand; `-p` before still parses).
-        - `rivet validate --project .` and `rivet validate -p . --format json`
-          both succeed (previously errored).
-        - `rivet validate` on the rivet repo still PASS.
-    tags: [cli, ergonomics, clap, args, dogfooding]
-    fields:
-      priority: should
-      category: functional
-    links:
-      - type: traces-to
-        target: REQ-007
-    provenance:
-      created-by: ai-assisted
-      model: claude-opus-4-8
-      timestamp: 2026-06-06T02:18:14Z
