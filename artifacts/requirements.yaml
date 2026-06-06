@@ -6455,3 +6455,45 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-05T21:19:32Z
+  - id: REQ-208
+    type: requirement
+    title: "`rivet validate --new-since <ref>` shows only diagnostics NEW relative to a git ref (edit-verify loop + 'no new diagnostics' CI gate)"
+    status: implemented
+    description: |
+      Finding (issue #488). After editing, the question that matters is "did MY
+      change add any diagnostics?" — not "what are all N warnings in the repo?".
+      `--explain <ID>` needs a known id and covers one artifact; `--baseline` is
+      a named cumulative scope; neither answers "new since a git ref". So the
+      edit-verify loop meant `validate --format json | jq` over hundreds of
+      diagnostics.
+
+      Fix: `rivet validate --new-since <REF>` validates the current tree and a
+      detached git worktree of <REF> (each via a `rivet validate --format json`
+      subprocess of the same binary), then prints the set-difference of
+      diagnostics keyed on (severity, artifact_id, rule, message). Exits
+      non-zero when any NEW diagnostic is at or above `--fail-on` — a ready
+      "this PR adds no new diagnostics" gate, e.g.
+      `rivet validate --new-since origin/main --fail-on warning`. The pure diff
+      is factored into `diff_new_diagnostics` (unit-tested); the worktree is
+      always cleaned up; no new runtime dependency (PID-scoped temp dir).
+
+      Acceptance:
+        - `cargo test -p rivet-cli --bin rivet new_since_diff_tests` passes
+          (current-minus-baseline by the 4-field key; empty when current ⊆ baseline).
+        - `rivet validate --new-since <REF>` prints a line
+          `New diagnostics since <REF>: N (E errors, W warnings, I infos)` and
+          lists only diagnostics absent at <REF>; `--new-since HEAD` reports 0.
+        - Exits non-zero iff a NEW diagnostic is at/above `--fail-on`.
+        - No `git worktree` is left behind after the run.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [validate, diagnostics, diff, ci-gate, edit-verify, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-06T01:49:27Z
