@@ -194,15 +194,15 @@ fn check_for_updates() {
 #[command(name = "rivet", about = "SDLC artifact traceability and validation", version = build_version())]
 struct Cli {
     /// Path to the project directory (containing rivet.yaml).
-    /// `global` so it works in any position (`rivet validate -p X` as well as
-    /// `rivet -p X validate`) — a non-global path arg silently errors when
-    /// placed after the subcommand, which is surprising for tools (#500).
-    #[arg(short, long, default_value = ".", global = true)]
+    /// NOTE: not `global` — clap debug-asserts when a global arg coexists with
+    /// subcommands that take positionals (next-id/link/snapshot diff/…), so
+    /// `--project` must precede the subcommand: `rivet -p X validate`, not
+    /// `rivet validate -p X`. See #500 (reverted REQ-209).
+    #[arg(short, long, default_value = ".")]
     project: PathBuf,
 
-    /// Path to schemas directory. `global` for the same position-independence
-    /// as `--project` (#500).
-    #[arg(long, global = true)]
+    /// Path to schemas directory (precedes the subcommand, like `--project`).
+    #[arg(long)]
     schemas: Option<PathBuf>,
 
     /// Increase verbosity
@@ -16993,32 +16993,6 @@ fn print_diagnostics_with_remediation(
 }
 
 // ── LSP unit tests ─────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod cli_global_args_tests {
-    use super::Cli;
-    use clap::Parser;
-
-    // rivet: verifies REQ-209
-    #[test]
-    fn project_and_schemas_parse_after_the_subcommand() {
-        // The #500 regression: a non-global `--project` errored when placed
-        // after the subcommand. With `global = true` both positions parse.
-        let after =
-            Cli::try_parse_from(["rivet", "validate", "--project", "/x", "--schemas", "/s"])
-                .expect("`--project`/`--schemas` must parse AFTER the subcommand");
-        assert_eq!(after.project.to_str(), Some("/x"));
-        assert_eq!(
-            after.schemas.as_deref().and_then(|p| p.to_str()),
-            Some("/s")
-        );
-
-        // The pre-subcommand form still works (no regression).
-        let before = Cli::try_parse_from(["rivet", "-p", "/y", "validate"])
-            .expect("`-p` before the subcommand must still parse");
-        assert_eq!(before.project.to_str(), Some("/y"));
-    }
-}
 
 #[cfg(test)]
 mod new_since_diff_tests {
