@@ -183,6 +183,26 @@ Use `rivet validate --format json` for machine-readable output.
 - Always include traceability links when creating artifacts
 - Run `rivet validate` before committing
 
+### Release planning (the `baseline` field is the release field)
+
+rivet's release plan lives in the **`baseline`** field on requirement /
+design-decision / feature artifacts — it is the schema-declared, queryable
+"which version is this targeted for" field. (This is the field the
+release-planning skill calls `release:`; rivet's name for it is `baseline`,
+and #512's "add a release field" is answered by this convention, not a new
+field.)
+
+- **In progress:** `baseline: vX.Y.Z-track` while the release is being built.
+- **Shipped:** drop the `-track` suffix (`baseline: vX.Y.Z`) when the release
+  is cut.
+- **Scope a release** = `rivet list --filter '(= baseline "vX.Y.Z-track")'`.
+- **Readiness is a query:** a release is cuttable only when every artifact in
+  its scope is `verified`/`accepted` (the V closed) — not when it's merely
+  `implemented`. Check with
+  `rivet list --filter '(and (= baseline "vX.Y.Z-track") (= status "implemented"))'`
+  (anything returned is still-to-verify).
+- Tag in bulk without races via `rivet modify --where '<filter>' --set-field baseline=vX.Y.Z-track`.
+
 ## Commit Traceability
 
 This project enforces commit-to-artifact traceability.
