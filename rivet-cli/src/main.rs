@@ -1278,6 +1278,14 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// List the built-in schema PRESETS you can declare in rivet.yaml's
+    /// `schemas:` list (name, version, #types) — the answer to "which
+    /// standards can I enable?" (#510). Needs no project.
+    Presets {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
     /// Show detailed info for an artifact type
     Show {
         /// Artifact type name
@@ -10823,6 +10831,13 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         SchemaAction::GetJson { name, content } => {
             return cmd_schema_get_json(cli, name, *content);
         }
+        // `presets` lists the compiled-in declarable schemas — independent of
+        // any project, so it must work in a bare directory (the user is
+        // deciding what to put in `schemas:` before a project exists). #510.
+        SchemaAction::Presets { format } => {
+            validate_format(format, &["text", "json"])?;
+            return cmd_schema_presets(format);
+        }
         // Resolve sources WITHOUT loading the schema graph — the whole point is
         // to diagnose resolution (incl. missing/embedded schemas), which must
         // work even when the full load would fail.
@@ -10951,6 +10966,7 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
         }
         SchemaAction::ListJson { .. }
         | SchemaAction::GetJson { .. }
+        | SchemaAction::Presets { .. }
         | SchemaAction::Sources { .. }
         | SchemaAction::Migrate { .. } => unreachable!(),
     };
@@ -11092,6 +11108,70 @@ fn resolve_json_schema(cli: &Cli, relative: &str) -> PathBuf {
         return project_schemas;
     }
     PathBuf::from(relative)
+}
+
+/// `rivet schema presets` (#510): list the compiled-in schema presets a user
+/// can declare in `rivet.yaml`'s `schemas:` list. Needs no project — the user
+/// is deciding what to enable before a project exists. For each preset we parse
+/// the embedded copy to surface its version, artifact-type count, and (if any)
+/// description, so the declarable set is self-documenting.
+fn cmd_schema_presets(format: &str) -> Result<bool> {
+    struct Preset {
+        name: &'static str,
+        version: String,
+        types: usize,
+        description: Option<String>,
+    }
+    let presets: Vec<Preset> = rivet_core::embedded::embedded_schema_names()
+        .filter_map(|name| {
+            let s = rivet_core::embedded::load_embedded_schema(name).ok()?;
+            Some(Preset {
+                name,
+                version: s.schema.version.clone(),
+                types: s.artifact_types.len(),
+                description: s.schema.description.clone(),
+            })
+        })
+        .collect();
+
+    if format == "json" {
+        let arr: Vec<serde_json::Value> = presets
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "name": p.name,
+                    "version": p.version,
+                    "types": p.types,
+                    "description": p.description,
+                })
+            })
+            .collect();
+        let out = serde_json::json!({
+            "command": "schema presets",
+            "count": presets.len(),
+            "presets": arr,
+        });
+        println!("{}", serde_json::to_string_pretty(&out).unwrap());
+    } else {
+        println!("Built-in schema presets — declare any of these in rivet.yaml `schemas:`:\n");
+        let name_w = presets.iter().map(|p| p.name.len()).max().unwrap_or(4);
+        for p in &presets {
+            let desc = p.description.as_deref().unwrap_or("");
+            println!(
+                "  {:<name_w$}  {:>7}  {:>2} types  {}",
+                p.name,
+                format!("@{}", p.version),
+                p.types,
+                desc,
+                name_w = name_w,
+            );
+        }
+        println!(
+            "\n{} presets. Bridge schemas auto-discover from the loaded set and are not listed here.",
+            presets.len()
+        );
+    }
+    Ok(true)
 }
 
 fn cmd_schema_list_json(cli: &Cli, format: &str) -> Result<bool> {
