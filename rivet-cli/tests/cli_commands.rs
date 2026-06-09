@@ -261,6 +261,48 @@ fn schema_list_json() {
     );
 }
 
+/// REQ-213 / #510: `rivet schema presets` lists the declarable embedded
+/// schemas — needs NO project (the user runs it before one exists) and must
+/// include the standards that prompted the report.
+#[test]
+fn schema_presets_lists_declarable_standards_without_a_project() {
+    // Deliberately run from a temp dir with no rivet.yaml.
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let output = Command::new(rivet_bin())
+        .args(["schema", "presets", "--format", "json"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to execute rivet schema presets");
+
+    assert!(
+        output.status.success(),
+        "rivet schema presets must exit 0 with no project. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("schema presets JSON must be valid");
+    let presets = parsed
+        .get("presets")
+        .and_then(|v| v.as_array())
+        .expect("presets array");
+    let names: Vec<&str> = presets
+        .iter()
+        .filter_map(|p| p.get("name").and_then(|v| v.as_str()))
+        .collect();
+    for standard in ["do-178c", "iso-26262", "iec-61508", "en-50128", "common"] {
+        assert!(
+            names.contains(&standard),
+            "schema presets must list '{standard}'; got {names:?}"
+        );
+    }
+    // Each preset carries a version and a type count.
+    for p in presets {
+        assert!(p.get("version").and_then(|v| v.as_str()).is_some());
+        assert!(p.get("types").and_then(|v| v.as_u64()).is_some());
+    }
+}
+
 // ── rivet init ──────────────────────────────────────────────────────────
 
 /// `rivet init --preset stpa` creates rivet.yaml and artifacts in a temp dir.
