@@ -1278,6 +1278,18 @@ artifacts:
       hooks do not provide security assurance — only CI enforcement does.
       A rivet validate --check-hooks flag should report whether hooks are
       installed, but hook absence must not block local development.
+
+      Status (2026-06-06): the in-CI gating MECHANISM is now wired — see
+      REQ-212, which added a `traceability` job to ci.yml running `rivet
+      validate` (fail on errors) + `rivet commits` (orphan/broken-ref gate on
+      PRs). The hook-security documentation clause is met (CLAUDE.md "Hook
+      Security Model"). REMAINING before this can flip to implemented:
+      (1) the job must be added to branch protection's REQUIRED status checks
+      so it actually blocks merges (operator/repo-settings action, can't live
+      in-repo; the empty required-checks set is tracked in #436); and (2) the
+      `rivet validate --check-hooks` flag does not yet exist. Kept `draft`
+      until both are done — the job running but not blocking is exactly the
+      advisory-gate trap #436 describes.
     tags: [ci, hooks, security, tool-qualification]
     links:
       - type: constraint-satisfies
@@ -6607,6 +6619,57 @@ artifacts:
       model: claude-opus-4-8
       timestamp: 2026-06-06T11:00:00Z
 
+  - id: REQ-212
+    type: requirement
+    title: "CI runs `rivet validate` + `rivet commits` as a gating job — the traceability tool gates its own PRs (the in-CI mechanism of REQ-051)"
+    status: implemented
+    description: |
+      Finding (bootstrap-verification audit of rivet-as-tool). The project
+      that BUILDS the traceability tool did not gate its own PRs on
+      traceability: `ci.yml` ran `rivet docs check` but neither `rivet
+      validate` nor `rivet commits`. `rivet validate` ran only at release
+      time (`release.yml`), so a graph error or an untraced code commit could
+      land on `main` and only surface at release. This is the in-CI mechanism
+      REQ-051 calls for; REQ-051 stays the broader (and still-`draft`) parent
+      because it additionally requires the job be a *branch-protection
+      required check* (operator action, see #436) and a `validate
+      --check-hooks` flag (not yet implemented).
+
+      A new `traceability` job in `ci.yml`:
+        - Gate 1: `cargo run -p rivet-cli -- validate` — exits 1 on ERRORs
+          (broken links, dup ids, bad targets, cardinality); coverage/lint
+          WARNINGS do not fail (default `--fail-on error`).
+        - Gate 2 (pull_request only): `rivet commits --range <base.sha>..HEAD
+          --format json`, fail if `orphans` or `broken_refs` is non-empty —
+          i.e. a non-exempt code commit missing trailers, or a trailer
+          pointing at an unknown id. NOT `--strict`, which promotes
+          whole-store "artifact has no commit coverage" to errors and so can
+          never pass on a narrow PR range (calibrated: `--strict` over the 3
+          clean recent merges still exits 1 on uncovered-artifact findings).
+
+      Acceptance:
+        - `.github/workflows/ci.yml` defines a `traceability` job that runs
+          `rivet validate` and (on pull_request) the `rivet commits`
+          orphan/broken-ref check; `actionlint` is clean (modulo the
+          pre-existing custom runner-label false positives).
+        - `rivet validate` exits non-zero on a tree with a dangling link and
+          0 on the current rivet tree (PASS, warnings only) — verified.
+        - The commit gate's bash passes on a clean range (orphans=0,
+          broken=0 → exit 0) and fails on a range containing the reverted
+          REQ-209 trailer (broken_refs=2 → exit 1) — verified locally.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [ci, traceability, gate, dogfooding, req-051]
+    fields:
+      priority: must
+      category: non-functional
+      baseline: v0.16.0-track
+    links:
+      - type: traces-to
+        target: REQ-051
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-06T11:30:00Z
   - id: REQ-213
     type: requirement
     title: "`rivet schema presets` lists the declarable built-in schemas so the enableable standard set is discoverable (#510)"
@@ -6643,6 +6706,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
