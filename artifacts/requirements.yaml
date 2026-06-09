@@ -6147,6 +6147,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-196
@@ -6180,6 +6181,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
@@ -6278,6 +6280,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
@@ -6321,6 +6324,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-159
@@ -6370,6 +6374,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-177
@@ -6410,6 +6415,7 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-054
@@ -6448,6 +6454,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: FEAT-001
@@ -6490,6 +6497,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
@@ -6540,6 +6548,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-051
@@ -6589,6 +6598,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
