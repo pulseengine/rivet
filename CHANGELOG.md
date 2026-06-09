@@ -5,7 +5,29 @@
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-06-09
+
 ### Added
+
+- **REQ-213 / #510 — `rivet schema presets`.** Lists every built-in schema
+  preset you can declare in `rivet.yaml`'s `schemas:` (name, version,
+  artifact-type count, description), so the enableable standard set —
+  DO-178C / ISO 26262 / IEC 61508 / EN 50128 and the rest — is discoverable
+  instead of undocumented. Needs no project; works in a bare directory.
+- **REQ-211 / #506, #511 — `rivet list --format json --full`.** Emits each
+  artifact's `description`, `tags`, and `fields` in bulk, so a machine-readable
+  query for a custom field value (e.g. `release`/`baseline`) no longer needs one
+  `rivet get` per artifact or a raw YAML parse.
+- **REQ-212 / REQ-051, #436 — CI traceability gate.** A `traceability` job in
+  `ci.yml` runs `rivet validate` (fail on errors) + `rivet commits` (orphan /
+  broken-trailer gate on PRs): the traceability tool now gates its own PRs. The
+  in-CI mechanism of REQ-051 (marking it a *required* check remains an operator
+  step, #436).
+- **Release planning via the `baseline` field (#512).** Documented in AGENTS.md
+  that `baseline` is rivet's release field (`vX.Y.Z-track` while in progress →
+  `vX.Y.Z` when shipped); readiness is the query
+  `rivet list --filter '(= baseline "vX.Y.Z-track")'`. v0.16.0 is the first
+  release scoped this way.
 
 - **REQ-162 / #352, #355 — canonical status lifecycle is now enforced.** The
   shared `schemas/common.yaml` `status` base-field declares
