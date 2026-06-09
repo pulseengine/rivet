@@ -220,6 +220,15 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Names of every embedded schema preset — the set a user may list in
+/// `rivet.yaml`'s `schemas:`. Reuses the existing `SCHEMA_NAMES` registry;
+/// surfaced by `rivet schema presets` (#510) so the declarable set is
+/// self-documenting. The `every_embedded_preset_resolves_and_parses` test
+/// guards that every name here also resolves via `embedded_schema`.
+pub fn embedded_schema_names() -> impl Iterator<Item = &'static str> {
+    SCHEMA_NAMES.iter().copied()
+}
+
 /// Look up embedded bridge schema content by filename stem
 /// (e.g. `"eu-ai-act-stpa.bridge"`).
 pub fn embedded_bridge(name: &str) -> Option<&'static str> {
@@ -441,6 +450,31 @@ pub fn load_schemas_with_fallback(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // rivet: verifies REQ-213
+    #[test]
+    fn every_embedded_preset_resolves_and_parses() {
+        // The single-source array must stay self-consistent: every listed
+        // name resolves via `embedded_schema`, parses as a SchemaFile, and is
+        // surfaced by `embedded_schema_names`. Guards #510 (`schema presets`)
+        // against a preset that lists but can't load (or vice-versa).
+        let names: Vec<&str> = embedded_schema_names().collect();
+        assert_eq!(names.len(), SCHEMA_NAMES.len());
+        for standard in ["do-178c", "iso-26262", "iec-61508", "en-50128"] {
+            assert!(
+                names.contains(&standard),
+                "preset list missing '{standard}'"
+            );
+        }
+        for name in names {
+            let content = embedded_schema(name)
+                .unwrap_or_else(|| panic!("preset '{name}' has no embedded content"));
+            assert!(!content.is_empty(), "preset '{name}' is empty");
+            // Must parse — `schema presets` reads each one's version/types.
+            load_embedded_schema(name)
+                .unwrap_or_else(|e| panic!("preset '{name}' failed to parse: {e}"));
+        }
+    }
 
     // rivet: verifies REQ-177
     #[test]

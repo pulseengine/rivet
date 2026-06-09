@@ -6159,6 +6159,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-196
@@ -6192,6 +6193,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
@@ -6290,6 +6292,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
@@ -6333,6 +6336,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-159
@@ -6382,6 +6386,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-177
@@ -6422,6 +6427,7 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-054
@@ -6460,6 +6466,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: FEAT-001
@@ -6502,6 +6509,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
@@ -6552,6 +6560,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-051
@@ -6601,6 +6610,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-007
@@ -6652,6 +6662,7 @@ artifacts:
     fields:
       priority: must
       category: non-functional
+      baseline: v0.16.0-track
     links:
       - type: traces-to
         target: REQ-051
@@ -6659,3 +6670,87 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-06T11:30:00Z
+  - id: REQ-213
+    type: requirement
+    title: "`rivet schema presets` lists the declarable built-in schemas so the enableable standard set is discoverable (#510)"
+    status: implemented
+    description: |
+      Finding (#510). A user bootstrapping a multi-standard project went to
+      declare DO-178C / ISO 26262 / IEC 61508 / EN 50128 in `rivet.yaml`'s
+      `schemas:` list and found "no preset for any of the four". In fact all
+      four are embedded and declarable (since before v0.15.0) — but there was
+      NO way to DISCOVER them: `rivet schema` had `list` (loaded types),
+      `links`, `rules`, `list-json`, `migrate`, but nothing enumerating the
+      available presets. So the declarable set was undocumented and the user
+      reasonably concluded the schemas didn't exist.
+
+      Fix: `rivet schema presets` (text + json) lists every embedded schema
+      preset with its version, artifact-type count, and description. Needs no
+      project (the user runs it before one exists). The embedded registry was
+      refactored to a single source of truth (`EMBEDDED_SCHEMAS: &[(name,
+      content)]`) so `embedded_schema`, `embedded_schema_names`, and this
+      command can never drift apart.
+
+      Acceptance:
+        - `rivet schema presets --format json` run in a directory with NO
+          rivet.yaml exits 0 and lists >= 21 presets, each with `name`,
+          `version`, and `types`; the set includes `do-178c`, `iso-26262`,
+          `iec-61508`, `en-50128`.
+        - `cargo test -p rivet-core --lib embedded::tests::every_embedded_preset_resolves_and_parses`
+          passes (every listed preset resolves + parses — no drift).
+        - `cargo test -p rivet-cli --test cli_commands` passes (full suite,
+          incl. schema_presets_lists_declarable_standards_without_a_project).
+        - `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` clean.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [schema, presets, discoverability, dogfooding, dx]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.16.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-09T09:30:00Z
+
+  - id: REQ-214
+    type: requirement
+    title: "`release` is a first-class, queryable optional field on requirement-family types (release-planning) (#512)"
+    status: draft
+    description: |
+      Finding (#512). The release-planning workflow scopes a release as the
+      set of artifacts carrying `release: vX.Y` and computes readiness by
+      filtering on release + status. But `release` is not a schema-declared
+      field on the requirement family (`requirement`, `sw-req`, `system-req`,
+      `stakeholder-req`, `design-decision`), so: (a) `rivet validate` emits an
+      INFO "field 'release' is not defined in schema"; and (b) a TOP-LEVEL
+      `release:` key is invisible to the s-expression filter (`(= release
+      "vX.Y")` → count 0). NB verified on main: a `release` value placed under
+      `fields:` IS already queryable via `(= release ...)`; only the top-level
+      form and the validate INFO remain.
+
+      Fix (additive): declare `release` as an optional field on the
+      requirement-family types in the relevant schemas (common/dev/aspice) so
+      the field is blessed (no INFO) and uniformly queryable, regardless of
+      whether the value is written top-level or under `fields:`.
+
+      Acceptance:
+        - `rivet schema show requirement` lists `release` among optional fields.
+        - An artifact with `release: v0.1.0` validates with no INFO about an
+          undeclared `release` field.
+        - `rivet list --filter '(= release "v0.1.0")' --format json` matches it
+          whether `release` is top-level or under `fields:`.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [schema, release-planning, query, dx]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-09T09:30:00Z
