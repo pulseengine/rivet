@@ -737,7 +737,11 @@ jobs:
   # are green under the unified workspace.
   verus:
     name: Verus Proofs
-    needs: [test]
+    # Decoupled from `test` (mirrors `rocq`, #299): Verus runs the proof specs
+    # via Bazel, independent of cargo-test status. With `needs: [test]` this
+    # ubuntu-latest (always-available) job sat blocked behind the contended
+    # self-hosted rust-cpu `test` job — the exact saturation Rocq decoupled to
+    # avoid (#509).
     # ubuntu-latest (GitHub-hosted): mirrors the green `rocq` job — full sudo,
     # no NoNewPrivileges, so the standard cachix Nix installer works. Moved off
     # the self-hosted lean-mem pool (#509): there the no-sudo daemonless
