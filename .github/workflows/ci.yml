@@ -436,18 +436,18 @@ jobs:
         # bazel.rs has the third transmute but its tests touch salsa/process
         # internals — covered by the nightly full sweep, not the PR gate.
         #
-        # MUST run under Tree Borrows. rowan's thin-token provenance trips a
-        # *Stacked Borrows* rule (rust-analyzer/rowan #210/#211/#212, all closed
-        # UNMERGED — upstream is rewriting rowan, not patching it). The
-        # maintainer's position: "rowan should pass Tree Borrows; that Stacked
-        # Borrows rule is unlikely to survive Rust's final aliasing model." Our
-        # `fix/miri-soundness-v2` fork pin passes under TB. (Without
-        # `-Zmiri-tree-borrows` this hits a SharedReadOnly zero-size-retag UB.)
+        # Runs under STACKED BORROWS (Miri default, the strictest model). This
+        # is sound thanks to rowan fork v3 (= v2 + phall1's #212: GreenToken as a
+        # DST + cursor SB fixes), which widens the token retag past the slice
+        # tail. The pre-v3 pin hit a SharedReadOnly zero-size-retag UB here and
+        # needed `-Zmiri-tree-borrows` to dodge it; v3 makes both SB and TB pass,
+        # so we gate on the stricter one. (rust-analyzer/rowan #210/#211/#212 are
+        # all closed-unmerged; upstream is rewriting rowan — Cargo.toml.)
         run: |
           cargo miri nextest run -p rivet-core --lib --test-threads 24 \
             -E 'test(sexpr::) | test(yaml_cst::)'
         env:
-          MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
+          MIRIFLAGS: "-Zmiri-disable-isolation"
         timeout-minutes: 20
 
   # Nightly + manual: the FULL Miri sweep — every Miri-compatible test (all but

@@ -2938,7 +2938,7 @@ dependencies = [
 [[package]]
 name = "rowan"
 version = "0.16.2"
-source = "git+https://github.com/pulseengine/rowan.git?branch=fix%2Fmiri-soundness-v2#dcbece400019397b97764070435eba62c7aa5336"
+source = "git+https://github.com/pulseengine/rowan.git?branch=fix%2Fmiri-soundness-v3#9e7abd1161634377d278cde0c504c101ac003941"
 dependencies = [
  "countme",
  "hashbrown 0.15.5",
