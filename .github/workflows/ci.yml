@@ -738,8 +738,13 @@ jobs:
   verus:
     name: Verus Proofs
     needs: [test]
-    # lean-mem: Verus solver work benefits from RAM headroom.
-    runs-on: [self-hosted, linux, x64, lean-mem]
+    # ubuntu-latest (GitHub-hosted): mirrors the green `rocq` job — full sudo,
+    # no NoNewPrivileges, so the standard cachix Nix installer works. Moved off
+    # the self-hosted lean-mem pool (#509): there the no-sudo daemonless
+    # nix-installer broke on a version bump and chronically failed at install,
+    # so this advisory job was perma-red regardless of the proofs. 16 GB on the
+    # hosted runner is ample for the rivet Verus specs.
+    runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -756,27 +761,15 @@ jobs:
       # of which target is being built, so Nix must be on PATH even for
       # Verus-only invocations.
       #
-      # The self-hosted runners run with `NoNewPrivileges=true` (systemd
-      # hardening), which makes `sudo` inside `cachix/install-nix-action`
-      # fail with "sudo: 'no new privileges' flag is set". Use the
-      # DeterminateSystems installer which supports a daemonless
-      # single-user mode that does not need sudo.
+      # ubuntu-latest is GitHub-hosted (full sudo, no NoNewPrivileges), so the
+      # standard cachix multi-user installer works — matching the green `rocq`
+      # job. The DeterminateSystems daemonless variant was only needed for the
+      # self-hosted NoNewPrivileges runner, and an installer version bump broke
+      # its no-sudo path (it escalated to sudo and failed at install); #509.
       - name: Install Nix
-        # Pinned by SHA + `determinate: false`. The action's `determinate`
-        # input default flipped false->true between v17 and v22, so the
-        # former `@main` pin started installing Determinate Nix, whose
-        # `determinate-nixd` daemon ignores `init: none` and fails on
-        # no-sudo / NoNewPrivileges runners (missing daemon socket,
-        # root-owned store lock). `determinate: false` restores the plain
-        # upstream daemonless install this job was written for.
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: cachix/install-nix-action@v30
         with:
-          determinate: false
-          init: none
-          extra-conf: |
-            experimental-features = nix-command flakes
-      - name: Add Nix to PATH
-        run: echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
+          nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Verus specs
         run: bazel test //verus:rivet_specs_verify
       - name: Upload Verus test log
