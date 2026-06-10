@@ -410,10 +410,16 @@ jobs:
           path: coverage-html/
 
   # ── Miri (undefined behavior, pointer provenance) ───────────────────
+  # PR/push: Miri over the actual UB SURFACE only. Measured (PR #521): the full
+  # 678-test sweep is ~930 test-minutes of mostly safe business logic (regex,
+  # glob, HTML) that Miri runs ~100-1000x slower than native — it can't fit a
+  # per-PR budget at any thread count, and provides ~no memory-safety value.
+  # Miri exists to validate `unsafe`; in rivet-core that's the SyntaxKind
+  # `transmute`s in the rowan-based CST parsers. Scope the PR gate to those
+  # (sexpr + yaml_cst); the FULL sweep runs nightly (miri-full, #498 pattern).
   miri:
-    name: Miri
-    # lean-mem: parallel Miri (nextest, process-per-test) trades RAM for cores —
-    # the 24G ceiling lets several Miri processes run at once.
+    name: Miri (safety surface)
+    if: github.event_name != 'schedule'
     runs-on: [self-hosted, linux, x64, lean-mem]
     steps:
       - uses: actions/checkout@v6
@@ -424,40 +430,42 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      - name: Show runner resources
-        # Make the "where do CPU/mem go" answer visible in the log: the box has
-        # plenty; single-process `cargo miri test` just used one core of it.
+      - name: Run Miri over the unsafe/CST surface
+        # sexpr.rs + yaml_cst.rs hold the only real `unsafe` in rivet-core
+        # (`std::mem::transmute` of raw SyntaxKind for the rowan parsers).
+        # bazel.rs has the third transmute but its tests touch salsa/process
+        # internals — covered by the nightly full sweep, not the PR gate. The
+        # multi-item-tree rowan cursor UB (pulseengine/rowan#211) lives in
+        # yaml_hir/sexpr_eval/feature_model (nightly-skipped); the single-item
+        # sexpr/yaml_cst tests here pass clean. nextest spreads them across the
+        # cores (measured 32c/125G) so this is a couple of minutes.
         run: |
-          echo "cores (nproc): $(nproc)"
-          free -h
-      - name: Run Miri (nextest — process-per-test parallelism)
-        # `cargo miri test` ran ONE Miri process: a single-threaded interpreter
-        # pinning one core for ~45 min while the rest of the box sat idle.
-        # `cargo miri nextest run` runs each test in its own process, so the
-        # runner's cores are actually used and wall-time collapses toward
-        # total-work / threads.
-        #
-        # MEASURED on this runner (see "Show runner resources"): 32 cores,
-        # 125 GiB RAM — NOT memory-constrained. ~678 Miri tests at ~20s each
-        # ≈ 226 core-min of work. At --test-threads 4 that was still ~56 min
-        # (timed out); at 24 it's ~9-10 min, using ~24 * ~3 GiB ≈ 72 GiB,
-        # comfortably under 125 GiB. (The "lean-mem" label is a misnomer here.)
-        #
-        # SAME test selection as before: the old libtest `--skip <m>` list is
-        # translated to nextest's filterset `not (test(<m>) | ...)`. Skip
-        # bazel/db (salsa internals), externals (spawns git),
-        # export/providers/test_scanner/yaml_edit/markdown (not
-        # safety-critical, slow under Miri); yaml_hir/feature_model/sexpr_eval
-        # + its s-expr consumers (query_embed/parse_query/execute_sexpr) build
-        # multi-item rowan trees → cursor-dealloc UB under tree borrows
-        # (pulseengine/rowan#211); doc_check (pulldown-cmark heavy);
-        # parse_actual_hazards/stpa_hazard (slow).
+          cargo miri nextest run -p rivet-core --lib --test-threads 24 \
+            -E 'test(sexpr::) | test(yaml_cst::)'
+        timeout-minutes: 20
+
+  # Nightly + manual: the FULL Miri sweep — every Miri-compatible test (all but
+  # the externals/process-spawning + rowan#211 multi-item failures the suite
+  # has always skipped). Off the per-PR path (#498) so its ~50-min runtime
+  # never blocks a PR; 24 threads on the 125 GiB runner, generous timeout.
+  miri-full:
+    name: Miri (full, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, linux, x64, lean-mem]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Run full Miri sweep
         run: |
           cargo miri nextest run -p rivet-core --lib --test-threads 24 \
             -E 'not (test(bazel) | test(db) | test(externals) | test(export) | test(providers) | test(test_scanner) | test(yaml_edit) | test(markdown) | test(parse_actual_hazards) | test(stpa_hazard) | test(yaml_hir) | test(feature_model) | test(doc_check) | test(sexpr_eval) | test(query_embed) | test(parse_query) | test(execute_sexpr))'
-        # Generous headroom for a now-parallel job (was a single-process 45-min
-        # budget). Tighten once we see the real parallel wall-time.
-        timeout-minutes: 45
+        timeout-minutes: 90
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
 
