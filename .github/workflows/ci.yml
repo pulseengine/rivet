@@ -440,9 +440,13 @@ jobs:
         # 15 min with the last printed test at the 11-min mark (i.e.,
         # the slow tests at the tail just ran past the budget on
         # smithy's lean-mem class). Hosted may have been fine because
-        # of different tail-test perf characteristics. Revisit once
-        # we have a few green runs to set the budget closer to actual.
-        timeout-minutes: 30
+        # of different tail-test perf characteristics.
+        # Bumped 30→45 (2026-06-10): under self-hosted-pool contention
+        # (clearing the #509 outage backlog) Miri ran past 30 min and
+        # timed out, failing the run while every required gate was green.
+        # 45 gives headroom on the lean-mem class without masking a real
+        # hang (a genuine UB loop still trips the budget).
+        timeout-minutes: 45
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
 
