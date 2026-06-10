@@ -434,11 +434,14 @@ jobs:
         # `cargo miri test` ran ONE Miri process: a single-threaded interpreter
         # pinning one core for ~45 min while the rest of the box sat idle.
         # `cargo miri nextest run` runs each test in its own process, so the
-        # lean-mem runner's cores are actually used and wall-time collapses
-        # toward the slowest single test. `--test-threads` bounds concurrent
-        # Miri processes so total shadow-memory stays under the 24G ceiling —
-        # start conservative at 4, raise once a green run shows real peak-RSS
-        # headroom.
+        # runner's cores are actually used and wall-time collapses toward
+        # total-work / threads.
+        #
+        # MEASURED on this runner (see "Show runner resources"): 32 cores,
+        # 125 GiB RAM — NOT memory-constrained. ~678 Miri tests at ~20s each
+        # ≈ 226 core-min of work. At --test-threads 4 that was still ~56 min
+        # (timed out); at 24 it's ~9-10 min, using ~24 * ~3 GiB ≈ 72 GiB,
+        # comfortably under 125 GiB. (The "lean-mem" label is a misnomer here.)
         #
         # SAME test selection as before: the old libtest `--skip <m>` list is
         # translated to nextest's filterset `not (test(<m>) | ...)`. Skip
@@ -450,7 +453,7 @@ jobs:
         # (pulseengine/rowan#211); doc_check (pulldown-cmark heavy);
         # parse_actual_hazards/stpa_hazard (slow).
         run: |
-          cargo miri nextest run -p rivet-core --lib --test-threads 4 \
+          cargo miri nextest run -p rivet-core --lib --test-threads 24 \
             -E 'not (test(bazel) | test(db) | test(externals) | test(export) | test(providers) | test(test_scanner) | test(yaml_edit) | test(markdown) | test(parse_actual_hazards) | test(stpa_hazard) | test(yaml_hir) | test(feature_model) | test(doc_check) | test(sexpr_eval) | test(query_embed) | test(parse_query) | test(execute_sexpr))'
         # Generous headroom for a now-parallel job (was a single-process 45-min
         # budget). Tighten once we see the real parallel wall-time.
