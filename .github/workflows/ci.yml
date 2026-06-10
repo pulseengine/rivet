@@ -440,9 +440,13 @@ jobs:
         # 15 min with the last printed test at the 11-min mark (i.e.,
         # the slow tests at the tail just ran past the budget on
         # smithy's lean-mem class). Hosted may have been fine because
-        # of different tail-test perf characteristics. Revisit once
-        # we have a few green runs to set the budget closer to actual.
-        timeout-minutes: 30
+        # of different tail-test perf characteristics.
+        # Bumped 30→45 (2026-06-10): under self-hosted-pool contention
+        # (clearing the #509 outage backlog) Miri ran past 30 min and
+        # timed out, failing the run while every required gate was green.
+        # 45 gives headroom on the lean-mem class without masking a real
+        # hang (a genuine UB loop still trips the budget).
+        timeout-minutes: 45
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
 
@@ -733,9 +737,18 @@ jobs:
   # are green under the unified workspace.
   verus:
     name: Verus Proofs
-    needs: [test]
-    # lean-mem: Verus solver work benefits from RAM headroom.
-    runs-on: [self-hosted, linux, x64, lean-mem]
+    # Decoupled from `test` (mirrors `rocq`, #299): Verus runs the proof specs
+    # via Bazel, independent of cargo-test status. With `needs: [test]` this
+    # ubuntu-latest (always-available) job sat blocked behind the contended
+    # self-hosted rust-cpu `test` job — the exact saturation Rocq decoupled to
+    # avoid (#509).
+    # ubuntu-latest (GitHub-hosted): mirrors the green `rocq` job — full sudo,
+    # no NoNewPrivileges, so the standard cachix Nix installer works. Moved off
+    # the self-hosted lean-mem pool (#509): there the no-sudo daemonless
+    # nix-installer broke on a version bump and chronically failed at install,
+    # so this advisory job was perma-red regardless of the proofs. 16 GB on the
+    # hosted runner is ample for the rivet Verus specs.
+    runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -752,27 +765,15 @@ jobs:
       # of which target is being built, so Nix must be on PATH even for
       # Verus-only invocations.
       #
-      # The self-hosted runners run with `NoNewPrivileges=true` (systemd
-      # hardening), which makes `sudo` inside `cachix/install-nix-action`
-      # fail with "sudo: 'no new privileges' flag is set". Use the
-      # DeterminateSystems installer which supports a daemonless
-      # single-user mode that does not need sudo.
+      # ubuntu-latest is GitHub-hosted (full sudo, no NoNewPrivileges), so the
+      # standard cachix multi-user installer works — matching the green `rocq`
+      # job. The DeterminateSystems daemonless variant was only needed for the
+      # self-hosted NoNewPrivileges runner, and an installer version bump broke
+      # its no-sudo path (it escalated to sudo and failed at install); #509.
       - name: Install Nix
-        # Pinned by SHA + `determinate: false`. The action's `determinate`
-        # input default flipped false->true between v17 and v22, so the
-        # former `@main` pin started installing Determinate Nix, whose
-        # `determinate-nixd` daemon ignores `init: none` and fails on
-        # no-sudo / NoNewPrivileges runners (missing daemon socket,
-        # root-owned store lock). `determinate: false` restores the plain
-        # upstream daemonless install this job was written for.
-        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+        uses: cachix/install-nix-action@v30
         with:
-          determinate: false
-          init: none
-          extra-conf: |
-            experimental-features = nix-command flakes
-      - name: Add Nix to PATH
-        run: echo "$HOME/.nix-profile/bin" >> "$GITHUB_PATH"
+          nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Verus specs
         run: bazel test //verus:rivet_specs_verify
       - name: Upload Verus test log

@@ -6754,3 +6754,45 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-09T09:30:00Z
+
+  - id: REQ-215
+    type: requirement
+    title: "Proof CI jobs (Verus, Miri) must not be perma-red from self-hosted-pool infra; run them on a config that actually completes (v0.17.0, #509)"
+    status: implemented
+    description: |
+      Finding (v0.16.0 post-release CI). The required gates were all green and
+      v0.16.0 shipped, yet the main CI run was red from two advisory/proof jobs
+      failing on self-hosted-pool infrastructure, not on code:
+        - Verus Proofs: perma-red at "Install Nix". The no-sudo daemonless
+          DeterminateSystems installer (crafted for the self-hosted
+          NoNewPrivileges runner) broke on a version bump and escalated to
+          sudo, which fails there — the proofs never ran.
+        - Miri: timed out at 30 min on the slow `lean-mem` self-hosted runner
+          while the pool was contended clearing the #509 outage backlog.
+
+      Fix (first v0.17.0 CI-reliability work, #509 theme):
+        - Move Verus to `ubuntu-latest` + `cachix/install-nix-action@v30`,
+          mirroring the green `rocq` job exactly. Fixes the install and removes
+          the self-hosted-pool dependency. Stays continue-on-error (advisory).
+        - Bump Miri `timeout-minutes` 30 → 45 for headroom on the lean-mem
+          class under contention, without masking a real hang.
+
+      Acceptance:
+        - The `Verus Proofs` job runs on `ubuntu-latest` with
+          `cachix/install-nix-action` and its check goes GREEN (the proofs run,
+          no Install-Nix failure).
+        - The `Miri` job `timeout-minutes` is 45.
+        - `actionlint` clean (modulo pre-existing custom runner-label notes).
+        - A subsequent main CI run is green on all non-`continue-on-error` jobs.
+    tags: [ci, reliability, verus, miri, nix, dogfooding]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.17.0-track
+    links:
+      - type: traces-to
+        target: REQ-051
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-10T08:00:00Z
