@@ -410,9 +410,16 @@ jobs:
           path: coverage-html/
 
   # ── Miri (undefined behavior, pointer provenance) ───────────────────
+  # PR/push: Miri over the actual UB SURFACE only. Measured (PR #521): the full
+  # 678-test sweep is ~930 test-minutes of mostly safe business logic (regex,
+  # glob, HTML) that Miri runs ~100-1000x slower than native — it can't fit a
+  # per-PR budget at any thread count, and provides ~no memory-safety value.
+  # Miri exists to validate `unsafe`; in rivet-core that's the SyntaxKind
+  # `transmute`s in the rowan-based CST parsers. Scope the PR gate to those
+  # (sexpr + yaml_cst); the FULL sweep runs nightly (miri-full, #498 pattern).
   miri:
-    name: Miri
-    # lean-mem: Miri allocates aggressively; benefits from 24G ceiling.
+    name: Miri (safety surface)
+    if: github.event_name != 'schedule'
     runs-on: [self-hosted, linux, x64, lean-mem]
     steps:
       - uses: actions/checkout@v6
@@ -420,33 +427,51 @@ jobs:
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
-      - name: Run Miri
-        # Run safety-critical modules under Miri with tree borrows model.
-        # Uses pulseengine/rowan fork with Miri UB fixes (upstream: rust-analyzer/rowan#210).
-        # Skip: bazel/db (salsa internals), externals (spawns git),
-        # export/providers/test_scanner/yaml_edit (not safety-critical, slow under Miri).
-        # Skip yaml_cst/yaml_hir tests that create multi-item trees: rowan cursor
-        # deallocation UB with large trees under tree borrows (pulseengine/rowan#211).
-        # Single-item parser tests (25/26) pass clean.
-        # Also skip feature_model (constraint parsing builds rowan trees → same UB).
-        # Also skip doc_check (pulldown-cmark heavy → 30–90s/test under Miri,
-        # times out the job; business-logic tests, not memory-safety tests).
-        # Skip sexpr_eval and any test that goes through it (embed query,
-        # query::execute_sexpr, parse_query): all build rowan trees via
-        # s-expr parsing and hit the same cursor deallocation UB as
-        # yaml_cst/feature_model (pulseengine/rowan#211).
-        run: cargo miri test -p rivet-core --lib -- --skip bazel --skip db --skip externals --skip export --skip providers --skip test_scanner --skip yaml_edit --skip markdown --skip parse_actual_hazards --skip stpa_hazard --skip yaml_hir --skip feature_model --skip doc_check --skip sexpr_eval --skip query_embed --skip parse_query --skip execute_sexpr
-        # Bumped 15→30 during smithy migration: first run timed out at
-        # 15 min with the last printed test at the 11-min mark (i.e.,
-        # the slow tests at the tail just ran past the budget on
-        # smithy's lean-mem class). Hosted may have been fine because
-        # of different tail-test perf characteristics.
-        # Bumped 30→45 (2026-06-10): under self-hosted-pool contention
-        # (clearing the #509 outage backlog) Miri ran past 30 min and
-        # timed out, failing the run while every required gate was green.
-        # 45 gives headroom on the lean-mem class without masking a real
-        # hang (a genuine UB loop still trips the budget).
-        timeout-minutes: 45
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Run Miri over the unsafe/CST surface
+        # sexpr.rs + yaml_cst.rs hold the only real `unsafe` in rivet-core
+        # (`std::mem::transmute` of raw SyntaxKind for the rowan parsers).
+        # bazel.rs has the third transmute but its tests touch salsa/process
+        # internals — covered by the nightly full sweep, not the PR gate.
+        #
+        # Runs under STACKED BORROWS (Miri default, the strictest model). This
+        # is sound thanks to rowan fork v3 (= v2 + phall1's #212: GreenToken as a
+        # DST + cursor SB fixes), which widens the token retag past the slice
+        # tail. The pre-v3 pin hit a SharedReadOnly zero-size-retag UB here and
+        # needed `-Zmiri-tree-borrows` to dodge it; v3 makes both SB and TB pass,
+        # so we gate on the stricter one. (rust-analyzer/rowan #210/#211/#212 are
+        # all closed-unmerged; upstream is rewriting rowan — Cargo.toml.)
+        run: |
+          cargo miri nextest run -p rivet-core --lib --test-threads 24 \
+            -E 'test(sexpr::) | test(yaml_cst::)'
+        env:
+          MIRIFLAGS: "-Zmiri-disable-isolation"
+        timeout-minutes: 20
+
+  # Nightly + manual: the FULL Miri sweep — every Miri-compatible test (all but
+  # the externals/process-spawning + rowan#211 multi-item failures the suite
+  # has always skipped). Off the per-PR path (#498) so its ~50-min runtime
+  # never blocks a PR; 24 threads on the 125 GiB runner, generous timeout.
+  miri-full:
+    name: Miri (full, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, linux, x64, lean-mem]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Run full Miri sweep
+        run: |
+          cargo miri nextest run -p rivet-core --lib --test-threads 24 \
+            -E 'not (test(bazel) | test(db) | test(externals) | test(export) | test(providers) | test(test_scanner) | test(yaml_edit) | test(markdown) | test(parse_actual_hazards) | test(stpa_hazard) | test(yaml_hir) | test(feature_model) | test(doc_check) | test(sexpr_eval) | test(query_embed) | test(parse_query) | test(execute_sexpr))'
+        timeout-minutes: 90
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
 
