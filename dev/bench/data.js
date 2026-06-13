@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781069789202,
+  "lastUpdate": 1781336330902,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "b7e948c0ecc22dbbb969ea2494b92266d01846fa",
-          "message": "fix(mutate): rivet add emits valid YAML for multi-line/special-char fields (REQ-198) (#471)\n\nData-corruption bug (verified on current main): `rivet add --type requirement\n--title T --description $'a\\nb'` wrote INVALID YAML and broke the whole artifacts\nfile — `rivet validate` afterwards FAILed with a YAML parse error\n(\"could not find expected ':'\"). `render_artifact_yaml` (mutate.rs) was a naive\nserializer:\n- `description: >` folded scalar indented only the FIRST line, so a newline put\n  line 2 at column 0;\n- `title:` / tag / field values were emitted unquoted, so a colon (e.g.\n  \"Multi word: with colon\") also produced invalid YAML.\n\nThe modify/set_field path already serializes safely via yaml_edit; only the add\npath diverged. Fix: route add's title/status/description/tags/field values\nthrough the same emitters (`yaml_quote_inline_scalar` + `yaml_render_scalar_value`,\nnow `pub(crate)`), so newlines become block-literal `|` scalars with correct\nindentation and special chars are quoted.\n\nTest (mutate::tests): render_artifact_yaml_multiline_and_colon_is_valid_parseable_yaml\nrenders an artifact with a multi-line description + colon title and asserts the\nYAML parses and round-trips exactly.\n\nConfirmed with: cargo test -p rivet-core --lib mutate::tests (17/17), cargo fmt\n--check, cargo clippy --all-targets -- -D warnings (exit 0), rivet validate PASS.\nManually verified the original repro now writes a `|-` block scalar + quoted\ntitle and validates PASS (was FAIL with 2 parse errors).\n\nImplements: REQ-198\nVerifies: REQ-198\nRefs: REQ-031",
-          "timestamp": "2026-06-04T18:16:19-05:00",
-          "tree_id": "6fc746fb114b74b4dd35ebeb5e7bcda85e0e30b4",
-          "url": "https://github.com/pulseengine/rivet/commit/b7e948c0ecc22dbbb969ea2494b92266d01846fa"
-        },
-        "date": 1780615580791,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85062,
-            "range": "± 485",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 945948,
-            "range": "± 5426",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 21115546,
-            "range": "± 3054346",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1939,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24961,
-            "range": "± 99",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 387625,
-            "range": "± 4390",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1444724,
-            "range": "± 17888",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 154030,
-            "range": "± 2673",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1789823,
-            "range": "± 9638",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 29267325,
-            "range": "± 1483610",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 435231,
-            "range": "± 4165",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15733912,
-            "range": "± 575717",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1158433182,
-            "range": "± 25400272",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4096,
-            "range": "± 51",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 51374,
-            "range": "± 388",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 756439,
-            "range": "± 16891",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63592,
-            "range": "± 179",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 735895,
-            "range": "± 7793",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 14872219,
-            "range": "± 737638",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1341,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14757,
-            "range": "± 133",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 236511,
-            "range": "± 3838",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21352,
-            "range": "± 42",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 145816,
-            "range": "± 3569",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1352102,
-            "range": "± 8886",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1488536,
             "range": "± 20293",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4c51a8bfcf052a4619d8c39fcff04f1be54eb97f",
+          "message": "ci(miri): parallelize with cargo-nextest so Miri uses the cores (not 45 min on one) (#521)\n\n* ci(miri): parallelize with cargo-nextest (process-per-test) to use idle cores\n\nMeasured root cause of the 45-min Miri job + lean-mem contention: `cargo miri\ntest` runs ONE Miri process — a single-threaded interpreter — pinning one core\nfor 45 min while the rest of the (ample) box sits idle. The CPU/mem doesn't\nvanish into contention (peak 15 concurrent jobs, ~22s queues); Miri just can't\nuse it, and it hogs the scarce lean-mem runner for 45 min so other lean-mem\njobs queue behind it.\n\nSwitch to `cargo miri nextest run`: each test runs in its own process, so the\nrunner's cores are actually used and wall-time collapses toward the slowest\nsingle test. `--test-threads 4` bounds concurrent Miri processes under the 24G\nshadow-memory ceiling (conservative start; raise after a green run shows peak\nRSS). Same test selection: the libtest `--skip <m>` list is translated to\nnextest's `-E 'not (test(<m>) | ...)'` (verified locally: 721 run / 412\nexcluded, identical modules). Adds a resource-print step so the log shows the\nbox's real nproc/free.\n\nRefs: REQ-215, #509\nTrace: skip\n\n* ci(miri): use 24 of the runner's 32 cores (was 4) — box has 125 GiB, not 24\n\nMeasured the runner directly (the new resource-print step): 32 cores, 125 GiB\nRAM — the \"lean-mem\" label is a misnomer and memory is a non-constraint. At\n--test-threads 4 the parallel Miri job still timed out at 45 min (~678 tests ×\n~20s ÷ 4 ≈ 56 min); 28 of 32 cores sat idle. Raise to 24 threads:\n~226 core-min ÷ 24 ≈ ~9-10 min, using ~72 GiB (well under 125). This is where\nthe CPU/mem was \"vanishing\": into idle cores, because nothing was using them.\n\nRefs: REQ-215, #509\nTrace: skip\n\n* ci(miri): scope PR gate to the unsafe/CST surface; full sweep nightly\n\nCorrection to the earlier \"24 threads thrash\" claim: measured effective\nconcurrency is 23x — parallelism works fine. The real problem is work VOLUME:\nthe 678-test sweep is ~930 test-minutes (mean 104s/test, worst 557s) of mostly\nsafe business logic (regex/glob/HTML) that Miri runs ~100-1000x slower than\nnative and that has no `unsafe` to validate. No thread count fits that in a\nper-PR budget.\n\nSo split it (the #498 nightly pattern):\n- PR/push `miri` → only the real UB surface: the SyntaxKind `transmute`s in the\n  rowan CST parsers (sexpr + yaml_cst), 41 tests, ~3 min. This is what Miri is\n  FOR.\n- nightly/manual `miri-full` → the full Miri-compatible sweep, 24 threads on the\n  125 GiB runner, 90-min budget, off the per-PR path.\n\nRefs: REQ-215, #509\nTrace: skip\n\n* ci(miri): restore -Zmiri-tree-borrows on the scoped job (my regression)\n\nWhen I split Miri into scoped (PR) + full (nightly) I kept MIRIFLAGS on\nmiri-full but dropped it from the scoped job, so it ran under default Stacked\nBorrows and surfaced rowan's thin-token SharedReadOnly zero-size-retag UB —\nwhich I mistakenly reported as a fresh finding. Research (subagent, source-\ngrounded) confirms: rust-analyzer/rowan #210/#211/#212 are all closed UNMERGED\n(upstream is rewriting rowan, not patching); the maintainer holds that rowan\nshould pass Tree Borrows and the failing Stacked Borrows rule is unlikely to\nsurvive Rust's final aliasing model. Our fork pin is sound under Tree Borrows,\nwhich the original job already used.\n\nRestore `MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-tree-borrows` on the scoped\njob (matching miri-full and the pre-split job). Update the rowan pin comment in\nCargo.toml to reflect the closed-unmerged/rewrite reality.\n\nRefs: REQ-215, #509\nTrace: skip\n\n* build(rowan): bump fork pin to v3 (phall1 #212 token+cursor DST) → Miri SB-sound\n\nAdopts phall1's unmerged rust-analyzer/rowan#212 into our fork as\nfix/miri-soundness-v3 (= v2 + `48a1b5e` GreenToken-as-DST + `9e7abd1` cursor SB\nfix). v2 was only sound under Tree Borrows; the residual thin-token\nSharedReadOnly zero-size-retag UB is now fixed, so rivet's rowan parsers are\nsound under BOTH Stacked Borrows and Tree Borrows.\n\n- Cargo.toml: pin branch v2 → v3; comment rewritten to the closed-unmerged /\n  upstream-rewrite reality + the SB-soundness.\n- Cargo.lock: rowan git rev → 9e7abd1.\n- ci.yml: the scoped PR Miri job now gates under STACKED BORROWS (strictest;\n  drop -Zmiri-tree-borrows) since v3 makes it sound. miri-full stays on Tree\n  Borrows for the broader (incl. mutable-path) sweep.\n\nConfirmed: rivet-core builds against v3; native sexpr::/yaml_cst:: tests pass;\nrowan fork v3 builds + carries phall1's miri_node_cache_rehash / miri_cursor_free_sb\nregression tests; actionlint clean.\n\nRefs: REQ-215, #509\nTrace: skip",
+          "timestamp": "2026-06-13T02:26:44-05:00",
+          "tree_id": "20028d0ece8b63fe0bfb69b11db4e93d7396b565",
+          "url": "https://github.com/pulseengine/rivet/commit/4c51a8bfcf052a4619d8c39fcff04f1be54eb97f"
+        },
+        "date": 1781336329550,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84960,
+            "range": "± 511",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 895254,
+            "range": "± 4599",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12910741,
+            "range": "± 1049870",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2199,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26769,
+            "range": "± 246",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 369342,
+            "range": "± 1720",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1481157,
+            "range": "± 30211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 162819,
+            "range": "± 721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1968496,
+            "range": "± 36684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25101070,
+            "range": "± 715603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 451704,
+            "range": "± 2633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16539527,
+            "range": "± 164481",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1390011700,
+            "range": "± 12379170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4395,
+            "range": "± 96",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60558,
+            "range": "± 252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 805143,
+            "range": "± 2723",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59193,
+            "range": "± 262",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 696128,
+            "range": "± 6003",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7780938,
+            "range": "± 204167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1190,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15383,
+            "range": "± 1698",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 327088,
+            "range": "± 3972",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25055,
+            "range": "± 187",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 176150,
+            "range": "± 1089",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1619261,
+            "range": "± 13423",
             "unit": "ns/iter"
           }
         ]
