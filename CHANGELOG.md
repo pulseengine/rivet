@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **REQ-216 / #518 — mutating commands refuse on a parse-broken source.** A
+  source file dropped from the graph by a YAML parse error (merge conflict,
+  manual edit, or an unquoted-colon title pre-REQ-198) is invisible to the
+  loader, so `next-id` allocated IDs against the *partial* store — colliding
+  with the unparsed file's artifacts (the report saw five artifacts share one
+  id) — and `add` exited 0 on the error. `rivet next-id` and `rivet add` now
+  hard-fail (non-zero) with an actionable message when any source failed to
+  parse; read-only commands still warn-and-continue.
+
 ## [0.16.0] - 2026-06-09
 
 ### Added
