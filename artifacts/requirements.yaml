@@ -6796,3 +6796,43 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-10T08:00:00Z
+
+  - id: REQ-217
+    type: requirement
+    title: "`rivet variant check --variant` accepts the wrapped binding form that `rivet variant init` scaffolds (#514)"
+    status: implemented
+    description: |
+      Finding (#514, kiln variant setup). `rivet variant init <name>` scaffolds
+      `bindings/<name>.yaml` in the feature-model-bindings form — a top-level
+      `variant: { name, selects }` wrapper plus a `bindings:` block — and even
+      prints `rivet variant check --model … --variant bindings/<name>.yaml` as
+      the next step. But `variant check` parsed `--variant` strictly as the flat
+      `VariantConfig` (`name:`/`selects:` at top level), so it rejected init's
+      own output with `missing field 'name'`. The scaffold and the checker
+      disagreed, breaking the init→check happy path.
+
+      Fix: `VariantConfig::from_yaml_str` accepts EITHER form — flat, or the
+      `variant:`-wrapped bindings form (extract the `variant:` block; the
+      `bindings:` block is ignored for a selection check). Wired into every
+      `--variant <file>` parse site (check, check-all, list --variant, and the
+      resolve_variant_arg paths). Malformed configs still error.
+
+      Acceptance:
+        - `rivet variant init kiln` then the exact `rivet variant check --model
+          … --variant bindings/kiln.yaml` it prints exits 0 (PASS).
+        - A flat `{name, selects}` variant file still checks correctly.
+        - `VariantConfig::from_yaml_str` unit test covers flat + wrapped + a
+          malformed (error) case.
+        - `cargo test -p rivet-core` + `-p rivet-cli --test cli_commands` pass.
+        - `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` clean.
+    tags: [cli, variant, feature-model, dx, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-083
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-13T15:30:00Z

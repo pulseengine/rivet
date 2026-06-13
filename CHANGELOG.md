@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **REQ-217 / #514 — `variant check` accepts the form `variant init` writes.**
+  `rivet variant init` scaffolds a `variant:`-wrapped bindings file (and prints
+  the `variant check --variant <that file>` command to run), but `check` parsed
+  `--variant` strictly as the flat `{name, selects}` form and rejected it with
+  `missing field 'name'`. `VariantConfig::from_yaml_str` now accepts both forms
+  across every `--variant` path, so the init→check happy path works.
+
 ## [0.16.0] - 2026-06-09
 
 ### Added

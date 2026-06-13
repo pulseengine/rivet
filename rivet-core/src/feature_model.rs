@@ -153,6 +153,32 @@ pub struct VariantConfig {
     pub selects: Vec<String>,
 }
 
+impl VariantConfig {
+    /// Parse a variant config from EITHER the flat form (`name:` / `selects:`
+    /// at the top level) OR the feature-model-bindings form that `rivet
+    /// variant init` scaffolds, where the same fields live under a top-level
+    /// `variant:` key alongside `bindings:`. Accepting both lets `rivet
+    /// variant check --variant <file>` work on the file `init` actually writes
+    /// (#514): the two used to disagree (init wrapped, check expected flat).
+    pub fn from_yaml_str(yaml: &str) -> Result<Self, serde_yaml::Error> {
+        match serde_yaml::from_str::<VariantConfig>(yaml) {
+            Ok(vc) => Ok(vc),
+            Err(flat_err) => {
+                #[derive(Deserialize)]
+                struct Wrapped {
+                    variant: VariantConfig,
+                }
+                // Fall back to the wrapped form; if that also fails, surface the
+                // flat error — it's the more direct diagnostic for a config the
+                // caller likely intended as flat.
+                serde_yaml::from_str::<Wrapped>(yaml)
+                    .map(|w| w.variant)
+                    .map_err(|_| flat_err)
+            }
+        }
+    }
+}
+
 /// Origin of a feature in a resolved variant — why did the solver
 /// include it in the effective set?
 ///
@@ -1634,6 +1660,27 @@ pub fn load_variant_configs_from_dir(dir: &std::path::Path) -> Result<Vec<Varian
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // #514: `VariantConfig::from_yaml_str` must accept both the flat form and
+    // the `variant:`-wrapped feature-model-bindings form that `rivet variant
+    // init` scaffolds, so init→check stops disagreeing.
+    #[test]
+    fn variant_config_accepts_flat_and_wrapped_forms() {
+        let flat = "name: a\nselects: [x, y]\n";
+        let vc = VariantConfig::from_yaml_str(flat).expect("flat form must parse");
+        assert_eq!(vc.name, "a");
+        assert_eq!(vc.selects, ["x", "y"]);
+
+        // The exact shape `rivet variant init` writes: variant: wrapper +
+        // a bindings: block (which the variant check ignores).
+        let wrapped = "variant:\n  name: kiln\n  selects: [telemetry]\nbindings:\n  telemetry:\n    artifacts: []\n";
+        let vc = VariantConfig::from_yaml_str(wrapped).expect("wrapped form must parse");
+        assert_eq!(vc.name, "kiln");
+        assert_eq!(vc.selects, ["telemetry"]);
+
+        // A genuinely malformed config still errors (no silent acceptance).
+        assert!(VariantConfig::from_yaml_str("selects: [x]\n").is_err());
+    }
 
     fn vehicle_model_yaml() -> &'static str {
         r#"
