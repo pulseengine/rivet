@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781439756697,
+  "lastUpdate": 1781443613998,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "6ffbdd7e9628108c72893cf0848815dc38022604",
-          "message": "fix(export): node-budget the single-page graph render so it can't hang (REQ-201) (#474)\n\nVerified hang: on the rivet repo (~900 artifacts) `rivet export --format html\n--single-page` runs for MINUTES producing nothing (multi-page finishes in ~6s).\nRoot cause: `render_section_graph` (rivet-core/src/export.rs) lays out the\nentire link graph eagerly via `etch::layout::layout(pg, ...)` with NO node\nbudget; etch's layout is super-linear, so ~900 nodes effectively hangs the\nsingle-page export. The serve path already guards this\n(rivet-cli/src/render/graph.rs `DEFAULT_NODE_BUDGET = 200` + a \"Graph above node\nbudget\" page) — the static export did not.\n\nFix: in `render_section_graph`, if `node_count > 200`, skip the layout and emit\na short note (\"Graph has N nodes, exceeding the 200-node static-render budget —\nview it interactively in `rivet serve`\"), mirroring the serve guard.\n\nTest (export::tests): render_section_graph_over_budget_skips_layout — a\n250-node graph returns the budget note and NO `<svg>` (the layout that hangs).\n\nConfirmed with: cargo test -p rivet-core --lib\nexport::tests::render_section_graph_over_budget_skips_layout (pass), cargo fmt\n--check, cargo clippy --all-targets -- -D warnings (exit 0), rivet validate PASS.\nManually verified `rivet export --format html --single-page` on the rivet repo\nnow completes in ~3s (was minutes/hang) with the budget note present.\n\nImplements: REQ-201\nVerifies: REQ-201\nRefs: REQ-007",
-          "timestamp": "2026-06-05T14:22:53-05:00",
-          "tree_id": "c11c81a40245c6513139fbbc08b4c9fb41ee0843",
-          "url": "https://github.com/pulseengine/rivet/commit/6ffbdd7e9628108c72893cf0848815dc38022604"
-        },
-        "date": 1780687966594,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 87353,
-            "range": "± 556",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 929423,
-            "range": "± 9047",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15118032,
-            "range": "± 495578",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2053,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25326,
-            "range": "± 54",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 375673,
-            "range": "± 2013",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1452642,
-            "range": "± 26342",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167133,
-            "range": "± 1288",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1939897,
-            "range": "± 14805",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 30107337,
-            "range": "± 943895",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 434321,
-            "range": "± 2058",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17928608,
-            "range": "± 105850",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1432009431,
-            "range": "± 18462826",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4144,
-            "range": "± 51",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 43094,
-            "range": "± 202",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 715887,
-            "range": "± 3896",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62908,
-            "range": "± 292",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 718813,
-            "range": "± 3450",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8090423,
-            "range": "± 335193",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1209,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14660,
-            "range": "± 61",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 235252,
-            "range": "± 2236",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23049,
-            "range": "± 48",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 158547,
-            "range": "± 556",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1496952,
-            "range": "± 22484",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1633443,
             "range": "± 10154",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6f2df499df302631de60f989bcd2bbc578a6e8e7",
+          "message": "ci: move mutants-cli off lean-mem to rust-cpu (#523) (#526)\n\n`mutants-cli` (`Mutation Testing (rivet-cli)`) was running on every PR and\npush pinned to the 4-runner `lean-mem` pool — the one runner class with no\nspare capacity. A 14-day audit of the self-hosted fleet showed it as the\nsingle largest consumer of that pool (488 instances), and as a direct\nconsequence Miri (~17 h median wait, 43% fail rate) and Verus (~18 h\nmedian wait, 94% fail rate) were starving against `cancel-in-progress`\nPR-push churn while `rust-cpu` sat 86% idle.\n\nThe fix is a one-line runner-pool change: `rivet-cli` is the small crate\nrunning `--jobs 2` with `--timeout 30`; the `rust-cpu` class (16 G\n`MemoryHigh`, 7 runners) handles it without contention. Per-PR mutation\ncoverage is preserved, no cadence change is needed, and `lean-mem` is\nfreed up for the genuinely RAM-bound gating jobs (Miri, Verus) plus the\nnightly `mutants-core` fan-out.\n\nAlso extends the surrounding comment block to document why this pool\nchoice matters so future drift doesn't quietly re-pin to `lean-mem`.\n\nThe post-merge bullet of the issue's Acceptance (\"lean-mem median job\nwait drops back under a few minutes\") can only be confirmed by operator\nobservation against the runner pool after this lands; the in-repo bullet\n(\"mutants-cli no longer runs on lean-mem\") is the diff itself.\n\nNote: the pulseengine.eu/blog/ workflow guidance was HTTP 503 throughout\nthis triage run (same symptom carried across #420 / #516 / #522 / …), so\nthis PR ships as a draft for maintainer review against the authoritative\nprocess posts once the blog is reachable.\n\nRefs: #523, #509\n\nCo-authored-by: Claude <noreply@anthropic.com>",
+          "timestamp": "2026-06-14T08:12:55-05:00",
+          "tree_id": "9754cb4547a349e818924df1e4dda8e37ee91008",
+          "url": "https://github.com/pulseengine/rivet/commit/6f2df499df302631de60f989bcd2bbc578a6e8e7"
+        },
+        "date": 1781443613350,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85484,
+            "range": "± 390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 932169,
+            "range": "± 6995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 17266485,
+            "range": "± 1381825",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1928,
+            "range": "± 84",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25109,
+            "range": "± 634",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 362534,
+            "range": "± 3499",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1476966,
+            "range": "± 31066",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 168949,
+            "range": "± 3958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1942019,
+            "range": "± 21991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 33204552,
+            "range": "± 3629329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 438593,
+            "range": "± 2328",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17183630,
+            "range": "± 188801",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1333393619,
+            "range": "± 19620130",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4263,
+            "range": "± 67",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 45943,
+            "range": "± 682",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 774084,
+            "range": "± 13802",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59563,
+            "range": "± 553",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 723227,
+            "range": "± 2316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7706894,
+            "range": "± 205227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1277,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14424,
+            "range": "± 259",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 248042,
+            "range": "± 7601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24045,
+            "range": "± 70",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 172872,
+            "range": "± 6049",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1646018,
+            "range": "± 41579",
             "unit": "ns/iter"
           }
         ]
