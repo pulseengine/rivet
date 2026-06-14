@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781443613998,
+  "lastUpdate": 1781443804924,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "531f4f33e6dad542e2c26c6314aa02dbc58203f5",
-          "message": "docs(agents): add \"Before You Push (Rust)\" fmt/clippy guidance + file REQ-202 (minimal build) (#475)\n\nAddresses issue #438 (AI commits pass locally, fail CI Format/Clippy) via its\nown second suggestion: surface the exact CI gates where agents look. The git\npre-commit hook (scripts/install-hooks.sh) already runs `cargo fmt --all --\ncheck` on staged .rs since #438 was filed, but it requires manual install and\ndoes not cover clippy. The new AGENTS.md \"Before You Push (Rust)\" section gives\nthe verbatim `cargo fmt --all -- --check` + `cargo clippy --all-targets -- -D\nwarnings` one-liners and documents the three traps that bite agents (grep\n'^error' misses -D warnings; -p <crate> skips --all-targets test lints; the\ncommit-msg hook rejects `Word:` body lines).\n\nAlso files REQ-202 (draft) from issue #456: rivet-cli has no minimal build —\n`default = []` and axum/rmcp/lsp-server are unconditional deps, so every\nfrom-source build compiles the full serve+MCP+LSP stack even for the\nvalidate/list hot path. Proposed additive fix keeps features in `default` so\nthe published binary is byte-for-byte unchanged; the feature set is a maintainer\ncall, hence draft.\n\nNote: a stronger fix for #438 — a .claude/settings.json PostToolUse hook that\nauto-runs `cargo fmt --all` on every .rs edit — was attempted but is gated as\nself-modification of agent config and needs explicit maintainer authorization.\n\nConfirmed with: rivet validate PASS (257 warnings, 0 errors).\n\nRefs: REQ-202, REQ-007",
-          "timestamp": "2026-06-05T14:27:32-05:00",
-          "tree_id": "379dde3e341180cd63e9ef32b8ffbc6bc92ca3e4",
-          "url": "https://github.com/pulseengine/rivet/commit/531f4f33e6dad542e2c26c6314aa02dbc58203f5"
-        },
-        "date": 1780688280070,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 67153,
-            "range": "± 676",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 736228,
-            "range": "± 4489",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 11632774,
-            "range": "± 386214",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1532,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18605,
-            "range": "± 186",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 262385,
-            "range": "± 1625",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1108652,
-            "range": "± 21999",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 127912,
-            "range": "± 1896",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1478194,
-            "range": "± 19920",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 21634013,
-            "range": "± 2533368",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 338291,
-            "range": "± 790",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 13279552,
-            "range": "± 215097",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1059688941,
-            "range": "± 7886956",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3225,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 40497,
-            "range": "± 495",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 578239,
-            "range": "± 3030",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 48159,
-            "range": "± 1810",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 514423,
-            "range": "± 2954",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6054584,
-            "range": "± 53019",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 917,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 11897,
-            "range": "± 156",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 177307,
-            "range": "± 1380",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 17375,
-            "range": "± 112",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 125481,
-            "range": "± 934",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1158417,
-            "range": "± 14629",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1646018,
             "range": "± 41579",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fa1b8edc17b28e350c949a8e7c25a5caac15f4de",
+          "message": "fix(schema): restore `accepted` to canonical status enum (#522) (#525)\n\nv0.16.0 declared the canonical status lifecycle in common.yaml (REQ-162,\nPR #419) but dropped `accepted` — the documented terminal state for\n`design-decision` / `external-anchor` / requirement-meta artifacts.\nDownstream stores that followed the documented chain\n(`... -> verified -> accepted`) flipped from PASS to FAIL on the\n0.15 -> 0.16 bump with no migration path; the jess hardware-integration\nstore hit 12 of 21 errors from this alone.\n\nRe-add `accepted` to the canonical enum and document its terminal role\nin the inline schema comment so the published lifecycle and the\nvalidator agree again. The `status-allowed-values` guard still fires on\ngenuinely typo'd values — covered by the new regression test\n`common_status_accepts_accepted_and_still_rejects_typos`, which also\nasserts via `Schema::base_fields` that the introspection surface and\nthe diagnostic see the same set.\n\nSlice 2 of #522 only. Out of scope (filed separately): slice 1\n(`rivet migrate` / `validate --fix` status remap with default-mapping\npolicy for `open` / `resolved` in `ai-found-defect`); slice 3\n(per-schema status enums so `ai-found-defect` can keep its\n`open`/`triaged`/`resolved` triage vocabulary distinct from the\ndocument lifecycle).\n\nNote: the pulseengine.eu/blog/ workflow guidance was 503 throughout\nthis run (carried symptom flagged across the recent triage threads on\n#420, #522, #516, …), so this PR ships as a draft for maintainer review\nagainst the authoritative process posts once the blog is reachable.\n\nFixes: REQ-162\nRefs: #352, #419, #522\n\nCo-authored-by: Claude <noreply@anthropic.com>",
+          "timestamp": "2026-06-14T08:13:18-05:00",
+          "tree_id": "5084cd64d9b94436d83467ecd2c445717da1d333",
+          "url": "https://github.com/pulseengine/rivet/commit/fa1b8edc17b28e350c949a8e7c25a5caac15f4de"
+        },
+        "date": 1781443804207,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84643,
+            "range": "± 485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 890053,
+            "range": "± 2621",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12629618,
+            "range": "± 790621",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2202,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25956,
+            "range": "± 144",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 357366,
+            "range": "± 888",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 98,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 92,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1448897,
+            "range": "± 27055",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167396,
+            "range": "± 1335",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1894516,
+            "range": "± 21581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24416657,
+            "range": "± 1961916",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 459165,
+            "range": "± 1402",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17356080,
+            "range": "± 171338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1469807040,
+            "range": "± 19050361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4424,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 58336,
+            "range": "± 250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 739218,
+            "range": "± 1820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62880,
+            "range": "± 297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 714132,
+            "range": "± 18091",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7762258,
+            "range": "± 177998",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1171,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15122,
+            "range": "± 66",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 340862,
+            "range": "± 2540",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24980,
+            "range": "± 135",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 179397,
+            "range": "± 2194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1716906,
+            "range": "± 17156",
             "unit": "ns/iter"
           }
         ]
