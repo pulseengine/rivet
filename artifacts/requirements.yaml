@@ -6797,6 +6797,47 @@ artifacts:
       model: claude-opus-4-8
       timestamp: 2026-06-10T08:00:00Z
 
+  - id: REQ-216
+    type: requirement
+    title: "Mutating / ID-allocating commands hard-fail when a source file failed to parse (no silent skip → duplicate-ID corruption) (#518)"
+    status: implemented
+    description: |
+      Finding (#518, spar release planning). One unquoted colon in a title made
+      `rivet add` write invalid YAML (fixed separately by REQ-198 escaping), but
+      the deeper, still-live damage was the resilience failure: a source file
+      dropped from the graph by ANY parse error (merge conflict, manual edit,
+      another tool) is invisible to the loader, yet `next-id` kept computing
+      against the partial store and `add` kept allocating — so it handed out IDs
+      that COLLIDE with the unparsed file's artifacts (the report saw five
+      artifacts all allocated the same id), and `add` exited 0 on the error.
+
+      Read-only commands may tolerate a parse-skip (warn + continue); MUTATING /
+      ID-allocating commands must REFUSE. Added `ProjectContext::ensure_no_parse_skips`
+      (reuses the existing parse-skip scan behind `warn_parse_error_skips`) and
+      call it in `cmd_next_id` and `cmd_add` right after load, before any ID is
+      allocated or any file is written. It bails non-zero with an actionable
+      message pointing at `rivet validate`.
+
+      Acceptance:
+        - In a project whose `artifacts/*.yaml` has a YAML parse error,
+          `rivet next-id <type>` and `rivet add --type <type> --title ...` both
+          exit non-zero with a message containing "refusing" and "parse".
+        - On a clean store both still succeed (no behavior change).
+        - `cargo test -p rivet-cli --test cli_commands` passes (incl. the new
+          `mutating_commands_refuse_on_parse_broken_source`).
+        - `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` clean.
+        - `rivet validate` on the rivet repo still PASS.
+    tags: [cli, add, next-id, data-integrity, dogfooding]
+    fields:
+      priority: must
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-13T15:00:00Z
   - id: REQ-217
     type: requirement
     title: "`rivet variant check --variant` accepts the wrapped binding form that `rivet variant init` scaffolds (#514)"
