@@ -1952,8 +1952,83 @@ enum CheckAction {
     },
 }
 
+/// Does the raw argv request JSON output (`--format json` / `-f json` in any
+/// of its accepted spellings)? Used only to decide whether a clap *parse*
+/// failure should also emit a machine-readable error envelope (#500).
+fn argv_requests_json() -> bool {
+    let mut prev_was_format_flag = false;
+    for a in std::env::args().skip(1) {
+        if prev_was_format_flag {
+            prev_was_format_flag = false;
+            if a == "json" {
+                return true;
+            }
+        }
+        match a.as_str() {
+            "--format" | "-f" => prev_was_format_flag = true,
+            "--format=json" | "-f=json" | "-fjson" => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// #500: clap writes parse errors to stderr and leaves stdout empty, so a
+/// consumer that ran `rivet validate --format json --project X` (with the
+/// top-level `--project` in the wrong position — it is deliberately NOT a
+/// clap `global` arg, since `global` debug-asserts against positional
+/// subcommands and broke the build once, #501/#502) gets an empty payload and
+/// a cryptic "EOF while parsing a value", with no hint about the real cause.
+/// When the invocation asked for JSON, also print a one-line JSON error
+/// envelope on stdout so machine consumers get a structured, actionable error.
+/// `--help`/`--version` (which clap reports as "errors" with exit 0) pass
+/// through unchanged.
+fn handle_parse_error(err: clap::Error) -> ExitCode {
+    use clap::error::ErrorKind;
+    if matches!(
+        err.kind(),
+        ErrorKind::DisplayHelp
+            | ErrorKind::DisplayVersion
+            | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+    ) {
+        // Renders help/version to stdout and exits 0 — never returns.
+        err.exit();
+    }
+
+    if argv_requests_json() {
+        // Strip ANSI styling clap may have applied, and collapse to one line.
+        let ansi = regex::Regex::new("\u{1b}\\[[0-9;]*m").ok();
+        let raw = err.to_string();
+        let cleaned = ansi.map_or_else(|| raw.clone(), |re| re.replace_all(&raw, "").into_owned());
+        let summary = cleaned
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("argument parse error")
+            .trim_start_matches("error:")
+            .trim()
+            .to_string();
+        let envelope = serde_json::json!({
+            "error": summary,
+            "hint": "rivet's top-level options are not positional-global: pass \
+                     --project/--schemas BEFORE the subcommand, e.g. \
+                     `rivet --project <dir> <subcommand>`",
+        });
+        if let Ok(s) = serde_json::to_string(&envelope) {
+            println!("{s}");
+        }
+    }
+
+    // Preserve clap's normal human-facing stderr message and exit code.
+    let _ = err.print();
+    ExitCode::from(u8::try_from(err.exit_code()).unwrap_or(2))
+}
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => return handle_parse_error(e),
+    };
 
     let log_level = if cli.quiet {
         // Below the default `warn` — only hard errors. Suppresses the
