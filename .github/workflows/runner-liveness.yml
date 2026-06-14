@@ -1,0 +1,146 @@
+name: Runner Liveness
+
+# #509 slice 1 — liveness alert for the self-hosted runner pool.
+#
+# Every gating CI job runs on `[self-hosted, …]`, so when the pool goes offline
+# every gate queues forever with no fallback and no alarm (the multi-day outage
+# in #509 was invisible until someone noticed by hand). This workflow is
+# GitHub-HOSTED (`ubuntu-latest`), so it keeps firing even when the self-hosted
+# pool is down, and turns that silent failure into a durable tracking issue.
+#
+# Signals (in order of reliability):
+#   1. Queued-run age — authoritative. Needs only `actions: read`, works
+#      regardless of whether runners are registered at repo or org level, and
+#      directly measures the symptom (jobs stuck in `queued`).
+#   2. Runner list — best-effort. `GET /repos/{repo}/actions/runners` needs the
+#      `administration` permission, which is NOT a grantable `GITHUB_TOKEN`
+#      scope, so the default token gets 403 (and an org-level pool returns empty
+#      anyway). A failed/empty lookup is logged and SKIPPED rather than raised as
+#      a false alarm; wire a PAT into `GH_TOKEN` later if a hard runner count is
+#      wanted. The queued-age signal above is the real alarm.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *" # every 15 minutes
+  workflow_dispatch:
+
+permissions:
+  actions: read # list workflow runs (queued-age check — the authoritative signal)
+  issues: write # open / update / close the tracking issue
+  # NB: listing self-hosted runners needs the `administration` scope, which is
+  # not grantable to GITHUB_TOKEN — that check is best-effort and self-skips.
+
+concurrency:
+  group: runner-liveness
+  cancel-in-progress: false
+
+env:
+  QUEUE_THRESHOLD_MINUTES: "30"
+  TRACKING_LABEL: "runner-down"
+  TRACKING_TITLE: "🚨 CI runner pool liveness alert"
+
+jobs:
+  liveness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe runner pool and queued runs
+        id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          problems=()
+
+          # --- Runner list (best-effort) -------------------------------------
+          if runners=$(gh api "repos/$REPO/actions/runners" 2>/dev/null); then
+            total=$(jq '.total_count' <<<"$runners")
+            online=$(jq '[.runners[]? | select(.status=="online")] | length' <<<"$runners")
+            echo "runners: total=$total online=$online"
+            if [ "${total:-0}" -gt 0 ] && [ "${online:-0}" -eq 0 ]; then
+              problems+=("All ${total} registered runner(s) are offline.")
+            fi
+          else
+            echo "note: could not list repo runners (org-level pool or missing administration:read) — skipping runner check"
+          fi
+
+          # --- Queued-run age (authoritative) --------------------------------
+          threshold="${QUEUE_THRESHOLD_MINUTES}"
+          now=$(date -u +%s)
+          queued=$(gh api "repos/$REPO/actions/runs?status=queued&per_page=100" 2>/dev/null || echo '{}')
+          oldest_age=0
+          oldest_id=""
+          while read -r id created; do
+            [ -n "$id" ] || continue
+            age=$(( (now - $(date -u -d "$created" +%s)) / 60 ))
+            if [ "$age" -gt "$oldest_age" ]; then
+              oldest_age=$age
+              oldest_id=$id
+            fi
+          done < <(jq -r '.workflow_runs[]? | "\(.id) \(.created_at)"' <<<"$queued")
+          echo "oldest queued run: id=${oldest_id:-none} age=${oldest_age}m (threshold ${threshold}m)"
+          if [ "$oldest_age" -gt "$threshold" ]; then
+            problems+=("Run ${oldest_id} has been queued ${oldest_age}m (> ${threshold}m) — runners are not picking up jobs.")
+          fi
+
+          # --- Result --------------------------------------------------------
+          if [ ${#problems[@]} -gt 0 ]; then
+            {
+              echo "status=down"
+              echo "summary<<SUMEOF"
+              printf -- '- %s\n' "${problems[@]}"
+              echo "SUMEOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "status=up" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update tracking issue
+        if: steps.probe.outputs.status == 'down'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SUMMARY: ${{ steps.probe.outputs.summary }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          stamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          body=$(cat <<EOF
+          <!-- runner-liveness-tracker -->
+          The scheduled runner-liveness probe detected a problem at ${stamp}:
+
+          ${SUMMARY}
+
+          This issue auto-updates on each probe and auto-closes when the pool recovers.
+          Diagnose: \`gh api repos/${REPO}/actions/runners --jq .total_count\` (0 = pool offline).
+          Probe run: ${RUN_URL}
+          EOF
+          )
+          existing=$(gh issue list --repo "$REPO" --label "$TRACKING_LABEL" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$REPO" --body "$body"
+            echo "updated tracking issue #$existing"
+          else
+            gh label create "$TRACKING_LABEL" --repo "$REPO" --color B60205 --description "CI runner pool liveness" 2>/dev/null || true
+            gh issue create --repo "$REPO" --title "$TRACKING_TITLE" --label "$TRACKING_LABEL" --body "$body"
+          fi
+
+      - name: Close tracking issue on recovery
+        if: steps.probe.outputs.status == 'up'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          stamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          for n in $(gh issue list --repo "$REPO" --label "$TRACKING_LABEL" --state open --json number --jq '.[].number'); do
+            gh issue comment "$n" --repo "$REPO" --body "✅ Runner pool healthy again as of ${stamp} (probe run ${{ github.run_id }}). Auto-closing."
+            gh issue close "$n" --repo "$REPO" --reason completed
+            echo "closed recovered tracking issue #$n"
+          done
+
+      - name: Fail the run when the pool is down
+        if: steps.probe.outputs.status == 'down'
+        run: |
+          echo "::error title=Runner pool down::Self-hosted runner pool liveness check failed — see the '$TRACKING_LABEL' tracking issue."
+          exit 1
