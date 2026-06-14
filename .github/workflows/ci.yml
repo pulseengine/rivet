@@ -618,10 +618,16 @@ jobs:
   # fast and per-push while the heavy 16-shard rivet-core sweep moved to nightly
   # (#498). Tuning rationale (timeout 30 / --jobs 2) is documented on
   # mutants-core's identical step.
+  # Runner pool: `rust-cpu`, not `lean-mem` (#523). `rivet-cli` is the small
+  # crate with `--jobs 2`; rust-cpu's 16 G `MemoryHigh` headroom + 7 idle
+  # runners handle it comfortably, and pinning a per-PR job to the 4-runner
+  # lean-mem pool was starving Miri/Verus (median lean-mem wait ~64 min,
+  # p95 ~23 h on a 14-day audit). Keep `lean-mem` reserved for the genuinely
+  # RAM-bound gating jobs (Miri, Verus) and the nightly mutants-core fan-out.
   mutants-cli:
     name: Mutation Testing (rivet-cli)
     needs: [test]
-    runs-on: [self-hosted, linux, x64, lean-mem]
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
