@@ -5156,8 +5156,8 @@ fn cmd_validate(
 
             let variant_yaml = std::fs::read_to_string(vp)
                 .with_context(|| format!("reading variant config {}", vp.display()))?;
-            let vc: rivet_core::feature_model::VariantConfig =
-                serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+            let vc = rivet_core::feature_model::VariantConfig::from_yaml_str(&variant_yaml)
+                .context("parsing variant config")?;
 
             let resolved = rivet_core::feature_model::solve(&fm, &vc).map_err(|errs| {
                 let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
@@ -5961,7 +5961,7 @@ fn resolve_variant_arg(
     if direct.is_file() {
         let yaml = std::fs::read_to_string(&direct)
             .with_context(|| format!("reading {}", direct.display()))?;
-        let vc: rivet_core::feature_model::VariantConfig = serde_yaml::from_str(&yaml)
+        let vc = rivet_core::feature_model::VariantConfig::from_yaml_str(&yaml)
             .with_context(|| format!("parsing variant config {}", direct.display()))?;
         return Ok((direct, vc.name));
     }
@@ -5972,7 +5972,7 @@ fn resolve_variant_arg(
     if candidate.is_file() {
         let yaml = std::fs::read_to_string(&candidate)
             .with_context(|| format!("reading {}", candidate.display()))?;
-        let vc: rivet_core::feature_model::VariantConfig = serde_yaml::from_str(&yaml)
+        let vc = rivet_core::feature_model::VariantConfig::from_yaml_str(&yaml)
             .with_context(|| format!("parsing variant config {}", candidate.display()))?;
         // Sanity check: the file's `name:` should equal the lookup
         // name. If it doesn't, prefer the on-disk name (it's the
@@ -12840,8 +12840,8 @@ fn cmd_variant_check(
 
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
-    let variant: rivet_core::feature_model::VariantConfig =
-        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+    let variant = rivet_core::feature_model::VariantConfig::from_yaml_str(&variant_yaml)
+        .context("parsing variant config")?;
 
     match rivet_core::feature_model::solve(&model, &variant) {
         Ok(resolved) => {
@@ -13039,8 +13039,8 @@ fn cmd_variant_solve(
 
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
-    let variant: rivet_core::feature_model::VariantConfig =
-        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+    let variant = rivet_core::feature_model::VariantConfig::from_yaml_str(&variant_yaml)
+        .context("parsing variant config")?;
 
     let resolved = rivet_core::feature_model::solve(&model, &variant).map_err(|errs| {
         let msgs: Vec<String> = errs.iter().map(|e| format!("{e:?}")).collect();
@@ -13170,8 +13170,8 @@ fn load_and_solve_variant(
     let model = load_feature_model_via_project(model_path)?;
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
-    let variant: rivet_core::feature_model::VariantConfig =
-        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+    let variant = rivet_core::feature_model::VariantConfig::from_yaml_str(&variant_yaml)
+        .context("parsing variant config")?;
     let resolved = rivet_core::feature_model::solve(&model, &variant).map_err(|errs| {
         let msgs: Vec<String> = errs.iter().map(|e| format!("{e:?}")).collect();
         anyhow::anyhow!(
@@ -13496,8 +13496,8 @@ fn cmd_variant_manifest(
 
     let variant_yaml = std::fs::read_to_string(variant_path)
         .with_context(|| format!("reading {}", variant_path.display()))?;
-    let variant: rivet_core::feature_model::VariantConfig =
-        serde_yaml::from_str(&variant_yaml).context("parsing variant config")?;
+    let variant = rivet_core::feature_model::VariantConfig::from_yaml_str(&variant_yaml)
+        .context("parsing variant config")?;
 
     let binding_yaml = std::fs::read_to_string(binding_path)
         .with_context(|| format!("reading {}", binding_path.display()))?;
@@ -13598,7 +13598,7 @@ fn cmd_variant_matrix(
         for path in paths {
             let yaml = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            let vc: rivet_core::feature_model::VariantConfig = serde_yaml::from_str(&yaml)
+            let vc = rivet_core::feature_model::VariantConfig::from_yaml_str(&yaml)
                 .with_context(|| format!("parsing variant file {}", path.display()))?;
             if !existing.insert(vc.name.clone()) {
                 anyhow::bail!(
