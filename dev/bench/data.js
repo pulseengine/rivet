@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781419679342,
+  "lastUpdate": 1781420444811,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f7fc2d0aa5b198e8bdfdbfbfdd71291c716b3b8f",
-          "message": "fix(export): honest AADL fallback in the REAL html export path (REQ-200, #468) (#473)\n\nDogfooding the actual `rivet export --format html` (build + export + scan)\nshowed the perpetual `<p class=\"aadl-loading\">Loading AADL diagram...</p>`\nplaceholder STILL shipping in 2 of 988 pages — `documents/ARCH-001.html` (the\nexact #468 page) and `artifacts/ARCH-SYS-001.html` — with no honest fallback.\n\nRoot cause: REQ-196 patched `static_aadl_fallback` inside\n`rivet_core::export::render_document_body_for_export`, but `rivet export\n--format html` is implemented by `cmd_export_html` (rivet-cli), which renders\npages via the rivet-cli `render/` serve renderers and wraps them in a\n`wrap_page` layout — it never calls the rivet-core function REQ-196 fixed. So\nREQ-196 was effectively a no-op for the real export (and the published\ncompliance report), yet was marked implemented on a unit test of the helper\nrather than an e2e export check.\n\nFix: apply the placeholder→honest-note replacement in `wrap_page`, the universal\nper-page wrapper, so every exported page is covered.\n\nTest (export_html): export_html_replaces_perpetual_aadl_loading_placeholder\nwalks the full export output and asserts ZERO pages contain the raw placeholder.\n\nConfirmed with: cargo test -p rivet-cli --test export_html\nexport_html_replaces_perpetual_aadl_loading_placeholder (pass), cargo fmt\n--check, cargo clippy --all-targets -- -D warnings (exit 0), rivet validate PASS.\nManually verified the real export now has 0 raw placeholders and the honest\nfallback present (was 2 raw, 0 fallback).\n\nImplements: REQ-200\nVerifies: REQ-200\nRefs: REQ-196",
-          "timestamp": "2026-06-05T03:15:19-05:00",
-          "tree_id": "33cc033b408f22133d8b5428136c7f64de9527e9",
-          "url": "https://github.com/pulseengine/rivet/commit/f7fc2d0aa5b198e8bdfdbfbfdd71291c716b3b8f"
-        },
-        "date": 1780648470048,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84563,
-            "range": "± 465",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 900424,
-            "range": "± 9479",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14953814,
-            "range": "± 1049018",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2181,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27420,
-            "range": "± 698",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 380466,
-            "range": "± 1482",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 98,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1460091,
-            "range": "± 14316",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161289,
-            "range": "± 830",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1921037,
-            "range": "± 12697",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 42471295,
-            "range": "± 3019655",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 462678,
-            "range": "± 4597",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17269832,
-            "range": "± 138642",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1382189693,
-            "range": "± 13517777",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4267,
-            "range": "± 54",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 58372,
-            "range": "± 287",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 741293,
-            "range": "± 9084",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61535,
-            "range": "± 490",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 702228,
-            "range": "± 2878",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7884142,
-            "range": "± 794837",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1160,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14610,
-            "range": "± 195",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 339188,
-            "range": "± 1213",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24586,
-            "range": "± 160",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 176478,
-            "range": "± 731",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1662653,
-            "range": "± 26293",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1566643,
             "range": "± 20471",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "abb1e241af58d8b6d073dc9820cc4da84081f37f",
+          "message": "fix(variant): check --variant accepts the wrapped form init scaffolds (REQ-217, #514) (#528)\n\n`rivet variant init <name>` scaffolds a feature-model-bindings file\n(`variant: { name, selects }` + `bindings:`) and prints\n`rivet variant check --variant bindings/<name>.yaml` as the next step — but\n`check` parsed `--variant` strictly as the flat `VariantConfig`\n(`name:`/`selects:` at top level), rejecting init's own output with\n`missing field 'name'`. The scaffold and the checker disagreed.\n\n`VariantConfig::from_yaml_str` now accepts EITHER form: flat, or the\n`variant:`-wrapped bindings form (extract the `variant:` block; `bindings:` is\nignored for a selection check). Wired into all six `--variant`/variant-file\nparse sites (check, check-all, list --variant, resolve_variant_arg). Malformed\nconfigs still error.\n\nConfirmed with: `rivet variant init kiln` then the exact check command it\nprints now exits PASS; a flat variant file still checks; new\n`variant_config_accepts_flat_and_wrapped_forms` unit test (flat + wrapped +\nmalformed); cargo test -p rivet-core (55 feature_model) + -p rivet-cli --test\ncli_commands (130 passed); cargo fmt --check + cargo clippy --all-targets --\n-D warnings clean; rivet validate PASS.\n\nImplements: REQ-217\nRefs: #514\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
+          "timestamp": "2026-06-14T01:36:14-05:00",
+          "tree_id": "6216b9638a1431c3cddc93cacf7e803f1acef8bc",
+          "url": "https://github.com/pulseengine/rivet/commit/abb1e241af58d8b6d073dc9820cc4da84081f37f"
+        },
+        "date": 1781420443201,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84922,
+            "range": "± 383",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 902116,
+            "range": "± 15294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14814917,
+            "range": "± 899019",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2124,
+            "range": "± 27",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26491,
+            "range": "± 213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 394573,
+            "range": "± 1807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1457242,
+            "range": "± 10652",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 161568,
+            "range": "± 2045",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1912277,
+            "range": "± 19849",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28915756,
+            "range": "± 1914539",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 435955,
+            "range": "± 2953",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17577670,
+            "range": "± 273282",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1470697289,
+            "range": "± 12154221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4351,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 62403,
+            "range": "± 372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 749811,
+            "range": "± 4502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59683,
+            "range": "± 229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 692623,
+            "range": "± 5374",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7891503,
+            "range": "± 350700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1200,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15199,
+            "range": "± 218",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 330344,
+            "range": "± 3623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25175,
+            "range": "± 174",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 175645,
+            "range": "± 1568",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1610911,
+            "range": "± 9754",
             "unit": "ns/iter"
           }
         ]
