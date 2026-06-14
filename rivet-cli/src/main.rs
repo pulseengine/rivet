@@ -65,12 +65,15 @@ use rivet_core::validate;
 mod check;
 mod close_gaps;
 mod docs;
+#[cfg(feature = "mcp")]
 mod mcp;
 mod migrate_cmd;
 mod pipelines_cmd;
+#[cfg(feature = "serve")]
 mod render;
 mod runs_cmd;
 mod schema_cmd;
+#[cfg(feature = "serve")]
 mod serve;
 mod templates_cmd;
 
@@ -804,6 +807,7 @@ enum Command {
     },
 
     /// Start the HTMX-powered dashboard server
+    #[cfg(feature = "serve")]
     Serve {
         /// Port to listen on (0 = auto-assign)
         #[arg(short = 'P', long, default_value = "3000")]
@@ -884,6 +888,7 @@ enum Command {
     },
 
     /// Capture or compare project snapshots for delta tracking
+    #[cfg(feature = "serve")]
     Snapshot {
         #[command(subcommand)]
         action: SnapshotAction,
@@ -1167,6 +1172,7 @@ enum Command {
     },
 
     /// Resolve a computed embed and print the result
+    #[cfg(feature = "serve")]
     Embed {
         /// Embed query string, e.g. "stats:types" or "coverage:rule-name"
         query: String,
@@ -1243,6 +1249,7 @@ enum Command {
     },
 
     /// Start the language server (LSP over stdio)
+    #[cfg(feature = "lsp")]
     Lsp,
 
     /// Start the MCP server (stdio transport)
@@ -1250,6 +1257,7 @@ enum Command {
     /// With no flags, runs the server on stdio. Use `--list-tools` to
     /// dump the registered tool catalog without starting the server, or
     /// `--probe` to run an in-process `tools/call rivet_list` smoke test.
+    #[cfg(feature = "mcp")]
     Mcp {
         /// Print the registered tool catalog (name, description, input
         /// schema summary) and exit. Does NOT start the server.
@@ -2030,9 +2038,11 @@ fn run(cli: Cli) -> Result<bool> {
     if let Command::CommitMsgCheck { file } = &cli.command {
         return cmd_commit_msg_check(&cli, file);
     }
+    #[cfg(feature = "lsp")]
     if let Command::Lsp = &cli.command {
         return cmd_lsp(&cli);
     }
+    #[cfg(feature = "mcp")]
     if let Command::Mcp {
         list_tools,
         probe,
@@ -2062,9 +2072,11 @@ fn run(cli: Cli) -> Result<bool> {
         | Command::Docs { .. }
         | Command::Quickstart { .. }
         | Command::Context
-        | Command::CommitMsgCheck { .. }
-        | Command::Lsp
-        | Command::Mcp { .. } => unreachable!(),
+        | Command::CommitMsgCheck { .. } => unreachable!(),
+        #[cfg(feature = "lsp")]
+        Command::Lsp => unreachable!(),
+        #[cfg(feature = "mcp")]
+        Command::Mcp { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate {
             format,
@@ -2256,6 +2268,7 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             strict,
         } => cmd_audit(&cli, since.as_deref(), until.as_deref(), format, *strict),
+        #[cfg(feature = "serve")]
         Command::Serve { port, bind, watch } => {
             check_for_updates();
             let port = *port;
@@ -2293,6 +2306,7 @@ fn run(cli: Cli) -> Result<bool> {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
             BaselineAction::List => cmd_baseline_list(&cli),
         },
+        #[cfg(feature = "serve")]
         Command::Snapshot { action } => match action {
             SnapshotAction::Capture { name, output } => {
                 cmd_snapshot_capture(&cli, name.as_deref(), output.as_deref())
@@ -2574,6 +2588,7 @@ fn run(cli: Cli) -> Result<bool> {
         ),
         Command::Remove { id, force } => cmd_remove(&cli, id, *force),
         Command::Batch { file } => cmd_batch(&cli, file),
+        #[cfg(feature = "serve")]
         Command::Embed { query, format } => cmd_embed(&cli, query, format),
         Command::Query {
             sexpr_pos,
@@ -8304,6 +8319,10 @@ fn cmd_matrix(
 }
 
 /// Export all project artifacts in the specified format.
+// The HTML export path (and its params: single_page/theme/offline/homepage/
+// version_label/versions_json) is gated behind `serve`, which owns the shared
+// renderer (#456/#104). Without that feature those params are unused.
+#[cfg_attr(not(feature = "serve"), allow(unused_variables))]
 #[allow(clippy::too_many_arguments)]
 fn cmd_export(
     cli: &Cli,
@@ -8344,6 +8363,14 @@ fn cmd_export(
         );
     }
     if format == "html" {
+        #[cfg(not(feature = "serve"))]
+        anyhow::bail!(
+            "`export --format html` requires the `serve` feature — the HTML renderer \
+             is shared with the dashboard server (#456/#104). This binary was built \
+             with --no-default-features; rebuild with `--features serve` (or use \
+             `--format zola`, `gherkin`, `reqif`, or `generic-yaml`)."
+        );
+        #[cfg(feature = "serve")]
         return cmd_export_html(
             cli,
             output,
@@ -9027,6 +9054,7 @@ fn cmd_export_gherkin(
 /// `/etc/passwd`). Require every path component to be a plain `Normal`
 /// segment (which excludes `..`, `.`, root, and Windows prefixes), reject
 /// backslashes (a Unix `rel` should never contain them), and cap length.
+#[cfg(feature = "serve")]
 fn is_safe_doc_asset_path(rel: &str) -> bool {
     use std::path::{Component, Path};
     if rel.is_empty() || rel.len() > 1024 || rel.contains('\\') || rel.contains('\0') {
@@ -9048,6 +9076,7 @@ fn is_safe_doc_asset_path(rel: &str) -> bool {
 ///
 /// Mirrors the route→file layout in `cmd_export_html`'s `write_page`
 /// calls; keep the two in sync.
+#[cfg(feature = "serve")]
 fn static_file_for_route(route: &str) -> String {
     // Strip query string / fragment, then split into non-empty segments.
     let path = route.split(['?', '#']).next().unwrap_or(route);
@@ -9089,6 +9118,7 @@ fn static_file_for_route(route: &str) -> String {
 /// path is recorded in `docs_assets` so the caller can copy the image.
 /// External (http/https/`//`), in-page anchors (`#…`), and already-relative
 /// links are left untouched.
+#[cfg(feature = "serve")]
 fn rewrite_static_links(
     content: &str,
     prefix: &str,
@@ -9151,6 +9181,7 @@ fn rewrite_static_links(
 /// are plain `<a href="...">` anchors that work in any static file server
 /// or offline browser.
 #[allow(clippy::too_many_arguments)]
+#[cfg(feature = "serve")]
 fn cmd_export_html(
     cli: &Cli,
     output: Option<&std::path::Path>,
@@ -12572,6 +12603,7 @@ fn cmd_baseline_list(cli: &Cli) -> Result<bool> {
 
 // ── Snapshot commands ───────────────────────────────────────────────────
 
+#[cfg(feature = "serve")]
 fn cmd_snapshot_capture(
     cli: &Cli,
     name: Option<&str>,
@@ -12630,6 +12662,7 @@ fn cmd_snapshot_capture(
     Ok(true)
 }
 
+#[cfg(feature = "serve")]
 fn cmd_snapshot_diff(
     cli: &Cli,
     baseline_path: Option<&std::path::Path>,
@@ -12707,6 +12740,7 @@ fn cmd_snapshot_diff(
     Ok(true)
 }
 
+#[cfg(feature = "serve")]
 fn cmd_snapshot_list(cli: &Cli) -> Result<bool> {
     let project_path = cli
         .project
@@ -13818,6 +13852,7 @@ fn rivet_core_yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
     }
 }
 
+#[cfg(feature = "serve")]
 fn find_latest_snapshot(snap_dir: &std::path::Path) -> Result<std::path::PathBuf> {
     if !snap_dir.exists() {
         anyhow::bail!("no snapshots directory found — run `rivet snapshot capture` first");
@@ -13842,6 +13877,7 @@ fn find_latest_snapshot(snap_dir: &std::path::Path) -> Result<std::path::PathBuf
         .ok_or_else(|| anyhow::anyhow!("no snapshot files found in {}", snap_dir.display()))
 }
 
+#[cfg(feature = "serve")]
 fn print_delta_text(
     delta: &rivet_core::snapshot::SnapshotDelta,
     baseline: &rivet_core::snapshot::Snapshot,
@@ -13884,6 +13920,7 @@ fn print_delta_text(
     );
 }
 
+#[cfg(feature = "serve")]
 fn format_delta_markdown(
     delta: &rivet_core::snapshot::SnapshotDelta,
     baseline: &rivet_core::snapshot::Snapshot,
@@ -15702,6 +15739,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     Ok(true)
 }
 
+#[cfg(feature = "serve")]
 fn cmd_embed(cli: &Cli, query: &str, format: &str) -> Result<bool> {
     validate_format(format, &["text", "html"])?;
     let schemas_dir = resolve_schemas_dir(cli);
@@ -15741,6 +15779,7 @@ fn cmd_embed(cli: &Cli, query: &str, format: &str) -> Result<bool> {
 }
 
 /// Minimal HTML tag stripper for terminal-friendly output.
+#[cfg(feature = "serve")]
 fn strip_html_tags(html: &str) -> String {
     let mut result = String::with_capacity(html.len());
     let mut in_tag = false;
@@ -15773,6 +15812,7 @@ fn strip_html_tags(html: &str) -> String {
         .replace("&quot;", "\"")
 }
 
+#[cfg(feature = "mcp")]
 fn cmd_mcp(cli: &Cli, list_tools: bool, probe: bool, format: &str) -> Result<bool> {
     if list_tools {
         validate_format(format, &["text", "json"])?;
@@ -15912,6 +15952,7 @@ fn cmd_query(
     Ok(true)
 }
 
+#[cfg(feature = "lsp")]
 fn cmd_lsp(cli: &Cli) -> Result<bool> {
     use lsp_server::{Connection, Message, Response};
     use lsp_types::*;
@@ -16639,6 +16680,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
 // ── LSP helpers ──────────────────────────────────────────────────────────
 
+#[cfg(feature = "lsp")]
 fn lsp_uri_to_path(uri: &lsp_types::Uri) -> Option<std::path::PathBuf> {
     let s = uri.as_str();
     // Handle both file:///path (Unix) and file:///C:/path (Windows)
@@ -16658,6 +16700,7 @@ fn lsp_uri_to_path(uri: &lsp_types::Uri) -> Option<std::path::PathBuf> {
     }
 }
 
+#[cfg(feature = "lsp")]
 fn lsp_path_to_uri(path: &std::path::Path) -> Option<lsp_types::Uri> {
     let path_str = path.to_string_lossy();
     // On Windows, paths like C:\foo need file:///C:/foo (three slashes)
@@ -16669,6 +16712,7 @@ fn lsp_path_to_uri(path: &std::path::Path) -> Option<lsp_types::Uri> {
     s.parse().ok()
 }
 
+#[cfg(feature = "lsp")]
 fn lsp_find_artifact_line(path: &std::path::Path, artifact_id: &str) -> u32 {
     std::fs::read_to_string(path)
         .unwrap_or_default()
@@ -16682,6 +16726,7 @@ fn lsp_find_artifact_line(path: &std::path::Path, artifact_id: &str) -> u32 {
         .unwrap_or(0)
 }
 
+#[cfg(feature = "lsp")]
 fn lsp_word_at_position(content: &str, line: u32, character: u32) -> String {
     content
         .lines()
@@ -16722,6 +16767,7 @@ fn lsp_word_at_position(content: &str, line: u32, character: u32) -> String {
 /// explicit empty publish, clearing stale markers in the editor. This handles
 /// the cross-file case: fixing a broken link in file A clears diagnostics in
 /// file B that referenced A, even if B has no artifacts being reloaded.
+#[cfg(feature = "lsp")]
 fn lsp_publish_salsa_diagnostics(
     connection: &lsp_server::Connection,
     diagnostics: &[validate::Diagnostic],
@@ -16833,6 +16879,7 @@ fn lsp_publish_salsa_diagnostics(
     );
 }
 
+#[cfg(feature = "lsp")]
 fn lsp_hover(params: &lsp_types::HoverParams, store: &Store) -> Option<lsp_types::Hover> {
     let uri = &params.text_document_position_params.text_document.uri;
     let pos = params.text_document_position_params.position;
@@ -16871,6 +16918,7 @@ fn lsp_hover(params: &lsp_types::HoverParams, store: &Store) -> Option<lsp_types
     })
 }
 
+#[cfg(feature = "lsp")]
 fn lsp_goto_definition(
     params: &lsp_types::GotoDefinitionParams,
     store: &Store,
@@ -16901,6 +16949,7 @@ fn lsp_goto_definition(
 /// suggestions in a per-process-random order (the `type:` branch already
 /// sorted; the ID branch did not — #415). Using `iter_sorted()` makes the
 /// completion list stable and matches the sibling branch's behavior.
+#[cfg(feature = "lsp")]
 fn artifact_id_completions(store: &Store) -> Vec<lsp_types::CompletionItem> {
     store
         .iter_sorted()
@@ -16913,6 +16962,7 @@ fn artifact_id_completions(store: &Store) -> Vec<lsp_types::CompletionItem> {
         .collect()
 }
 
+#[cfg(feature = "lsp")]
 fn lsp_completion(
     params: &lsp_types::CompletionParams,
     store: &Store,
@@ -16959,6 +17009,7 @@ fn lsp_completion(
 /// an "id" key. Returns a flat list of `DocumentSymbol` values suitable for
 /// the `textDocument/documentSymbol` LSP response.
 #[allow(deprecated)] // DocumentSymbol.deprecated field is itself deprecated in lsp_types
+#[cfg(feature = "lsp")]
 fn lsp_document_symbols(source: &str) -> Vec<lsp_types::DocumentSymbol> {
     use rivet_core::yaml_cst;
 
@@ -16978,6 +17029,7 @@ fn lsp_document_symbols(source: &str) -> Vec<lsp_types::DocumentSymbol> {
 /// (`requires at least` or `requires exactly`), we generate a workspace-edit
 /// code action that inserts a TODO comment reminding the user to add the link.
 #[allow(clippy::mutable_key_type)] // Uri has interior mutability but HashMap<Uri, _> is the lsp_types API
+#[cfg(feature = "lsp")]
 fn lsp_code_actions(params: &lsp_types::CodeActionParams) -> Vec<lsp_types::CodeActionOrCommand> {
     let uri = &params.text_document.uri;
     let mut actions = Vec::new();
@@ -17045,6 +17097,7 @@ fn lsp_code_actions(params: &lsp_types::CodeActionParams) -> Vec<lsp_types::Code
 
 /// Recursively walk the CST looking for SequenceItem nodes that represent artifacts.
 #[allow(deprecated)]
+#[cfg(feature = "lsp")]
 fn walk_for_symbols(
     node: &rivet_core::yaml_cst::SyntaxNode,
     symbols: &mut Vec<lsp_types::DocumentSymbol>,
@@ -17068,6 +17121,7 @@ fn walk_for_symbols(
 ///
 /// Returns `Some` if the item contains a mapping with an "id" key.
 #[allow(deprecated)]
+#[cfg(feature = "lsp")]
 fn extract_symbol_from_item(
     item: &rivet_core::yaml_cst::SyntaxNode,
     line_starts: &[u32],
@@ -17142,6 +17196,7 @@ fn extract_symbol_from_item(
 /// Extract the text of the first scalar token descended from a CST node.
 ///
 /// Standalone version for the LSP helpers (mirrors `yaml_hir::scalar_text`).
+#[cfg(feature = "lsp")]
 fn cst_scalar_text(node: &rivet_core::yaml_cst::SyntaxNode) -> Option<String> {
     use rivet_core::yaml_cst::SyntaxKind;
 
@@ -17181,6 +17236,7 @@ fn cst_scalar_text(node: &rivet_core::yaml_cst::SyntaxNode) -> Option<String> {
 }
 
 /// Convert a rowan `TextRange` to an LSP `Range` using a line-starts table.
+#[cfg(feature = "lsp")]
 fn text_range_to_lsp(tr: rowan::TextRange, line_starts: &[u32]) -> lsp_types::Range {
     use rivet_core::yaml_cst;
 
@@ -17338,7 +17394,7 @@ mod stamp_glob_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "lsp"))]
 mod lsp_tests {
     use super::*;
 
