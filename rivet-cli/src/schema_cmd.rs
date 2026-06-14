@@ -317,7 +317,8 @@ pub fn cmd_rules(schema: &Schema, format: &str) -> String {
 
 // ── Example YAML generation ─────────────────────────────────────────────
 
-/// Public wrapper for use by the help renderer.
+/// Public wrapper for use by the help renderer (serve-gated; #456).
+#[cfg(feature = "serve")]
 pub fn generate_example_yaml_pub(
     t: &rivet_core::schema::ArtifactTypeDef,
     schema: &Schema,

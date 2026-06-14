@@ -6200,7 +6200,7 @@ artifacts:
   - id: REQ-202
     type: requirement
     title: "rivet-cli must support a minimal `--no-default-features` build (validate/list/commit-msg-check) that excludes the serve+MCP+LSP stack"
-    status: draft
+    status: implemented
     description: |
       Finding (issue #456, AI-agent dogfooding, verified against
       rivet-cli/Cargo.toml). `rivet validate` is the hook-critical and
@@ -6233,11 +6233,23 @@ artifacts:
         - `cargo build -p rivet-cli --no-default-features` succeeds and the
           resulting binary runs `validate`, `list`, and `commit-msg-check`.
         - `cargo build -p rivet-cli --no-default-features` does NOT compile
-          `axum`, `rmcp`, or `lsp-server` (verify via
-          `cargo tree -p rivet-cli --no-default-features` absence).
+          `axum`, `rmcp`, `lsp-server`, `lsp-types`, `tower-http`, `notify`, or
+          `tokio` into the binary (verify via
+          `cargo tree -p rivet-cli --no-default-features -e normal` absence;
+          `-e normal` excludes the dev-deps the integration tests still use).
         - Default build (`cargo build -p rivet-cli`) is unchanged: serve, mcp,
           and lsp subcommands all present.
         - `rivet validate` on the rivet repo still PASS.
+      Shipped (v0.16.x): the dependency coupling was deeper than the original
+      sketch. `serve` embeds an MCP HTTP endpoint (`crate::mcp::RivetServer`) so
+      `serve = ["mcp", …]`; the shared HTML renderer (`crate::render`) and its
+      component/context types live in the `serve` module and are reused by the
+      LSP hover-preview, so `lsp = ["serve", …]` (lsp ⊇ serve) and the HTML-
+      rendering commands `export --format html`, `snapshot`, and `embed` are
+      also `serve`-gated — the minimal build keeps `reqif`/`gherkin`/`zola`/
+      `generic-yaml`/`json` export and refuses `--format html` with a clear
+      message. Fully decoupling render from serve (so a minimal/LSP build needn't
+      pull the web stack) remains follow-up #104.
     tags: [cli, build, cargo-features, minimal-build, friction, dogfooding]
     fields:
       priority: should

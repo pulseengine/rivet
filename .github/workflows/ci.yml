@@ -49,6 +49,11 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --all-targets -- -D warnings
+      # REQ-202 / #456: the minimal validate/list/commit-check binary must keep
+      # compiling without the serve+MCP+LSP stack. Without this guard, the next
+      # serve-coupled change in an ungated path silently rots the minimal build.
+      - name: Minimal build (--no-default-features) stays clean
+        run: cargo clippy -p rivet-cli --no-default-features -- -D warnings
 
   yaml-lint:
     name: YAML Lint

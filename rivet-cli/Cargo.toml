@@ -11,8 +11,21 @@ rust-version.workspace = true
 name = "rivet"
 path = "src/main.rs"
 
+# REQ-202 / #456: the validate/list/commit-check hot path must be buildable
+# without the web + MCP + LSP stack. `default` keeps all three on, so
+# `cargo install rivet` and the released binary are byte-for-byte unchanged;
+# `cargo build -p rivet-cli --no-default-features` yields the minimal
+# traceability core (parser + validate + list + commit checks). `serve` embeds
+# an MCP HTTP endpoint (`crate::mcp::RivetServer`), so it enables `mcp`.
 [features]
-default = []
+default = ["serve", "mcp", "lsp"]
+mcp = ["dep:rmcp", "dep:tokio"]
+serve = ["mcp", "dep:axum", "dep:tower-http", "dep:notify"]
+# `lsp` enables `serve`: the LSP hover-preview reuses the shared HTML renderer
+# (`crate::render`), whose component/context types still live in the `serve`
+# module. Fully decoupling render from serve so LSP needn't pull the web stack
+# is tracked as #104; until then lsp ⊇ serve.
+lsp = ["serve", "dep:lsp-server", "dep:lsp-types"]
 wasm = ["rivet-core/wasm"]
 
 [dependencies]
@@ -25,17 +38,17 @@ log = { workspace = true }
 serde_yaml = { workspace = true }
 serde_json = { workspace = true }
 regex = { workspace = true }
-axum = { workspace = true }
-tokio = { workspace = true }
-tower-http = { workspace = true }
+axum = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true }
 etch = { path = "../etch" }
 petgraph = { workspace = true }
 urlencoding = { workspace = true }
-lsp-server = "0.7"
-lsp-types = "0.97"
+lsp-server = { version = "0.7", optional = true }
+lsp-types = { version = "0.97", optional = true }
 rowan = { workspace = true }
-notify = "7"
-rmcp = { version = "1.3.0", features = ["server", "transport-io", "macros", "transport-streamable-http-server"] }
+notify = { version = "7", optional = true }
+rmcp = { version = "1.3.0", features = ["server", "transport-io", "macros", "transport-streamable-http-server"], optional = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
