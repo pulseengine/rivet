@@ -14054,12 +14054,12 @@ impl ProjectContext {
     /// skips (the existing REQ-062 channel) and prints a concise loud block to
     /// stderr pointing at `rivet validate`. No-op when nothing was skipped;
     /// emitted regardless of log level because it signals data loss.
-    fn warn_parse_error_skips(&self, cli: &Cli) {
-        // Re-walk each `generic` source's directory and classify failed files
-        // via `scan_skipped_files` directly (rather than
-        // `load_artifacts_with_skips`, which would re-run `load_artifacts` and
-        // re-emit its per-file `log::warn!`). This adds the consolidated
-        // summary without doubling the existing warning noise.
+    /// Re-walk each `generic` source's directory and return the files dropped
+    /// from the loaded graph by a PARSE error. Used both for the read-only
+    /// warning and for the mutating-command hard-fail guard. `scan_skipped_files`
+    /// (rather than `load_artifacts_with_skips`) avoids re-emitting the per-file
+    /// `log::warn!`.
+    fn parse_error_skips(&self, cli: &Cli) -> Vec<rivet_core::SkippedFile> {
         let mut skips: Vec<rivet_core::SkippedFile> = Vec::new();
         for source in &self.config.sources {
             if !matches!(source.format.as_str(), "generic" | "generic-yaml") {
@@ -14074,6 +14074,11 @@ impl ProjectContext {
                 );
             }
         }
+        skips
+    }
+
+    fn warn_parse_error_skips(&self, cli: &Cli) {
+        let skips = self.parse_error_skips(cli);
         if skips.is_empty() {
             return;
         }
@@ -14085,6 +14090,30 @@ impl ProjectContext {
         for s in &skips {
             eprintln!("  - {}: {}", s.path.display(), s.reason);
         }
+    }
+
+    /// Hard-fail guard for MUTATING / ID-allocating commands (#518). A source
+    /// file dropped by a parse error is invisible to the link graph, so
+    /// `next-id` would compute against a partial store and hand out an ID that
+    /// collides with the unparsed file's artifacts — and `add`/`modify` would
+    /// write against that partial view. Read-only commands tolerate this (warn
+    /// + continue); anything that allocates IDs or writes must REFUSE.
+    fn ensure_no_parse_skips(&self, cli: &Cli, action: &str) -> Result<()> {
+        let skips = self.parse_error_skips(cli);
+        if skips.is_empty() {
+            return Ok(());
+        }
+        let list = skips
+            .iter()
+            .map(|s| format!("  - {}: {}", s.path.display(), s.reason))
+            .collect::<Vec<_>>()
+            .join("\n");
+        anyhow::bail!(
+            "refusing to {action}: {} artifact source(s) failed to parse and are NOT loaded, \
+             so a new ID could collide with artifacts inside them (#518). Fix the parse \
+             error(s) first — `rivet validate` shows details:\n{list}",
+            skips.len()
+        )
     }
 
     /// Load project with artifacts, schema, and link graph.
@@ -14661,6 +14690,9 @@ fn cmd_next_id(
     use rivet_core::mutate;
 
     let ctx = ProjectContext::load(cli)?;
+    // #518: a parse-broken source is invisible here, so allocating an ID
+    // against this partial store would collide with the unparsed artifacts.
+    ctx.ensure_no_parse_skips(cli, "allocate an ID")?;
     let store = ctx.store;
 
     // The positional `target` is a shorthand for --type (it routes through
@@ -14737,6 +14769,10 @@ fn cmd_add(
     });
 
     let ctx = ProjectContext::load(cli)?;
+    // #518: refuse to add when a source failed to parse — otherwise the new ID
+    // is allocated against a partial store (collides with the unparsed file's
+    // artifacts) and we'd append to a possibly-broken file.
+    ctx.ensure_no_parse_skips(cli, "add an artifact")?;
     let (store, schema) = (ctx.store, ctx.schema);
 
     // Resolve prefix for the type

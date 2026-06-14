@@ -6326,3 +6326,76 @@ fn variant_solve_accepts_bare_variant_name() {
         String::from_utf8_lossy(&by_path.stderr)
     );
 }
+
+/// #518: a source file broken by a parse error must make MUTATING / ID-allocating
+/// commands (next-id, add) HARD-FAIL — not silently skip the file and allocate an
+/// ID that collides with its (now-invisible) artifacts.
+#[test]
+fn mutating_commands_refuse_on_parse_broken_source() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(
+        init.status.success(),
+        "init: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    // Sanity: next-id succeeds on the clean store.
+    let ok = Command::new(rivet_bin())
+        .args(["--project", dirs, "next-id", "requirement"])
+        .output()
+        .expect("next-id");
+    assert!(
+        ok.status.success(),
+        "next-id should succeed on a clean store"
+    );
+
+    // Corrupt an artifacts source with a YAML parse error (an unquoted colon).
+    let target = std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .find(|p| p.extension().map(|x| x == "yaml").unwrap_or(false))
+        .expect("an artifacts yaml");
+    let mut content = std::fs::read_to_string(&target).unwrap();
+    content.push_str("\n  - id: REQ-BROKEN\n    title: bad: unquoted colon\n");
+    std::fs::write(&target, content).unwrap();
+
+    // next-id must now REFUSE (non-zero) and explain why.
+    let nid = Command::new(rivet_bin())
+        .args(["--project", dirs, "next-id", "requirement"])
+        .output()
+        .expect("next-id");
+    assert!(
+        !nid.status.success(),
+        "next-id must hard-fail when a source failed to parse (#518)"
+    );
+    let err = String::from_utf8_lossy(&nid.stderr);
+    assert!(
+        err.contains("refusing") && err.contains("parse"),
+        "next-id refusal must explain the parse skip; got: {err}"
+    );
+
+    // add must also REFUSE.
+    let add = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "add",
+            "--type",
+            "requirement",
+            "--title",
+            "x",
+        ])
+        .output()
+        .expect("add");
+    assert!(
+        !add.status.success(),
+        "add must hard-fail when a source failed to parse (#518)"
+    );
+}
