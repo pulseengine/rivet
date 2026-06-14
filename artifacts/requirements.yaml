@@ -6877,3 +6877,54 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-13T15:30:00Z
+
+  - id: REQ-218
+    type: requirement
+    title: "`rivet next-id` honors IDs claimed in git history, never reissuing a reverted/in-flight ID (#479)"
+    status: implemented
+    description: |
+      Finding (#479, hourly dogfooding loop). `next-id`/`add` allocated the next
+      ID by scanning only the working tree, so in any multi-branch or
+      reverted-commit workflow they handed out IDs already claimed elsewhere —
+      producing two artifacts with the same ID. Verified in-tree: REQ-209 was
+      claimed by a commit, reverted (#502), and the next allocation reissued
+      REQ-209 against a divergent definition. Distinct from #422 (textual EOF
+      conflicts): this is logical ID collision even when the two artifacts live
+      in different files and never textually conflict.
+
+      Fix: ID allocation now also considers IDs claimed in git history. The CLI
+      harvests `{prefix}-N` IDs from every ref (`git log --all`), counting an ID
+      only in an *allocation context* — a traceability trailer line
+      (`Implements:`/`Fixes:`/`Verifies:`/`Satisfies:`/`Refs:`/…) or a
+      parenthetical subject tag (`… (REQ-213, #510)`) — so free-prose mentions
+      (`REQ-001 → REQ-999`) never poison allocation. rivet-core stays IO-free:
+      the new `mutate::next_id_considering(store, prefix, extra_ids)` raises the
+      floor from the supplied burned IDs while keeping the store's own zero-pad
+      width. A skip past the working-tree maximum prints an explanatory stderr
+      note. Best-effort and overridable: outside a git repo, or with
+      `RIVET_NEXTID_NO_GIT=1`, behavior falls back to the working tree only
+      (the REQ-051 hook/CI model — tooling assists, never gates local work).
+
+      Acceptance:
+        - In a git repo where a commit trailer claims `REQ-994` but no such
+          artifact exists in the tree, `rivet next-id requirement` returns
+          `REQ-995` (skips the burned ID) and emits a stderr note.
+        - `RIVET_NEXTID_NO_GIT=1 rivet next-id requirement` ignores git history
+          and allocates from the working-tree maximum.
+        - A free-prose `REQ-999` mention in an unrelated commit body does NOT
+          raise the floor (only trailer / parenthetical IDs count).
+        - `mutate::next_id_considering` unit test covers burned-above,
+          burned-below, other-prefix, and width cases.
+        - `cargo test -p rivet-core` + `-p rivet-cli --test cli_commands` pass.
+        - `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` clean.
+    tags: [cli, next-id, traceability, git, dx, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-031
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-14T12:00:00Z
