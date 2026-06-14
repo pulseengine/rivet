@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-06-14
+
 ### Fixed
 
 - **REQ-217 / #514 — `variant check` accepts the form `variant init` writes.**
