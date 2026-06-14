@@ -66,15 +66,22 @@ evidence is born compliant instead of being reverse-engineered later.
 ## Install
 
 ```bash
-# From source (recommended while pre-1.0)
+# Via npm — no Rust toolchain needed; postinstall pulls the prebuilt
+# binary for your platform (macOS/Linux/Windows, x64/arm64).
+npm install -g @pulseengine/rivet        # `rivet` on your PATH
+npx @pulseengine/rivet --help            # …or run it without installing
+
+# From source (Rust toolchain)
 cargo install --path rivet-cli
 
-# Or from a release tag
-curl -L https://github.com/pulseengine/rivet/releases/download/v0.5.0/rivet-x86_64-unknown-linux-gnu.tar.gz | tar xz
-
-# Or via npm (for `npx @pulseengine/rivet mcp` in MCP clients)
-npm install -g @pulseengine/rivet
+# Or grab a prebuilt release binary directly (substitute your platform /
+# the current version — assets are named rivet-vX.Y.Z-<target>)
+curl -L https://github.com/pulseengine/rivet/releases/download/v0.16.1/rivet-v0.16.1-x86_64-unknown-linux-gnu.tar.gz | tar xz
 ```
+
+`npm`/`npx` is the zero-toolchain path — it fetches the same signed
+binary the release ships, so MCP clients can run `npx @pulseengine/rivet
+mcp` without a Rust install.
 
 ## 30-second demo
 

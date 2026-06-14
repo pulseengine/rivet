@@ -20,6 +20,20 @@ git push origin vX.Y.Z
 #    cosign-signed SHA256SUMS, GitHub Release page, VS Code Marketplace.
 ```
 
+## Version locations
+
+- **Authoritative:** `Cargo.toml [workspace.package].version` — the
+  release-prep PR bumps this (plus `Cargo.lock` and
+  `vscode-rivet/package.json` for the Marketplace listing).
+- **Workflow-managed, do NOT need a manual bump:** `npm/package.json` and
+  `platform-packages/*/package.json`. `release-npm.yml` rewrites their
+  `version` (and the root's `optionalDependencies`) to the tag at publish
+  time via `jq`, then publishes — the committed values are never read by
+  the published artifact. They are kept roughly in sync only so the repo
+  doesn't *look* abandoned (a stale `0.4.x` here previously caused exactly
+  that confusion); a drift between releases is harmless. The published
+  channel is `npm view @pulseengine/rivet version`, not these files.
+
 ## Why signed tags
 
 The release workflow keys publication off the tag push. An attacker
