@@ -6399,3 +6399,91 @@ fn mutating_commands_refuse_on_parse_broken_source() {
         "add must hard-fail when a source failed to parse (#518)"
     );
 }
+
+/// #479: next-id must not reissue an ID that is claimed in git history (a
+/// commit trailer / subject) but absent from the working tree — the
+/// reverted-but-burned trap (e.g. REQ-209). Git awareness is best-effort and
+/// can be disabled with RIVET_NEXTID_NO_GIT.
+#[test]
+fn next_id_skips_ids_burned_in_git_history() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(
+        init.status.success(),
+        "init: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+
+    // Establish a git repo and commit a message that *claims* a REQ id far above
+    // anything in the working tree, then leave that id absent from the store —
+    // exactly the shape of a reverted commit or an unmerged branch.
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "t@example.com"]);
+    git(&["config", "user.name", "t"]);
+    git(&["add", "-A"]);
+    git(&[
+        "commit",
+        "-q",
+        "-m",
+        "feat: burn an id\n\nImplements: REQ-994",
+    ]);
+
+    let next_id = |env_no_git: bool| -> (String, String) {
+        let mut cmd = Command::new(rivet_bin());
+        cmd.args(["--project", dirs, "next-id", "requirement"]);
+        if env_no_git {
+            cmd.env("RIVET_NEXTID_NO_GIT", "1");
+        }
+        let out = cmd.output().expect("next-id");
+        assert!(
+            out.status.success(),
+            "next-id must succeed. stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        )
+    };
+
+    // Git-aware: must clear the burned REQ-994 -> REQ-995, with a stderr note.
+    let (id, stderr) = next_id(false);
+    assert_eq!(
+        id, "REQ-995",
+        "next-id must skip past the git-burned REQ-994; got {id}"
+    );
+    assert!(
+        stderr.contains("git history") && stderr.contains("REQ-995"),
+        "a skip must emit an explanatory stderr note; got: {stderr}"
+    );
+
+    // Escape hatch: RIVET_NEXTID_NO_GIT ignores git history entirely, so the
+    // allocation falls back to the (much lower) working-tree maximum.
+    let (bare, _) = next_id(true);
+    assert_ne!(
+        bare, "REQ-995",
+        "RIVET_NEXTID_NO_GIT must allocate from the working tree only, ignoring REQ-994"
+    );
+    assert!(
+        bare.starts_with("REQ-") && bare.as_str() < "REQ-994",
+        "tree-only id must be below the burned id; got {bare}"
+    );
+}

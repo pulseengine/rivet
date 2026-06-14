@@ -93,34 +93,54 @@ pub fn prefix_for_type(artifact_type: &str, store: &Store) -> String {
 ///
 /// The prefix should NOT include the trailing dash — it is added automatically.
 pub fn next_id(store: &Store, prefix: &str) -> String {
-    let dash_prefix = format!("{prefix}-");
-    let mut max_num: u32 = 0;
+    next_id_considering(store, prefix, std::iter::empty::<&str>())
+}
 
+/// Like [`next_id`], but also considers a set of externally-claimed IDs when
+/// picking the next free number — IDs that are *not* in the working-tree store
+/// but have nonetheless been burned (e.g. claimed by an open PR/branch or by a
+/// commit that was later reverted). Issue #479: scanning only the local store
+/// hands out IDs already live elsewhere, producing two artifacts with the same
+/// ID. The caller (the CLI) supplies the burned IDs from git history; core
+/// stays IO-free.
+///
+/// `extra_ids` may contain IDs of any prefix and any shape; only those matching
+/// `{prefix}-{number}` contribute. The returned ID's zero-pad width is still
+/// derived from the *store* (the project's own convention), falling back to the
+/// width seen among the extra IDs, then to 3.
+pub fn next_id_considering<I, S>(store: &Store, prefix: &str, extra_ids: I) -> String
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let dash_prefix = format!("{prefix}-");
+
+    let parse_num = |id: &str| -> Option<(u32, usize)> {
+        id.strip_prefix(&dash_prefix)
+            .and_then(|suffix| suffix.parse::<u32>().ok().map(|n| (n, suffix.len())))
+    };
+
+    let mut max_num: u32 = 0;
+    // Width is taken from the store's own IDs first (the project convention).
+    let mut store_width: Option<usize> = None;
     for artifact in store.iter() {
-        if let Some(suffix) = artifact.id.strip_prefix(&dash_prefix) {
-            if let Ok(n) = suffix.parse::<u32>() {
-                if n > max_num {
-                    max_num = n;
-                }
-            }
+        if let Some((n, w)) = parse_num(&artifact.id) {
+            max_num = max_num.max(n);
+            store_width = Some(store_width.map_or(w, |cur: usize| cur.max(w)));
+        }
+    }
+
+    // Burned IDs raise the floor but only contribute width if the store had none.
+    let mut extra_width: Option<usize> = None;
+    for id in extra_ids {
+        if let Some((n, w)) = parse_num(id.as_ref()) {
+            max_num = max_num.max(n);
+            extra_width = Some(extra_width.map_or(w, |cur: usize| cur.max(w)));
         }
     }
 
     let next = max_num + 1;
-    // Determine zero-pad width from existing IDs (default 3)
-    let width = store
-        .iter()
-        .filter_map(|a| a.id.strip_prefix(&dash_prefix))
-        .filter_map(|s| {
-            if s.parse::<u32>().is_ok() {
-                Some(s.len())
-            } else {
-                None
-            }
-        })
-        .max()
-        .unwrap_or(3);
-
+    let width = store_width.or(extra_width).unwrap_or(3);
     format!("{prefix}-{next:0>width$}")
 }
 
@@ -709,6 +729,30 @@ mod tests {
         assert_eq!(next_id(&store, "REQ"), "REQ-003");
         assert_eq!(next_id(&store, "FEAT"), "FEAT-002");
         assert_eq!(next_id(&store, "DD"), "DD-001");
+    }
+
+    // #479: burned IDs (claimed in git history but absent from the working
+    // tree) must raise the allocation floor so next-id never reissues them.
+    // rivet: verifies REQ-031
+    #[test]
+    fn next_id_considering_skips_burned_ids() {
+        let store = make_test_store(); // REQ-001, REQ-002 present -> bare next is REQ-003.
+
+        // A reverted REQ-009 lingers only in git history: skip past it.
+        let burned = ["REQ-009", "FEAT-007", "junk", "REQ-xyz"];
+        assert_eq!(
+            next_id_considering(&store, "REQ", burned),
+            "REQ-010",
+            "must clear the highest burned REQ id, not just the store max"
+        );
+        // Other prefixes are unaffected by REQ burns.
+        assert_eq!(next_id_considering(&store, "DD", burned), "DD-001");
+
+        // Burned below the store max changes nothing.
+        assert_eq!(next_id_considering(&store, "REQ", ["REQ-001"]), "REQ-003");
+
+        // Width follows the store convention even when a burned id is wider.
+        assert_eq!(next_id_considering(&store, "REQ", ["REQ-0042"]), "REQ-043");
     }
 
     // rivet: verifies REQ-031

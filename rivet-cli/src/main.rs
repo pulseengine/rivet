@@ -11872,6 +11872,96 @@ fn git_in(project: &Path, args: &[&str]) -> Result<std::process::Output> {
         .with_context(|| format!("running git {}", args.join(" ")))
 }
 
+/// Trailer keys that record an artifact-ID *allocation* in a commit message
+/// (the project's mandated traceability trailers — see CLAUDE.md). An ID on one
+/// of these lines is a real claim; an ID in free prose ("changed target
+/// REQ-001 → REQ-999") is not.
+const ALLOC_TRAILER_KEYS: &[&str] = &[
+    "Implements",
+    "Fixes",
+    "Verifies",
+    "Satisfies",
+    "Refs",
+    "Closes",
+    "Resolves",
+    "Depends",
+    "Relates",
+    "Trace",
+];
+
+/// #479: harvest artifact IDs of the given `prefix` that have been *claimed in
+/// git history* but may be absent from the working tree — IDs burned by an open
+/// PR/branch or by a commit that was later reverted (the REQ-209 trap that bit
+/// this very project). We scan every commit reachable from any ref (`--all`, so
+/// local branches AND fetched remote-tracking refs), but count an ID as claimed
+/// only in an *allocation context*: a traceability trailer line (`Implements:
+/// REQ-994`, `Fixes: REQ-12`), or a parenthetical subject tag (`feat(schema): …
+/// (REQ-213, #510)`). Free-prose mentions are deliberately ignored, or a commit
+/// that merely discusses `REQ-99999` as an example would poison every future
+/// allocation.
+///
+/// Over-claiming (leaving an ID gap) is the safe failure mode; under-claiming
+/// risks two divergent branches defining the same ID. Returns an empty vec when
+/// not in a git repo, when git is unavailable, or when `RIVET_NEXTID_NO_GIT` is
+/// set — git awareness is best-effort, never a hard dependency (the REQ-051
+/// hook/CI model: tooling assists, it does not gate local work).
+fn git_claimed_ids(project: &Path, prefix: &str) -> Vec<String> {
+    if std::env::var_os("RIVET_NEXTID_NO_GIT").is_some() {
+        return Vec::new();
+    }
+    let out = match git_in(project, &["log", "--all", "--format=%B"]) {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let id_re = match regex::Regex::new(&format!(r"{}-\d+", regex::escape(prefix))) {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut ids: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let is_trailer = ALLOC_TRAILER_KEYS.iter().any(|k| {
+            trimmed
+                .strip_prefix(k)
+                .is_some_and(|rest| rest.trim_start().starts_with(':'))
+        });
+        if is_trailer {
+            // The whole trailer value is an allocation list: take every ID.
+            ids.extend(id_re.find_iter(line).map(|m| m.as_str().to_string()));
+        } else {
+            // Otherwise only IDs that immediately follow a `(` (subject tags).
+            for (idx, m) in id_re.find_iter(line).map(|m| (m.start(), m)) {
+                if line[..idx].trim_end().ends_with('(') {
+                    ids.push(m.as_str().to_string());
+                }
+            }
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+/// Allocate the next ID for `prefix`, honoring IDs burned in git history
+/// (#479). Emits a one-line stderr note when a burned ID forces the allocation
+/// past the working-tree maximum, so the skip is never silent.
+fn next_id_git_aware(project: &Path, store: &Store, prefix: &str) -> String {
+    let claimed = git_claimed_ids(project, prefix);
+    let with_git = rivet_core::mutate::next_id_considering(store, prefix, &claimed);
+    let tree_only = rivet_core::mutate::next_id(store, prefix);
+    if with_git != tree_only {
+        eprintln!(
+            "note: allocating {prefix} {with_git}, not {tree_only} — higher IDs are \
+             already claimed in git history (an open branch or a reverted commit) \
+             though absent from the working tree. Set RIVET_NEXTID_NO_GIT=1 to \
+             allocate from the working tree only."
+        );
+    }
+    with_git
+}
+
 /// Resolve `--since` default: try `git merge-base origin/main HEAD`, fall
 /// back to `HEAD~50` if the merge-base lookup fails (no origin remote, no
 /// origin/main, shallow clone, etc.).
@@ -14709,7 +14799,7 @@ fn cmd_next_id(
         ),
     };
 
-    let next = mutate::next_id(&store, &resolved_prefix);
+    let next = next_id_git_aware(&cli.project, &store, &resolved_prefix);
 
     if format == "json" {
         let json = serde_json::json!({
@@ -14778,8 +14868,9 @@ fn cmd_add(
     // Resolve prefix for the type
     let prefix = mutate::prefix_for_type(artifact_type, &store);
 
-    // Generate ID
-    let id = mutate::next_id(&store, &prefix);
+    // Generate ID (git-aware: never reissue an ID burned by an open branch or
+    // a reverted commit — #479).
+    let id = next_id_git_aware(&cli.project, &store, &prefix);
 
     // Build fields map
     let mut fields_map: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
