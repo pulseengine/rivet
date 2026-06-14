@@ -413,3 +413,75 @@ fn aspice_phase_9_scales_to_100_verifiers() {
         "full validate of 200-artifact store took {elapsed:?}; suspected O(N²) regression"
     );
 }
+
+/// #522 slice 2 regression: `status: accepted` is the documented terminal
+/// state for design-decision / external-anchor / requirement-meta artifacts.
+/// Dropping it from the canonical enum in 0.16.0 flipped existing stores
+/// that followed the documented lifecycle (12 of 21 errors on the jess
+/// store) from PASS to FAIL. Confirm the enum re-admits it and the
+/// `status-allowed-values` rule still fires on a genuinely off-vocabulary
+/// value so the typo-guard isn't widened to "anything goes."
+// rivet: verifies REQ-162
+#[test]
+fn common_status_accepts_accepted_and_still_rejects_typos() {
+    let schema = Schema::merge(&[parse_schema("common"), parse_schema("dev")]);
+
+    // Acceptance bullet 3: introspection surface must agree with the
+    // diagnostic. The status field is a schema-wide base-field
+    // (`schemas/common.yaml` → `base-fields:`); `rivet schema show <type>`
+    // surfaces it via `Schema::base_fields`. That list must include
+    // `accepted`.
+    let status_field = schema
+        .base_fields
+        .iter()
+        .find(|f| f.name == "status")
+        .expect("status must be declared as a common.yaml base-field");
+    let allowed = status_field
+        .allowed_values
+        .as_ref()
+        .expect("status base-field must declare allowed-values");
+    assert!(
+        allowed.iter().any(|v| v == "accepted"),
+        "common.yaml status enum must include `accepted` (documented terminal \
+         state for design-decision / external-anchor / requirement-meta); got {allowed:?}"
+    );
+
+    let mut store = Store::default();
+    // Acceptance bullet 2: a design-decision with `status: accepted` must
+    // validate cleanly — no `allowed-values` / `status-allowed-values`
+    // diagnostic on it.
+    store.upsert(artifact("DD-ACCEPTED", "design-decision", "accepted", &[]));
+    // Negative control: a typo'd status must still fire the rule so the
+    // canonical-enum guard isn't accidentally widened.
+    store.upsert(artifact("DD-TYPO", "design-decision", "implmented", &[]));
+
+    let graph = LinkGraph::build(&store, &schema);
+    let diags = validate(&store, &schema, &graph);
+
+    let dd_accepted_status_diags: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.artifact_id.as_deref() == Some("DD-ACCEPTED")
+                && (d.rule == "allowed-values" || d.rule == "status-allowed-values")
+        })
+        .collect();
+    assert!(
+        dd_accepted_status_diags.is_empty(),
+        "design-decision with `status: accepted` must not produce a status \
+         allowed-values diagnostic; got {dd_accepted_status_diags:#?}"
+    );
+
+    let dd_typo_status_diags: Vec<_> = diags
+        .iter()
+        .filter(|d| {
+            d.artifact_id.as_deref() == Some("DD-TYPO")
+                && (d.rule == "allowed-values" || d.rule == "status-allowed-values")
+        })
+        .collect();
+    assert_eq!(
+        dd_typo_status_diags.len(),
+        1,
+        "design-decision with a typo'd status must still fire the status \
+         allowed-values guard exactly once; got {dd_typo_status_diags:#?}"
+    );
+}

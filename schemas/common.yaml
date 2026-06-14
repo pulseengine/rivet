@@ -50,6 +50,11 @@ base-fields:
     # (`schemas/aspice.yaml` uses `(= status "released")`) and the
     # tool-qualification defect flow gates. Absent status is allowed (the check
     # only fires when a status is present).
+    # #522: `accepted` is the documented terminal state for design-decision /
+    # external-anchor / requirement-meta artifacts (the lifecycle docs and
+    # downstream agent guidance use it) — kept here so stores that followed
+    # the documented chain `... -> verified -> accepted` don't flip to FAIL
+    # on the 0.15 -> 0.16 bump.
     allowed-values:
       - draft
       - proposed
@@ -57,6 +62,7 @@ base-fields:
       - implemented
       - verified
       - released
+      - accepted
       - deprecated
       - rejected
 

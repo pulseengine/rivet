@@ -73,6 +73,19 @@
 
 ### Fixed
 
+- **REQ-162 / #522 — restore `accepted` to the canonical status enum.** v0.16.0
+  declared the canonical lifecycle (`draft → … → released` + `deprecated` /
+  `rejected`) but dropped `accepted`, the documented terminal state for
+  `design-decision` / `external-anchor` / requirement-meta artifacts. Downstream
+  stores that followed the documented chain (e.g. the jess hardware-integration
+  store, 12 of 21 errors on upgrade) flipped from PASS to FAIL on the 0.15 → 0.16
+  bump with no migration path. `accepted` is now re-admitted in
+  `schemas/common.yaml`, so stores upgrade cleanly; the `status-allowed-values`
+  guard still fires on genuinely typo'd values (covered by
+  `common_status_accepts_accepted_and_still_rejects_typos`). The wider
+  migration / per-schema enum questions raised in #522 (slices 1 and 3) are
+  tracked separately.
+
 - **REQ-168 / #428 — `rivet bundle --incoming`.** `bundle` built the closure
   from *outgoing* links only, so bundling a requirement (a graph sink —
   everything links *to* it, it links *out* to nothing) returned just the bare
