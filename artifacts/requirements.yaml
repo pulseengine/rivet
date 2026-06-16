@@ -6940,3 +6940,50 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-14T12:00:00Z
+
+  - id: REQ-220
+    type: requirement
+    title: "`rivet init --vendor-schemas` writes the resolved built-in schemas on-disk to pin validation against rivet upgrades (#431)"
+    status: implemented
+    description: |
+      Finding (#431, maintainer-reported). A project that lists only built-in
+      schema NAMES in `rivet.yaml` (no local `schemas/` dir) validates against
+      whatever schema definitions are compiled into the installed rivet binary
+      (`embedded::load_schemas_with_fallback` prefers on-disk, else the embedded
+      copy). So every release that tightens or adds a rule to a built-in schema
+      silently changes validation for embedded-schema consumers — the same
+      `rivet validate` that passed now flags unchanged artifacts. The schema
+      `version:` field is surfaced (REQ-176/177, #442/#443/#483) and CI warns on
+      an unbumped schema change (REQ-206, #487), but nothing lets a project PIN
+      the schema set it validates against.
+
+      Fix (this slice): `rivet init --vendor-schemas` writes the resolved schema
+      set — the names in `schemas:` plus their auto-discovered bridges — from the
+      binary's embedded copies into the project's `schemas/<name>.yaml`. Because
+      the loader prefers on-disk over embedded, the vendored set is committed to
+      the project's git and is immune to release-to-release rule drift. Vendoring
+      never overwrites an existing schema file (a locally-edited schema is kept).
+
+      Acceptance:
+        - `rivet init --preset aspice --vendor-schemas --dir D` writes
+          `D/schemas/common.yaml` and `D/schemas/aspice.yaml`.
+        - `rivet --project D validate` then reports those schemas as `(on-disk)`
+          (resolved from the vendored copies, not embedded) and PASSes.
+        - Re-running the vendor path over an existing, locally-edited
+          `schemas/<name>.yaml` leaves it untouched.
+        - `cargo test -p rivet-cli --test cli_commands` passes; `cargo fmt
+          --check` + `cargo clippy --all-targets -- -D warnings` clean.
+      Out of scope (separate slice): a `rivet.yaml`-recorded expected-version
+      pin with a validate-time drift diagnostic, and a `rivet schema vendor`
+      command for already-initialized projects.
+    tags: [cli, schema, init, stability, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-14T14:30:00Z

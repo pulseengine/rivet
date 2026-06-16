@@ -305,6 +305,83 @@ fn schema_presets_lists_declarable_standards_without_a_project() {
 
 // ── rivet init ──────────────────────────────────────────────────────────
 
+/// #431: `rivet init --vendor-schemas` writes the resolved built-in schemas
+/// on-disk so validation is pinned against rivet upgrades (the loader prefers
+/// `schemas/<name>.yaml` over the embedded copy), and is idempotent (won't
+/// clobber an existing/edited schema file).
+#[test]
+fn init_vendor_schemas_pins_schemas_on_disk() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "init",
+            "--preset",
+            "aspice",
+            "--vendor-schemas",
+            "--dir",
+            dirs,
+        ])
+        .output()
+        .expect("run rivet init --vendor-schemas");
+    assert!(
+        out.status.success(),
+        "init --vendor-schemas must exit 0. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The resolved set (common + aspice) must be written on-disk.
+    let schemas_dir = dir.join("schemas");
+    let common = schemas_dir.join("common.yaml");
+    let aspice = schemas_dir.join("aspice.yaml");
+    assert!(common.exists(), "common.yaml must be vendored");
+    assert!(aspice.exists(), "aspice.yaml must be vendored");
+
+    // validate must now resolve schemas from on-disk (pinned), not embedded.
+    let val = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("run rivet validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&val.stdout),
+        String::from_utf8_lossy(&val.stderr)
+    );
+    assert!(
+        combined.contains("on-disk"),
+        "validate must report schemas resolved on-disk after vendoring; got:\n{combined}"
+    );
+
+    // Idempotent: a locally-edited schema must survive a re-vendor. `init`
+    // refuses when rivet.yaml exists, so remove it (keeping schemas/) to let the
+    // vendor path run again and exercise its exists-guard.
+    std::fs::write(&common, "# locally edited sentinel\n").expect("edit vendored schema");
+    std::fs::remove_file(dir.join("rivet.yaml")).expect("remove rivet.yaml");
+    let out2 = Command::new(rivet_bin())
+        .args([
+            "init",
+            "--preset",
+            "aspice",
+            "--vendor-schemas",
+            "--dir",
+            dirs,
+        ])
+        .output()
+        .expect("re-run init --vendor-schemas");
+    assert!(
+        out2.status.success(),
+        "re-run init must exit 0. stderr: {}",
+        String::from_utf8_lossy(&out2.stderr)
+    );
+    let kept = std::fs::read_to_string(&common).expect("read vendored schema");
+    assert!(
+        kept.contains("locally edited sentinel"),
+        "re-vendoring must not overwrite an existing schema file"
+    );
+}
+
 /// `rivet init --preset stpa` creates rivet.yaml and artifacts in a temp dir.
 #[test]
 fn init_stpa_preset() {

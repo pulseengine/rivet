@@ -293,6 +293,14 @@ enum Command {
         /// only if you really want to regenerate them.
         #[arg(long, requires = "agents")]
         bootstrap: bool,
+
+        /// Vendor the resolved built-in schemas (and their auto-discovered
+        /// bridges) into the project's `schemas/` directory, pinning validation
+        /// against rivet upgrades (#431). The loader prefers on-disk schemas
+        /// over the binary's embedded copies, so a vendored set is immune to
+        /// release-to-release rule drift. Existing files are not overwritten.
+        #[arg(long)]
+        vendor_schemas: bool,
     },
 
     /// Validate artifacts against schemas
@@ -1990,6 +1998,7 @@ fn run(cli: Cli) -> Result<bool> {
         yes: _yes,
         hooks,
         bootstrap,
+        vendor_schemas,
     } = &cli.command
     {
         if *agents {
@@ -2002,7 +2011,7 @@ fn run(cli: Cli) -> Result<bool> {
         if *hooks {
             return cmd_init_hooks(dir);
         }
-        return cmd_init(name.as_deref(), preset, schema, dir);
+        return cmd_init(name.as_deref(), preset, schema, dir, *vendor_schemas);
     }
     if let Command::Docs {
         topic,
@@ -3785,6 +3794,7 @@ fn cmd_init(
     preset: &str,
     schema_override: &[String],
     dir: &std::path::Path,
+    vendor_schemas: bool,
 ) -> Result<bool> {
     let dir = if dir == std::path::Path::new(".") {
         std::env::current_dir().context("resolving current directory")?
@@ -3854,6 +3864,40 @@ sources:
         for bridge in &bridges {
             println!("    + {bridge}");
         }
+    }
+
+    // #431: vendor the resolved schema set (plus bridges) on-disk so validation
+    // is pinned against rivet upgrades. The loader prefers `schemas/<name>.yaml`
+    // over the embedded copy, so a vendored project is immune to release-to-
+    // release rule drift. Existing files are left untouched (never clobber a
+    // locally-edited schema).
+    if vendor_schemas {
+        let schemas_dir = dir.join("schemas");
+        std::fs::create_dir_all(&schemas_dir)
+            .with_context(|| format!("creating {}", schemas_dir.display()))?;
+        println!("\n  vendoring schemas (pinned against upgrades):");
+        let mut wrote = 0usize;
+        for name in rivet_core::embedded::schema_names_with_bridges(&schemas) {
+            let content = rivet_core::embedded::embedded_schema(&name)
+                .or_else(|| rivet_core::embedded::embedded_bridge(&name));
+            let Some(content) = content else {
+                eprintln!("    ! {name}: no embedded schema to vendor — skipping");
+                continue;
+            };
+            let path = schemas_dir.join(format!("{name}.yaml"));
+            if path.exists() {
+                println!("    = {} (exists, kept)", path.display());
+                continue;
+            }
+            std::fs::write(&path, content)
+                .with_context(|| format!("writing {}", path.display()))?;
+            println!("    + {}", path.display());
+            wrote += 1;
+        }
+        println!(
+            "  vendored {wrote} schema file(s) into {}",
+            schemas_dir.display()
+        );
     }
 
     // Create artifacts/ directory with preset-specific sample files
