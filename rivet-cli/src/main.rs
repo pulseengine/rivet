@@ -1950,6 +1950,26 @@ enum CheckAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+
+    /// Enumerate every candidate path the doc scanner considered and
+    /// tag each `loaded` / `skipped (<reason>)` / `excluded (<glob>)`.
+    /// Dedicated read-only oracle so the doc-scan status is queryable
+    /// without running a full `rivet validate` pass. `--format json`
+    /// emits the canonical `{oracle, entries, total, by_status}`
+    /// envelope; `--strict` exits non-zero when any entry is `skipped`
+    /// (explicit `excluded` allowlist matches do not trip strict).
+    Docs {
+        /// Read-only audit gate: exit non-zero if any candidate is
+        /// `skipped` (the scanner declined the file and it is not on
+        /// the `docs[].exclude` allowlist). Files that match an
+        /// `exclude:` glob are explicit opt-in and do not trip strict.
+        #[arg(long)]
+        strict: bool,
+
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 fn main() -> ExitCode {
@@ -2499,6 +2519,7 @@ fn run(cli: Cli) -> Result<bool> {
                 format,
             } => cmd_check_sources(&cli, *update, *apply, *strict, format),
             CheckAction::AiDefectsOpen { format } => cmd_check_ai_defects_open(&cli, format),
+            CheckAction::Docs { strict, format } => cmd_check_docs(&cli, *strict, format),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -14198,6 +14219,42 @@ fn cmd_check_sources(
         firing += report.by_status.stale;
     }
     Ok(firing == 0)
+}
+
+/// `rivet check docs` — enumerate the doc scanner's per-path verdicts.
+///
+/// See [`check::docs`] for the JSON contract. Iterates the project's
+/// configured `docs:` entries, runs `scan_documents` per directory,
+/// and prints the flattened enumeration. `--strict` exits non-zero
+/// when any entry is `skipped` (the scanner declined a file and the
+/// user did not allowlist it).
+fn cmd_check_docs(cli: &Cli, strict: bool, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let config_path = cli.project.join("rivet.yaml");
+    if !config_path.exists() {
+        let project_dir =
+            std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+        anyhow::bail!(
+            "no rivet.yaml found in {}\n\nTo initialize a new project, run: rivet init",
+            project_dir.display()
+        );
+    }
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+
+    let report = check::docs::compute(&cli.project, &config.docs)?;
+
+    if format == "json" {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print!("{}", check::docs::render_text(&report));
+    }
+
+    if strict {
+        Ok(check::docs::strict_passes(&report))
+    } else {
+        Ok(true)
+    }
 }
 
 struct ProjectContext {

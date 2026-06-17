@@ -21,6 +21,7 @@
 //! The JSON shape is the contract pipelines consume.
 
 pub mod bidirectional;
+pub mod docs;
 pub mod gaps_json;
 pub mod review_signoff;
 pub mod sources;
