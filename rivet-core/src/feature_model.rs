@@ -1640,6 +1640,16 @@ pub fn load_variant_configs_from_dir(dir: &std::path::Path) -> Result<Vec<Varian
     for path in &paths {
         let yaml = std::fs::read_to_string(path)
             .map_err(|e| Error::Io(format!("reading {}: {e}", path.display())))?;
+        // A feature-model binding file (the `bindings:` map + optional
+        // `variants:` list shape of `FeatureBinding`) can legitimately live
+        // beside the single-variant configs it binds. Detect and skip it so
+        // the loader doesn't fail trying to parse it as `VariantConfig`
+        // (#532). The discriminator is a top-level `bindings:` key with
+        // neither `name:` (flat variant config) nor `variant:` (wrapped
+        // variant config from `rivet variant init`, see #514) present.
+        if is_feature_binding_file(&yaml) {
+            continue;
+        }
         let vc: VariantConfig = serde_yaml::from_str(&yaml).map_err(|e| {
             Error::Schema(format!("parsing variant config {}: {e}", path.display()))
         })?;
@@ -1653,6 +1663,25 @@ pub fn load_variant_configs_from_dir(dir: &std::path::Path) -> Result<Vec<Varian
         configs.push(vc);
     }
     Ok(configs)
+}
+
+/// True when `yaml` is structurally a feature-model binding file (a
+/// top-level `bindings:` map with no `name:`/`variant:` siblings), as
+/// opposed to a single-variant config. Used by `load_variant_configs_from_dir`
+/// to skip binding files that share the `artifacts/variants/` directory
+/// with the variant configs they bind (#532). Unparseable YAML returns
+/// `false` so the caller's existing error path still fires.
+fn is_feature_binding_file(yaml: &str) -> bool {
+    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(yaml) else {
+        return false;
+    };
+    let serde_yaml::Value::Mapping(map) = value else {
+        return false;
+    };
+    let key = |k: &str| serde_yaml::Value::String(k.to_string());
+    map.contains_key(key("bindings"))
+        && !map.contains_key(key("name"))
+        && !map.contains_key(key("variant"))
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────
@@ -2482,6 +2511,82 @@ bindings:
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         std::fs::write(dir.join("bad.yaml"), "name: 12345\nselects: not-a-list\n").unwrap();
+        let err = load_variant_configs_from_dir(dir).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("parsing variant config"), "got: {msg}");
+    }
+
+    // #532: a feature-model binding file (`variants:` list + `bindings:` map)
+    // can legitimately live in artifacts/variants/ beside the single-variant
+    // configs it binds. The loader must skip it rather than fail with
+    // "missing field `name`".
+    #[test]
+    fn load_variant_configs_from_dir_skips_binding_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        // The repro from #532: real single-variant configs beside a binding
+        // file. Only the named configs should load; the binding file is
+        // silently skipped.
+        std::fs::write(
+            dir.join("sem-m3-gcc.yaml"),
+            "name: sem-m3-gcc\nselects: [m3, gcc]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("sem-smp-x86.yaml"),
+            "name: sem-smp-x86\nselects: [smp, x86]\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("bindings.yaml"),
+            r#"
+variants:
+  - name: sem-m3-gcc
+    selects: [m3, gcc]
+bindings:
+  m3:
+    artifacts: []
+  gcc:
+    artifacts: []
+"#,
+        )
+        .unwrap();
+        let got = load_variant_configs_from_dir(dir).expect("binding file must not fail the load");
+        let names: Vec<&str> = got.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["sem-m3-gcc", "sem-smp-x86"],
+            "binding file must be skipped; only single-variant configs load"
+        );
+    }
+
+    // The wrapped variant config form `rivet variant init` writes (#514) has
+    // a top-level `variant:` key alongside a `bindings:` block. The skip
+    // discriminator must NOT confuse it with a pure binding file — and the
+    // loader must still surface its parse failure (it's not in flat form),
+    // not silently drop it. This is the regression guard for the discriminator.
+    #[test]
+    fn load_variant_configs_from_dir_does_not_skip_wrapped_variant_form() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("init.yaml"),
+            r#"
+variant:
+  name: kiln
+  selects: [telemetry]
+bindings:
+  telemetry:
+    artifacts: []
+"#,
+        )
+        .unwrap();
+        // The loader currently uses flat-form parsing, so this surfaces as a
+        // parse error rather than silently disappearing — that's the
+        // contract we need to preserve. (If/when the loader adopts
+        // `VariantConfig::from_yaml_str`, this test should flip to assert
+        // the wrapped form loads, which is fine — but the binding-file
+        // skip must not have absorbed it.)
         let err = load_variant_configs_from_dir(dir).unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("parsing variant config"), "got: {msg}");
