@@ -235,6 +235,121 @@ impl ScanReport {
     }
 }
 
+/// Per-path verdict from a docs scan. See [`scan_documents`].
+///
+/// The scanner classifies every `.md` / `.markdown` candidate it finds
+/// into exactly one of three buckets. The `Skipped` and `Excluded`
+/// variants carry a human-readable reason / matching glob so callers
+/// can present an actionable enumeration (e.g. `rivet check docs`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DocScanStatus {
+    /// File parsed cleanly into a [`Document`].
+    Loaded,
+    /// File was declined: either no leading `---` frontmatter or a
+    /// frontmatter parse error. The string is the same reason the
+    /// stderr-warning form prints (`"no YAML frontmatter"` or the
+    /// serde error message).
+    Skipped(String),
+    /// File matched an `exclude:` glob. The string is the matching
+    /// pattern (verbatim from `docs[].exclude`) so the caller can show
+    /// which allowlist entry covered it.
+    Excluded(String),
+}
+
+/// One row of the per-path enumeration produced by [`scan_documents`].
+#[derive(Debug, Clone)]
+pub struct ScannedDoc {
+    /// Absolute path to the candidate file on disk.
+    pub path: PathBuf,
+    /// Verdict for this file.
+    pub status: DocScanStatus,
+}
+
+/// Walk `dir` and classify every `.md` / `.markdown` candidate without
+/// emitting stderr warnings.
+///
+/// This is the per-path form of [`load_documents_with_report`]: it
+/// returns a `Vec<ScannedDoc>` so callers can render the full
+/// enumeration (loaded / skipped-with-reason / excluded-by-glob). The
+/// warning-printing convenience that `load_documents_with_report` keeps
+/// for `rivet validate` is layered on top of this function; the byte
+/// shape of those warnings is preserved.
+///
+/// Iteration order, glob semantics, and the set of files considered
+/// match `load_documents_with_report` exactly — only the side-channel
+/// (stderr warnings vs. structured return) differs.
+pub fn scan_documents(dir: &Path, exclude: &[String]) -> Result<Vec<ScannedDoc>, Error> {
+    let mut out = Vec::new();
+    if !dir.is_dir() {
+        return Ok(out);
+    }
+
+    // Pre-compile each exclude pattern into a regex once. An invalid
+    // pattern emits a one-shot stderr warning (same as the streaming
+    // form) and is then ignored — we don't fail the whole scan over a
+    // malformed allowlist entry.
+    let compiled: Vec<(String, regex::Regex)> = exclude
+        .iter()
+        .filter_map(|pat| match glob_to_regex(pat) {
+            Ok(re) => Some((pat.clone(), re)),
+            Err(e) => {
+                eprintln!("warning: invalid docs exclude pattern {pat:?}: {e}");
+                None
+            }
+        })
+        .collect();
+
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .is_some_and(|ext| ext == "md" || ext == "markdown")
+        })
+        .collect();
+
+    // Sort for deterministic ordering.
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let path = entry.path();
+        let rel = path.strip_prefix(dir).unwrap_or(&path);
+        let rel_str = rel.to_string_lossy();
+        if let Some((pat, _)) = compiled.iter().find(|(_, re)| re.is_match(&rel_str)) {
+            out.push(ScannedDoc {
+                path: path.clone(),
+                status: DocScanStatus::Excluded(pat.clone()),
+            });
+            continue;
+        }
+
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
+
+        if !content.starts_with("---") {
+            out.push(ScannedDoc {
+                path: path.clone(),
+                status: DocScanStatus::Skipped("no YAML frontmatter".to_string()),
+            });
+            continue;
+        }
+
+        match parse_document(&content, Some(&path)) {
+            Ok(_) => out.push(ScannedDoc {
+                path: path.clone(),
+                status: DocScanStatus::Loaded,
+            }),
+            Err(e) => out.push(ScannedDoc {
+                path: path.clone(),
+                status: DocScanStatus::Skipped(e.to_string()),
+            }),
+        }
+    }
+
+    Ok(out)
+}
+
 /// Load all `.md` files from a directory as documents.
 ///
 /// Convenience wrapper that prints warnings to stderr and discards the
