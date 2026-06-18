@@ -6477,6 +6477,52 @@ fn mutating_commands_refuse_on_parse_broken_source() {
     );
 }
 
+/// #500: a clap parse failure (e.g. the non-global `--project` placed AFTER the
+/// subcommand) used to leave stdout empty, so a `--format json` consumer got a
+/// cryptic "EOF while parsing". Now such invocations also emit a one-line JSON
+/// error envelope on stdout, while non-JSON invocations keep clap's stderr-only
+/// behavior.
+#[test]
+fn json_consumers_get_an_error_envelope_on_parse_failure() {
+    // `--project` after the subcommand is a parse error; with --format json we
+    // must get a JSON envelope on stdout (not empty), exit non-zero.
+    let bad = Command::new(rivet_bin())
+        .args(["validate", "--format", "json", "--project", "."])
+        .output()
+        .expect("run rivet");
+    assert!(
+        !bad.status.success(),
+        "a misplaced --project must still fail"
+    );
+    let stdout = String::from_utf8_lossy(&bad.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
+        .unwrap_or_else(|e| panic!("stdout must be a JSON envelope, got {stdout:?}: {e}"));
+    assert!(
+        parsed.get("error").and_then(|v| v.as_str()).is_some(),
+        "envelope must carry an 'error' string"
+    );
+    assert!(
+        parsed
+            .get("hint")
+            .and_then(|v| v.as_str())
+            .is_some_and(|h| h.contains("BEFORE the subcommand")),
+        "envelope must hint at the arg-position fix; got: {stdout}"
+    );
+
+    // Same parse error WITHOUT a JSON request: stdout stays empty (clap writes
+    // its message to stderr), preserving the human path.
+    let bad_text = Command::new(rivet_bin())
+        .args(["validate", "--project", "."])
+        .output()
+        .expect("run rivet");
+    assert!(!bad_text.status.success());
+    assert!(
+        bad_text.stdout.is_empty(),
+        "non-JSON parse error must not print an envelope to stdout; got: {}",
+        String::from_utf8_lossy(&bad_text.stdout)
+    );
+}
+
 /// #479: next-id must not reissue an ID that is claimed in git history (a
 /// commit trailer / subject) but absent from the working tree — the
 /// reverted-but-burned trap (e.g. REQ-209). Git awareness is best-effort and

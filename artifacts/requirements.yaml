@@ -6987,3 +6987,51 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-14T14:30:00Z
+
+  - id: REQ-219
+    type: requirement
+    title: "A clap parse failure under `--format json` must emit a JSON error envelope on stdout, not an empty payload (#500)"
+    status: implemented
+    description: |
+      Finding (#500, hit while implementing #488). rivet's top-level `--project`
+      / `--schemas` options are NOT clap `global` args, so they parse only
+      before the subcommand: `rivet --project X validate` works,
+      `rivet validate --project X` is a parse error. clap writes that error to
+      stderr and leaves stdout empty — so a consumer running
+      `rivet validate --format json --project X` as a subprocess got an empty
+      payload and a cryptic "EOF while parsing a value", with no hint that the
+      arg *position* was the cause. (The obvious "just add `global = true`" fix
+      is a trap: `global` debug-asserts against positional subcommands and broke
+      main once — REQ-209 / #501, reverted #502.)
+
+      Fix (safe, no `global`): parse via `Cli::try_parse()`; on error, when the
+      raw argv requested JSON (`--format json` / `-f json` in any spelling),
+      print a one-line JSON envelope `{ "error": <clap summary>, "hint": "pass
+      --project/--schemas BEFORE the subcommand …" }` to stdout, then still emit
+      clap's normal human message to stderr and exit with clap's code.
+      `--help` / `--version` (clap "errors" with exit 0) pass through unchanged;
+      non-JSON parse errors keep the stderr-only behavior (empty stdout).
+
+      Acceptance:
+        - `rivet validate --format json --project .` (misplaced `--project`)
+          exits non-zero and prints a single JSON object on stdout with string
+          `error` and `hint` fields; the hint mentions putting the option
+          BEFORE the subcommand.
+        - `rivet validate --project .` (no JSON) exits non-zero with an EMPTY
+          stdout (clap message on stderr only).
+        - `rivet --project . validate --format json` (correct order) still
+          produces the normal JSON result.
+        - `rivet --help` / `--version` still print and exit 0.
+        - `cargo test -p rivet-cli --test cli_commands` passes;
+          `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` clean.
+    tags: [cli, json, dx, error-handling, dogfooding]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-14T13:30:00Z
