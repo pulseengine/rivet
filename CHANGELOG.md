@@ -5,6 +5,64 @@
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-06-19
+
+### Security
+
+- **RUSTSEC-2026-0182 / #542 — bump wasmtime 43 → 44.0.3.** A new advisory flags
+  a WASIp1 `fd_renumber` resource leak in `wasmtime-wasi`, fixed in 44.0.3. The
+  Security Audit gate had gone red repo-wide; rivet's only wasmtime consumer is
+  the compose-witness component runner (`wasm_runtime.rs`), which compiles
+  unchanged against the new API. `cargo audit` is clean afterward.
+
+### Added
+
+- **#540 / #541 — `rivet check docs` oracle.** Enumerates every candidate path
+  the doc scanner considered and tags each `loaded` / `skipped (<reason>)` /
+  `excluded (<glob>)`. `--format json` emits the canonical
+  `{oracle, entries, total, by_status}` envelope; `--strict` exits non-zero when
+  any candidate is skipped (allowlist exclusions do not trip strict).
+- **REQ-202 / #456 — minimal `--no-default-features` build.** `rivet-cli` gates
+  the serve + MCP + LSP stack behind cargo features (all kept in `default`, so
+  the published binary is byte-for-byte unchanged). `cargo build -p rivet-cli
+  --no-default-features` yields the validate/list/add/commit-check core with
+  none of axum/rmcp/lsp-server compiled in; `--format html` export, `snapshot`,
+  and `embed` (which share the dashboard renderer) are serve-gated and refuse
+  with a clear message in the minimal build.
+- **REQ-220 / #431 — `rivet init --vendor-schemas`.** Writes the resolved
+  built-in schemas (plus auto-discovered bridges) on-disk into `schemas/`, so a
+  project pins its validation against rivet upgrades (the loader prefers on-disk
+  over the embedded copy). Never overwrites an existing schema file.
+- **#509 — runner-liveness alert.** A GitHub-hosted scheduled workflow
+  (`runner-liveness.yml`) probes the self-hosted runner pool and queued-run age
+  every 15 minutes and raises a durable `runner-down` tracking issue when the
+  pool stalls, instead of every gate queueing forever with no signal.
+
+### Fixed
+
+- **REQ-218 / #479 — `next-id` honors IDs claimed in git history.** Allocation
+  scanned only the working tree, so a reverted commit or an in-flight branch
+  could reissue an ID already claimed elsewhere (the reverted-but-burned-ID
+  trap). `next-id`
+  and `add` now also consider IDs claimed in commit trailers / subject tags
+  across all refs; overridable with `RIVET_NEXTID_NO_GIT=1`.
+- **REQ-219 / #500 — JSON error envelope on a parse failure.** A misplaced
+  top-level `--project`/`--schemas` (they are deliberately not clap `global`)
+  left stdout empty under `--format json`, giving consumers a cryptic "EOF while
+  parsing". Such invocations now emit a one-line `{error, hint}` envelope on
+  stdout; non-JSON parse errors keep the stderr-only behavior.
+- **#532 / #539 — variant loader skips feature-model binding files.**
+  `load_variant_configs_from_dir` no longer trips over `variant:`-wrapped
+  binding files.
+- **#522 / #525 — restore `accepted` to the canonical status enum.**
+
+### Changed
+
+- **#533 — npm/npx is now a first-class install path** in the README, with the
+  stale committed `npm/` + `platform-packages/` versions synced; RELEASING.md
+  documents which version locations are authoritative vs workflow-managed.
+- **#523 / #526 — mutation-testing CI moved off `lean-mem` to `rust-cpu`.**
+
 ## [0.16.1] - 2026-06-14
 
 ### Fixed
