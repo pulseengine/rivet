@@ -10,7 +10,7 @@
 
 schema:
   name: common
-  version: "0.2.0"
+  version: "0.3.0"
   description: >
     Base field definitions and common link types for lifecycle traceability.
     All domain schemas implicitly extend this schema.
@@ -75,6 +75,22 @@ base-fields:
     type: mapping
     required: false
     description: AI provenance metadata (created-by, model, session-id, timestamp, reviewed-by)
+
+  # #556: cited-source is a base field, so ANY artifact type can carry a
+  # sha256-stamped, drift-checked reference to an external source — including
+  # the verification types (sw/unit/sys-verification) where the
+  # requirement→test→evidence chain wants a tamper-evident citation. The drift
+  # check (`rivet validate` / `rivet check sources`) already discovers the field
+  # by name on every artifact; declaring it here stops `unknown-field` from
+  # flagging it on types that don't redeclare it.
+  - name: cited-source
+    type: cited-source
+    required: false
+    description: >
+      Typed cited-source field — sha256-stamped reference to an external
+      source. Shape: { uri, kind, sha256, last-checked }, where kind is one of
+      file | url | github | oslc | reqif | polarion. Phase 1 verifies kind:
+      file. See `rivet docs schema-cited-sources` for the full reference.
 
 # ──────────────────────────────────────────────────────────────────────────
 # Common link types — reusable across all domains.

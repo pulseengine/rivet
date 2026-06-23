@@ -1117,8 +1117,17 @@ pub fn validate_structural_with_externals_and_variant(
             continue;
         }
         if let Some(type_def) = schema.artifact_type(&artifact.artifact_type) {
-            let known_fields: std::collections::HashSet<&str> =
-                type_def.fields.iter().map(|f| f.name.as_str()).collect();
+            // #556: a base-field declared in `common.yaml` (e.g. `cited-source`)
+            // is valid on EVERY type — that's what "base" means — so a
+            // verification artifact carrying `cited-source` must not be flagged
+            // `unknown-field`. Struct base-fields (id/title/…) never appear in
+            // `artifact.fields`, so chaining them in is harmless.
+            let known_fields: std::collections::HashSet<&str> = type_def
+                .fields
+                .iter()
+                .chain(schema.base_fields.iter())
+                .map(|f| f.name.as_str())
+                .collect();
             for field_name in artifact.fields.keys() {
                 if !known_fields.contains(field_name.as_str()) {
                     diagnostics.push(Diagnostic {
@@ -2848,6 +2857,40 @@ then:
             "per-type enum: `open` ok, `draft` rejected; got {status_diags:?}"
         );
         assert_eq!(status_diags[0].artifact_id.as_deref(), Some("DEF-2"));
+    }
+
+    // #556: a base-field (e.g. `cited-source`) is valid on EVERY type, so an
+    // artifact of a type that doesn't redeclare it must NOT be flagged
+    // `unknown-field`.
+    #[test]
+    fn base_field_is_accepted_on_any_type() {
+        let mut file = minimal_schema("verification");
+        file.base_fields = vec![FieldDef {
+            name: "cited-source".into(),
+            field_type: "cited-source".into(),
+            ..Default::default()
+        }];
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "verification".into(),
+            ..Default::default() // declares NO fields of its own
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        let mut art = minimal_artifact("V-1", "verification");
+        art.fields
+            .insert("cited-source".into(), serde_yaml::Value::String("x".into()));
+        store.insert(art).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let unknown: Vec<_> = validate_structural(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "unknown-field")
+            .collect();
+        assert!(
+            unknown.is_empty(),
+            "a base-field must be accepted on any type, got {unknown:?}"
+        );
     }
 
     // Backward-compatibility: with no `allowed-values` declared on `status`

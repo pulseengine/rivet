@@ -7202,3 +7202,45 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-23T14:30:00Z
+
+  - id: REQ-225
+    type: requirement
+    title: "`cited-source` is a base field, usable (and drift-checked) on any artifact type incl. verification types (#556)"
+    status: implemented
+    description: |
+      Finding (#556, relay test-traceability work). `cited-source` (sha256-stamped,
+      drift-checked by `rivet validate` / `rivet check sources`) was only declared
+      on requirement-ish types, so on a verification artifact
+      (sw/unit/sys-verification) it was flagged `unknown-field` — even though the
+      requirement→test→evidence chain is exactly where a tamper-evident citation
+      is wanted. The drift checker (`validate_cited_sources`) already discovers
+      the field by NAME on every artifact, so the only blocker was the
+      `unknown-field` rule consulting per-type fields only.
+
+      Fix: declare `cited-source` as a `common` base-field (the maintainer's
+      choice — generic, no per-schema duplication), and teach the `unknown-field`
+      check to treat base-field names as known on every type (struct base-fields
+      like id/title never appear in `fields`, so this is harmless). Now any type,
+      including the verification types, may carry a `cited-source` and it is
+      drift-checked. common 0.2.0 → 0.3.0.
+
+      Acceptance:
+        - An ASPICE `sw-verification` artifact with a `cited-source` field
+          validates with NO `unknown-field` flag (other schema rules still apply).
+        - The cited-source drift check still runs on it (field-name discovery).
+        - `cargo test -p rivet-core` passes; fmt + clippy clean; `rivet validate`
+          on the repo still PASS.
+      Out of scope (separate slice, folds into #559): the `named-test-exists`
+      check that a referenced test name actually exists.
+    tags: [schema, cited-source, verification, drift, dogfooding]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.18.0-track
+    links:
+      - type: traces-to
+        target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-23T15:30:00Z
