@@ -7123,3 +7123,43 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-22T19:00:00Z
+
+  - id: REQ-223
+    type: requirement
+    title: "`rivet add --type <T>` creates a default file for a new type instead of forcing --file (#552)"
+    status: implemented
+    description: |
+      Finding (#552, authoring a BYO-OS decision). `rivet add --type
+      design-decision` (a type the schema and `rivet add --help` both advertise)
+      failed with `no existing file found for type 'design-decision'. Use --file
+      to specify one` whenever no file already held that type — so you could not
+      add the FIRST artifact of a type without hand-picking a file. (The two
+      other parts of #552 were already resolved: field/link values with special
+      chars are YAML-quoted on write — REQ-198/199, verified across adversarial
+      inputs; the `next-id` prefix is learned from existing same-type artifacts,
+      which is intentional.)
+
+      Fix: when no file holds the type and no `--file` is given, `rivet add`
+      synthesizes a default path in the project's first generic-yaml source
+      (e.g. `artifacts/design-decisions.yaml` for `design-decision`), creating it
+      with an `artifacts:` header if absent, then appends. Existing routing
+      (an existing file for the type, or an explicit `--file`) is unchanged.
+
+      Acceptance:
+        - In a fresh `dev` project (requirements.yaml only), `rivet add --type
+          design-decision --title X --field rationale=Y` exits 0 and creates
+          `artifacts/design-decisions.yaml`.
+        - A subsequent add of the same type appends to that file.
+        - `cargo test -p rivet-cli --test cli_commands` passes; fmt + clippy clean.
+    tags: [cli, add, dx, dogfooding]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.18.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-23T13:30:00Z
