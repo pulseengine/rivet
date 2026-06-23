@@ -7035,3 +7035,48 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-14T13:30:00Z
+
+  - id: REQ-222
+    type: requirement
+    title: "A schema-declarable rule must flag a requirement with no verifying test (close the right side of the V) (#555)"
+    status: implemented
+    description: |
+      Finding (#555, the most-actionable slice of a cluster of field reports —
+      scry #554, kiln #559, relay #556 — all dogfooding the methodology). The
+      `verifies` link type exists, but NO traceability rule enforced it: a
+      requirement could be `implemented` and `rivet validate`-green with ZERO
+      tests tracing to it, and nothing — not even a warning — flagged the gap.
+      The right side of the V was invisible.
+
+      Fix (schema-enabled + generic, per the maintainer's direction): add a
+      declarative `requirement-verification` traceability-rule
+      (`required-backlink: verifies`, severity `warning`) to the `dev` schema,
+      next to `requirement-coverage`. `from-types` is intentionally OMITTED, and
+      the engine already treats empty `from-types` as "match any source type" —
+      so any artifact that `verifies` the requirement satisfies it, regardless of
+      which schema named the verification type. No engine change. A project that
+      doesn't want the rule simply doesn't load a schema declaring it (opt-out).
+      `dev` schema version bumped 0.1.0 -> 0.2.0 (rules changed).
+
+      Acceptance:
+        - A `dev` project with an `implemented` requirement and no incoming
+          `verifies` link emits a `requirement-verification` WARNING.
+        - Adding any artifact with a `verifies` link to that requirement clears
+          the warning (generic — source type doesn't matter).
+        - `rivet validate` still returns PASS (advisory, not error).
+        - A rivet-core unit test covers the fires/clears behavior.
+      Note: on rivet's own corpus this surfaces ~190 advisory warnings (rivet
+      verifies via `Verifies:` commit trailers, not artifact links) — the honest
+      V-gap the rule is designed to reveal; wiring those links is follow-up.
+    tags: [schema, traceability, verification, v-model, dogfooding]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.18.0-track
+    links:
+      - type: traces-to
+        target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-23T12:00:00Z

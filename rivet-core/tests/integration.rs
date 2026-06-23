@@ -1355,12 +1355,26 @@ fn test_schema_metadata_loading() {
     let dev_path = schemas_dir.join("dev.yaml");
     let dev = Schema::load_file(&dev_path).expect("load dev schema");
     assert_eq!(dev.schema.name, "dev");
-    assert_eq!(dev.schema.version, "0.1.0");
+    // 0.2.0: added the requirement-verification rule (#555 / REQ-222).
+    assert_eq!(dev.schema.version, "0.2.0");
     assert!(
         dev.schema.description.is_some(),
         "dev schema should have a description"
     );
     assert_eq!(dev.schema.extends, vec!["common"]);
+
+    // #555 / REQ-222: the dev schema declares a generic requirement->test
+    // verification rule (`verifies` backlink, no from-types = any source type).
+    let verif = dev
+        .traceability_rules
+        .iter()
+        .find(|r| r.name == "requirement-verification")
+        .expect("dev schema must declare the requirement-verification rule");
+    assert_eq!(verif.required_backlink.as_deref(), Some("verifies"));
+    assert!(
+        verif.from_types.is_empty(),
+        "requirement-verification must stay generic (empty from-types = any source)"
+    );
 
     // New optional metadata fields default to None when not present
     assert!(
