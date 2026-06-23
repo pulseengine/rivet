@@ -7244,3 +7244,45 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-23T15:30:00Z
+
+  - id: REQ-226
+    type: requirement
+    title: "`rivet verify <ID>` advances an implemented artifact to verified when it has verifying evidence (#559)"
+    status: implemented
+    description: |
+      Finding (#559, kiln V-right-side). Nothing advanced a requirement's status
+      to `verified` from its test evidence — `import-results` is a separate
+      run-log, and `coverage --tests` mapped markers but never wrote status. So a
+      requirement stayed `implemented` no matter how many passing tests verified
+      it, and a release-readiness query couldn't tell `implemented` from
+      `verified`.
+
+      Fix (maintainer's chosen design — source markers only, explicit command, no
+      auto-advance): `rivet verify <ID>` advances an `implemented` artifact to
+      `verified` iff it has verifying evidence — an incoming `verifies` link OR a
+      `// rivet: verifies <ID>` source marker (scanned from src/ + tests/, or
+      `--scan <path>`). Refuses with an actionable message when there's no
+      evidence; no-ops if already verified; rejects non-implemented states. The
+      write reuses the `modify --set-status` path (schema-validated YAML edit).
+
+      Acceptance:
+        - An implemented requirement with a `verifies` marker -> `rivet verify`
+          advances it to `verified` (file updated).
+        - No evidence -> refuses, non-zero, explains how to add evidence.
+        - `cargo test -p rivet-cli --test cli_commands` passes; fmt + clippy clean.
+      Note: #559's other ask — folding marker coverage into a single combined
+      V-closure metric in `rivet coverage` — is partly served already (#555 put a
+      `requirement-verification` rule into the coverage report); the combined
+      satisfied-AND-verified number is a fast-follow slice.
+    tags: [cli, verify, v-model, status, dogfooding]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.18.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-23T16:30:00Z

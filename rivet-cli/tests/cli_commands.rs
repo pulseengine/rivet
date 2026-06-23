@@ -5939,6 +5939,66 @@ fn validate_emits_single_skip_warn_for_malformed_source() {
     );
 }
 
+/// #559: `rivet verify <REQ>` advances an implemented requirement to `verified`
+/// when a verifying source-marker (`// rivet: verifies <ID>`) exists, and
+/// refuses when there's no evidence.
+#[test]
+fn verify_advances_on_marker_evidence_and_refuses_without() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .output()
+            .expect("run rivet")
+    };
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  - id: REQ-9\n    type: requirement\n    title: T\n    status: implemented\n  - id: REQ-8\n    type: requirement\n    title: U\n    status: implemented\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("tests/t.rs"),
+        "// rivet: verifies REQ-9\nfn t() {}\n",
+    )
+    .unwrap();
+
+    // REQ-9 has a marker -> verify advances it.
+    let ok = run(&["verify", "REQ-9"]);
+    assert!(
+        ok.status.success(),
+        "verify REQ-9 must succeed with marker evidence; stderr: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    let reqs = std::fs::read_to_string(dir.join("artifacts/reqs.yaml")).unwrap();
+    assert!(
+        reqs.contains("id: REQ-9") && reqs.contains("status: verified"),
+        "REQ-9 must now be verified; got:\n{reqs}"
+    );
+
+    // REQ-8 has no evidence -> verify refuses (non-zero).
+    let no = run(&["verify", "REQ-8"]);
+    assert!(
+        !no.status.success(),
+        "verify REQ-8 must refuse without evidence"
+    );
+    assert!(
+        String::from_utf8_lossy(&no.stderr).contains("no verifying evidence"),
+        "refusal must explain the missing evidence"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.
