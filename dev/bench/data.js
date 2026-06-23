@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782194792822,
+  "lastUpdate": 1782199250275,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ed8612bb7d673b1478d6b8e7646580a487914a9b",
-          "message": "feat(validate): `--new-since <ref>` shows only diagnostics new vs a git ref (REQ-208, closes #488) (#499)\n\nAnswers \"did MY change add any diagnostics?\" without jq over hundreds of lines.\n`rivet validate --new-since <REF>` validates the current tree and a detached git\nworktree of <REF> (each via a `rivet validate --format json` subprocess of the\nsame binary), then prints the set-difference keyed on\n(severity, artifact_id, rule, message). Exits non-zero when any NEW diagnostic is\nat/above `--fail-on` — a ready \"this PR adds no new diagnostics\" CI gate\n(e.g. `rivet validate --new-since origin/main --fail-on warning`).\n\n- Pure diff factored into `diff_new_diagnostics` (unit-tested: current-minus-\n  baseline by the 4-field key; empty when current is a subset).\n- `--new-since` short-circuits in the Validate dispatch (like `--explain`).\n- Worktree always cleaned up; no new runtime dep (PID-scoped temp dir, not the\n  dev-only `tempfile`, per #456).\n\nConfirmed with: cargo test -p rivet-cli --bin rivet new_since_diff_tests (2 pass);\n`rivet validate --new-since f7fc2d0` on this repo correctly reports the 8 new\ndiagnostics introduced by REQ-201..207 (their requirement-coverage warnings),\n`--new-since HEAD` reports 0, no worktree left behind; cargo fmt --check +\nclippy --all-targets -- -D warnings (exit 0); rivet validate PASS.\n\nImplements: REQ-208\nVerifies: REQ-208\nRefs: REQ-007",
-          "timestamp": "2026-06-05T20:54:39-05:00",
-          "tree_id": "6ec7bcbfa05aa0479aad2e7aac3ff3dfd79862d9",
-          "url": "https://github.com/pulseengine/rivet/commit/ed8612bb7d673b1478d6b8e7646580a487914a9b"
-        },
-        "date": 1780711430401,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85034,
-            "range": "± 286",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 940759,
-            "range": "± 5167",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 19266279,
-            "range": "± 1566408",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1990,
-            "range": "± 20",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 23060,
-            "range": "± 600",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 356510,
-            "range": "± 3177",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1448970,
-            "range": "± 14890",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167143,
-            "range": "± 865",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 2111617,
-            "range": "± 89649",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 51243381,
-            "range": "± 3104799",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 447061,
-            "range": "± 1861",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 19361494,
-            "range": "± 184438",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1500272603,
-            "range": "± 44622407",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4145,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44047,
-            "range": "± 480",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 740330,
-            "range": "± 34042",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 67295,
-            "range": "± 305",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 771710,
-            "range": "± 2834",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 11280029,
-            "range": "± 338678",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1455,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 16786,
-            "range": "± 125",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 255954,
-            "range": "± 4223",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22586,
-            "range": "± 67",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 157956,
-            "range": "± 856",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1512347,
-            "range": "± 11420",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1710440,
             "range": "± 70573",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "71fb5f372747feb780f0311653e74f6dbb7e3fff",
+          "message": "fix(schema): load bundled bridge schemas by name in a consumer's schemas: list (REQ-221, #530) (#558)\n\nBundled bridges (`stpa-dev.bridge`, `eu-ai-act-stpa.bridge`, …) ship embedded\nand define cross-domain trace links (`constraint-satisfies`, etc.), but the\nloader only auto-discovered them from the loaded schema set — it never resolved\na bridge by explicit name. A consumer (wohl) that listed `stpa-dev.bridge` in\n`rivet.yaml` got `schema '…' not found on disk or as embedded schema`, with no\nway to pull a bridge whose endpoints weren't both already loaded.\n\nEvery name-resolution path (load_schemas_with_fallback, the content loader, and\nschema_sources) now falls back to embedded_bridge(name) after embedded_schema;\nalready-listed bridges are skipped by auto-discovery (no double-load). The\nnot-found error now points at the `.bridge` stem naming + `rivet schema presets`.\n\nConfirmed: a project with `schemas: [common, stpa, stpa-dev.bridge]` validates\nPASS and reports `stpa-dev.bridge@0.1.0 (embedded)` with no spurious warning;\nnew `bundled_bridges_are_loadable_by_explicit_name` test; `cargo test\n-p rivet-core` green; clippy --all-targets + fmt clean; rivet validate PASS.\n\nImplements: REQ-221\nRefs: REQ-010\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-23T01:59:40-05:00",
+          "tree_id": "efed5274ee60226666b6f239fd5cd731d2fc539a",
+          "url": "https://github.com/pulseengine/rivet/commit/71fb5f372747feb780f0311653e74f6dbb7e3fff"
+        },
+        "date": 1782199249162,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 77295,
+            "range": "± 435",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 947055,
+            "range": "± 19570",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 24753001,
+            "range": "± 3708666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1701,
+            "range": "± 22",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 19354,
+            "range": "± 84",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 366265,
+            "range": "± 1050",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 87,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 87,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 85,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1370925,
+            "range": "± 35102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 160657,
+            "range": "± 3236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1948338,
+            "range": "± 114621",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 75041834,
+            "range": "± 3544462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 417563,
+            "range": "± 1294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17832342,
+            "range": "± 291612",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1140983682,
+            "range": "± 7250223",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3899,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 41506,
+            "range": "± 77",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 778539,
+            "range": "± 22486",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 52948,
+            "range": "± 395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 591806,
+            "range": "± 3029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 12306579,
+            "range": "± 642694",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 986,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 12811,
+            "range": "± 39",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 324778,
+            "range": "± 5817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22644,
+            "range": "± 202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 168538,
+            "range": "± 422",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1594117,
+            "range": "± 14311",
             "unit": "ns/iter"
           }
         ]
