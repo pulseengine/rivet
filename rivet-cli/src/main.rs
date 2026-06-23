@@ -552,6 +552,22 @@ enum Command {
         qualification: bool,
     },
 
+    /// Advance a requirement to `verified` when it has verifying test evidence.
+    ///
+    /// #559: closes the right side of the V explicitly. The requirement must
+    /// currently be `implemented` and have at least one piece of verifying
+    /// evidence — an incoming `verifies` link, OR a `// rivet: verifies <ID>`
+    /// source marker. No auto-advance: this is the opt-in, auditable command.
+    Verify {
+        /// Requirement (or other artifact) ID to advance to `verified`.
+        id: String,
+
+        /// Extra source paths to scan for `verifies` markers (default: src/,
+        /// tests/, else the project root).
+        #[arg(long = "scan", value_name = "PATH")]
+        scan: Vec<PathBuf>,
+    },
+
     /// Show traceability coverage report
     Coverage {
         /// S-expression filter to scope coverage
@@ -2278,6 +2294,7 @@ fn run(cli: Cli) -> Result<bool> {
                 cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref())
             }
         }
+        Command::Verify { id, scan } => cmd_verify(&cli, id, scan),
         Command::Coverage {
             filter,
             format,
@@ -7064,6 +7081,89 @@ fn cmd_stats_qualification(cli: &Cli) -> Result<bool> {
     });
     println!("{}", serde_json::to_string_pretty(&output).unwrap());
     Ok(true)
+}
+
+/// #559: advance an artifact to `verified` when it has verifying evidence —
+/// an incoming `verifies` link, OR a `// rivet: verifies <ID>` source marker.
+/// Opt-in and auditable (no auto-advance); the artifact must be `implemented`.
+fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> {
+    use rivet_core::test_scanner;
+
+    // Scope the loaded store/graph borrows so cmd_modify can reload below.
+    let link_count = {
+        let ctx = ProjectContext::load(cli)?;
+        let artifact = ctx
+            .store
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("artifact '{id}' not found"))?;
+        match artifact.status.as_deref() {
+            Some("verified") => {
+                println!("{id} is already verified — nothing to do.");
+                return Ok(true);
+            }
+            Some("implemented") => {}
+            other => anyhow::bail!(
+                "refusing to verify '{id}': status is '{}', expected 'implemented'. \
+                 Only an implemented artifact can be advanced to verified.",
+                other.unwrap_or("(none)")
+            ),
+        }
+        ctx.graph.backlinks_of_type(id, "verifies").len()
+    };
+
+    // Source-marker evidence: `// rivet: verifies <ID>`. Default scan dirs match
+    // `coverage --tests`: src/ + tests/, else the project root.
+    let paths: Vec<std::path::PathBuf> = if scan.is_empty() {
+        let mut p: Vec<std::path::PathBuf> = ["src", "tests"]
+            .iter()
+            .map(|d| cli.project.join(d))
+            .filter(|c| c.is_dir())
+            .collect();
+        if p.is_empty() {
+            p.push(cli.project.clone());
+        }
+        p
+    } else {
+        scan.to_vec()
+    };
+    let markers = test_scanner::scan_source_files(&paths, &test_scanner::default_patterns());
+    let marker_hits: Vec<&test_scanner::TestMarker> = markers
+        .iter()
+        .filter(|m| m.target_id == id && m.link_type == "verifies")
+        .collect();
+
+    if link_count == 0 && marker_hits.is_empty() {
+        anyhow::bail!(
+            "refusing to verify '{id}': no verifying evidence. Add an incoming \
+             `verifies` link from a test/verification artifact, or a \
+             `// rivet: verifies {id}` marker in a test, then re-run."
+        );
+    }
+    if link_count > 0 {
+        println!("  evidence: {link_count} incoming `verifies` link(s)");
+    }
+    if let Some(first) = marker_hits.first() {
+        println!(
+            "  evidence: {} source `verifies` marker(s) (e.g. {}:{})",
+            marker_hits.len(),
+            first.file.display(),
+            first.line
+        );
+    }
+
+    // Advance via the shared modify write-path (validation + YAML edit).
+    cmd_modify(
+        cli,
+        Some(id),
+        None,
+        false,
+        Some("verified"),
+        None,
+        None,
+        &[],
+        &[],
+        &[],
+    )
 }
 
 /// Show traceability coverage report.
