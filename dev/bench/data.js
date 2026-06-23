@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782201752482,
+  "lastUpdate": 1782203412181,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "e94ac9542a839c4942b1f5129605c5a700ac0209",
-          "message": "fix(cli): revert --project/--schemas global — clap debug-asserts with positional subcommands (reverts REQ-209/#501) (#502)\n\nREQ-209 / #501 marked --project/--schemas `global = true` to fix #500, but that\nbroke main: 3 cli_commands integration tests (next_id_json,\nnext_id_positional_shorthand, all_json_outputs_are_valid) panicked in clap's\ndebug_asserts — clap does NOT allow a `global` arg to coexist with subcommands\nthat take positionals (next-id <type>, link <src> <tgt>, snapshot diff\n<baseline>, …). My pre-merge check only exercised `validate` (no positional), so\nit passed; the full suite would have caught it.\n\nReverts the `global = true` on both args, removes the now-invalid\ncli_global_args_tests and the REQ-209 artifact. #500's premise (args after the\nsubcommand) is therefore a clap limitation, not fixable this way — the workaround\nis the standard convention: put --project before the subcommand\n(`rivet -p X validate`). Documented on the arg + reopening #500.\n\nConfirmed with: cargo test -p rivet-cli --test cli_commands (127 passed, 0\nfailed — the 3 regressions fixed); cargo fmt --check + clippy --all-targets -- -D\nwarnings (exit 0); rivet validate PASS.\n\nRefs: REQ-007",
-          "timestamp": "2026-06-05T22:49:37-05:00",
-          "tree_id": "7df54c545a9aa82da2aa9af4f4c895cf7e05dc92",
-          "url": "https://github.com/pulseengine/rivet/commit/e94ac9542a839c4942b1f5129605c5a700ac0209"
-        },
-        "date": 1780718260913,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 67654,
-            "range": "± 3608",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 724588,
-            "range": "± 3390",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13016161,
-            "range": "± 833543",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1544,
-            "range": "± 11",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18836,
-            "range": "± 320",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 263616,
-            "range": "± 2700",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1116285,
-            "range": "± 18770",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 127342,
-            "range": "± 429",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1485700,
-            "range": "± 14208",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24740238,
-            "range": "± 1227213",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 339829,
-            "range": "± 1166",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 14380052,
-            "range": "± 167404",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1146681493,
-            "range": "± 7596817",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3230,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 33990,
-            "range": "± 530",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 578137,
-            "range": "± 2534",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 44967,
-            "range": "± 425",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 518272,
-            "range": "± 2497",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6244657,
-            "range": "± 325897",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 882,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 11308,
-            "range": "± 17",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 175603,
-            "range": "± 2580",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 17265,
-            "range": "± 41",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 121441,
-            "range": "± 356",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1148895,
-            "range": "± 10832",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1709409,
             "range": "± 23384",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5f63ca3c5ef864ed2ac9ae837b89d6dca306c0af",
+          "message": "feat(schema): per-type status enum overrides the global lifecycle (REQ-224, #550) (#563)\n\nThe base `status` field declares one global lifecycle (draft→…→released,\n+accepted), but some types have their own: an `ai-found-defect` moves\nopen → triaged → resolved. A downstream store (jess) using `status: open` /\n`resolved` on its defects hit 27 `status-allowed-values` ERRORs and couldn't\nupgrade off its v0.15.0 pin (slice 3 of #522).\n\nA type may now declare its OWN `status` field with `allowed-values`; the status\ncheck — at validate time, in `rivet add`/`modify`, and in the remediation help —\nprefers the type's enum and falls back to the global base-field enum.\n`common.yaml` declares `status: [open, triaged, resolved]` on `ai-found-defect`\n(distinct from its release-gating `triage-status`). common 0.1.0 → 0.2.0.\n\nConfirmed: an ai-found-defect with `status: open`/`resolved` validates clean,\n`status: bogus` errors against `[open, triaged, resolved]`, and a requirement\nstill validates against the global enum. New\n`per_type_status_field_overrides_global_enum` test; `cargo test -p rivet-core`\ngreen; fmt + clippy clean; `rivet validate` + `rivet docs check` PASS.\n\nImplements: REQ-224\nVerifies: REQ-135\n\nCo-authored-by: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-23T03:21:05-05:00",
+          "tree_id": "fdbce9776ca5ff0e56e806ddbba614c1fe472fee",
+          "url": "https://github.com/pulseengine/rivet/commit/5f63ca3c5ef864ed2ac9ae837b89d6dca306c0af"
+        },
+        "date": 1782203410695,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83513,
+            "range": "± 556",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 890762,
+            "range": "± 7590",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12688878,
+            "range": "± 496824",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2157,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26164,
+            "range": "± 188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 371944,
+            "range": "± 1989",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1485396,
+            "range": "± 14224",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 159876,
+            "range": "± 877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1880687,
+            "range": "± 16054",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24381662,
+            "range": "± 817149",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 470848,
+            "range": "± 4704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17066598,
+            "range": "± 160463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1459382989,
+            "range": "± 11141227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4305,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61197,
+            "range": "± 479",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 804708,
+            "range": "± 4199",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62743,
+            "range": "± 314",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 708567,
+            "range": "± 5935",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7512675,
+            "range": "± 228469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1209,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14892,
+            "range": "± 77",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 347471,
+            "range": "± 1108",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24777,
+            "range": "± 224",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 175524,
+            "range": "± 2177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1625366,
+            "range": "± 14412",
             "unit": "ns/iter"
           }
         ]
