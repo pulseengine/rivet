@@ -5,7 +5,7 @@
 
 schema:
   name: dev
-  version: "0.1.0"
+  version: "0.2.0"
   extends: [common]
   description: >
     Software development tracking types. Used to manage requirements,
@@ -158,6 +158,19 @@ traceability-rules:
     source-type: requirement
     required-backlink: satisfies
     from-types: [design-decision, feature]
+    severity: warning
+
+  # #555: close the right side of the V. `verifies` exists as a link type but
+  # nothing flagged a requirement that is implemented yet has zero tests/
+  # verification tracing to it. `from-types` is intentionally OMITTED (= any
+  # source type), so this stays generic — any artifact that `verifies` the
+  # requirement satisfies it, whatever schema named the verification type.
+  # Severity is `warning` (advisory, like requirement-coverage); a project that
+  # doesn't want it simply doesn't load a schema declaring it.
+  - name: requirement-verification
+    description: Every requirement should be verified by at least one test (a `verifies` backlink)
+    source-type: requirement
+    required-backlink: verifies
     severity: warning
 
   - name: decision-justification
