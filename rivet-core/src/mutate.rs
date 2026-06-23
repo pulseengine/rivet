@@ -203,7 +203,7 @@ pub fn validate_add(artifact: &Artifact, store: &Store, schema: &Schema) -> Resu
     // field; when the schema declares `allowed-values` on it, reject values
     // outside the set at mutation time (so a typo never reaches a file).
     if let Some(status) = artifact.status.as_deref() {
-        check_status_allowed(status, schema)?;
+        check_status_allowed(status, &artifact.artifact_type, schema)?;
     }
 
     // Validate link types
@@ -408,7 +408,7 @@ pub fn validate_modify(
 
     // REQ-135: a `--set-status` value must be in the declared status enum.
     if let Some(status) = params.set_status.as_deref() {
-        check_status_allowed(status, schema)?;
+        check_status_allowed(status, &artifact.artifact_type, schema)?;
     }
 
     Ok(())
@@ -417,11 +417,14 @@ pub fn validate_modify(
 /// REQ-135: reject a status outside the `status` base-field's declared
 /// `allowed-values`. Inert (Ok) when no enum is declared — keeps status
 /// free-form for schemas that don't opt in.
-fn check_status_allowed(status: &str, schema: &Schema) -> Result<(), Error> {
+fn check_status_allowed(status: &str, artifact_type: &str, schema: &Schema) -> Result<(), Error> {
+    // #550: a type may override the global lifecycle enum with its own `status`
+    // field allowed-values (e.g. ai-found-defect: open/triaged/resolved). Prefer
+    // the type's own status field; fall back to the base-field enum.
     if let Some(allowed) = schema
-        .base_fields
-        .iter()
-        .find(|f| f.name == "status")
+        .artifact_type(artifact_type)
+        .and_then(|t| t.fields.iter().find(|f| f.name == "status"))
+        .or_else(|| schema.base_fields.iter().find(|f| f.name == "status"))
         .and_then(|f| f.allowed_values.as_ref())
     {
         if !allowed.is_empty() && !allowed.iter().any(|a| a == status) {

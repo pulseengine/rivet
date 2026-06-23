@@ -7163,3 +7163,42 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-23T13:30:00Z
+
+  - id: REQ-224
+    type: requirement
+    title: "An artifact type may declare a per-type `status` enum that overrides the global lifecycle (#550)"
+    status: implemented
+    description: |
+      Finding (#550, jess downstream — slice 3 of #522). The base `status` field
+      declares one global lifecycle enum (draft→…→released, +accepted). But some
+      types have their own lifecycle: an `ai-found-defect` moves
+      open → triaged → resolved. A downstream store (jess) using `status: open` /
+      `status: resolved` on its defects hit 27 `status-allowed-values` ERRORs and
+      could not upgrade off its v0.15.0 pin.
+
+      Fix: a type may declare its OWN `status` field with `allowed-values`; the
+      status check (validate-time, `rivet add`/`modify`, and the remediation
+      help) prefers the type's status enum and falls back to the global
+      base-field enum. `common.yaml` declares `status: [open, triaged, resolved]`
+      on `ai-found-defect` (distinct from its release-gating `triage-status`
+      field). common schema 0.1.0 → 0.2.0.
+
+      Acceptance:
+        - An `ai-found-defect` with `status: open` or `resolved` validates clean;
+          `status: bogus` errors against `[open, triaged, resolved]`.
+        - A `requirement` still validates against the global enum.
+        - `rivet add`/`modify` honor the per-type enum; the remediation help
+          lists the per-type values, not the global ones.
+        - `cargo test -p rivet-core` passes; fmt + clippy clean.
+    tags: [schema, status, validation, downstream, dogfooding]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.18.0-track
+    links:
+      - type: traces-to
+        target: REQ-135
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-23T14:30:00Z
