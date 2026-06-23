@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782236905794,
+  "lastUpdate": 1782239422685,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "2871c9763da51f150f28102ed2600a47e67f00bc",
-          "message": "feat(list): --full emits description/tags/fields in JSON for bulk queries (REQ-211, #506) (#507)\n\nAGENTS.md/CLAUDE.md point agents to `rivet list --format json` for\nmachine-readable queries, but that output is summary-only\n(id/type/title/status/links) across all 917 artifacts — it drops\ndescription/tags/fields. So a bulk query for a field value (e.g. `priority`)\nneeded one `rivet get <ID>` subprocess per artifact or a raw YAML parse\n(#506).\n\nAdd an opt-in `--full` flag: with `--format json`, each entry also carries\ndescription (string), tags (array), and fields (object), matching\n`get <ID> --format json`. Additive — default output is unchanged and\nlist-output.schema.json is `additionalProperties: true`, so no consumer\nbreaks. Inserted before the `--variant` block so a variant's merged `fields:`\nview still wins when both flags are set.\n\nAlso corrects drift in list-output.schema.json: `links` was still typed as an\ninteger count, but the actual output has been an array of {type,target}\nobjects since #358 — the schema now matches, and documents the new optional\n--full keys.\n\nConfirmed with: `rivet list --format json --full` adds the rich keys while\nplain `list` stays summary-only, and --full's `fields` for an id equals\n`get`'s `fields`; cargo test -p rivet-cli --test cli_commands (128 passed,\n0 failed — full suite, incl. the new list_json_full_includes_rich_fields);\ncargo fmt --check + cargo clippy -p rivet-cli --all-targets -- -D warnings\n(exit 0); rivet validate PASS.\n\nImplements: REQ-211\nRefs: REQ-007, #358\n\nCo-authored-by: Claude Opus 4.8 (1M context) <noreply@anthropic.com>",
-          "timestamp": "2026-06-06T03:47:37-05:00",
-          "tree_id": "ee12b93283273d63a9593ff0244bd7092e318418",
-          "url": "https://github.com/pulseengine/rivet/commit/2871c9763da51f150f28102ed2600a47e67f00bc"
-        },
-        "date": 1780738919267,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85095,
-            "range": "± 901",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 921342,
-            "range": "± 5049",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13357302,
-            "range": "± 564846",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1994,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25290,
-            "range": "± 59",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 360289,
-            "range": "± 1760",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1442110,
-            "range": "± 27936",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 169476,
-            "range": "± 4766",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1942068,
-            "range": "± 26458",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28814294,
-            "range": "± 378582",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 439233,
-            "range": "± 2262",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 18303086,
-            "range": "± 129835",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1438771444,
-            "range": "± 18531955",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4148,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 43875,
-            "range": "± 271",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 729242,
-            "range": "± 4879",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 64309,
-            "range": "± 1102",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 722523,
-            "range": "± 3951",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8039147,
-            "range": "± 40452",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1279,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15245,
-            "range": "± 38",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 249506,
-            "range": "± 5851",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22083,
-            "range": "± 44",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 158340,
-            "range": "± 857",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1479105,
-            "range": "± 17919",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1584830,
             "range": "± 24024",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f80298f7a064dcfd375bdae83518176380d000bc",
+          "message": "fix(wasm): `rivet-core --features wasm` test build compiles — drop host-only Link.external (REQ-227, #543) (#569)\n\nDrop `external` from the two `wit::Link` constructors in wasm_runtime.rs. The host\nmodel::Link gained an `external` field (prefix:ID externals); an \"add it everywhere\"\npass leaked it into the WIT-generated types::Link, which carries only link-type +\ntarget, breaking `cargo test -p rivet-core --features wasm --tests` (E0560). external\nis a host-side composition concept the wasm guest ABI doesn't model; host->WIT omits\nit, WIT->host keeps `external: None`. The .wit is unchanged (guest contract source of\ntruth; no spar regen).\n\nFixes: REQ-227\nRefs: REQ-008\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>",
+          "timestamp": "2026-06-23T13:21:25-05:00",
+          "tree_id": "683dda81a095655533fa6b0ac3ade376d9d0c810",
+          "url": "https://github.com/pulseengine/rivet/commit/f80298f7a064dcfd375bdae83518176380d000bc"
+        },
+        "date": 1782239421235,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86588,
+            "range": "± 402",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 908096,
+            "range": "± 3509",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13125515,
+            "range": "± 423288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2164,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26529,
+            "range": "± 177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 391481,
+            "range": "± 2359",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1497520,
+            "range": "± 23011",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167970,
+            "range": "± 1254",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1920620,
+            "range": "± 13627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24326169,
+            "range": "± 530624",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 479903,
+            "range": "± 7836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17012513,
+            "range": "± 225393",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1456180799,
+            "range": "± 9906918",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4355,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59464,
+            "range": "± 199",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 744879,
+            "range": "± 2927",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63045,
+            "range": "± 503",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 709691,
+            "range": "± 3407",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7565567,
+            "range": "± 52538",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1292,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15141,
+            "range": "± 89",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 326874,
+            "range": "± 909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25745,
+            "range": "± 243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 183305,
+            "range": "± 1284",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1717850,
+            "range": "± 24152",
             "unit": "ns/iter"
           }
         ]
