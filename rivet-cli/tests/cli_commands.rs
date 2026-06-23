@@ -5939,6 +5939,48 @@ fn validate_emits_single_skip_warn_for_malformed_source() {
     );
 }
 
+/// #552: `rivet add --type <T>` must create a default file for the type when
+/// none exists yet, instead of erroring "no existing file found … use --file".
+/// You shouldn't need --file just to add the FIRST artifact of a type.
+#[test]
+fn add_creates_default_file_for_a_new_type() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(init.status.success(), "init must succeed");
+
+    // The dev preset writes requirements.yaml but no design-decisions file.
+    assert!(!dir.join("artifacts/design-decisions.yaml").exists());
+
+    let add = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "add",
+            "--type",
+            "design-decision",
+            "--title",
+            "First decision",
+            "--field",
+            "rationale=because",
+        ])
+        .output()
+        .expect("add");
+    assert!(
+        add.status.success(),
+        "adding the first design-decision (no --file) must succeed; stderr: {}",
+        String::from_utf8_lossy(&add.stderr)
+    );
+    assert!(
+        dir.join("artifacts/design-decisions.yaml").exists(),
+        "add must have created a default design-decisions.yaml"
+    );
+}
+
 /// REQ-158 / #397: `rivet validate` emits a `near-duplicate-intent` INFO for a
 /// pair of same-type artifacts with highly similar titles, and NOT for a
 /// distinct one. `rivet add` emits a non-blocking note for a similar new title.

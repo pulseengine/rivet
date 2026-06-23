@@ -15162,14 +15162,44 @@ fn cmd_add(
     // Determine target file
     let target_file = if let Some(f) = file {
         cli.project.join(f)
+    } else if let Some(existing) = mutate::find_file_for_type(artifact_type, &store) {
+        existing
     } else {
-        mutate::find_file_for_type(artifact_type, &store).ok_or_else(|| {
-            anyhow::anyhow!(
-                "no existing file found for type '{}'. Use --file to specify one.",
-                artifact_type
-            )
-        })?
+        // #552: no file holds this type yet — synthesize a default in the
+        // project's first generic-yaml source (e.g. `design-decision` ->
+        // `artifacts/design-decisions.yaml`) instead of forcing the user to
+        // pass --file just to add the FIRST artifact of a type. Created with an
+        // `artifacts:` header below if absent.
+        let src = ctx
+            .config
+            .sources
+            .iter()
+            .find(|s| matches!(s.format.as_str(), "generic" | "generic-yaml"))
+            .map(|s| cli.project.join(&s.path))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no generic-yaml source in rivet.yaml to add a '{artifact_type}' to. \
+                     Use --file to specify a target."
+                )
+            })?;
+        if src.is_dir() {
+            src.join(format!("{artifact_type}s.yaml"))
+        } else {
+            src
+        }
     };
+
+    // #552: ensure the target file exists with an `artifacts:` list header, so
+    // the first artifact of a type can be added without --file.
+    if !target_file.exists() {
+        if let Some(parent) = target_file.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        std::fs::write(&target_file, "artifacts:\n")
+            .with_context(|| format!("creating {}", target_file.display()))?;
+        println!("  created {}", target_file.display());
+    }
 
     // Write to file
     mutate::append_artifact_to_file(&artifact, &target_file)
