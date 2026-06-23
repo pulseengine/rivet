@@ -5,6 +5,55 @@
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-06-23
+
+Theme: **close the right side of the V** — make requirement→test→evidence a
+first-class, drift-checked, status-advancing trace, and remove the schema
+friction that blocked declaring verification artifacts.
+
+### Added
+
+- **REQ-226 / #559 — `rivet verify <ID>`.** Advances an `implemented` artifact
+  to `verified` iff it has verifying evidence — an incoming `verifies` link OR a
+  `// rivet: verifies <ID>` source marker (scanned from `src/` + `tests/`, or
+  `--scan <path>`). Refuses with an actionable message when there's no evidence;
+  no-ops if already `verified`; rejects non-`implemented` states. The write
+  reuses the schema-validated `modify --set-status` path. Nothing previously
+  advanced status from test evidence (`import-results` is a separate run-log),
+  so a requirement stayed `implemented` no matter how many passing tests
+  verified it.
+- **REQ-222 / #555 — `requirement-verification` traceability rule.** A `dev`
+  schema rule (`required-backlink: verifies`, severity warning) surfaces
+  requirements with no incoming verification in the coverage report, closing the
+  right side of the V in the rule set. (`dev` 0.1.0 → 0.2.0.)
+- **REQ-225 / #556 — `cited-source` usable on any artifact type.** The
+  sha256-stamped, drift-checked `cited-source` field is now a `common`
+  base-field, so verification artifacts (`sw`/`unit`/`sys-verification`) can
+  carry a tamper-evident citation without being flagged `unknown-field` — the
+  requirement→test→evidence chain is exactly where it's wanted. The drift
+  checker discovers it by name, so it runs on those types too. (`common`
+  0.2.0 → 0.3.0.)
+
+### Fixed
+
+- **REQ-224 / #550 — per-type `status` enum overrides the global lifecycle.** A
+  type that declares its own `status` field with allowed-values is now validated
+  against that enum instead of the base lifecycle, so domain status sets (e.g.
+  `ai-found-defect`'s `open`/`triaged`/`resolved`) validate correctly.
+  (`common` 0.1.0 → 0.2.0.)
+- **REQ-223 / #552 — `rivet add` synthesizes a default file for a new artifact
+  type** instead of forcing `--file`. A first-of-its-type artifact lands in
+  `<src_dir>/<type>s.yaml` with an `artifacts:` header.
+- **REQ-221 / #530 — bundled bridge schemas load by name.** A consumer can list
+  a bundled `*.bridge` schema by name in `schemas:` and the loader falls back to
+  the embedded bridge after the embedded base schema.
+
+### CI
+
+- **#560 — VSIX Marketplace publish is non-blocking.** The release workflow no
+  longer lets a Marketplace publish failure (expired PAT) mark the whole Release
+  run as `failure` and skip the npm publish that gates on it.
+
 ## [0.17.0] - 2026-06-19
 
 ### Security
