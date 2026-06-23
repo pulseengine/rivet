@@ -7080,3 +7080,46 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-23T12:00:00Z
+
+  - id: REQ-221
+    type: requirement
+    title: "Bundled bridge schemas (`*.bridge.yaml`) are loadable by name in a consumer project's `schemas:` list (#530)"
+    status: implemented
+    description: |
+      Finding (#530, tool-friction from the `wohl` consumer project). Bundled
+      bridge schemas (`stpa-dev.bridge`, `eu-ai-act-stpa.bridge`, …) define the
+      cross-domain trace links a consumer needs (e.g. `constraint-satisfies`,
+      `risk-identified-by-stpa`). They ship embedded in the rivet binary, but the
+      schema loader only ever *auto-discovered* them from the loaded schema set —
+      it never resolved a bridge by explicit name. So a consumer that listed
+      `stpa-dev.bridge` in its `rivet.yaml` `schemas:` failed with
+      `schema 'stpa-dev.bridge' not found on disk or as embedded schema`, with no
+      way to pull a bridge whose endpoints weren't both already loaded.
+
+      Fix: every schema-name resolution path (`load_schemas_with_fallback`, the
+      content loader, and `schema_sources`) now falls back to
+      `embedded_bridge(name)` after `embedded_schema(name)`, so a bridge resolves
+      by its `<a>-<b>.bridge` stem just like any built-in. Already-listed bridges
+      are skipped by the auto-discovery pass (no double-load). The not-found
+      error now points at the `.bridge` naming and `rivet schema presets`.
+
+      Acceptance:
+        - A project with `schemas: [common, stpa, stpa-dev.bridge]` and no local
+          `schemas/` dir validates PASS, and `validate` reports
+          `stpa-dev.bridge@… (embedded)`.
+        - `load_schemas_with_fallback` loads the bridge's own link types (e.g.
+          `constraint-satisfies`); an unknown `*.bridge` name still errors.
+        - `rivet schema sources` reports a bridge name as `Embedded`, not Missing.
+        - `cargo test -p rivet-core` passes; `cargo fmt --check` +
+          `cargo clippy --all-targets -- -D warnings` clean.
+    tags: [schema, bridge, embedded, consumer, tool-friction]
+    fields:
+      priority: should
+      category: functional
+    links:
+      - type: traces-to
+        target: REQ-010
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-22T19:00:00Z

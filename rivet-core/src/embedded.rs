@@ -182,7 +182,8 @@ pub fn schema_sources(
             let path = schemas_dir.join(format!("{name}.yaml"));
             let source = if path.exists() {
                 SchemaSource::OnDisk(path)
-            } else if embedded_schema(name).is_some() {
+            } else if embedded_schema(name).is_some() || embedded_bridge(name).is_some() {
+                // #530: bridges resolve by name too (e.g. `stpa-dev.bridge`).
                 SchemaSource::Embedded
             } else {
                 SchemaSource::Missing
@@ -277,6 +278,9 @@ pub fn load_schema_contents(
                 result.push((name.clone(), content));
             }
         } else if let Some(content) = embedded_schema(name) {
+            result.push((name.clone(), content.to_string()));
+        } else if let Some(content) = embedded_bridge(name) {
+            // #530: bridges are loadable by explicit name too.
             result.push((name.clone(), content.to_string()));
         } else {
             log::warn!("schema '{name}' not found on disk or embedded");
@@ -409,9 +413,22 @@ pub fn load_schemas_with_fallback(
             let file: SchemaFile = serde_yaml::from_str(content)
                 .map_err(|e| Error::Schema(format!("embedded '{name}': {e}")))?;
             files.push(file);
+        } else if let Some(content) = embedded_bridge(name) {
+            // #530: a consumer project may list a bundled bridge schema (e.g.
+            // `stpa-dev.bridge`, `eu-ai-act-stpa.bridge`) by name in its
+            // `schemas:` to pull the cross-domain links it needs. Bridges are
+            // embedded, but resolution only auto-discovered them from the loaded
+            // schema set and never resolved them by explicit name — so a
+            // consumer's `schemas: [stpa-dev.bridge]` failed as "not found".
+            let file: SchemaFile = serde_yaml::from_str(content)
+                .map_err(|e| Error::Schema(format!("embedded bridge '{name}': {e}")))?;
+            files.push(file);
         } else {
             return Err(Error::Schema(format!(
-                "schema '{name}' not found on disk ({}) or as embedded schema",
+                "schema '{name}' not found on disk ({}) or as an embedded schema \
+                 or bridge. Built-in bridges are listed by their `<a>-<b>.bridge` \
+                 stem (e.g. `stpa-dev.bridge`); run `rivet schema presets` to see \
+                 declarable names.",
                 schemas_dir.join(format!("{name}.yaml")).display()
             )));
         }
@@ -570,5 +587,40 @@ mod tests {
             "expected bridge schemas to be appended, got {expanded:?}"
         );
         assert!(expanded.iter().any(|n| n.contains("bridge")));
+    }
+
+    // #530: a consumer project must be able to load a bundled bridge schema by
+    // its `<a>-<b>.bridge` name in `schemas:` — previously only auto-discovered,
+    // never resolvable by explicit name (failed as "not found").
+    #[test]
+    fn bundled_bridges_are_loadable_by_explicit_name() {
+        let empty = std::path::Path::new("/nonexistent-schemas-dir");
+
+        // The bridge resolves by name through the main loader (no on-disk dir).
+        let names = vec![
+            "common".to_string(),
+            "stpa".to_string(),
+            "stpa-dev.bridge".to_string(),
+        ];
+        let schema = load_schemas_with_fallback(&names, empty)
+            .expect("a bundled bridge must load by explicit name");
+        // The bridge's own link types are present (it defines the cross-domain
+        // links the consumer asked for — #530's `constraint-satisfies`).
+        assert!(
+            schema.link_types.contains_key("constraint-satisfies"),
+            "the stpa-dev bridge's link types must be loaded, got {:?}",
+            schema.link_types.keys().collect::<Vec<_>>()
+        );
+
+        // It also reports as Embedded (not Missing) in source resolution.
+        let sources = schema_sources(&["stpa-dev.bridge".to_string()], empty);
+        assert!(
+            matches!(sources[0].1, SchemaSource::Embedded),
+            "a bridge must resolve as Embedded by name, got {:?}",
+            sources[0].1
+        );
+
+        // A genuinely unknown name still errors.
+        assert!(load_schemas_with_fallback(&["no-such.bridge".to_string()], empty).is_err());
     }
 }
