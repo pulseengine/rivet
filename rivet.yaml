@@ -39,6 +39,8 @@ docs-check:
     - "0.1.0"
     # Example/historical schema versions referenced in topic bodies.
     - "0.2.0"
+    # common 0.3.0 (#556: cited-source base-field).
+    - "0.3.0"
     # ASPICE process IDs that look like X.Y.Z (e.g. SYS.2.1.7) — false
     # positives from the regex but stable upstream identifiers.
     - "2.1.7"
