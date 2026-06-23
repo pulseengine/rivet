@@ -132,10 +132,12 @@ fn status_allowed_values(diag: &Diagnostic, schema: &Schema, store: &Store) -> O
     let source_id = diag.artifact_id.as_deref()?;
     let artifact = store.get(source_id)?;
     let status = artifact.status.as_deref()?;
+    // #550: prefer the artifact type's own `status` field (per-type override,
+    // e.g. ai-found-defect uses open/triaged/resolved) over the global enum.
     let allowed = schema
-        .base_fields
-        .iter()
-        .find(|f| f.name == "status")
+        .artifact_type(&artifact.artifact_type)
+        .and_then(|t| t.fields.iter().find(|f| f.name == "status"))
+        .or_else(|| schema.base_fields.iter().find(|f| f.name == "status"))
         .and_then(|f| f.allowed_values.as_ref())?;
     let allowed_list = allowed.join(", ");
     Some(Remediation {

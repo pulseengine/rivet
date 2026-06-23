@@ -10,7 +10,7 @@
 
 schema:
   name: common
-  version: "0.1.0"
+  version: "0.2.0"
   description: >
     Base field definitions and common link types for lifecycle traceability.
     All domain schemas implicitly extend this schema.
@@ -295,6 +295,19 @@ artifact-types:
       raises rivet's TD claim (Tool error Detection per ISO 26262-8
       §11.4.5.4) when the upstream author is non-human.
     fields:
+      # #550: per-type override of the global lifecycle `status` enum. A defect
+      # found by an AI step moves open -> triaged -> resolved, NOT the
+      # draft->...->released chain. Declaring a `status` field on the type makes
+      # `rivet validate` enforce this set instead of the base lifecycle (so a
+      # downstream store using `status: open|resolved` validates clean). The
+      # separate `triage-status` field below is the release-gating disposition.
+      - name: status
+        type: enum
+        required: false
+        allowed-values: [open, triaged, resolved]
+        description: >
+          Defect lifecycle: open -> triaged -> resolved. Per-type override of
+          the global status enum (#550).
       - name: severity
         type: string
         required: true

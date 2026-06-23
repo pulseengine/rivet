@@ -801,12 +801,16 @@ pub fn validate_structural_with_externals_and_variant(
         // `allowed-values` on the `status` base-field, enforce it here; with
         // no values declared the check is inert (backward compatible).
         if let Some(status) = artifact.status.as_deref() {
-            if let Some(allowed) = schema
-                .base_fields
+            // #550: a type may declare its OWN `status` field with
+            // `allowed-values` to override the global lifecycle enum (e.g.
+            // `ai-found-defect` uses open/triaged/resolved, not draft→released).
+            // Prefer the type's own status field; fall back to the base-field.
+            let status_field = type_def
+                .fields
                 .iter()
                 .find(|f| f.name == "status")
-                .and_then(|f| f.allowed_values.as_ref())
-            {
+                .or_else(|| schema.base_fields.iter().find(|f| f.name == "status"));
+            if let Some(allowed) = status_field.and_then(|f| f.allowed_values.as_ref()) {
                 if !allowed.is_empty() && !allowed.iter().any(|a| a == status) {
                     diagnostics.push(Diagnostic {
                         source_file: None,
@@ -2798,6 +2802,52 @@ then:
         );
         assert_eq!(status_diags[0].artifact_id.as_deref(), Some("REQ-2"));
         assert!(status_diags[0].message.contains("implmented"));
+    }
+
+    // #550: a type may declare its OWN `status` field allowed-values, which
+    // override the global lifecycle enum for artifacts of that type.
+    #[test]
+    fn per_type_status_field_overrides_global_enum() {
+        let mut file = minimal_schema("defect");
+        file.base_fields = vec![FieldDef {
+            name: "status".into(),
+            field_type: "enum".into(),
+            allowed_values: Some(vec!["draft".into(), "approved".into()]),
+            ..Default::default()
+        }];
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "ai-found-defect".into(),
+            fields: vec![FieldDef {
+                name: "status".into(),
+                field_type: "enum".into(),
+                allowed_values: Some(vec!["open".into(), "triaged".into(), "resolved".into()]),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        // `open` is valid for the type (not in the global enum).
+        let mut good = minimal_artifact("DEF-1", "ai-found-defect");
+        good.status = Some("open".to_string());
+        store.insert(good).unwrap();
+        // `draft` is a GLOBAL value but NOT in the per-type set -> rejected.
+        let mut bad = minimal_artifact("DEF-2", "ai-found-defect");
+        bad.status = Some("draft".to_string());
+        store.insert(bad).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let status_diags: Vec<_> = validate_structural(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "status-allowed-values")
+            .collect();
+        assert_eq!(
+            status_diags.len(),
+            1,
+            "per-type enum: `open` ok, `draft` rejected; got {status_diags:?}"
+        );
+        assert_eq!(status_diags[0].artifact_id.as_deref(), Some("DEF-2"));
     }
 
     // Backward-compatibility: with no `allowed-values` declared on `status`
