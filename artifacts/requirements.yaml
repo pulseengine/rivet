@@ -7286,3 +7286,41 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-23T16:30:00Z
+
+  - id: REQ-227
+    type: requirement
+    title: "`rivet-core --features wasm` test build must compile (WIT `Link` has no host-only `external` field) (#543)"
+    status: implemented
+    description: |
+      Finding (#543, dogfooding). `cargo test -p rivet-core --features wasm
+      --tests` failed to compile (E0560): a `#[cfg(test)]` constructor and the
+      host->WIT conversion in `wasm_runtime.rs` built the WIT-generated
+      `pulseengine:rivet/types.Link` with `external: None`, but the WIT `record
+      link` carries only `link-type` + `target`. The host `model::Link` gained
+      an `external: Option<...>` field (the prefix:ID externals composition
+      work), and an "add it everywhere" pass leaked the host-only field into the
+      WIT-side constructors.
+
+      Fix: drop `external` from the two `wit::Link` constructors. `external` is a
+      host-side composition concept (cross-repo prefix:ID links) that the wasm
+      guest ABI deliberately does not model, so the host->WIT conversion simply
+      omits it; the WIT-generated `types::Link` is unchanged (no spar regen — the
+      .wit is the source of truth for the guest contract). The host-side
+      constructor (WIT->host) keeps `external: None`, which is correct.
+
+      Acceptance:
+        - `cargo check -p rivet-core --features wasm --tests` compiles (was E0560).
+        - `cargo test -p rivet-core --features wasm --lib wasm_runtime` passes.
+        - The default (no-wasm) build is unaffected.
+    tags: [wasm, wit, build, features, dogfooding]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.19.0-track
+    links:
+      - type: traces-to
+        target: REQ-008
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-23T18:00:00Z
