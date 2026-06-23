@@ -7324,3 +7324,45 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-23T18:00:00Z
+
+  - id: REQ-228
+    type: requirement
+    title: "`rivet coverage` reports a combined V-closure metric (satisfied AND verified) per source type"
+    status: verified
+    description: |
+      Fast-follow from #555/#559 (V-model). Per-rule coverage answers "how many
+      requirements are satisfied?" and, separately, "how many are verified?" —
+      but a release needs the intersection: a requirement is closed in the V only
+      when it is BOTH satisfied (left side) AND verified (right side). The
+      per-rule numbers hide this — a type can be 100% on each rule individually
+      yet have lower closure when different artifacts miss different rules.
+
+      `CoverageReport::v_closure()` computes, for every source type governed by
+      >1 traceability rule, the share of artifacts not strictly missing on ANY
+      applicable rule (covered OR external-boundary on each — the same 3-state
+      "accounted" convention as per-rule coverage; a supplier-delegated
+      derivative counts as closed). Single-rule types are omitted (their closure
+      is just that rule's coverage). `rivet coverage` prints a `V-closure:` line
+      per such type; `--format json` adds a `closure` array with
+      closed/total/open_ids/percentage/rule_names.
+
+      Acceptance:
+        - `rivet coverage` prints `V-closure: requirement (all N rules)  P%`
+          when requirements have both a satisfies and a verifies rule.
+        - The closure percentage is <= each contributing rule's percentage.
+        - `rivet coverage --format json` emits `closure[]` with per-type
+          closed/total/open_ids; a single-rule type produces no entry.
+        - `cargo test -p rivet-core --lib coverage` and the cli coverage suite
+          pass; fmt + clippy clean.
+    tags: [coverage, v-model, traceability, dogfooding]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.19.0-track
+    links:
+      - type: traces-to
+        target: REQ-004
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-23T18:30:00Z

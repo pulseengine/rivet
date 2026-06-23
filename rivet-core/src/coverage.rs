@@ -121,6 +121,46 @@ impl CoverageEntry {
     }
 }
 
+/// V-closure for one source artifact type: the *intersection* of every
+/// traceability rule that applies to it.
+///
+/// Per-rule coverage answers "how many requirements are satisfied?" and,
+/// separately, "how many are verified?" — but a release needs the **both**:
+/// a requirement is closed in the V only when it is satisfied (left side)
+/// *and* verified (right side). This is strictly stronger than per-rule
+/// coverage — a type can be 100% on each rule individually yet have lower
+/// closure when *different* artifacts miss *different* rules.
+///
+/// `closed` follows the same 3-state convention as [`CoverageEntry`]: an
+/// artifact is closed when it is not *strictly missing* on any applicable
+/// rule (covered OR external-boundary on each). `open_ids` is the union of
+/// the applicable rules' `uncovered_ids` — the artifacts missing at least
+/// one side.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ClosureEntry {
+    /// Source artifact type (e.g. `"requirement"`).
+    pub source_type: String,
+    /// Names of the rules intersected (always ≥ 2).
+    pub rule_names: Vec<String>,
+    /// Total source artifacts of this type.
+    pub total: usize,
+    /// Artifacts not strictly missing on any applicable rule.
+    pub closed: usize,
+    /// IDs strictly missing on at least one applicable rule (sorted, unique).
+    pub open_ids: Vec<String>,
+}
+
+impl ClosureEntry {
+    /// Closure percentage (0..100). Returns 100 when total is 0.
+    pub fn percentage(&self) -> f64 {
+        if self.total == 0 {
+            100.0
+        } else {
+            (self.closed as f64 / self.total as f64) * 100.0
+        }
+    }
+}
+
 /// Full coverage report across all traceability rules.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CoverageReport {
@@ -136,6 +176,54 @@ impl CoverageReport {
         }
         let covered: usize = self.entries.iter().map(|e| e.covered).sum();
         (covered as f64 / total as f64) * 100.0
+    }
+
+    /// V-closure across every source type that is governed by more than one
+    /// traceability rule — the intersection of those rules (e.g. the count
+    /// of requirements that are BOTH satisfied AND verified). Source types
+    /// with a single rule are omitted: their closure is just that rule's
+    /// coverage, so there is nothing new to report. Entries preserve the
+    /// first-seen order of source types in `self.entries`.
+    pub fn v_closure(&self) -> Vec<ClosureEntry> {
+        use std::collections::BTreeSet;
+
+        // Group rule-entries by source type, preserving first-seen order.
+        let mut order: Vec<&str> = Vec::new();
+        for e in &self.entries {
+            if !order.contains(&e.source_type.as_str()) {
+                order.push(&e.source_type);
+            }
+        }
+
+        let mut out = Vec::new();
+        for st in order {
+            let group: Vec<&CoverageEntry> = self
+                .entries
+                .iter()
+                .filter(|e| e.source_type == st)
+                .collect();
+            if group.len() < 2 {
+                continue;
+            }
+            // Every rule over the same source type sees the same artifact
+            // population; take the max defensively in case a rule scoped its
+            // total differently.
+            let total = group.iter().map(|e| e.total).max().unwrap_or(0);
+            let open: BTreeSet<&str> = group
+                .iter()
+                .flat_map(|e| e.uncovered_ids.iter().map(String::as_str))
+                .collect();
+            let open_ids: Vec<String> = open.iter().map(|s| s.to_string()).collect();
+            let closed = total.saturating_sub(open_ids.len());
+            out.push(ClosureEntry {
+                source_type: st.to_string(),
+                rule_names: group.iter().map(|e| e.rule_name.clone()).collect(),
+                total,
+                closed,
+                open_ids,
+            });
+        }
+        out
     }
 
     /// Serialize the report to a JSON string.
@@ -797,5 +885,76 @@ mod tests {
         assert_eq!(entry.covered, 1, "SG-A covered via alternate backlink");
         assert_eq!(entry.uncovered_ids, vec!["SG-B"]);
         assert_eq!(entry.total, 2);
+    }
+
+    fn rule_entry(rule: &str, source: &str, total: usize, uncovered: &[&str]) -> CoverageEntry {
+        CoverageEntry {
+            rule_name: rule.into(),
+            description: String::new(),
+            source_type: source.into(),
+            link_type: "x".into(),
+            direction: CoverageDirection::Backward,
+            target_types: vec![],
+            covered: total - uncovered.len(),
+            external_boundary: 0,
+            external_boundary_ids: vec![],
+            total,
+            uncovered_ids: uncovered.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    // rivet: verifies REQ-228
+    #[test]
+    fn v_closure_is_the_intersection_not_the_per_rule_average() {
+        // Two rules over `requirement`: satisfies (left side of the V) and
+        // verifies (right side). REQ-002 misses satisfies; REQ-003 misses
+        // verifies. Each rule alone is 2/3, but only REQ-001 is closed on
+        // BOTH — closure is 1/3, strictly lower than either rule.
+        let report = CoverageReport {
+            entries: vec![
+                rule_entry("req-satisfies", "requirement", 3, &["REQ-002"]),
+                rule_entry("req-verifies", "requirement", 3, &["REQ-003"]),
+            ],
+        };
+
+        let closure = report.v_closure();
+        assert_eq!(closure.len(), 1, "one source type with ≥2 rules");
+        let c = &closure[0];
+        assert_eq!(c.source_type, "requirement");
+        assert_eq!(c.rule_names, vec!["req-satisfies", "req-verifies"]);
+        assert_eq!(c.total, 3);
+        assert_eq!(c.closed, 1, "only REQ-001 satisfies BOTH rules");
+        assert_eq!(c.open_ids, vec!["REQ-002", "REQ-003"]);
+        assert!((c.percentage() - 33.333).abs() < 0.01);
+    }
+
+    #[test]
+    fn v_closure_omits_single_rule_types_and_counts_external_boundary_as_closed() {
+        let mut satisfies = rule_entry("req-satisfies", "requirement", 3, &[]);
+        // REQ-003 is delegated to a supplier on the verifies side: it is an
+        // external-boundary, NOT strictly missing, so it stays closed.
+        let mut verifies = rule_entry("req-verifies", "requirement", 3, &[]);
+        verifies.covered = 2;
+        verifies.external_boundary = 1;
+        verifies.external_boundary_ids = vec!["REQ-003".into()];
+        satisfies.covered = 3;
+
+        let report = CoverageReport {
+            entries: vec![
+                satisfies,
+                verifies,
+                // A single-rule type contributes no closure entry.
+                rule_entry("dd-justifies", "design-decision", 2, &["DD-002"]),
+            ],
+        };
+
+        let closure = report.v_closure();
+        assert_eq!(closure.len(), 1, "design-decision (single rule) omitted");
+        assert_eq!(closure[0].source_type, "requirement");
+        assert_eq!(
+            closure[0].closed, 3,
+            "external-boundary REQ-003 counts as closed (accounted)"
+        );
+        assert!(closure[0].open_ids.is_empty());
     }
 }

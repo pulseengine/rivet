@@ -7242,6 +7242,23 @@ fn cmd_coverage(
         let checks_covered: usize = report.entries.iter().map(|e| e.covered).sum();
         let external_boundary: usize = report.entries.iter().map(|e| e.external_boundary).sum();
         let overall_pct = (report.overall_coverage() * 10.0).round() / 10.0;
+        // V-closure: intersection of all rules per source type (both sides of
+        // the V). Each entry rounds its percentage to one decimal to match the
+        // text view and the `overall` block.
+        let closure_json: Vec<serde_json::Value> = report
+            .v_closure()
+            .into_iter()
+            .map(|c| {
+                serde_json::json!({
+                    "source_type": c.source_type,
+                    "rule_names": c.rule_names,
+                    "closed": c.closed,
+                    "total": c.total,
+                    "open_ids": c.open_ids,
+                    "percentage": (c.percentage() * 10.0).round() / 10.0,
+                })
+            })
+            .collect();
         let mut output = serde_json::json!({
             "command": "coverage",
             "rules": rules_json,
@@ -7251,6 +7268,7 @@ fn cmd_coverage(
                 "checks_total": checks_total,
                 "percentage": overall_pct,
             },
+            "closure": closure_json,
         });
         if let Some(ref name) = variant_name {
             output["variant"] = serde_json::Value::String(name.clone());
@@ -7311,6 +7329,26 @@ fn cmd_coverage(
         let overall = report.overall_coverage();
         println!("  {}", "-".repeat(80));
         println!("  {:<52} {:>7.1}%", "Overall (weighted)", overall);
+
+        // V-closure: for any source type governed by >1 rule, the share that
+        // satisfies EVERY rule (e.g. requirements that are both satisfied AND
+        // verified — both sides of the V closed). Strictly stronger than the
+        // per-rule numbers above, so it gets its own line.
+        let closure = report.v_closure();
+        for c in &closure {
+            let label = format!(
+                "V-closure: {} (all {} rules)",
+                c.source_type,
+                c.rule_names.len()
+            );
+            println!(
+                "  {:<52} {:>7.1}%  [{}/{}]",
+                label,
+                c.percentage(),
+                c.closed,
+                c.total
+            );
+        }
 
         // 3-state breakdown for the auditor — only printed when at least
         // one boundary exists, to keep the common case uncluttered.
