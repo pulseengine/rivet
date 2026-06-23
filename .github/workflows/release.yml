@@ -503,6 +503,14 @@ jobs:
     name: Publish VSIX to VS Code Marketplace
     needs: [create-release]
     runs-on: ubuntu-latest
+    # The VS Code Marketplace is a SEPARATE distribution channel (RELEASING.md):
+    # a failure here (e.g. an expired VSCE PAT) must NOT fail the overall Release
+    # run, because `release-npm.yml` triggers on `workflow_run.conclusion ==
+    # 'success'` — so a red marketplace job was silently SKIPPING the npm publish
+    # (v0.17.0 shipped binaries but npm froze at 0.16.1 until a manual backfill).
+    # `build-test-evidence` is already continue-on-error for the same reason; the
+    # core release (binaries + GitHub Release via create-release) still gates.
+    continue-on-error: true
     steps:
       - uses: actions/download-artifact@v4
         with:
