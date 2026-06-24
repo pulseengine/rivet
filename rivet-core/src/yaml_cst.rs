@@ -795,6 +795,31 @@ impl<'src> Parser<'src> {
                         if self.at(SyntaxKind::Comment) {
                             self.bump();
                         }
+                        // Multi-line plain scalars as sequence items: consume
+                        // continuation lines indented deeper than the `-`, that
+                        // don't start a new sequence item or mapping entry. This
+                        // mirrors the mapping-value path in `parse_mapping_entry`
+                        // — a plain scalar that folds across lines is valid YAML
+                        // (e.g. a wrapped `causal-factors:` list item). Without
+                        // it the continuation line was misread as a new mapping
+                        // key ("expected ':' after mapping key"). The `indent`
+                        // here is the dash column, so the shared helper's
+                        // strictly-deeper test correctly excludes sibling items.
+                        while self.at(SyntaxKind::Newline) {
+                            if !self.is_plain_scalar_continuation(indent) {
+                                break;
+                            }
+                            self.bump(); // newline
+                            while !self.at_eof()
+                                && !self.at(SyntaxKind::Newline)
+                                && !self.at(SyntaxKind::Comment)
+                            {
+                                self.bump();
+                            }
+                            if self.at(SyntaxKind::Comment) {
+                                self.bump();
+                            }
+                        }
                     }
                 }
                 Some(SyntaxKind::Newline | SyntaxKind::Comment) => {
@@ -1233,6 +1258,29 @@ artifacts:
     fn multiline_plain_scalar_nested() {
         parse_and_check(
             "items:\n  - id: X\n    fields:\n      alt: Rejected because it\n        requires separate deploy.\n\n  - id: Y\n    title: Next\n",
+        );
+    }
+
+    /// Regression (#570): a plain (unquoted) multi-line scalar used as a
+    /// *sequence item* that wraps onto an indented continuation line. The
+    /// continuation was misread as a new mapping key
+    /// ("expected ':' after mapping key" / "expected mapping key, found
+    /// Some(Dash)"). This is the dominant shape in STPA `causal-factors:` /
+    /// wrapped `scenario` lists. Valid YAML — PyYAML/serde_yaml accept it.
+    #[test]
+    fn multiline_plain_scalar_sequence_item() {
+        parse_and_check(
+            "causal-factors:\n  - Base offset calculation uses defined_function_count instead of\n    total_function_count (imports plus defined)\n",
+        );
+    }
+
+    /// The continuation absorb must not swallow a following sibling item or a
+    /// deeper nested mapping: a wrapped item, then a single-line sibling, then
+    /// a `- id:`-style mapping item must all parse cleanly.
+    #[test]
+    fn multiline_plain_scalar_sequence_item_then_siblings() {
+        parse_and_check(
+            "items:\n  - first item that wraps onto\n    a second line\n  - second single-line item\n  - id: X\n    title: a mapping item\n",
         );
     }
 
