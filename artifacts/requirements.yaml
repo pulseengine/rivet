@@ -7366,3 +7366,56 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-23T18:30:00Z
+
+  - id: REQ-229
+    type: requirement
+    title: "rivet exposes a SQL query interface over the artifact store, usable WITHOUT MCP or a running server"
+    status: proposed
+    description: |
+      Agents query rivet today via a bespoke s-expression filter (`rivet query
+      "(= (field \"x\") \"y\")"`) for reads and `rivet add`/`modify` for writes —
+      two languages, neither of which LLMs have meaningful training data on, and
+      neither of which expresses JOINs/aggregations (the V-closure query is
+      bespoke Rust). SQL is the most LLM-legible query language and expresses the
+      relational questions (satisfied-AND-verified, coverage rollups) directly.
+
+      Provide a SQL read interface over the artifact graph projected as virtual
+      tables — `artifacts(id,type,title,description,status)`,
+      `links(source,link_type,target,external)`, `fields(artifact_id,key,value)`
+      + `fields_json`, `provenance(...)` — backed by the live in-memory store
+      (the YAML files remain the single source of truth; SQLite stores no rows).
+
+      CONSTRAINT (hard): the interface MUST be usable with **no MCP server and no
+      running `rivet serve`** — many environments forbid adding MCP servers. The
+      baseline transport is a plain CLI command `rivet sql "<query>"` that loads
+      the project, runs the query, and prints results. The same shared executor
+      is ALSO reachable via `rivet serve` (`POST /sql`) and an MCP `rivet_sql`
+      tool, but those are additive — the CLI path is the lowest common
+      denominator (CI, scripts, sandboxes, agents that can only shell out).
+
+      This requirement is the READ-ONLY MVP. The read/write `xUpdate` path
+      (SQL INSERT/UPDATE/DELETE routed through `mutate` + `validate`) is a
+      deliberate second slice (separate REQ) so the YAML-corrupting write path is
+      gated behind its own review. Design recorded in DD-068.
+
+      Acceptance:
+        - `rivet sql "SELECT id FROM artifacts WHERE status='implemented'"`
+          returns matching ids with NO server and NO MCP running.
+        - A JOIN query reproduces the V-closure set, e.g.
+          `SELECT id FROM artifacts WHERE status='implemented' AND id NOT IN
+          (SELECT target FROM links WHERE link_type='verifies')`.
+        - `--format json` emits structured rows; `--format csv` emits a table.
+        - Results reflect the current on-disk artifacts (no stale snapshot).
+        - `cargo test -p rivet-cli` covers the schema projection + a JOIN.
+    tags: [sql, query, agent-interface, cli, virtual-tables]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.20.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-24T09:00:00Z
