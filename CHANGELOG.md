@@ -5,6 +5,35 @@
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-06-24
+
+Theme: **measure the V** — a combined closure metric plus build/parse fixes.
+
+### Added
+
+- **REQ-228 / #571 — combined V-closure metric in `rivet coverage`.** For every
+  source type governed by more than one traceability rule, `rivet coverage` now
+  reports the *intersection* — the share of artifacts satisfying **every**
+  applicable rule (e.g. requirements that are BOTH satisfied AND verified). This
+  is strictly stronger than the per-rule numbers, which hide the gap when
+  different artifacts miss different rules: on this repo requirements are 12.8%
+  V-closed vs 25.1% satisfied. `--format json` gains a `closure` array
+  (`closed`/`total`/`open_ids`/`percentage`/`rule_names`). External-boundary
+  (supplier-delegated) artifacts count as closed, matching the 3-state
+  `accounted` convention.
+
+### Fixed
+
+- **REQ-227 / #543 — `rivet-core --features wasm` test build compiles.** The
+  host `model::Link` gained an `external` field (prefix:ID externals); an
+  "add it everywhere" pass had leaked it into the WIT-generated `types::Link`
+  constructors, which carry only `link-type` + `target`, breaking
+  `cargo test -p rivet-core --features wasm` (E0560). The host→WIT conversion
+  now omits the host-only field; the `.wit` is unchanged.
+- **#572 / #570 — YAML plain multi-line scalars parse as sequence items.** The
+  rowan-yaml CST no longer mis-folds a plain multi-line scalar that continues
+  onto an indented next line.
+
 ## [0.18.0] - 2026-06-23
 
 Theme: **close the right side of the V** — make requirement→test→evidence a
