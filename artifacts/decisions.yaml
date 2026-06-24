@@ -1274,3 +1274,67 @@ artifacts:
       model: claude-opus-4-7
       session-id: mythos-slop-hunt-needs-json-whole-block
       timestamp: 2026-04-25T00:00:00Z
+
+  - id: DD-068
+    type: design-decision
+    title: SQL virtual-table facade over the live artifact store (CLI-first, transport-agnostic)
+    status: proposed
+    description: >
+      Expose the artifact graph as a SQL interface so agents can use the query
+      language LLMs know best, including JOINs/aggregations the s-expression
+      filter cannot express. Decision: project the live in-memory store as
+      SQLite VIRTUAL tables (rusqlite vtab module) — the tables are backed by
+      `Store`/`LinkGraph` via xFilter, NOT materialized rows, so YAML stays the
+      single source of truth and reads are never stale. The SQL executor lives in
+      a shared core module; transports are thin wrappers over it.
+    tags: [sql, virtual-tables, agent-interface, architecture, serve, mcp, cli]
+    links:
+      - type: satisfies
+        target: REQ-229
+    fields:
+      baseline: v0.20.0-track
+      source-ref: "new: rivet-core/src/sql/ (executor + vtab module); rivet-cli/src/main.rs (cmd_sql); rivet-cli/src/serve.rs (POST /sql); rivet-cli/src/mcp.rs (rivet_sql tool)"
+      rationale: |
+        Why SQL: it is the highest-training-data query language for LLMs and the
+        only one of rivet's surfaces that expresses relational questions
+        (satisfied-AND-verified, per-release readiness) as one-liners instead of
+        bespoke Rust (cf. the V-closure metric, REQ-228, hand-written).
+
+        Why VIRTUAL tables (rusqlite vtab), not a materialized export: a SQLite
+        `.db` export goes stale the instant an artifact changes and needs a
+        re-export step. A vtab module projects the live store on xFilter and
+        routes writes via xUpdate — SQLite stores nothing, so there is no second
+        database to keep in sync and a write CANNOT bypass schema validation or
+        provenance (xUpdate calls the same `mutate` path `rivet_add`/`rivet_modify`
+        already use).
+
+        Why CLI-first / transport-agnostic (HARD constraint, REQ-229): some
+        deployment environments forbid adding MCP servers. The executor therefore
+        lives in the core, and the BASELINE transport is `rivet sql "<query>"` —
+        no server, no MCP, works in CI/sandboxes/shell-only agents. `rivet serve`
+        adds `POST /sql` and the MCP server adds a `rivet_sql` tool, both as thin
+        wrappers over the same executor. MCP is one transport, never the only one.
+
+        Phasing: READ-ONLY first (REQ-229) — all query value, zero YAML-corruption
+        risk. WRITE path (xUpdate → mutate → validate → YAML → reload) is a
+        deliberate SECOND slice behind its own REQ, because: (a) xUpdate is
+        per-row but `mutate` is per-artifact-file (transaction-boundary decision);
+        (b) writes must validate-before-commit so `UPDATE ... SET status='bogus'`
+        is rejected, not silently written; (c) `mutate::render_artifact_yaml` is a
+        hand-rolled allowlist serializer that silently DROPS any field it does not
+        emit, so the write path needs round-trip fidelity tests or fields vanish.
+      alternatives: >
+        (1) `rivet export --format sqlite` (materialized snapshot) — rejected as
+        the primary mechanism: stale-on-write, needs re-export, read-only; kept as
+        a possible offline/compliance-bundle convenience, not the query surface.
+        (2) DataFusion TableProvider — strong reads but weak/awkward INSERT/UPDATE;
+        rusqlite vtab's xUpdate is the cleaner writable-virtual contract.
+        (3) Extend the s-expression `rivet query` with joins — rejected: reinvents
+        SQL with near-zero LLM training data. (4) MCP-only `rivet_sql` tool —
+        rejected: violates the no-MCP constraint; MCP must be one transport among
+        CLI + HTTP. (5) Let SQL writes edit YAML directly — rejected: bypasses
+        schema validation and provenance; all writes go through `mutate`.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-24T09:00:00Z
