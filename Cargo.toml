@@ -126,6 +126,10 @@ rowan = { git = "https://github.com/pulseengine/rowan.git", branch = "fix/miri-s
 # Markdown rendering
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 
+# SQL facade over the artifact store (REQ-229 / DD-068). `bundled` compiles
+# SQLite from source so there is no system libsqlite3 dependency.
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 # Benchmarking
 criterion = { version = "0.5", features = ["html_reports"] }
 

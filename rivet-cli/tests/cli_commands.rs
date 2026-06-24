@@ -1320,6 +1320,64 @@ fn list_json() {
     );
 }
 
+/// `rivet sql` runs read-only SQL over the store with no server/MCP (REQ-229).
+/// Covers the schema projection and a JOIN (the V-closure query).
+// rivet: verifies REQ-229
+#[test]
+fn sql_join_and_json_over_the_store() {
+    // JOIN: requirements with no incoming `verifies` link — the V-closure set.
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "sql",
+            "SELECT id FROM artifacts WHERE type='requirement' \
+             AND id NOT IN (SELECT target FROM links WHERE link_type='verifies') \
+             ORDER BY id",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet sql");
+
+    assert!(
+        output.status.success(),
+        "rivet sql must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("sql JSON must be valid");
+    let rows = parsed
+        .as_array()
+        .expect("sql --format json is an array of rows");
+    assert!(
+        rows.iter()
+            .all(|r| r.get("id").and_then(|v| v.as_str()).is_some()),
+        "each row must carry the projected `id` column"
+    );
+}
+
+/// `rivet sql` refuses writes in the read-only MVP (REQ-229).
+// rivet: verifies REQ-229
+#[test]
+fn sql_refuses_writes() {
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "sql",
+            "UPDATE artifacts SET status='x'",
+        ])
+        .output()
+        .expect("failed to execute rivet sql");
+
+    assert!(!output.status.success(), "a write must be rejected");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("read-only"),
+        "error must explain reads-only"
+    );
+}
+
 /// `rivet list --format json` artifacts have expected fields.
 #[test]
 fn list_json_artifact_fields() {
