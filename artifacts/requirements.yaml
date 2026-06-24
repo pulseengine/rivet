@@ -7419,3 +7419,54 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-24T09:00:00Z
+
+  - id: REQ-230
+    type: requirement
+    title: "`rivet sql` supports writes (UPDATE) routed through validate + the safe YAML edit path"
+    status: proposed
+    description: |
+      Write slice of the SQL facade (REQ-229 / DD-068). Lets an agent CHANGE
+      artifacts through the same SQL surface it queries — the unification the
+      design promised — without a second language. As with reads, NO MCP and NO
+      server are required: `rivet sql "UPDATE artifacts SET status='verified'
+      WHERE id='REQ-1'"` works as a plain CLI command.
+
+      Mechanism (no parallel writer — reuses the existing validated path): the
+      write runs against the ephemeral in-memory SQLite (staging), then the
+      `artifacts` table is diffed against the live store. Each changed row is
+      translated to a `ModifyParams` and applied via `validate_modify` +
+      `yaml_edit::modify_artifact_in_file` — the indentation-safe editor that
+      does NOT go through the `render_artifact_yaml` allowlist, so unrelated
+      fields are preserved (the allowlist-drop trap DD-068 flagged). Validation
+      runs BEFORE any file is written: an `UPDATE ... SET status='bogus'` is
+      rejected, not silently persisted, and the whole statement is all-or-nothing.
+
+      Scope of THIS slice: `UPDATE artifacts SET {status|title|description}`.
+      Out of scope (clear errors, follow-up slices): writes to `fields`/`links`
+      (mapped to set-fields / link edits), `INSERT` (artifact creation via
+      `add`), `DELETE` (removal), and multi-statement transactions. A write that
+      changes the `fields`/`links` staging tables is REFUSED rather than silently
+      dropped.
+
+      Acceptance:
+        - `rivet sql "UPDATE artifacts SET status='verified' WHERE id='<X>'"`
+          updates the artifact's YAML (status changed, all other fields intact)
+          with no server/MCP.
+        - An invalid value (off-enum status) is rejected; the file is unchanged.
+        - A write touching unsupported tables (`fields`/`links`) or `INSERT`/
+          `DELETE` errors clearly, no partial write.
+        - Round-trip fidelity test: a sibling field on the same artifact survives
+          the SQL UPDATE (guards the allowlist-drop trap).
+        - `cargo test -p rivet-core` + cli suite pass; fmt + clippy clean.
+    tags: [sql, write, mutate, agent-interface, v-model]
+    fields:
+      priority: should
+      category: functional
+      baseline: v0.20.0-track
+    links:
+      - type: traces-to
+        target: REQ-007
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-24T10:00:00Z

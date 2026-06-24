@@ -1,11 +1,9 @@
-//! SQL query facade over the artifact store (REQ-229 / DD-068).
+//! SQL query + write facade over the artifact store (REQ-229 / DD-068).
 //!
-//! Read-only MVP. Each call builds an **ephemeral in-memory SQLite** from the
-//! live store and runs the query against it. Because the CLI reloads the project
-//! on every invocation, results are never stale — this gives DD-068's "no stale
-//! snapshot" guarantee without a full `vtab` module. The `vtab` upgrade is only
-//! needed for the *write* path (`xUpdate`), which is a separate slice; reads at
-//! rivet's scale (hundreds of artifacts) don't need it.
+//! Each call builds an **ephemeral in-memory SQLite** from the live store and
+//! runs against it. Because the CLI reloads the project on every invocation,
+//! results are never stale — DD-068's "no stale snapshot" guarantee without a
+//! full `vtab` module (which rivet's scale doesn't need).
 //!
 //! Tables projected from the [`Store`]:
 //! - `artifacts(id, type, title, description, status, fields_json)`
@@ -13,11 +11,15 @@
 //! - `fields(artifact_id, key, value)`   — EAV; one row per field, for JOINs
 //! - `provenance(artifact_id, created_by, model, session_id, timestamp, reviewed_by)`
 //!
-//! Only read statements (`SELECT` / `WITH`) are accepted; writes are refused
-//! with a pointer to the planned write slice.
+//! [`query`] runs read-only `SELECT`/`WITH`. [`plan_write`] (REQ-230) handles
+//! `UPDATE artifacts SET {status|title|description}`: it diffs the staging table
+//! against the store and returns `ModifyParams` for the caller to validate and
+//! apply via the indentation-safe `modify_artifact_in_file` editor (no allowlist
+//! drop). Writes to `fields`/`links` and `INSERT`/`DELETE` are refused.
 
 #![cfg(feature = "sql")]
 
+use crate::mutate::ModifyParams;
 use crate::store::Store;
 use rusqlite::Connection;
 
@@ -184,6 +186,153 @@ fn value_ref_to_string(v: rusqlite::types::ValueRef<'_>) -> String {
     }
 }
 
+/// A modification planned by a write query: the artifact id and the
+/// `ModifyParams` to apply. Pure data — the caller validates and applies each
+/// via `validate_modify` + `modify_artifact_in_file` (the indentation-safe
+/// path that does NOT drop sibling fields, REQ-230 / DD-068).
+#[derive(Debug)]
+pub struct PlannedWrite {
+    pub id: String,
+    pub params: ModifyParams,
+}
+
+/// Plan the artifact modifications implied by a write SQL statement WITHOUT
+/// touching any file.
+///
+/// The statement runs against the ephemeral staging SQLite; the `artifacts`
+/// table is then diffed against the live store. Only `UPDATE artifacts SET
+/// {status|title|description}` is supported in this slice — writes that change
+/// the `fields`/`links` staging tables, or that `INSERT`/`DELETE` rows, are
+/// refused (clear error, never a silent partial write).
+pub fn plan_write(store: &Store, sql: &str) -> Result<Vec<PlannedWrite>, String> {
+    let head = sql
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_uppercase();
+    if head == "SELECT" || head == "WITH" {
+        return Err(
+            "not a write statement — use `rivet sql` without a write verb for reads".into(),
+        );
+    }
+
+    let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
+    build_schema(&conn).map_err(|e| e.to_string())?;
+    populate(&conn, store).map_err(|e| e.to_string())?;
+
+    // Snapshot the tables this slice does NOT support, so a write that changes
+    // them is refused rather than silently dropped.
+    let fields_before = snapshot(
+        &conn,
+        "SELECT artifact_id, key, value FROM fields ORDER BY 1, 2",
+    )?;
+    let links_before = snapshot(
+        &conn,
+        "SELECT source, link_type, target FROM links ORDER BY 1, 2, 3",
+    )?;
+
+    conn.execute(sql, [])
+        .map_err(|e| format!("SQL write failed: {e}"))?;
+
+    if snapshot(
+        &conn,
+        "SELECT artifact_id, key, value FROM fields ORDER BY 1, 2",
+    )? != fields_before
+    {
+        return Err("writes to `fields` are not supported in this slice (UPDATE artifacts SET status/title/description only); mapping SQL field writes to set-field is a follow-up".into());
+    }
+    if snapshot(
+        &conn,
+        "SELECT source, link_type, target FROM links ORDER BY 1, 2, 3",
+    )? != links_before
+    {
+        return Err("writes to `links` are not supported in this slice".into());
+    }
+
+    // Diff the artifacts table against the store.
+    let mut planned = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut stmt = conn
+        .prepare("SELECT id, title, description, status FROM artifacts")
+        .map_err(|e| e.to_string())?;
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        let id: String = row.get(0).map_err(|e| e.to_string())?;
+        let title: String = row.get(1).map_err(|e| e.to_string())?;
+        let description: Option<String> = row.get(2).map_err(|e| e.to_string())?;
+        let status: Option<String> = row.get(3).map_err(|e| e.to_string())?;
+        seen.insert(id.clone());
+
+        let orig = store.get(&id).ok_or_else(|| {
+            format!("INSERT is not supported in this slice (new id `{id}`); create artifacts with `rivet add`")
+        })?;
+
+        let mut params = ModifyParams {
+            set_status: None,
+            set_title: None,
+            set_description: None,
+            add_tags: Vec::new(),
+            remove_tags: Vec::new(),
+            set_fields: Vec::new(),
+        };
+        let mut changed = false;
+
+        if status != orig.status {
+            match &status {
+                Some(s) => {
+                    params.set_status = Some(s.clone());
+                    changed = true;
+                }
+                None => {
+                    return Err(format!(
+                        "clearing `status` via SQL (SET status=NULL) is not supported for `{id}`"
+                    ));
+                }
+            }
+        }
+        if title != orig.title {
+            params.set_title = Some(title.clone());
+            changed = true;
+        }
+        if description != orig.description {
+            match &description {
+                Some(d) => {
+                    params.set_description = Some(d.clone());
+                    changed = true;
+                }
+                None => {
+                    return Err(format!(
+                        "clearing `description` via SQL is not supported for `{id}`"
+                    ));
+                }
+            }
+        }
+
+        if changed {
+            planned.push(PlannedWrite { id, params });
+        }
+    }
+
+    // A row present in the store but gone from staging means a DELETE.
+    if let Some(missing) = store.iter().map(|a| &a.id).find(|id| !seen.contains(*id)) {
+        return Err(format!(
+            "DELETE is not supported in this slice (row `{missing}` removed); use `rivet modify`/remove"
+        ));
+    }
+
+    Ok(planned)
+}
+
+/// Snapshot a query's rows as a single comparable string (for change detection).
+fn snapshot(conn: &Connection, sql: &str) -> Result<String, String> {
+    let r = run_query(conn, sql)?;
+    Ok(r.rows
+        .iter()
+        .map(|row| row.join("\u{1f}"))
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,5 +399,81 @@ mod tests {
         let store = Store::new();
         let err = query(&store, "UPDATE artifacts SET status='x'").unwrap_err();
         assert!(err.contains("read-only"), "got: {err}");
+    }
+
+    // rivet: verifies REQ-230
+    #[test]
+    fn plan_write_status_update_targets_one_artifact() {
+        use crate::test_helpers::artifact_with_status;
+        let mut store = Store::new();
+        store
+            .insert(artifact_with_status("REQ-1", "requirement", "implemented"))
+            .unwrap();
+        store
+            .insert(artifact_with_status("REQ-2", "requirement", "implemented"))
+            .unwrap();
+
+        let planned = plan_write(
+            &store,
+            "UPDATE artifacts SET status='verified' WHERE id='REQ-1'",
+        )
+        .unwrap();
+        assert_eq!(planned.len(), 1);
+        assert_eq!(planned[0].id, "REQ-1");
+        assert_eq!(planned[0].params.set_status.as_deref(), Some("verified"));
+        // Untouched fields stay None — the apply path edits only what changed.
+        assert!(planned[0].params.set_title.is_none());
+    }
+
+    // rivet: verifies REQ-230
+    #[test]
+    fn plan_write_refuses_insert_and_delete() {
+        use crate::test_helpers::artifact_with_status;
+        let mut store = Store::new();
+        store
+            .insert(artifact_with_status("REQ-1", "requirement", "implemented"))
+            .unwrap();
+
+        let ins = plan_write(
+            &store,
+            "INSERT INTO artifacts (id, type, title) VALUES ('REQ-9', 'requirement', 't')",
+        )
+        .unwrap_err();
+        assert!(ins.contains("INSERT is not supported"), "got: {ins}");
+
+        let del = plan_write(&store, "DELETE FROM artifacts WHERE id='REQ-1'").unwrap_err();
+        assert!(del.contains("DELETE is not supported"), "got: {del}");
+    }
+
+    // rivet: verifies REQ-230
+    #[test]
+    fn plan_write_refuses_field_writes() {
+        use crate::test_helpers::artifact_with_status;
+        let mut store = Store::new();
+        store
+            .insert(artifact_with_status("REQ-1", "requirement", "implemented"))
+            .unwrap();
+        let err = plan_write(
+            &store,
+            "INSERT INTO fields (artifact_id, key, value) VALUES ('REQ-1', 'priority', 'high')",
+        )
+        .unwrap_err();
+        assert!(err.contains("`fields`"), "got: {err}");
+    }
+
+    // rivet: verifies REQ-230
+    #[test]
+    fn plan_write_noop_when_value_unchanged() {
+        use crate::test_helpers::artifact_with_status;
+        let mut store = Store::new();
+        store
+            .insert(artifact_with_status("REQ-1", "requirement", "implemented"))
+            .unwrap();
+        let planned = plan_write(
+            &store,
+            "UPDATE artifacts SET status='implemented' WHERE id='REQ-1'",
+        )
+        .unwrap();
+        assert!(planned.is_empty(), "no-op write plans nothing");
     }
 }

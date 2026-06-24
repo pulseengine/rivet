@@ -16217,6 +16217,17 @@ fn cmd_sql(cli: &Cli, query: &str, format: &str) -> Result<bool> {
     let project = rivet_core::load_project_full(&cli.project)
         .with_context(|| format!("loading project from {}", cli.project.display()))?;
 
+    // Write verbs route through the validated mutate path (REQ-230); everything
+    // else is a read.
+    let head = query
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_uppercase();
+    if !matches!(head.as_str(), "SELECT" | "WITH") {
+        return cmd_sql_write(&project, query);
+    }
+
     let result =
         rivet_core::sql::query(&project.store, query).map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -16305,6 +16316,42 @@ fn csv_escape(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// `rivet sql` write path (REQ-230): translate a write statement into validated
+/// `ModifyParams` and apply them through the indentation-safe
+/// `modify_artifact_in_file` editor. All changes are validated BEFORE any file
+/// is written — an invalid value aborts the whole statement, nothing partial.
+fn cmd_sql_write(project: &rivet_core::LoadedProject, query: &str) -> Result<bool> {
+    let planned =
+        rivet_core::sql::plan_write(&project.store, query).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    if planned.is_empty() {
+        eprintln!("0 artifacts changed");
+        return Ok(true);
+    }
+
+    // Validate every change first (schema enums, reserved keys, …) so a bad
+    // value can't leave a half-applied statement on disk.
+    for pw in &planned {
+        rivet_core::mutate::validate_modify(&pw.id, &pw.params, &project.store, &project.schema)
+            .map_err(|e| anyhow::anyhow!("rejected `{}`: {e}", pw.id))?;
+    }
+
+    // Apply through the safe YAML editor (preserves sibling fields).
+    for pw in &planned {
+        let src = project
+            .store
+            .get(&pw.id)
+            .and_then(|a| a.source_file.clone())
+            .ok_or_else(|| anyhow::anyhow!("no source file recorded for `{}`", pw.id))?;
+        rivet_core::mutate::modify_artifact_in_file(&pw.id, &pw.params, &src, &project.store)
+            .map_err(|e| anyhow::anyhow!("writing `{}`: {e}", pw.id))?;
+    }
+
+    let ids: Vec<&str> = planned.iter().map(|p| p.id.as_str()).collect();
+    eprintln!("{} artifact(s) updated: {}", planned.len(), ids.join(", "));
+    Ok(true)
 }
 
 fn cmd_query(
