@@ -1357,24 +1357,79 @@ fn sql_join_and_json_over_the_store() {
     );
 }
 
-/// `rivet sql` refuses writes in the read-only MVP (REQ-229).
-// rivet: verifies REQ-229
+/// A throwaway dev project with one implemented requirement carrying sibling
+/// fields, for SQL write tests (REQ-230).
+fn sql_write_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("init");
+    assert!(
+        init.status.success(),
+        "init must succeed: {}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    \
+         title: A requirement\n    status: implemented\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write fixture");
+    tmp
+}
+
+/// `rivet sql` UPDATE changes status and preserves sibling fields (REQ-230) —
+/// the round-trip-fidelity guard against the `render_artifact_yaml` allowlist.
+// rivet: verifies REQ-230
 #[test]
-fn sql_refuses_writes() {
-    let output = Command::new(rivet_bin())
+fn sql_write_updates_status_and_preserves_siblings() {
+    let tmp = sql_write_project();
+    let dir = tmp.path();
+    let out = Command::new(rivet_bin())
         .args([
             "--project",
-            project_root().to_str().unwrap(),
+            dir.to_str().unwrap(),
             "sql",
-            "UPDATE artifacts SET status='x'",
+            "UPDATE artifacts SET status='verified' WHERE id='REQ-001'",
         ])
         .output()
-        .expect("failed to execute rivet sql");
-
-    assert!(!output.status.success(), "a write must be rejected");
+        .expect("sql write");
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("read-only"),
-        "error must explain reads-only"
+        out.status.success(),
+        "write must succeed. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let content = std::fs::read_to_string(dir.join("artifacts").join("requirements.yaml")).unwrap();
+    assert!(content.contains("status: verified"), "status updated");
+    assert!(
+        content.contains("priority: must") && content.contains("category: functional"),
+        "sibling fields must survive the SQL UPDATE (allowlist-drop guard):\n{content}"
+    );
+}
+
+/// `rivet sql` rejects an invalid status and leaves the file unchanged (REQ-230).
+// rivet: verifies REQ-230
+#[test]
+fn sql_write_rejects_invalid_value_atomically() {
+    let tmp = sql_write_project();
+    let dir = tmp.path();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "sql",
+            "UPDATE artifacts SET status='not-a-status' WHERE id='REQ-001'",
+        ])
+        .output()
+        .expect("sql write");
+    assert!(!out.status.success(), "an off-enum status must be rejected");
+    let content = std::fs::read_to_string(dir.join("artifacts").join("requirements.yaml")).unwrap();
+    assert!(
+        content.contains("status: implemented"),
+        "file must be unchanged on rejection:\n{content}"
     );
 }
 
