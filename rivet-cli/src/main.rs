@@ -1240,6 +1240,27 @@ enum Command {
         variant: Option<String>,
     },
 
+    /// Run a SQL query over the artifact store (REQ-229 / DD-068)
+    ///
+    /// Projects the artifacts as virtual tables and runs read-only SQL — no
+    /// server and no MCP required. Tables: `artifacts(id, type, title,
+    /// description, status, fields_json)`, `links(source, link_type, target,
+    /// external)`, `fields(artifact_id, key, value)`, `provenance(...)`. SQL
+    /// gives JOINs/aggregations the s-expression filter can't express, e.g. the
+    /// V-closure set:
+    ///   rivet sql "SELECT id FROM artifacts WHERE status='implemented'
+    ///     AND id NOT IN (SELECT target FROM links WHERE link_type='verifies')"
+    Sql {
+        /// The SQL query (must start with SELECT or WITH; writes are a planned
+        /// follow-up slice).
+        #[arg(value_name = "QUERY")]
+        query: String,
+
+        /// Output format: "table" (default), "json", or "csv".
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
+
     /// Stamp artifact(s) with AI provenance metadata
     Stamp {
         /// Artifact ID to stamp, "all" for every artifact, or a glob/prefix
@@ -2730,6 +2751,7 @@ fn run(cli: Cli) -> Result<bool> {
                 ),
             }
         }
+        Command::Sql { query, format } => cmd_sql(&cli, query, format),
         Command::Stamp {
             id,
             created_by,
@@ -16184,6 +16206,107 @@ fn cmd_mcp(cli: &Cli, list_tools: bool, probe: bool, format: &str) -> Result<boo
 /// Three output formats: `text` (one line per match, id + title + status),
 /// `json` (MCP-shape: `{filter, count, total, truncated, artifacts[]}`),
 /// or `ids` (newline-separated IDs — handy for shell pipelines).
+/// `rivet sql` — read-only SQL over the artifact store (REQ-229 / DD-068).
+///
+/// Loads the project, projects it into an in-memory SQLite (tables backed by
+/// the live store, rebuilt per invocation so results are never stale), runs the
+/// query, and prints `table` / `json` / `csv`. No server and no MCP required.
+fn cmd_sql(cli: &Cli, query: &str, format: &str) -> Result<bool> {
+    validate_format(format, &["table", "json", "csv"])?;
+
+    let project = rivet_core::load_project_full(&cli.project)
+        .with_context(|| format!("loading project from {}", cli.project.display()))?;
+
+    let result =
+        rivet_core::sql::query(&project.store, query).map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    match format {
+        "json" => {
+            // One JSON object per row, keyed by column name — the shape an LLM
+            // expects back from a SELECT.
+            let objs: Vec<serde_json::Value> = result
+                .rows
+                .iter()
+                .map(|row| {
+                    let map: serde_json::Map<String, serde_json::Value> = result
+                        .columns
+                        .iter()
+                        .zip(row)
+                        .map(|(c, v)| (c.clone(), serde_json::Value::String(v.clone())))
+                        .collect();
+                    serde_json::Value::Object(map)
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&objs)?);
+        }
+        "csv" => {
+            println!(
+                "{}",
+                result
+                    .columns
+                    .iter()
+                    .map(|c| csv_escape(c))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            for row in &result.rows {
+                println!(
+                    "{}",
+                    row.iter()
+                        .map(|c| csv_escape(c))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                );
+            }
+        }
+        _ => {
+            // Aligned text table.
+            let mut widths: Vec<usize> = result.columns.iter().map(|c| c.chars().count()).collect();
+            for row in &result.rows {
+                for (i, cell) in row.iter().enumerate() {
+                    if let Some(w) = widths.get_mut(i) {
+                        *w = (*w).max(cell.chars().count());
+                    }
+                }
+            }
+            let render = |cells: &[String]| {
+                cells
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        format!("{:<width$}", c, width = widths.get(i).copied().unwrap_or(0))
+                    })
+                    .collect::<Vec<_>>()
+                    .join("  ")
+            };
+            println!("{}", render(&result.columns));
+            println!(
+                "{}",
+                widths
+                    .iter()
+                    .map(|w| "-".repeat(*w))
+                    .collect::<Vec<_>>()
+                    .join("  ")
+            );
+            for row in &result.rows {
+                println!("{}", render(row));
+            }
+            eprintln!("\n{} row(s)", result.rows.len());
+        }
+    }
+    Ok(true)
+}
+
+/// Minimal RFC-4180 CSV escaping: quote a field containing comma, quote, CR or
+/// LF and double any embedded quotes.
+fn csv_escape(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
 fn cmd_query(
     cli: &Cli,
     sexpr: &str,

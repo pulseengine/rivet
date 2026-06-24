@@ -82,6 +82,8 @@ pub mod sexpr;
 pub mod sexpr_eval;
 pub mod similarity;
 pub mod snapshot;
+#[cfg(feature = "sql")]
+pub mod sql;
 pub mod store;
 pub mod templates;
 pub mod test_scanner;
