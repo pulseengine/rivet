@@ -76,7 +76,7 @@ cargo install --path rivet-cli
 
 # Or grab a prebuilt release binary directly (substitute your platform /
 # the current version — assets are named rivet-vX.Y.Z-<target>)
-curl -L https://github.com/pulseengine/rivet/releases/download/v0.16.1/rivet-v0.16.1-x86_64-unknown-linux-gnu.tar.gz | tar xz
+curl -L https://github.com/pulseengine/rivet/releases/download/v0.19.0/rivet-v0.19.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
 ```
 
 `npm`/`npx` is the zero-toolchain path — it fetches the same signed
@@ -87,7 +87,7 @@ mcp` without a Rust install.
 
 ```bash
 rivet init --preset dev          # 1. scaffold rivet.yaml + schemas/ + artifacts/
-rivet add requirement -t "DB write returns ack" --asil B   # 2. add a typed atom
+rivet add -t requirement --title "DB write returns ack"   # 2. add a typed atom
 rivet validate                   # 3. oracle: PASS (no diagnostics)
 rivet serve --port 3099          # 4. dashboard at http://localhost:3099
 rivet docs quickstart            # 5. 10-step embedded guide w/ oracles

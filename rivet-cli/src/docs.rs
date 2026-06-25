@@ -535,15 +535,31 @@ rivet validate              Validate all artifacts against schemas
 rivet list [-t TYPE]        List artifacts (filter by type/status)
 rivet get ID                Show a single artifact by ID (text/json/yaml)
 rivet stats                 Summary statistics and orphan detection
-rivet coverage              Traceability coverage report
+rivet coverage              Traceability coverage report (incl. combined V-closure)
+rivet verify ID             Advance implemented -> verified on test evidence
 rivet matrix --from X --to Y  Traceability matrix between types
 rivet diff                  Compare artifact versions
-rivet export -f FORMAT      Export to reqif, generic-yaml, or html
+rivet export -f FORMAT      Export to reqif, generic-yaml, html, zola, or gherkin
 rivet serve [-P PORT]       Start HTMX dashboard (default: 3000)
 rivet commits [--since N]   Commit-artifact traceability analysis
 rivet commit-msg-check F    Validate commit message trailers (hook)
 rivet impact --since REF    Change impact analysis (transitive)
 ```
+
+## Query Commands
+
+```
+rivet query SEXPR           Run an s-expression filter (mirrors rivet_query)
+rivet sql "SELECT ..."      SQL over the artifact store — no server/MCP needed
+rivet sql "UPDATE artifacts SET status=... WHERE ..."   Validated write slice
+```
+
+`rivet sql` projects the store into in-memory SQLite (tables `artifacts`,
+`links`, `fields`, `provenance`) so JOINs and aggregations the s-expression
+filter can't express become one query. Reads are `SELECT`/`WITH`; the write
+slice is `UPDATE artifacts SET {status|title|description}` only, validated
+before any file is touched. See `rivet docs cli` examples in
+`docs/getting-started.md`.
 
 ## Embed and Snapshot Commands
 
@@ -566,7 +582,7 @@ rivet mcp --probe                  Run an in-process tools/call rivet_list smoke
 
 Exposes rivet tools to AI agents via the Model Context Protocol.
 The server uses stdio transport and only binds to the local process.
-See `rivet docs mcp` for the wire format, the 15-tool catalog, and the
+See `rivet docs mcp` for the wire format, the 16-tool catalog, and the
 3-message handshake.
 
 ## Oracle Subcommands (`rivet check`)
@@ -589,9 +605,11 @@ Phase 2. See `rivet docs schema-cited-sources`.
 
 ```
 rivet schema list           List all artifact types
+rivet schema presets        List declarable built-in schema presets (no project needed)
 rivet schema show TYPE      Show type details with example YAML
 rivet schema links          List all link types with inverses
 rivet schema rules          List all traceability rules
+rivet schema sources        Show where each active schema resolves (on-disk vs embedded)
 rivet schema migrate TGT    Plan + apply preset migration with snapshot
                             (see rivet docs schema-migrate)
 ```
@@ -620,7 +638,14 @@ rivet context               Generate .rivet/agent-context.md
 ```
 
 Available presets: `dev`, `aspice`, `stpa`, `stpa-ai`, `cybersecurity`,
-`aadl`, `eu-ai-act`, `safety-case`.
+`aadl`, `eu-ai-act`, `safety-case`, `do-178c`, `en-50128`, `iec-61508`,
+`iec-62304`, `iso-pas-8800`, `sotif`. Run `rivet schema presets` for the live
+list with versions and type counts.
+
+Init also accepts `--vendor-schemas` to write the resolved built-in schemas
+(plus auto-discovered bridges) on-disk into `schemas/`, pinning a project's
+validation against rivet upgrades. The loader prefers on-disk schemas over the
+embedded copies, so a vendored set is immune to release-to-release rule drift.
 
 ## Mutation Commands
 
@@ -2009,7 +2034,7 @@ project. Just enumerates the tool catalog the server would advertise.
 
 ```
 $ rivet mcp --list-tools
-rivet MCP server — 15 registered tools
+rivet MCP server — 16 registered tools
 
   rivet_add
     Add a new artifact to the project via CST mutation. Call rivet_reload after.
@@ -2571,6 +2596,12 @@ The `cited-source` field is a first-class typed schema construct that
 stamps an artifact with a hash-verifiable reference to an external
 source. Run `rivet validate` to detect drift; run `rivet check sources
 --update` to refresh the stamps.
+
+It is a `common` base field, so **any** artifact type can carry it without
+tripping `unknown-field` — including verification artifacts (`sw-req`,
+`unit`, `sys-verification`), which is exactly where a tamper-evident citation
+on the requirement→test→evidence chain is wanted. The drift checker discovers
+the field by name, so it runs on those types too.
 
 Phase 1 (current) implements the `kind: file` backend only. Remote kinds
 (`url`, `github`, `oslc`, `reqif`, `polarion`) are recognised by the
