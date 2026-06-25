@@ -1338,3 +1338,45 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-24T09:00:00Z
+
+  - id: DD-069
+    type: design-decision
+    title: Swap the SQL facade engine from rusqlite (bundled SQLite C) to gluesql-core (pure Rust)
+    status: proposed
+    description: >
+      The `rivet sql` facade (REQ-229/REQ-230) uses rusqlite `bundled`, which
+      compiles the SQLite C amalgamation on every build — measurably lengthening
+      CI per-job and compounding self-hosted runner contention (#567; PR #582 sat
+      ~40 min mostly queued). Decision: migrate the engine to `gluesql-core`
+      (pure Rust, no C), verified viable by a prototype.
+    tags: [sql, engine, gluesql, architecture, ci-weight, dogfooding]
+    links:
+      - type: satisfies
+        target: REQ-231
+    fields:
+      baseline: v0.20.0-track
+      source-ref: "rivet-core/src/sql.rs (engine), rivet-core/Cargo.toml (deps)"
+      rationale: |
+        Prototype (proto/gluesql-verify, throwaway):
+          - DIALECT works: the V-closure JOIN with `NOT IN (subquery)` AND
+            `UPDATE artifacts SET ... WHERE ...` both execute in gluesql's dialect.
+          - WEIGHT (decisive): use `gluesql-core` + a custom Store, NOT the
+            umbrella `gluesql` crate. The umbrella pulls EVERY storage backend
+            (csv/parquet/sled/redb/mongo/redis/git) and compiles `cc` (55s).
+            `gluesql-core` + `gluesql_memory_storage` compiles only sqlparser +
+            gluesql-core (pure Rust, no `cc`) in ~19s. The genuine "less heavy" win.
+          - ASYNC: gluesql `execute` is async; bridge into sync `sql::query`/
+            `plan_write` with a small `block_on`.
+        ARCHITECTURE bonus: gluesql-core's Store/StoreMut traits let rivet's store
+        BE the database (DD-068's virtual-tables vision) — reads + writes native,
+        deleting the read-path copy and the write-path staging-diff.
+      alternatives: >
+        (1) Keep rusqlite bundled — rejected: the SQLite-C compile is the CI
+        weight being removed. (2) rusqlite + system libsqlite3 — rejected:
+        portability hit. (3) umbrella `gluesql` — rejected: pulls all storages +
+        `cc`. (4) Turso/Limbo — rejected: beta. (5) DataFusion — rejected: heavy,
+        write-weak. Chosen: gluesql-core + custom Store.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-25T09:00:00Z

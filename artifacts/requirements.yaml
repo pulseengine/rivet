@@ -7470,3 +7470,42 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-24T10:00:00Z
+
+  - id: REQ-231
+    type: requirement
+    title: "Migrate the `rivet sql` engine to gluesql-core (pure Rust) — drop bundled SQLite from the build"
+    status: proposed
+    description: |
+      Replace rusqlite (bundled SQLite C) with `gluesql-core` behind the existing
+      `rivet_core::sql` API (DD-069), so the SQL facade stops compiling the SQLite
+      C amalgamation — relieving CI build weight + the #567 runner contention.
+
+      The public surface (`sql::query`, `sql::plan_write`, the `rivet sql` CLI,
+      the serve `POST /api/v1/sql` endpoint) MUST be unchanged for callers — same
+      SELECT/JOIN reads, same `UPDATE artifacts SET ...` writes, same output.
+      Internally, implement a gluesql-core `Store` (and later `StoreMut`) over
+      rivet's `Store`/`LinkGraph` so the engine queries the live data directly
+      (DD-068 virtual-tables), bridging gluesql's async API via a minimal block_on.
+
+      Acceptance:
+        - rusqlite + libsqlite3-sys removed; a clean build compiles no `cc`/
+          SQLite-C for the SQL feature.
+        - All existing sql tests pass unchanged: core read+write, cli `sql_*`,
+          serve `sql_endpoint_*`.
+        - `rivet sql` V-closure SELECT and `UPDATE artifacts SET status=...`
+          behave identically (incl. round-trip fidelity + validation rejection).
+        - fmt + clippy clean; `rivet validate` PASS.
+      Follow-on: write extensions (INSERT/DELETE/fields/links) become a native
+      StoreMut impl instead of the staging-diff.
+    tags: [sql, engine, gluesql, ci-weight, refactor]
+    fields:
+      priority: should
+      category: non-functional
+      baseline: v0.20.0-track
+    links:
+      - type: traces-to
+        target: REQ-229
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-25T09:00:00Z
