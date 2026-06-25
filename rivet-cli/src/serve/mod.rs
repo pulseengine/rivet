@@ -935,6 +935,7 @@ pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
                 .route("/artifacts", get(api::artifacts))
                 .route("/diagnostics", get(api::diagnostics))
                 .route("/coverage", get(api::coverage))
+                .route("/sql", post(api::sql))
                 .layer(CorsLayer::permissive())
                 .with_state(state.clone()),
         )
