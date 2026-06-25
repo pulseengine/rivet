@@ -1432,11 +1432,20 @@ fn embed_unknown_artifact_returns_200_with_not_found_body() {
 
 /// Minimal raw-HTTP POST of a JSON body; returns (status, response_body).
 fn post_json(port: u16, path: &str, body: &str) -> (u16, String) {
+    post_json_with_origin(port, path, body, None)
+}
+
+/// As [`post_json`], but optionally sets an `Origin` header to exercise the
+/// cross-origin guard on `/api/v1/sql`.
+fn post_json_with_origin(port: u16, path: &str, body: &str, origin: Option<&str>) -> (u16, String) {
     use std::io::{Read, Write};
     let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    let origin_header = origin
+        .map(|o| format!("Origin: {o}\r\n"))
+        .unwrap_or_default();
     let req = format!(
-        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n{origin_header}\
          Content-Type: application/json\r\nContent-Length: {}\r\n\
          Connection: close\r\n\r\n{body}",
         body.len()
@@ -1484,6 +1493,20 @@ fn sql_endpoint_runs_read_query_and_refuses_writes() {
     assert!(
         wbody.contains("read-only"),
         "write rejection must explain read-only: {wbody}"
+    );
+
+    // Cross-origin guard: a browser cross-origin POST (Origin header set) is
+    // rejected 403 even for a read, neutralizing the permissive-CORS
+    // exfiltration vector.
+    let (ostatus, obody) = post_json_with_origin(
+        port,
+        "/api/v1/sql",
+        r#"{"query":"SELECT id FROM artifacts LIMIT 1"}"#,
+        Some("https://evil.example"),
+    );
+    assert_eq!(
+        ostatus, 403,
+        "cross-origin request must be 403; body: {obody}"
     );
 
     child.kill().ok();
