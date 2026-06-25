@@ -7370,7 +7370,7 @@ artifacts:
   - id: REQ-229
     type: requirement
     title: "rivet exposes a SQL query interface over the artifact store, usable WITHOUT MCP or a running server"
-    status: proposed
+    status: verified
     description: |
       Agents query rivet today via a bespoke s-expression filter (`rivet query
       "(= (field \"x\") \"y\")"`) for reads and `rivet add`/`modify` for writes —
@@ -7423,7 +7423,7 @@ artifacts:
   - id: REQ-230
     type: requirement
     title: "`rivet sql` supports writes (UPDATE) routed through validate + the safe YAML edit path"
-    status: proposed
+    status: verified
     description: |
       Write slice of the SQL facade (REQ-229 / DD-068). Lets an agent CHANGE
       artifacts through the same SQL surface it queries — the unification the
@@ -7474,7 +7474,7 @@ artifacts:
   - id: REQ-231
     type: requirement
     title: "Migrate the `rivet sql` engine to gluesql-core (pure Rust) — drop bundled SQLite from the build"
-    status: proposed
+    status: implemented
     description: |
       Replace rusqlite (bundled SQLite C) with `gluesql-core` behind the existing
       `rivet_core::sql` API (DD-069), so the SQL facade stops compiling the SQLite
