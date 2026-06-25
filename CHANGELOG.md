@@ -5,6 +5,49 @@
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-06-25
+
+Theme: **SQL over the artifact store** — query *and* change artifacts in the
+query language LLMs know best, with no MCP server required.
+
+### Added
+
+- **REQ-229 / #580 — `rivet sql "<query>"`.** Read-only SQL over the artifact
+  graph, projected as virtual tables (`artifacts`, `links`, `fields`,
+  `provenance`). Works as a plain CLI command — **no server, no MCP** (for
+  environments that forbid adding MCP servers). Expresses JOINs/aggregations the
+  s-expression filter can't, e.g. the V-closure set is one query:
+  `SELECT id FROM artifacts WHERE status='implemented' AND id NOT IN
+  (SELECT target FROM links WHERE link_type='verifies')`. Output: `table` /
+  `json` / `csv`.
+- **REQ-230 / #582 — `rivet sql` writes (`UPDATE`).** `UPDATE artifacts SET
+  {status|title|description} WHERE …` routes through the same validated path as
+  `rivet modify`: every change is validated *before* any file is written
+  (all-or-nothing), and applied via the indentation-safe YAML editor so sibling
+  fields are preserved. Writes to `fields`/`links`, `INSERT`, and `DELETE` are
+  refused with a clear message.
+- **#583 — serve `POST /api/v1/sql`.** The same executor over HTTP, so a running
+  `rivet serve` is queryable by any agent that can POST JSON. **Read-only by
+  design** (a network endpoint must not accept arbitrary mutations) and rejects
+  cross-origin requests (403) to close the permissive-CORS exfiltration vector.
+
+### Changed
+
+- **REQ-231 / #586 — SQL engine: rusqlite → gluesql-core (pure Rust).** The
+  facade no longer compiles the bundled SQLite C amalgamation on every build —
+  removing the per-CI-job weight that was compounding self-hosted runner
+  contention. Behavior is identical (engine swapped behind the unchanged
+  `sql::query`/`plan_write` API); `rusqlite` + `libsqlite3-sys` are gone from the
+  dependency tree. (Design: DD-068 / DD-069.)
+
+### Docs
+
+- **#584 — documentation synced to the implementation.** Fixed a broken README
+  quick-start command, understated export-format lists, a stale MCP tool count
+  and install URL; documented `rivet sql`, `rivet verify`, the combined
+  `rivet coverage` V-closure metric, the `cited-source` base field, and
+  `rivet init --vendor-schemas`.
+
 ## [0.19.0] - 2026-06-24
 
 Theme: **measure the V** — a combined closure metric plus build/parse fixes.
