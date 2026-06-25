@@ -1,9 +1,9 @@
-//! SQL query + write facade over the artifact store (REQ-229 / DD-068).
+//! SQL query + write facade over the artifact store (REQ-229 / REQ-230 / DD-068).
 //!
-//! Each call builds an **ephemeral in-memory SQLite** from the live store and
+//! Engine: **gluesql-core** (pure Rust — no bundled SQLite C; REQ-231/DD-069).
+//! Each call builds an **ephemeral in-memory gluesql db** from the live store and
 //! runs against it. Because the CLI reloads the project on every invocation,
-//! results are never stale — DD-068's "no stale snapshot" guarantee without a
-//! full `vtab` module (which rivet's scale doesn't need).
+//! results are never stale — DD-068's "no stale snapshot" guarantee.
 //!
 //! Tables projected from the [`Store`]:
 //! - `artifacts(id, type, title, description, status, fields_json)`
@@ -16,12 +16,17 @@
 //! against the store and returns `ModifyParams` for the caller to validate and
 //! apply via the indentation-safe `modify_artifact_in_file` editor (no allowlist
 //! drop). Writes to `fields`/`links` and `INSERT`/`DELETE` are refused.
+//!
+//! gluesql's `execute` is async; it is bridged into these sync functions with
+//! `futures::executor::block_on` (no async runtime required).
 
 #![cfg(feature = "sql")]
 
 use crate::mutate::ModifyParams;
 use crate::store::Store;
-use rusqlite::Connection;
+use futures::executor::block_on;
+use gluesql_core::prelude::{Glue, Payload, Value};
+use gluesql_memory_storage::MemoryStorage;
 
 /// Tabular result of a SQL query: column names plus stringified rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,11 +40,7 @@ pub struct SqlResult {
 /// Returns an error string for write statements (anything not starting with
 /// `SELECT` or `WITH`) or on SQL errors.
 pub fn query(store: &Store, sql: &str) -> Result<SqlResult, String> {
-    let head = sql
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_ascii_uppercase();
+    let head = first_word_upper(sql);
     if head != "SELECT" && head != "WITH" {
         return Err(format!(
             "only read-only queries are supported (must start with SELECT or WITH; got `{head}`). \
@@ -47,143 +48,15 @@ pub fn query(store: &Store, sql: &str) -> Result<SqlResult, String> {
         ));
     }
 
-    let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
-    build_schema(&conn).map_err(|e| e.to_string())?;
-    populate(&conn, store).map_err(|e| e.to_string())?;
-    run_query(&conn, sql)
-}
-
-fn build_schema(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
-        "CREATE TABLE artifacts (
-            id          TEXT PRIMARY KEY,
-            type        TEXT NOT NULL,
-            title       TEXT,
-            description TEXT,
-            status      TEXT,
-            fields_json TEXT
-         );
-         CREATE TABLE links (
-            source    TEXT NOT NULL,
-            link_type TEXT NOT NULL,
-            target    TEXT NOT NULL,
-            external  TEXT
-         );
-         CREATE TABLE fields (
-            artifact_id TEXT NOT NULL,
-            key         TEXT NOT NULL,
-            value       TEXT
-         );
-         CREATE TABLE provenance (
-            artifact_id TEXT NOT NULL,
-            created_by  TEXT,
-            model       TEXT,
-            session_id  TEXT,
-            timestamp   TEXT,
-            reviewed_by TEXT
-         );",
-    )
-}
-
-fn populate(conn: &Connection, store: &Store) -> rusqlite::Result<()> {
-    for a in store.iter_sorted() {
-        let fields_json = serde_json::to_string(&a.fields).ok();
-        conn.execute(
-            "INSERT INTO artifacts (id, type, title, description, status, fields_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                a.id,
-                a.artifact_type,
-                a.title,
-                a.description,
-                a.status,
-                fields_json,
-            ],
-        )?;
-
-        for l in &a.links {
-            // `external` is non-null only for `*-external` link types; serialize
-            // the structured payload to JSON so it stays queryable.
-            let external = l
-                .external
-                .as_ref()
-                .and_then(|e| serde_json::to_string(e).ok());
-            conn.execute(
-                "INSERT INTO links (source, link_type, target, external) VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![a.id, l.link_type, l.target, external],
-            )?;
-        }
-
-        for (key, value) in &a.fields {
-            conn.execute(
-                "INSERT INTO fields (artifact_id, key, value) VALUES (?1, ?2, ?3)",
-                rusqlite::params![a.id, key, yaml_value_to_sql(value)],
-            )?;
-        }
-
-        if let Some(p) = &a.provenance {
-            conn.execute(
-                "INSERT INTO provenance
-                   (artifact_id, created_by, model, session_id, timestamp, reviewed_by)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![
-                    a.id,
-                    p.created_by,
-                    p.model,
-                    p.session_id,
-                    p.timestamp,
-                    p.reviewed_by,
-                ],
-            )?;
-        }
-    }
-    Ok(())
-}
-
-/// Flatten a YAML field value to a SQL-friendly string: scalars become their
-/// natural text, complex values (sequences/maps) become compact JSON so they
-/// remain queryable with SQLite's `json_*` functions.
-fn yaml_value_to_sql(value: &serde_yaml::Value) -> Option<String> {
-    match value {
-        serde_yaml::Value::Null => None,
-        serde_yaml::Value::Bool(b) => Some(b.to_string()),
-        serde_yaml::Value::Number(n) => Some(n.to_string()),
-        serde_yaml::Value::String(s) => Some(s.clone()),
-        other => serde_json::to_string(other).ok(),
-    }
-}
-
-fn run_query(conn: &Connection, sql: &str) -> Result<SqlResult, String> {
-    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
-    let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
-    let col_count = columns.len();
-
-    let mut out_rows = Vec::new();
-    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
-    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        let mut cells = Vec::with_capacity(col_count);
-        for i in 0..col_count {
-            let cell = row.get_ref(i).map_err(|e| e.to_string())?;
-            cells.push(value_ref_to_string(cell));
-        }
-        out_rows.push(cells);
-    }
-
+    let mut glue = staging(store)?;
+    let (labels, rows) = select(&mut glue, sql)?;
     Ok(SqlResult {
-        columns,
-        rows: out_rows,
+        columns: labels,
+        rows: rows
+            .into_iter()
+            .map(|r| r.iter().map(value_to_string).collect())
+            .collect(),
     })
-}
-
-fn value_ref_to_string(v: rusqlite::types::ValueRef<'_>) -> String {
-    use rusqlite::types::ValueRef;
-    match v {
-        ValueRef::Null => String::new(),
-        ValueRef::Integer(i) => i.to_string(),
-        ValueRef::Real(f) => f.to_string(),
-        ValueRef::Text(t) => String::from_utf8_lossy(t).into_owned(),
-        ValueRef::Blob(b) => format!("<blob {} bytes>", b.len()),
-    }
 }
 
 /// A modification planned by a write query: the artifact id and the
@@ -199,68 +72,47 @@ pub struct PlannedWrite {
 /// Plan the artifact modifications implied by a write SQL statement WITHOUT
 /// touching any file.
 ///
-/// The statement runs against the ephemeral staging SQLite; the `artifacts`
-/// table is then diffed against the live store. Only `UPDATE artifacts SET
+/// The statement runs against the ephemeral staging db; the `artifacts` table is
+/// then diffed against the live store. Only `UPDATE artifacts SET
 /// {status|title|description}` is supported in this slice — writes that change
 /// the `fields`/`links` staging tables, or that `INSERT`/`DELETE` rows, are
 /// refused (clear error, never a silent partial write).
 pub fn plan_write(store: &Store, sql: &str) -> Result<Vec<PlannedWrite>, String> {
-    let head = sql
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_ascii_uppercase();
+    let head = first_word_upper(sql);
     if head == "SELECT" || head == "WITH" {
         return Err(
             "not a write statement — use `rivet sql` without a write verb for reads".into(),
         );
     }
 
-    let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
-    build_schema(&conn).map_err(|e| e.to_string())?;
-    populate(&conn, store).map_err(|e| e.to_string())?;
+    let mut glue = staging(store)?;
 
     // Snapshot the tables this slice does NOT support, so a write that changes
     // them is refused rather than silently dropped.
-    let fields_before = snapshot(
-        &conn,
-        "SELECT artifact_id, key, value FROM fields ORDER BY 1, 2",
-    )?;
-    let links_before = snapshot(
-        &conn,
-        "SELECT source, link_type, target FROM links ORDER BY 1, 2, 3",
-    )?;
+    let fields_before = snapshot(&mut glue, "SELECT artifact_id, key, value FROM fields")?;
+    let links_before = snapshot(&mut glue, "SELECT source, link_type, target FROM links")?;
 
-    conn.execute(sql, [])
-        .map_err(|e| format!("SQL write failed: {e}"))?;
+    block_on(glue.execute(sql)).map_err(|e| format!("SQL write failed: {e}"))?;
 
-    if snapshot(
-        &conn,
-        "SELECT artifact_id, key, value FROM fields ORDER BY 1, 2",
-    )? != fields_before
-    {
+    if snapshot(&mut glue, "SELECT artifact_id, key, value FROM fields")? != fields_before {
         return Err("writes to `fields` are not supported in this slice (UPDATE artifacts SET status/title/description only); mapping SQL field writes to set-field is a follow-up".into());
     }
-    if snapshot(
-        &conn,
-        "SELECT source, link_type, target FROM links ORDER BY 1, 2, 3",
-    )? != links_before
-    {
+    if snapshot(&mut glue, "SELECT source, link_type, target FROM links")? != links_before {
         return Err("writes to `links` are not supported in this slice".into());
     }
 
     // Diff the artifacts table against the store.
     let mut planned = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    let mut stmt = conn
-        .prepare("SELECT id, title, description, status FROM artifacts")
-        .map_err(|e| e.to_string())?;
-    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
-    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-        let id: String = row.get(0).map_err(|e| e.to_string())?;
-        let title: String = row.get(1).map_err(|e| e.to_string())?;
-        let description: Option<String> = row.get(2).map_err(|e| e.to_string())?;
-        let status: Option<String> = row.get(3).map_err(|e| e.to_string())?;
+    let (_, rows) = select(
+        &mut glue,
+        "SELECT id, title, description, status FROM artifacts",
+    )?;
+    for row in &rows {
+        let id = value_opt(&row[0]).unwrap_or_default();
+        let title = value_opt(&row[1]).unwrap_or_default();
+        let description = value_opt(&row[2]);
+        let status = value_opt(&row[3]);
         seen.insert(id.clone());
 
         let orig = store.get(&id).ok_or_else(|| {
@@ -323,14 +175,182 @@ pub fn plan_write(store: &Store, sql: &str) -> Result<Vec<PlannedWrite>, String>
     Ok(planned)
 }
 
+// ── engine internals ────────────────────────────────────────────────────────
+
+fn first_word_upper(sql: &str) -> String {
+    sql.split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_uppercase()
+}
+
+/// Build a fresh in-memory gluesql db and populate it from the store.
+fn staging(store: &Store) -> Result<Glue<MemoryStorage>, String> {
+    let mut glue = Glue::new(MemoryStorage::default());
+    block_on(glue.execute(&build_setup_sql(store)))
+        .map_err(|e| format!("building SQL staging tables failed: {e}"))?;
+    Ok(glue)
+}
+
+/// The CREATE TABLE + batched INSERT SQL that projects the store into staging.
+fn build_setup_sql(store: &Store) -> String {
+    let mut s = String::new();
+    s.push_str(
+        "CREATE TABLE artifacts (id TEXT, type TEXT, title TEXT, description TEXT, status TEXT, fields_json TEXT);\n\
+         CREATE TABLE links (source TEXT, link_type TEXT, target TEXT, external TEXT);\n\
+         CREATE TABLE fields (artifact_id TEXT, key TEXT, value TEXT);\n\
+         CREATE TABLE provenance (artifact_id TEXT, created_by TEXT, model TEXT, session_id TEXT, timestamp TEXT, reviewed_by TEXT);\n",
+    );
+
+    let mut artifacts = Vec::new();
+    let mut links = Vec::new();
+    let mut fields = Vec::new();
+    let mut provenance = Vec::new();
+
+    for a in store.iter_sorted() {
+        let fields_json = serde_json::to_string(&a.fields).ok();
+        artifacts.push(format!(
+            "({}, {}, {}, {}, {}, {})",
+            lit(Some(&a.id)),
+            lit(Some(&a.artifact_type)),
+            lit(Some(&a.title)),
+            lit(a.description.as_deref()),
+            lit(a.status.as_deref()),
+            lit(fields_json.as_deref()),
+        ));
+        for l in &a.links {
+            // `external` is non-null only for `*-external` link types; serialize
+            // the structured payload to JSON so it stays queryable.
+            let external = l
+                .external
+                .as_ref()
+                .and_then(|e| serde_json::to_string(e).ok());
+            links.push(format!(
+                "({}, {}, {}, {})",
+                lit(Some(&a.id)),
+                lit(Some(&l.link_type)),
+                lit(Some(&l.target)),
+                lit(external.as_deref()),
+            ));
+        }
+        for (key, value) in &a.fields {
+            fields.push(format!(
+                "({}, {}, {})",
+                lit(Some(&a.id)),
+                lit(Some(key)),
+                lit(yaml_value_to_sql(value).as_deref()),
+            ));
+        }
+        if let Some(p) = &a.provenance {
+            provenance.push(format!(
+                "({}, {}, {}, {}, {}, {})",
+                lit(Some(&a.id)),
+                lit(Some(&p.created_by)),
+                lit(p.model.as_deref()),
+                lit(p.session_id.as_deref()),
+                lit(p.timestamp.as_deref()),
+                lit(p.reviewed_by.as_deref()),
+            ));
+        }
+    }
+
+    for (table, rows) in [
+        ("artifacts", artifacts),
+        ("links", links),
+        ("fields", fields),
+        ("provenance", provenance),
+    ] {
+        if !rows.is_empty() {
+            s.push_str(&format!(
+                "INSERT INTO {table} VALUES {};\n",
+                rows.join(", ")
+            ));
+        }
+    }
+    s
+}
+
+/// Escape an optional string into a SQL literal: `NULL`, or `'…'` with embedded
+/// single-quotes doubled. The staging db is ephemeral, but values still must
+/// parse cleanly.
+fn lit(v: Option<&str>) -> String {
+    match v {
+        None => "NULL".to_string(),
+        Some(s) => format!("'{}'", s.replace('\'', "''")),
+    }
+}
+
+/// Flatten a YAML field value to a SQL-friendly string: scalars become their
+/// natural text, complex values (sequences/maps) become compact JSON.
+fn yaml_value_to_sql(value: &serde_yaml::Value) -> Option<String> {
+    match value {
+        serde_yaml::Value::Null => None,
+        serde_yaml::Value::Bool(b) => Some(b.to_string()),
+        serde_yaml::Value::Number(n) => Some(n.to_string()),
+        serde_yaml::Value::String(s) => Some(s.clone()),
+        other => serde_json::to_string(other).ok(),
+    }
+}
+
+/// Execute a `SELECT` and return its labels + rows of gluesql `Value`s.
+fn select(
+    glue: &mut Glue<MemoryStorage>,
+    sql: &str,
+) -> Result<(Vec<String>, Vec<Vec<Value>>), String> {
+    let payload = block_on(glue.execute(sql))
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "query produced no payload".to_string())?;
+    match payload {
+        Payload::Select { labels, rows } => Ok((labels, rows)),
+        // SELECT of a single value (e.g. count) or an empty table still yields
+        // a Select payload; anything else means the caller passed a non-query.
+        #[allow(clippy::wildcard_enum_match_arm)]
+        other => Err(format!("expected a SELECT result, got {other:?}")),
+    }
+}
+
+/// Stringify a gluesql `Value` for the tabular `SqlResult` (NULL -> empty).
+#[allow(clippy::wildcard_enum_match_arm)]
+fn value_to_string(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::Str(s) => s.clone(),
+        Value::Bool(b) => b.to_string(),
+        Value::I64(n) => n.to_string(),
+        Value::F64(f) => f.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
+/// Convert a gluesql `Value` to `Option<String>`, preserving the NULL/empty
+/// distinction the write-diff relies on (NULL -> None, '' -> Some("")).
+#[allow(clippy::wildcard_enum_match_arm)]
+fn value_opt(v: &Value) -> Option<String> {
+    match v {
+        Value::Null => None,
+        Value::Str(s) => Some(s.clone()),
+        other => Some(value_to_string(other)),
+    }
+}
+
 /// Snapshot a query's rows as a single comparable string (for change detection).
-fn snapshot(conn: &Connection, sql: &str) -> Result<String, String> {
-    let r = run_query(conn, sql)?;
-    Ok(r.rows
+fn snapshot(glue: &mut Glue<MemoryStorage>, sql: &str) -> Result<String, String> {
+    let (_, rows) = select(glue, sql)?;
+    let mut lines: Vec<String> = rows
         .iter()
-        .map(|row| row.join("\u{1f}"))
-        .collect::<Vec<_>>()
-        .join("\n"))
+        .map(|row| {
+            row.iter()
+                .map(value_to_string)
+                .collect::<Vec<_>>()
+                .join("\u{1f}")
+        })
+        .collect();
+    // gluesql does not guarantee row order without ORDER BY; sort for a stable
+    // comparison key.
+    lines.sort();
+    Ok(lines.join("\n"))
 }
 
 #[cfg(test)]

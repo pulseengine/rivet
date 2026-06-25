@@ -14,10 +14,10 @@ rowan-yaml = []
 oslc = ["dep:reqwest", "dep:urlencoding"]
 wasm = ["dep:wasmtime", "dep:wasmtime-wasi"]
 aadl = ["dep:spar-hir", "dep:spar-analysis"]
-# REQ-229 / DD-068: SQL query facade over the artifact store. Kept in `default`
-# so `rivet sql` ships, but gated so the minimal `--no-default-features` build
-# (REQ-202) excludes the bundled SQLite C compile.
-sql = ["dep:rusqlite"]
+# REQ-229 / DD-068 / REQ-231: SQL query facade over the artifact store. Kept in
+# `default` so `rivet sql` ships, but gated so the minimal `--no-default-features`
+# build (REQ-202) excludes it. Engine is gluesql-core (pure Rust) — no SQLite C.
+sql = ["dep:gluesql-core", "dep:gluesql_memory_storage", "dep:futures"]
 
 [dependencies]
 serde = { workspace = true }
@@ -35,8 +35,11 @@ rowan = { workspace = true }
 pulldown-cmark = { workspace = true }
 etch = { path = "../etch" }
 
-# SQL facade (optional, behind "sql" feature) — REQ-229 / DD-068
-rusqlite = { workspace = true, optional = true }
+# SQL facade (optional, behind "sql" feature) — REQ-229 / DD-068 / REQ-231.
+# gluesql-core: pure-Rust SQL engine (no bundled SQLite C).
+gluesql-core = { workspace = true, optional = true }
+gluesql_memory_storage = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
 
 # OSLC client (optional, behind "oslc" feature)
 reqwest = { workspace = true, optional = true }
