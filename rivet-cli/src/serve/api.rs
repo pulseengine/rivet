@@ -760,3 +760,58 @@ fn matches_filters(artifact: &rivet_core::model::Artifact, params: &ArtifactsPar
     }
     true
 }
+
+// ── SQL query endpoint (REQ-229 / DD-068) ───────────────────────────────────
+//
+// `POST /api/v1/sql` runs read-only SQL over the live store — the same
+// `rivet_core::sql` executor the CLI uses, exposed over HTTP so a running
+// server is queryable by any agent that can POST JSON (no MCP required). The
+// endpoint is READ-ONLY by design: a network-facing server must not accept
+// arbitrary artifact mutations; writes go through the local `rivet sql` CLI
+// (filesystem-authenticated) which holds the write lock + reloads.
+
+#[derive(Deserialize)]
+pub(crate) struct SqlRequest {
+    query: String,
+}
+
+#[derive(Serialize)]
+struct SqlResponse {
+    columns: Vec<String>,
+    rows: Vec<Vec<String>>,
+    row_count: usize,
+}
+
+pub(crate) async fn sql(State(state): State<SharedState>, Json(req): Json<SqlRequest>) -> Response {
+    let head = req
+        .query
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_uppercase();
+    if head != "SELECT" && head != "WITH" {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "the /sql endpoint is read-only (SELECT/WITH only); \
+                          use the `rivet sql` CLI for writes"
+            })),
+        )
+            .into_response();
+    }
+
+    let guard = state.read().await;
+    match rivet_core::sql::query(&guard.store, &req.query) {
+        Ok(r) => Json(SqlResponse {
+            row_count: r.rows.len(),
+            columns: r.columns,
+            rows: r.rows,
+        })
+        .into_response(),
+        Err(e) => (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
+}

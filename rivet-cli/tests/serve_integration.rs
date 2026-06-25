@@ -1429,3 +1429,62 @@ fn embed_unknown_artifact_returns_200_with_not_found_body() {
     child.kill().ok();
     child.wait().ok();
 }
+
+/// Minimal raw-HTTP POST of a JSON body; returns (status, response_body).
+fn post_json(port: u16, path: &str, body: &str) -> (u16, String) {
+    use std::io::{Read, Write};
+    let mut stream = std::net::TcpStream::connect(format!("127.0.0.1:{port}")).expect("connect");
+    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    let req = format!(
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\
+         Content-Type: application/json\r\nContent-Length: {}\r\n\
+         Connection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(req.as_bytes()).expect("write request");
+    let mut resp = Vec::new();
+    stream.read_to_end(&mut resp).ok();
+    let resp = String::from_utf8_lossy(&resp).to_string();
+    let status = resp
+        .lines()
+        .next()
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(0);
+    let body = resp.split("\r\n\r\n").nth(1).unwrap_or("").to_string();
+    (status, body)
+}
+
+/// `POST /api/v1/sql` runs a read query and refuses writes (REQ-229 / serve slice).
+// rivet: verifies REQ-229
+#[test]
+fn sql_endpoint_runs_read_query_and_refuses_writes() {
+    let (mut child, port) = start_server();
+
+    let (status, body) = post_json(
+        port,
+        "/api/v1/sql",
+        r#"{"query":"SELECT id FROM artifacts LIMIT 1"}"#,
+    );
+    assert_eq!(status, 200, "read query should be 200; body: {body}");
+    assert!(
+        body.contains("columns") && body.contains("rows"),
+        "read response must carry columns+rows: {body}"
+    );
+
+    let (wstatus, wbody) = post_json(
+        port,
+        "/api/v1/sql",
+        r#"{"query":"UPDATE artifacts SET status='x'"}"#,
+    );
+    assert_eq!(
+        wstatus, 400,
+        "write must be rejected with 400; body: {wbody}"
+    );
+    assert!(
+        wbody.contains("read-only"),
+        "write rejection must explain read-only: {wbody}"
+    );
+
+    child.kill().ok();
+}
