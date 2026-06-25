@@ -446,6 +446,66 @@ Orphan artifacts (no links): 3
   REQ-012
 ```
 
+### `rivet coverage`
+
+Report traceability coverage per rule — for each source type governed by a
+traceability rule, the share of artifacts that satisfy it.
+
+```bash
+rivet coverage
+rivet coverage --format json
+rivet coverage --fail-under 80          # non-zero exit if overall < 80%
+rivet coverage --tests                  # test-to-requirement coverage from source markers
+```
+
+For every source type governed by more than one rule, the report also prints a
+combined **V-closure** figure: the share of artifacts satisfying *every*
+applicable rule (e.g. requirements that are BOTH satisfied AND verified). This
+intersection is strictly stronger than the per-rule numbers, which hide the gap
+when different artifacts miss different rules. `--format json` carries it as a
+`closure` array (`closed` / `total` / `open_ids` / `percentage` / `rule_names`).
+External-boundary (supplier-delegated) artifacts count as closed, matching the
+3-state coverage convention.
+
+### `rivet verify`
+
+Advance a requirement from `implemented` to `verified` when it has verifying
+test evidence — an incoming `verifies` link OR a `// rivet: verifies <ID>`
+source marker (scanned from `src/` and `tests/`, or extra paths via `--scan`).
+
+```bash
+rivet verify REQ-042
+rivet verify REQ-042 --scan integration-tests/
+```
+
+This is an opt-in, auditable command: it refuses with an actionable message
+when there is no evidence, no-ops if the artifact is already `verified`, and
+rejects non-`implemented` states. The write reuses the schema-validated
+`modify --set-status` path.
+
+### `rivet query`
+
+Run an s-expression filter and print matches. Mirror of the MCP `rivet_query`
+tool and the `{{query:(...)}}` document embed — all three share one evaluator,
+so their results agree for the same filter. See
+[S-Expression Filtering](#s-expression-filtering) for the predicate reference.
+
+```bash
+rivet query '(= type "requirement")'
+rivet query '(and (= type "requirement") (has-tag "safety"))' --format json
+rivet query '(not (linked-from "verifies" _))' --format ids   # newline-separated IDs
+```
+
+### `rivet sql`
+
+Run SQL over the artifact store — reads and a constrained set of writes — with
+no server and no MCP required. See [SQL over the artifact
+store](#sql-over-the-artifact-store) for the table schema and examples.
+
+```bash
+rivet sql "SELECT id, status FROM artifacts WHERE type='requirement'"
+```
+
 ### `rivet matrix`
 
 Generate a traceability matrix showing coverage between two artifact types.
@@ -494,9 +554,16 @@ Export all project artifacts to a specified format.
 ```bash
 rivet export --format reqif --output artifacts.reqif
 rivet export --format generic-yaml                       # stdout
+rivet export --format html --output ./dist               # static dashboard
+rivet export --format zola --output ./site               # Zola content tree
+rivet export --format gherkin --output ./features        # .feature files
 ```
 
-Supported formats: `reqif` (ReqIF 1.2 XML), `generic-yaml`.
+Supported formats: `reqif` (ReqIF 1.2 XML), `generic-yaml`, `html` (static
+dashboard; `--single-page`, `--theme dark|light`, `--offline`), `zola` (a Zola
+content tree), and `gherkin` (`.feature` files). The `html`, `zola`, and
+`snapshot`/`embed` exporters share the dashboard renderer and are gated behind
+the `serve` cargo feature (present in the default build).
 
 ### `rivet serve`
 
@@ -863,6 +930,66 @@ on links, use the purpose-built predicates (`linked-by`, `linked-from`,
 
 ---
 
+## SQL over the artifact store
+
+`rivet sql` projects the artifact store into an in-memory SQLite database and
+runs SQL against it — **no server and no MCP required**. The projection is
+rebuilt per invocation, so results are never stale. SQL gives you JOINs and
+aggregations the s-expression filter cannot express; reach for it when a
+question spans relationships between artifacts.
+
+Four virtual tables are projected:
+
+| Table        | Columns                                                                  |
+|--------------|--------------------------------------------------------------------------|
+| `artifacts`  | `id`, `type`, `title`, `description`, `status`, `fields_json`            |
+| `links`      | `source`, `link_type`, `target`, `external`                              |
+| `fields`     | `artifact_id`, `key`, `value` (EAV — one row per field, for JOINs)       |
+| `provenance` | `artifact_id`, `created_by`, `model`, `session_id`, `timestamp`, `reviewed_by` |
+
+Output is `table` (default), `json` (one object per row, keyed by column), or
+`csv`.
+
+### Reads — SELECT / WITH
+
+```bash
+# Count artifacts by type
+rivet sql "SELECT type, COUNT(*) AS n FROM artifacts GROUP BY type ORDER BY n DESC"
+
+# The V-closure gap: implemented requirements with no incoming `verifies` link
+rivet sql "SELECT id FROM artifacts
+           WHERE type='requirement' AND status='implemented'
+             AND id NOT IN (SELECT target FROM links WHERE link_type='verifies')"
+
+# Join artifacts to their links
+rivet sql "SELECT a.id, l.link_type, l.target
+           FROM artifacts a JOIN links l ON l.source = a.id
+           WHERE a.type='requirement'" --format json
+
+# Provenance rollup
+rivet sql "SELECT created_by, COUNT(*) FROM provenance GROUP BY created_by"
+```
+
+### Writes — UPDATE
+
+A constrained write slice routes through rivet's validated mutation path:
+`UPDATE artifacts SET {status|title|description}` only. Every change is
+schema-validated (status enums, reserved keys) *before* any file is touched, so
+an invalid value aborts the whole statement — never a silent partial write —
+and the safe YAML editor preserves sibling fields. `INSERT`, `DELETE`, and
+writes to `fields` or `links` are refused with a clear message (use the
+dedicated `add` / `link` / `modify` commands for those).
+
+```bash
+# Promote a requirement once it has verifying evidence
+rivet sql "UPDATE artifacts SET status='verified' WHERE id='REQ-042'"
+```
+
+A no-op write (the value already matches) reports `0 artifacts changed` and
+touches nothing.
+
+---
+
 ## Variant Management (Product Line Engineering)
 
 Manage product variants with feature models, constraint solving, and artifact scoping.
@@ -1155,15 +1282,16 @@ The importer:
 
 ## MCP Server (AI Agent Integration)
 
-Rivet exposes 15 tools via the Model Context Protocol:
+Rivet exposes 16 tools via the Model Context Protocol:
 
 ```bash
 rivet mcp  # stdio transport
 ```
 
-Tools: `rivet_validate`, `rivet_list`, `rivet_get`, `rivet_stats`, `rivet_coverage`,
-`rivet_schema`, `rivet_embed`, `rivet_snapshot_capture`, `rivet_add`, `rivet_query`,
-`rivet_modify`, `rivet_link`, `rivet_unlink`, `rivet_remove`, `rivet_reload`.
+Tools: `rivet_validate`, `rivet_list`, `rivet_get`, `rivet_bundle`, `rivet_stats`,
+`rivet_coverage`, `rivet_schema`, `rivet_embed`, `rivet_snapshot_capture`,
+`rivet_add`, `rivet_query`, `rivet_modify`, `rivet_link`, `rivet_unlink`,
+`rivet_remove`, `rivet_reload`.
 
 All mutations are audit-logged to `.rivet/mcp-audit.jsonl`.
 

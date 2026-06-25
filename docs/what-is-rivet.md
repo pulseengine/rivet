@@ -193,10 +193,10 @@ reviews*.
 - **Question.** Can my AI agent read the trace graph and propose
   mutations that rivet server-side-validates before I accept them?
 - **Artifacts.** All of them, through MCP.
-- **AI does.** Calls 15 MCP tools: `rivet_list`, `rivet_get`,
-  `rivet_query`, `rivet_stats`, `rivet_coverage`, `rivet_schema`,
-  `rivet_embed`, `rivet_add`, `rivet_modify`, `rivet_link`,
-  `rivet_unlink`, `rivet_remove`, `rivet_validate`,
+- **AI does.** Calls 16 MCP tools: `rivet_list`, `rivet_get`,
+  `rivet_bundle`, `rivet_query`, `rivet_stats`, `rivet_coverage`,
+  `rivet_schema`, `rivet_embed`, `rivet_add`, `rivet_modify`,
+  `rivet_link`, `rivet_unlink`, `rivet_remove`, `rivet_validate`,
   `rivet_snapshot_capture`, `rivet_reload`.
 - **Human reviews.** The MCP audit log (`rivet mcp` writes every
   mutation call as JSONL to the project directory) plus the git diff.
