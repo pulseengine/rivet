@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-06-26
+
+### Fixed
+- **`rivet modify --set-release` (and any new-base-field insert) no longer
+  corrupts artifacts with a trailing block mapping (data loss).** `--set-release`
+  — shipped in v0.21.0 — spliced the new `release:` key *between* a trailing
+  `provenance:` block and its children, producing invalid YAML so the artifact
+  (and its file-mates) vanished on reload. Since every AI-stamped artifact has a
+  `provenance:` block, this hit most artifacts the command touched. The inserter
+  now skips a field's full extent, including nested block-mapping children, and
+  places the new field after the whole block. Found by dogfooding the v0.21.0
+  release field. (REQ-004)
+
 ## [0.21.0] - 2026-06-26
 
 Theme: **Authoring & release ergonomics** — fix the dogfooding friction that
