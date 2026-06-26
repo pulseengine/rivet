@@ -1748,6 +1748,7 @@ artifacts:
             title: "aadl Bar (type)".into(),
             description: None,
             status: Some("imported".into()),
+            release: None,
             tags: vec!["aadl".into()],
             links: vec![],
             fields: BTreeMap::new(),

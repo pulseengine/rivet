@@ -190,6 +190,7 @@ mod tests {
             title: format!("Title of {id}"),
             description: None,
             status: status.map(|s| s.into()),
+            release: None,
             tags: tags.iter().map(|t| t.to_string()).collect(),
             links: vec![],
             fields: BTreeMap::new(),

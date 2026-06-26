@@ -575,6 +575,7 @@ fn extract_section_item(
     let mut title = String::new();
     let mut description: Option<String> = None;
     let mut status: Option<String> = None;
+    let mut release: Option<String> = None;
     let mut tags: Vec<String> = Vec::new();
     let mut links: Vec<Link> = Vec::new();
     let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
@@ -664,6 +665,12 @@ fn extract_section_item(
                     field_spans.insert("status".into(), value_span);
                 }
             }
+            "release" => {
+                if let Some(text) = scalar_text(&value_node) {
+                    release = Some(text);
+                    field_spans.insert("release".into(), value_span);
+                }
+            }
             "tags" => {
                 tags = extract_string_list(&value_node);
                 field_spans.insert("tags".into(), value_span);
@@ -727,6 +734,7 @@ fn extract_section_item(
             title,
             description,
             status,
+            release,
             tags,
             links,
             fields,
@@ -823,6 +831,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
     let mut title = String::new();
     let mut description: Option<String> = None;
     let mut status: Option<String> = None;
+    let mut release: Option<String> = None;
     let mut tags: Vec<String> = Vec::new();
     let mut links: Vec<Link> = Vec::new();
     let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
@@ -878,6 +887,12 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
                 if let Some(text) = scalar_text(&value_node) {
                     status = Some(text);
                     field_spans.insert("status".into(), value_span);
+                }
+            }
+            "release" => {
+                if let Some(text) = scalar_text(&value_node) {
+                    release = Some(text);
+                    field_spans.insert("release".into(), value_span);
                 }
             }
             "tags" => {
@@ -993,6 +1008,7 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
         title,
         description,
         status,
+        release,
         tags,
         links,
         fields,

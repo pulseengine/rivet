@@ -1379,6 +1379,7 @@ mod tests {
             title: format!("Title {id}"),
             description: None,
             status: Some("draft".into()),
+            release: None,
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),

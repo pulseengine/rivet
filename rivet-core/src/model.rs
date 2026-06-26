@@ -314,6 +314,13 @@ pub struct Artifact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
 
+    /// Release this artifact is scoped to (e.g. "v0.21.0"). First-class
+    /// release-planning dimension (#516): an unassigned artifact is backlog;
+    /// readiness is "which artifacts in `release: vX.Y` are not yet verified".
+    /// Free-form for now; a validated release registry is a follow-up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release: Option<String>,
+
     /// Arbitrary tags for categorization and filtering.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,

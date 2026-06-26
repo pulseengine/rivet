@@ -113,6 +113,7 @@ fn arb_artifact() -> impl Strategy<Value = Artifact> {
                 title,
                 description: desc,
                 status: status.map(|s| s.to_string()),
+                release: None,
                 tags: tags.into_iter().map(|s| s.to_string()).collect(),
                 links,
                 fields: BTreeMap::new(),

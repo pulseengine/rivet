@@ -1011,6 +1011,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             title,
             description,
             status,
+            release: None,
             tags,
             links: vec![], // filled in below from SPEC-RELATIONS
             fields,
@@ -1697,6 +1698,7 @@ mod tests {
                 title: "Memory isolation".into(),
                 description: Some("The system shall enforce memory isolation.".into()),
                 status: Some("approved".into()),
+                release: None,
                 tags: vec!["safety".into(), "core".into()],
                 links: vec![],
                 fields: {
@@ -1714,6 +1716,7 @@ mod tests {
                 title: "Test memory isolation".into(),
                 description: None,
                 status: Some("draft".into()),
+                release: None,
                 tags: vec![],
                 links: vec![Link {
                     link_type: "verifies".into(),
@@ -1925,6 +1928,7 @@ mod tests {
             title: "Provenance carrier".into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
@@ -1984,6 +1988,7 @@ mod tests {
             title: "Typed fields".into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields: fields.clone(),
@@ -2054,6 +2059,7 @@ mod tests {
             title: "Null field".into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields,
@@ -2086,6 +2092,7 @@ mod tests {
             title: String::new(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
@@ -2124,6 +2131,7 @@ mod tests {
             title: "Tags with specials".into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![
                 "safety, critical".into(), // contains comma
                 " leading-space".into(),   // leading whitespace
@@ -2244,6 +2252,7 @@ mod tests {
             title: "Runaway train".into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields,
@@ -2307,6 +2316,7 @@ mod tests {
             title: "Runaway train".into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields,
@@ -2613,6 +2623,7 @@ mod tests {
             title: "No provenance".into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
@@ -3096,6 +3107,7 @@ mod tests {
                 title: "R1".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![
                     Link {
@@ -3120,6 +3132,7 @@ mod tests {
                 title: "R2".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![Link {
                     link_type: "verifies".into(),
@@ -3272,6 +3285,7 @@ mod tests {
                 title: "R1".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
@@ -3285,6 +3299,7 @@ mod tests {
                 title: "R2".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),
@@ -3337,6 +3352,7 @@ mod tests {
                 title: "R1".into(),
                 description: Some("first".into()),
                 status: Some("approved".into()),
+                release: None,
                 tags: vec![],
                 links: vec![Link {
                     link_type: "verifies".into(),
@@ -3354,6 +3370,7 @@ mod tests {
                 title: "R2".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: BTreeMap::new(),

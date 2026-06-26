@@ -466,6 +466,7 @@ fn test_validate_documents_checks_wiki_links() {
             title: "Existing artifact".into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),

@@ -135,6 +135,7 @@ impl Adapter for GenericYamlAdapter {
                     title: a.title.clone(),
                     description: a.description.clone(),
                     status: a.status.clone(),
+                    release: a.release.clone(),
                     tags: a.tags.clone(),
                     links: a.links.clone(),
                     fields: a.fields.clone(),
@@ -168,6 +169,8 @@ struct GenericArtifact {
     description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    release: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -196,6 +199,7 @@ pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Ar
             title: a.title,
             description: a.description,
             status: a.status,
+            release: a.release,
             tags: a.tags,
             links: a.links,
             fields: a.fields,

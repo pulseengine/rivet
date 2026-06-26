@@ -65,6 +65,7 @@ fn make_artifact(
         title: title.into(),
         description: None,
         status: Some("draft".into()),
+        release: None,
         tags: vec![],
         links,
         fields,
@@ -526,6 +527,7 @@ fn test_validate_modify_rejects_invalid_field() {
 
     let params = mutate::ModifyParams {
         set_status: None,
+        set_release: None,
         set_title: None,
         set_description: None,
         add_tags: vec![],
@@ -618,6 +620,7 @@ fn test_append_artifact_to_file() {
         title: "Second".to_string(),
         description: None,
         status: Some("draft".to_string()),
+        release: None,
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),

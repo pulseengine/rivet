@@ -41,6 +41,7 @@ fn art(id: &str, t: &str, tags: &[&str], status: Option<&str>, links: &[(&str, &
         title: format!("title of {id}"),
         description: None,
         status: status.map(|s| s.to_string()),
+        release: None,
         tags: tags.iter().map(|s| s.to_string()).collect(),
         links: links
             .iter()

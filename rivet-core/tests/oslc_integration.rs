@@ -908,6 +908,7 @@ fn req(id: &str, title: &str, description: Option<&str>) -> Artifact {
         title: title.to_string(),
         description: description.map(str::to_string),
         status: Some("approved".to_string()),
+        release: None,
         tags: vec![],
         links: vec![],
         fields: std::collections::BTreeMap::new(),

@@ -325,6 +325,7 @@ mod tests {
             title: title.into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
@@ -346,6 +347,7 @@ mod tests {
             title: title.into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: links
                 .into_iter()

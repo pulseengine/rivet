@@ -756,6 +756,14 @@ pub fn modify_artifact_yaml(
             .map_err(Error::Validation)?;
     }
 
+    // Set release (top-level, first-class release-planning dimension — #516).
+    if let Some(ref new_release) = params.set_release {
+        let quoted = yaml_quote_inline_scalar(new_release);
+        editor
+            .set_field(id, "release", &quoted)
+            .map_err(Error::Validation)?;
+    }
+
     // Set description (top-level). Multi-line values are emitted as a YAML
     // block-literal scalar; single-line values that contain YAML-significant
     // characters are double-quoted.

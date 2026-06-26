@@ -6166,6 +6166,94 @@ fn verify_default_scan_finds_markers_in_workspace_member_crate() {
     );
 }
 
+/// #516: the first-class `release:` field must round-trip end-to-end through the
+/// real loader without data loss — load from YAML, query via `(= release …)`,
+/// set via `modify --set-release`, and keep sibling artifacts intact. Guards
+/// against the silent-drop class of bug (e.g. the rowan-yaml loader, where a
+/// missed field extraction makes the value vanish on load — REQ-091 history).
+///
+/// rivet: verifies REQ-010
+#[test]
+fn release_field_loads_sets_and_filters_without_loss() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .output()
+            .expect("run rivet")
+    };
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-9\n    type: requirement\n    title: T\n    status: implemented\n    release: v0.21.0\n  \
+         - id: REQ-8\n    type: requirement\n    title: U\n    status: draft\n",
+    )
+    .unwrap();
+
+    // 1) `release:` survives the load — filter by it returns REQ-9. (If the
+    //    loader dropped it, resolve would yield "" and this would not match.)
+    let f = run(&[
+        "list",
+        "--filter",
+        "(= release \"v0.21.0\")",
+        "--format",
+        "json",
+    ]);
+    let out = String::from_utf8_lossy(&f.stdout);
+    assert!(
+        out.contains("REQ-9") && !out.contains("REQ-8"),
+        "release must load and be filterable; got:\n{out}"
+    );
+
+    // 2) set release on the sibling, then confirm round-trip + no data loss.
+    let m = run(&["modify", "REQ-8", "--set-release", "v0.21.0"]);
+    assert!(
+        m.status.success(),
+        "modify --set-release must succeed; stderr: {}",
+        String::from_utf8_lossy(&m.stderr)
+    );
+    let reqs = std::fs::read_to_string(dir.join("artifacts/reqs.yaml")).unwrap();
+    assert!(
+        reqs.contains("id: REQ-9") && reqs.contains("id: REQ-8"),
+        "both artifacts must remain after the edit; got:\n{reqs}"
+    );
+    assert!(
+        reqs.contains("release: v0.21.0"),
+        "the set release must be written; got:\n{reqs}"
+    );
+
+    // 3) both artifacts now scoped to the release.
+    let f2 = run(&[
+        "list",
+        "--filter",
+        "(= release \"v0.21.0\")",
+        "--format",
+        "json",
+    ]);
+    let out2 = String::from_utf8_lossy(&f2.stdout);
+    assert!(
+        out2.contains("REQ-9") && out2.contains("REQ-8"),
+        "both artifacts must now be in release v0.21.0; got:\n{out2}"
+    );
+
+    // 4) the project still validates (file is not corrupted).
+    assert!(
+        run(&["validate"]).status.success(),
+        "project must still validate after release edits"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.

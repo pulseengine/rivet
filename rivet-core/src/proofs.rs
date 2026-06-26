@@ -31,6 +31,7 @@ mod proofs {
             title: id.into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links,
             fields: BTreeMap::new(),
@@ -532,6 +533,7 @@ mod proofs {
             title: "Test requirement".into(),
             description: Some("A test requirement for STPA".into()),
             status: Some("approved".into()),
+            release: None,
             tags: vec!["stpa".into(), "safety".into(), "eu".into()],
             links: vec![
                 Link {

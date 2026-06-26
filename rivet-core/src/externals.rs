@@ -1452,6 +1452,7 @@ mod tests {
             title: "External UCA".to_string(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![
                 Link {
@@ -1498,6 +1499,7 @@ mod tests {
             title: "External UCA".to_string(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![Link {
                 link_type: "traces-to".to_string(),
@@ -1537,6 +1539,7 @@ mod tests {
             title: "External req".to_string(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![], // no links at all
             fields: std::collections::BTreeMap::new(),

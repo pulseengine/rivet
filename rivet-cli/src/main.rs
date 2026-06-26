@@ -1157,6 +1157,11 @@ enum Command {
         #[arg(long)]
         set_status: Option<String>,
 
+        /// Set the release scope (e.g. v0.21.0) — first-class release-planning
+        /// dimension (#516). An unassigned artifact is backlog.
+        #[arg(long)]
+        set_release: Option<String>,
+
         /// Set the title
         #[arg(long)]
         set_title: Option<String>,
@@ -2712,6 +2717,7 @@ fn run(cli: Cli) -> Result<bool> {
             where_filter,
             dry_run,
             set_status,
+            set_release,
             set_title,
             set_description,
             add_tag,
@@ -2723,6 +2729,7 @@ fn run(cli: Cli) -> Result<bool> {
             where_filter.as_deref(),
             *dry_run,
             set_status.as_deref(),
+            set_release.as_deref(),
             set_title.as_deref(),
             set_description.as_deref(),
             add_tag,
@@ -6743,6 +6750,8 @@ fn cmd_list(
                     "type": a.artifact_type,
                     "title": a.title,
                     "status": a.status.as_deref().unwrap_or("-"),
+                    // #516: first-class release scope; "-" when unassigned (backlog).
+                    "release": a.release.as_deref().unwrap_or("-"),
                     // issue #358: emit the real link objects (matching `get`), not
                     // an opaque count, so the graph is inspectable from `list`.
                     // The count is recoverable as `.links | length`.
@@ -7180,6 +7189,7 @@ fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> 
         None,
         false,
         Some("verified"),
+        None,
         None,
         None,
         &[],
@@ -15267,6 +15277,7 @@ fn cmd_add(
         title: title.to_string(),
         description: description.map(|s| s.to_string()),
         status: Some(status.to_string()),
+        release: None,
         tags: tags.to_vec(),
         links: link_vec,
         fields: fields_map,
@@ -15429,6 +15440,7 @@ fn cmd_modify(
     where_filter: Option<&str>,
     dry_run: bool,
     set_status: Option<&str>,
+    set_release: Option<&str>,
     set_title: Option<&str>,
     set_description: Option<&str>,
     add_tags: &[String],
@@ -15442,6 +15454,7 @@ fn cmd_modify(
 
     let params = ModifyParams {
         set_status: set_status.map(|s| s.to_string()),
+        set_release: set_release.map(|s| s.to_string()),
         set_title: set_title.map(|s| s.to_string()),
         set_description: set_description.map(|s| s.to_string()),
         add_tags: add_tags.to_vec(),
@@ -15920,6 +15933,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     title: title.clone(),
                     description: description.clone(),
                     status: Some(status.as_deref().unwrap_or("draft").to_string()),
+                    release: None,
                     tags: tags.clone(),
                     links: link_vec,
                     fields: fields.clone(),
@@ -16011,6 +16025,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     title: title.clone(),
                     description: description.clone(),
                     status: Some(status.as_deref().unwrap_or("draft").to_string()),
+                    release: None,
                     tags: tags.clone(),
                     links: link_vec,
                     fields: fields.clone(),
@@ -17927,6 +17942,7 @@ mod lsp_tests {
                     title: format!("title {id}"),
                     description: None,
                     status: None,
+                    release: None,
                     tags: vec![],
                     links: vec![],
                     fields: std::collections::BTreeMap::new(),
@@ -18158,6 +18174,7 @@ mod lsp_tests {
                 title: "Test".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
@@ -18203,6 +18220,7 @@ mod lsp_tests {
                 title: "Decision".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
@@ -18245,6 +18263,7 @@ mod lsp_tests {
                 title: "Note".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
@@ -18332,6 +18351,7 @@ mod lsp_tests {
                 title: "Alpha".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
@@ -18347,6 +18367,7 @@ mod lsp_tests {
                 title: "Beta".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
@@ -18362,6 +18383,7 @@ mod lsp_tests {
                 title: "Gamma".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
@@ -18434,6 +18456,7 @@ artifacts:
                 title: "Third".into(),
                 description: None,
                 status: None,
+                release: None,
                 tags: vec![],
                 links: vec![],
                 fields: std::collections::BTreeMap::new(),
@@ -18580,6 +18603,7 @@ mod stats_tests {
             title: format!("Title of {id}"),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields: Default::default(),
