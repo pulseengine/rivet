@@ -6296,6 +6296,75 @@ fn add_creates_default_file_for_a_new_type() {
     );
 }
 
+/// #490: a source with `layout: per-id` makes `rivet add` write one `<ID>.yaml`
+/// file per artifact in the source directory, so two parallel adds never touch
+/// the same file (the structural cure for the requirements.yaml merge-conflict
+/// tax). The directory read path loads them all. Default (single-file) layout
+/// is unchanged — covered by `add_creates_default_file_for_a_new_type`.
+///
+/// rivet: verifies REQ-007
+#[test]
+fn add_with_per_id_layout_writes_one_file_per_artifact() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts/requirements")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts/requirements\n    format: generic-yaml\n    layout: per-id\n",
+    )
+    .unwrap();
+
+    let add = |title: &str| {
+        Command::new(rivet_bin())
+            .args([
+                "--project",
+                dirs,
+                "add",
+                "--type",
+                "requirement",
+                "--title",
+                title,
+            ])
+            .output()
+            .expect("add")
+    };
+    assert!(add("First").status.success(), "first add must succeed");
+    assert!(add("Second").status.success(), "second add must succeed");
+
+    // Two adds → two distinct files, and NO shared per-type `requirements.yaml`.
+    let entries: Vec<String> = std::fs::read_dir(dir.join("artifacts/requirements"))
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .collect();
+    assert_eq!(
+        entries.len(),
+        2,
+        "per-id must write one file per artifact; got {entries:?}"
+    );
+    assert!(
+        !entries.iter().any(|n| n == "requirements.yaml"),
+        "per-id must not append to a shared requirements.yaml; got {entries:?}"
+    );
+    assert!(
+        entries.iter().all(|n| n.ends_with(".yaml")),
+        "per-id files should be `<ID>.yaml`; got {entries:?}"
+    );
+
+    // The directory read path loads both artifacts.
+    let list = Command::new(rivet_bin())
+        .args(["--project", dirs, "list", "--format", "json"])
+        .output()
+        .expect("list");
+    let out = String::from_utf8_lossy(&list.stdout);
+    assert_eq!(
+        out.matches("\"id\"").count(),
+        2,
+        "both per-id artifacts must load via the directory source; got:\n{out}"
+    );
+}
+
 /// REQ-158 / #397: `rivet validate` emits a `near-duplicate-intent` INFO for a
 /// pair of same-type artifacts with highly similar titles, and NOT for a
 /// distinct one. `rivet add` emits a non-blocking note for a similar new title.

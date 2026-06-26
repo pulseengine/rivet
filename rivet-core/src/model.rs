@@ -1053,6 +1053,22 @@ pub struct ProjectMetadata {
     pub schemas: Vec<String>,
 }
 
+/// On-disk layout for how `rivet add` writes new artifacts into a directory
+/// source (#490). The read path globs every `*.yaml` in a directory regardless
+/// of layout; this only governs the write target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum SourceLayout {
+    /// All artifacts of a type accumulate in one `<type>s.yaml` file; new
+    /// artifacts are appended at EOF. The historical default — two parallel
+    /// adds collide on the file's tail.
+    #[default]
+    SingleFile,
+    /// One file per artifact id (`<ID>.yaml`) in the source directory, so two
+    /// PRs adding different artifacts touch different files → never conflict.
+    PerId,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceConfig {
     pub path: String,
@@ -1060,6 +1076,9 @@ pub struct SourceConfig {
     /// Path to a WASM adapter component (only used when `format: "wasm"`).
     #[serde(default)]
     pub adapter: Option<String>,
+    /// How `rivet add` writes new artifacts into this source (#490).
+    #[serde(default)]
+    pub layout: SourceLayout,
     #[serde(default)]
     pub config: BTreeMap<String, String>,
 }

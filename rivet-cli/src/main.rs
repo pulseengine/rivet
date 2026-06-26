@@ -15330,30 +15330,70 @@ fn cmd_add(
         }
     }
 
+    // #490: a directory source can declare `layout: per-id`, writing one
+    // `<ID>.yaml` per artifact so two parallel adds never share a file. The read
+    // path globs the directory regardless of layout; only the add target moves.
+    // Default stays single-file (append to `<type>s.yaml`) for backward compat.
+    use rivet_core::model::SourceLayout;
+    let layout_for_dir = |dir: &std::path::Path| -> SourceLayout {
+        ctx.config
+            .sources
+            .iter()
+            .filter(|s| matches!(s.format.as_str(), "generic" | "generic-yaml"))
+            .find(|s| {
+                let sp = cli.project.join(&s.path);
+                dir == sp || dir.starts_with(&sp)
+            })
+            .map(|s| s.layout)
+            .unwrap_or_default()
+    };
+
     // Determine target file
     let target_file = if let Some(f) = file {
-        cli.project.join(f)
+        let p = cli.project.join(f);
+        // An explicit directory target means one file per artifact.
+        if p.is_dir() {
+            p.join(format!("{id}.yaml"))
+        } else {
+            p
+        }
     } else if let Some(existing) = mutate::find_file_for_type(artifact_type, &store) {
-        existing
+        // Artifacts of this type already live somewhere. If the owning source is
+        // per-id, the new artifact gets its own `<ID>.yaml` file instead of
+        // being appended to a sibling's file (#490).
+        let is_per_id = existing
+            .parent()
+            .is_some_and(|d| layout_for_dir(d) == SourceLayout::PerId);
+        if is_per_id {
+            let dir = existing
+                .parent()
+                .unwrap_or(existing.as_path())
+                .to_path_buf();
+            dir.join(format!("{id}.yaml"))
+        } else {
+            existing
+        }
     } else {
         // #552: no file holds this type yet — synthesize a default in the
         // project's first generic-yaml source (e.g. `design-decision` ->
         // `artifacts/design-decisions.yaml`) instead of forcing the user to
         // pass --file just to add the FIRST artifact of a type. Created with an
         // `artifacts:` header below if absent.
-        let src = ctx
+        let src_cfg = ctx
             .config
             .sources
             .iter()
             .find(|s| matches!(s.format.as_str(), "generic" | "generic-yaml"))
-            .map(|s| cli.project.join(&s.path))
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "no generic-yaml source in rivet.yaml to add a '{artifact_type}' to. \
                      Use --file to specify a target."
                 )
             })?;
-        if src.is_dir() {
+        let src = cli.project.join(&src_cfg.path);
+        if src_cfg.layout == SourceLayout::PerId && src.is_dir() {
+            src.join(format!("{id}.yaml"))
+        } else if src.is_dir() {
             src.join(format!("{artifact_type}s.yaml"))
         } else {
             src
