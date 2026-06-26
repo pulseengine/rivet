@@ -6112,6 +6112,60 @@ fn verify_advances_on_marker_evidence_and_refuses_without() {
     );
 }
 
+/// #574: in a cargo WORKSPACE layout — no `./src` or `./tests` at the project
+/// root, crates live in `<member>/src/` — `rivet verify <ID>` must still find
+/// `// rivet: verifies <ID>` markers by DEFAULT (the project-root fallback
+/// scan), without an explicit `--scan`. Guards the fallback so a future
+/// refactor cannot silently reintroduce #574.
+///
+/// rivet: verifies REQ-226
+#[test]
+fn verify_default_scan_finds_markers_in_workspace_member_crate() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  - id: REQ-9\n    type: requirement\n    title: T\n    status: implemented\n",
+    )
+    .unwrap();
+    // Workspace shape: the marker lives in a member crate's src/, NOT in a
+    // root ./src or ./tests (which a workspace root does not have).
+    std::fs::create_dir_all(dir.join("member-crate/src")).unwrap();
+    std::fs::write(
+        dir.join("member-crate/src/lib.rs"),
+        "// rivet: verifies REQ-9\nfn t() {}\n",
+    )
+    .unwrap();
+    // Guard the test premise: there is no root ./src or ./tests to scan.
+    assert!(!dir.join("src").exists(), "premise: no root ./src");
+    assert!(!dir.join("tests").exists(), "premise: no root ./tests");
+
+    // Default scan (no --scan) must discover the member-crate marker.
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "verify", "REQ-9"])
+        .output()
+        .expect("run rivet verify");
+    assert!(
+        out.status.success(),
+        "verify must find the workspace member-crate marker by default (#574); stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let reqs = std::fs::read_to_string(dir.join("artifacts/reqs.yaml")).unwrap();
+    assert!(
+        reqs.contains("status: verified"),
+        "REQ-9 must be advanced to verified via the default workspace scan; got:\n{reqs}"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.
