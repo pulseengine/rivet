@@ -5,6 +5,40 @@
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-06-26
+
+Theme: **Authoring & release ergonomics** — fix the dogfooding friction that
+bites while planning and editing artifacts, and make release-planning a
+first-class, queryable dimension rather than a tag convention.
+
+### Added
+- **First-class `release:` field on artifacts (REQ-010, #516).** Optional
+  top-level scope (e.g. `release: v0.21.0`) on every artifact — the
+  release-planning axis the status lifecycle always implied. An unassigned
+  artifact is backlog; readiness is the query "which artifacts in
+  `release: vX.Y` are not yet `verified`". Threaded through every load/save and
+  query path (generic-yaml + the rowan-yaml loader, `render_artifact_yaml`,
+  importers) so the value round-trips with no data loss. Set it with
+  `rivet modify <ID> --set-release vX.Y`; filter with
+  `rivet list --filter '(= release "vX.Y")'` (also emitted in
+  `list --format json`). Slice 1 of #516; a `--release` list filter and a
+  release-readiness burn-down query follow.
+
+### Fixed
+- **`modify --set-field` no longer corrupts flow-style `fields:` maps
+  (REQ-004, #573).** Setting a custom field on an artifact whose `fields:` was
+  written inline (`fields: { a: 1 }`) used to append a block child under the
+  flow mapping, producing invalid YAML — the file then failed to parse and
+  **every artifact in it silently vanished** (data loss). The flow map is now
+  normalized to block style via the real YAML parser before the insert.
+- **`rivet verify` from a cargo workspace root (#574).** Confirmed the default
+  marker scan finds `// rivet: verifies <ID>` markers in workspace member
+  crates (the project-root fallback shipped in v0.18.0); added a regression
+  test so the behaviour cannot silently regress. (REQ-226)
+- **CI hygiene (#293):** `import_alias_works_for_reqif` is now cfg-gated to
+  match the `import` alias (which only exists with the `wasm` feature off), so
+  the nightly `--all-features` test-evidence job stops failing on it.
+
 ## [0.20.0] - 2026-06-25
 
 Theme: **SQL over the artifact store** — query *and* change artifacts in the
