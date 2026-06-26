@@ -240,6 +240,31 @@ impl YamlEditor {
         Ok(())
     }
 
+    /// End (exclusive) of a field's on-disk extent, consuming any continuation
+    /// lines indented deeper than the field key — covering BOTH block scalars
+    /// (`|`/`>`) and nested block MAPPINGS (e.g. `provenance:` with its
+    /// `created-by`/`model` children). `block_scalar_end` only handles the
+    /// scalar case; using it to find an insert position after a block-mapping
+    /// field lands the new field *inside* that block, corrupting the YAML (the
+    /// `--set-release` / `--set-field` regression on artifacts with a trailing
+    /// `provenance:`/`links:` block).
+    fn field_block_end(&self, field_line: usize, block_end: usize, field_indent: usize) -> usize {
+        let mut end = field_line + 1;
+        while end < block_end {
+            let line = &self.lines[end];
+            if line.trim().is_empty() {
+                break;
+            }
+            let indent = line.len() - line.trim_start().len();
+            if indent > field_indent {
+                end += 1;
+            } else {
+                break;
+            }
+        }
+        end
+    }
+
     /// Find the best position to insert a new field.
     ///
     /// Strategy: insert after the last existing "simple" field (id, type,
@@ -269,7 +294,10 @@ impl YamlEditor {
             // Extract key name
             if let Some(k) = trimmed.split(':').next() {
                 if base_order.contains(&k) || (!complex_keys.contains(&k) && !k.starts_with("- ")) {
-                    let end = self.block_scalar_end(i, block_end);
+                    // Consume the whole field, including nested block-mapping
+                    // children (e.g. `provenance:`), so the insert lands AFTER
+                    // the block, not inside it.
+                    let end = self.field_block_end(i, block_end, field_indent);
                     last_base_end = end;
                 }
             }
@@ -284,7 +312,7 @@ impl YamlEditor {
                     if let Some(line_idx) =
                         self.find_field_in_block(block_start, block_end, check_key)
                     {
-                        return self.block_scalar_end(line_idx, block_end);
+                        return self.field_block_end(line_idx, block_end, field_indent);
                     }
                 }
             }
@@ -1672,6 +1700,53 @@ artifacts:
             parsed["artifacts"][0]["fields"]["category"].as_str(),
             Some("functional"),
             "untouched flow-map key must be preserved"
+        );
+    }
+
+    // rivet: verifies REQ-004
+    /// Regression: inserting a NEW base field (e.g. `release` via
+    /// `--set-release`) on an artifact whose last field is a block MAPPING
+    /// (`provenance:` with children) used to splice the new key BETWEEN
+    /// `provenance:` and its children, producing invalid YAML — the artifact
+    /// then failed to load. The new field must land AFTER the whole block.
+    /// Surfaced by dogfooding the #516 release field while planning v0.22.
+    #[test]
+    fn set_field_inserts_after_trailing_provenance_block() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: implemented
+    description: d
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8";
+        let params = crate::mutate::ModifyParams {
+            set_release: Some("v0.22.0".to_string()),
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out =
+            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+
+        // Must still parse — the corruption made this fail.
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        assert_eq!(
+            parsed["artifacts"][0]["release"].as_str(),
+            Some("v0.22.0"),
+            "release must be set as a top-level field"
+        );
+        // The provenance block must survive intact, not be split.
+        assert_eq!(
+            parsed["artifacts"][0]["provenance"]["created-by"].as_str(),
+            Some("ai-assisted"),
+            "provenance block must remain intact under its own key"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["provenance"]["model"].as_str(),
+            Some("claude-opus-4-8")
         );
     }
 }
