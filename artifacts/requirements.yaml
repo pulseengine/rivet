@@ -7509,3 +7509,36 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-25T09:00:00Z
+
+  - id: REQ-232
+    type: requirement
+    title: rivet list --release <ver> filter sugar
+    status: proposed
+    description: "Convenience flag equal to --filter (= release \"<ver>\"). #516 slice 2. v0.22."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-26T18:44:21Z
+    release: v0.22.0
+
+  - id: REQ-234
+    type: requirement
+    title: rivet release move <id> <ver> logged scope change
+    status: proposed
+    description: "Re-target an artifact to a release as a logged scope decision (uses --set-release). #516 slice 3. v0.22."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-26T18:44:22Z
+    release: v0.22.0
+
+  - id: REQ-235
+    type: requirement
+    title: rivet migrate --explode <source> to per-id files
+    status: proposed
+    description: "Split an existing single-file source into per-id <ID>.yaml files so existing projects adopt the conflict-free layout (DD-070). #490 slice 2. v0.22."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-26T18:44:23Z
+    release: v0.22.0

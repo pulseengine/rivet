@@ -1154,3 +1154,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-7
       timestamp: 2026-05-20T09:00:00Z
+
+  - id: REQ-233
+    type: requirement
+    title: rivet release status <ver> readiness burn-down
+    status: proposed
+    description: "Per-status counts + the not-yet-verified set for a release; cuttable when zero. Reads the release: field. #516 slice 3. v0.22 centerpiece."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-26T18:44:22Z
+    release: v0.22.0
