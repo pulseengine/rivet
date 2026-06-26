@@ -333,6 +333,7 @@ mod tests {
                 path: "artifacts".into(),
                 format: "generic-yaml".into(),
                 adapter: None,
+                layout: Default::default(),
                 config: Default::default(),
             }],
             docs: vec![],

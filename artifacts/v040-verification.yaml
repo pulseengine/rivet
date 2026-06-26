@@ -492,3 +492,17 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-7
       timestamp: 2026-04-19T12:00:00Z
+
+  - id: DD-070
+    type: design-decision
+    title: Directory sources with per-id file layout for conflict-free parallel adds
+    status: accepted
+    fields:
+      rationale: "Every PR filing an artifact appends to one shared per-type file (requirements.yaml), so any two in-flight PRs collide on its tail — a standing tax on the dogfooding loop (#422, #487, and the #595 rebase this session). The read path already globs a directory of per-id files and every artifact records its own source_file, so modify/remove/validate/next-id are already path-agnostic; only rivet add hardcoded one-file-per-type. Add an opt-in SourceConfig layout: per-id so add writes <dir>/<ID>.yaml. Two PRs adding different artifacts touch different files → zero conflict. Default stays single-file for backward compat. Slice 1 (this change) = add write-path + config flag; a migrate --explode command to split existing files is Slice 2 (#490)."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-26T07:57:31Z
+    links:
+      - type: satisfies
+        target: REQ-007
