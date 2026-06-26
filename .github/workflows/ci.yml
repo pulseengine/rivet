@@ -587,7 +587,19 @@ jobs:
         # each shard takes ~2x as long (was 12-20 min, now 20-40 min),
         # but the lean-mem pool stops needing emergency cgroup-ceiling
         # bumps every quarter.
-        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 2 --output mutants-out -- --lib || true
+        # Defense-in-depth for #590: cap per-process virtual address space
+        # at ~48 G (RLIMIT_AS) so a runaway mutant aborts inside its own
+        # process with ENOMEM instead of OOM-killing the lean-mem host.
+        # A memory-runaway mutation can allocate ~100 G in seconds — faster
+        # than the 30 s cargo-mutants timeout — so the kernel OOM-killer
+        # fires first and can take down neighboring jobs. Primary fix is
+        # the infra MemoryMax cgroup cap; this is the optional repo-side
+        # guard that works now. `continue-on-error: true` + `|| true` mean
+        # a clipped mutant is still recorded as timeout/error, not a gate
+        # failure.
+        run: |
+          ulimit -v 50331648
+          cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 2 --output mutants-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0
