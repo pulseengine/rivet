@@ -178,6 +178,14 @@ fn export_reqif_to_directory_gives_actionable_error() {
 
 /// `rivet import` is a visible alias for `import-results` (the natural inverse
 /// of `export`) in the default build. #453 / REQ-184.
+///
+/// Gated to mirror the alias itself: `ImportResults` declares
+/// `#[cfg_attr(not(feature = "wasm"), command(visible_alias = "import"))]`, so
+/// the `import` alias only exists with `wasm` OFF. With `wasm` ON (e.g. a
+/// `--all-features` build), `import` resolves to the distinct custom-WASM-adapter
+/// command, which has no `--format` — so this assertion must not run there
+/// (it was a perpetual red in the `--all-features` test-evidence job; #293).
+#[cfg(not(feature = "wasm"))]
 #[test]
 fn import_alias_works_for_reqif() {
     let proj = tempfile::tempdir().unwrap();
