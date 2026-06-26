@@ -806,8 +806,47 @@ pub fn modify_artifact_yaml(
         let field_indent = editor.field_indent(block_start);
 
         if let Some(fields_line) = editor.find_field_in_block(block_start, block_end, "fields") {
-            // Look for the sub-key within the fields mapping
             let sub_indent = field_indent + 2;
+
+            // #573: if `fields:` is written in FLOW style (`fields: { a: 1 }`),
+            // appending a block child below it yields a block key under a flow
+            // mapping — invalid YAML. The file then fails to parse and EVERY
+            // artifact in it silently vanishes (data loss). Normalize the inline
+            // map to block style first: parse it with the real YAML parser,
+            // set/replace the key, and re-emit each entry as a block sub-field.
+            let after_colon = editor.lines[fields_line]
+                .split_once("fields:")
+                .map(|(_, rest)| rest.trim())
+                .unwrap_or("");
+            if after_colon.starts_with('{') {
+                let mut map: serde_yaml::Mapping =
+                    serde_yaml::from_str(after_colon).map_err(|e| {
+                        Error::Validation(format!(
+                            "parsing flow-style `fields:` map for '{id}': {e}"
+                        ))
+                    })?;
+                map.insert(
+                    serde_yaml::Value::String(key.clone()),
+                    serde_yaml::Value::String(value.clone()),
+                );
+                let block = serde_yaml::to_string(&map).map_err(|e| {
+                    Error::Validation(format!("re-emitting `fields:` map for '{id}': {e}"))
+                })?;
+                let indent = " ".repeat(sub_indent);
+                editor.lines.remove(fields_line);
+                let mut at = fields_line;
+                editor
+                    .lines
+                    .insert(at, format!("{}fields:", " ".repeat(field_indent)));
+                at += 1;
+                for l in block.lines() {
+                    editor.lines.insert(at, format!("{indent}{l}"));
+                    at += 1;
+                }
+                continue;
+            }
+
+            // Look for the sub-key within the fields mapping
             let sub_prefix = format!("{key}:");
             let mut found = false;
             for i in (fields_line + 1)..block_end {
@@ -1538,6 +1577,93 @@ artifacts:
             parsed["artifacts"][0]["description"].as_str(),
             Some("Updated via --set-description"),
             "set_description must write the top-level description"
+        );
+    }
+
+    // rivet: verifies REQ-004
+    /// #573: `--set-field` on an artifact whose `fields:` is written in FLOW
+    /// style (`fields: { a: 1 }`) used to append a block child under the flow
+    /// mapping, producing invalid YAML — the whole file then failed to parse
+    /// and every artifact in it silently vanished (data loss). The write must
+    /// stay parseable, preserve sibling artifacts, and apply the new field.
+    #[test]
+    fn set_field_on_flow_style_fields_map_stays_parseable() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: draft
+    description: d
+    fields: { priority: must, category: functional }
+  - id: REQ-002
+    type: requirement
+    title: t2
+    status: draft
+    description: d2
+    fields: { priority: must, category: functional }";
+        let params = crate::mutate::ModifyParams {
+            set_fields: vec![("release".to_string(), "v0.1.0".to_string())],
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out =
+            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+
+        // Must still be valid YAML — the corruption made this fail.
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let arts = parsed["artifacts"].as_sequence().expect("artifacts seq");
+        // The sibling artifact must survive (it used to vanish).
+        assert_eq!(arts.len(), 2, "both artifacts must remain after the edit");
+        // The new field is applied to REQ-001 …
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["release"].as_str(),
+            Some("v0.1.0"),
+            "release field must be set on REQ-001"
+        );
+        // … and the pre-existing flow-map entries are preserved.
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["priority"].as_str(),
+            Some("must"),
+            "existing flow-map field must be preserved"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["category"].as_str(),
+            Some("functional")
+        );
+    }
+
+    // rivet: verifies REQ-004
+    /// #573 sibling case: updating a key that already lives inside a flow-style
+    /// `fields:` map must replace it in place and keep the file parseable.
+    #[test]
+    fn set_field_updates_existing_key_in_flow_style_map() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: draft
+    fields: { priority: must, category: functional }";
+        let params = crate::mutate::ModifyParams {
+            set_fields: vec![("priority".to_string(), "should".to_string())],
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out =
+            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["priority"].as_str(),
+            Some("should"),
+            "existing flow-map key must be updated in place"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["category"].as_str(),
+            Some("functional"),
+            "untouched flow-map key must be preserved"
         );
     }
 }
