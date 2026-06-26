@@ -43,6 +43,7 @@ fn artifact(id: &str, art_type: &str, status: &str, links: &[(&str, &str)]) -> A
         title: format!("Title {id}"),
         description: None,
         status: Some(status.into()),
+        release: None,
         tags: vec![],
         links: links
             .iter()

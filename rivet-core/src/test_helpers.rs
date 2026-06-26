@@ -78,6 +78,7 @@ pub fn minimal_artifact(id: &str, art_type: &str) -> Artifact {
         title: format!("Test {id}"),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),

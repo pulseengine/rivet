@@ -121,6 +121,7 @@ pub fn plan_write(store: &Store, sql: &str) -> Result<Vec<PlannedWrite>, String>
 
         let mut params = ModifyParams {
             set_status: None,
+            set_release: None,
             set_title: None,
             set_description: None,
             add_tags: Vec::new(),

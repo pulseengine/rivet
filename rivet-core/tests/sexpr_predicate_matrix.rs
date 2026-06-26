@@ -51,6 +51,7 @@ fn base_artifact() -> Artifact {
         title: "Safety goal for pedestrian detection".into(),
         description: Some("STPA-derived requirement".into()),
         status: Some("approved".into()),
+        release: None,
         tags: vec!["stpa".into(), "safety".into(), "eu".into()],
         links: vec![
             Link {
@@ -444,6 +445,7 @@ fn linked_from_matches_incoming_link_type() {
         title: "System constraint 1".into(),
         description: None,
         status: Some("approved".into()),
+        release: None,
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
@@ -469,6 +471,7 @@ fn linked_from_no_match_when_no_incoming_link() {
         title: "Orphan".into(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
@@ -495,6 +498,7 @@ fn linked_from_no_match_wrong_link_type() {
         title: "System constraint 1".into(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
@@ -529,6 +533,7 @@ fn linked_from_source_filter_is_honoured() {
         title: "A".into(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: vec![Link {
             link_type: "satisfies".into(),
@@ -546,6 +551,7 @@ fn linked_from_source_filter_is_honoured() {
         title: "B".into(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: vec![Link {
             link_type: "satisfies".into(),
@@ -563,6 +569,7 @@ fn linked_from_source_filter_is_honoured() {
         title: "SC".into(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
@@ -729,6 +736,7 @@ fn make_req(id: &str, tags: &[&str]) -> Artifact {
         title: format!("title of {id}"),
         description: None,
         status: Some("approved".into()),
+        release: None,
         tags: tags.iter().map(|s| s.to_string()).collect(),
         links: vec![],
         fields: BTreeMap::new(),
@@ -843,6 +851,7 @@ fn chain_store() -> (Store, LinkGraph) {
         title: id.into(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: tgt
             .map(|t| {

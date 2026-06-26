@@ -976,6 +976,7 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
         title: title.to_string(),
         description: description.map(String::from),
         status: status.map(String::from),
+        release: None,
         tags,
         links,
         fields,
@@ -1139,6 +1140,7 @@ fn tool_modify(project_dir: &Path, p: &ModifyParams) -> Result<Value> {
 
     let params = mutate::ModifyParams {
         set_status: p.status.clone(),
+        set_release: None,
         set_title: p.title.clone(),
         set_description: p.description.clone(),
         add_tags: p.add_tags.clone().unwrap_or_default(),

@@ -393,6 +393,7 @@ fn convert_need(
         title,
         description,
         status,
+        release: None,
         tags: item.tags.clone(),
         links,
         fields,

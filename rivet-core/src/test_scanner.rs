@@ -405,6 +405,7 @@ mod tests {
             title: id.into(),
             description: None,
             status: None,
+            release: None,
             tags: vec![],
             links: vec![],
             fields: Default::default(),

@@ -56,6 +56,7 @@ fn fixture_store() -> (Store, LinkGraph) {
         title: format!("title-{id}"),
         description: Some(format!("desc-{id}")),
         status: Some("approved".into()),
+        release: None,
         tags: tags.iter().map(|s| s.to_string()).collect(),
         links: links
             .iter()
@@ -411,6 +412,7 @@ proptest! {
             title: "T".into(),
             description: None,
             status: Some("approved".into()),
+            release: None,
             tags: vec![],
             links: vec![], // no outbound links — empty set
             fields: BTreeMap::new(),
@@ -451,6 +453,7 @@ proptest! {
             title: "T".into(),
             description: None,
             status: Some("approved".into()),
+            release: None,
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
@@ -493,6 +496,7 @@ proptest! {
             title: "R".into(),
             description: None,
             status: Some("approved".into()),
+            release: None,
             tags: vec![],
             links: vec![],
             fields: BTreeMap::new(),
@@ -505,6 +509,7 @@ proptest! {
             title: "V".into(),
             description: None,
             status: Some("approved".into()),
+            release: None,
             tags: vec![],
             links: vec![
                 Link {

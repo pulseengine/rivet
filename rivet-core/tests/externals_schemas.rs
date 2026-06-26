@@ -182,6 +182,7 @@ fn external_prefixed_unknown_type_is_not_diagnosed() {
         title: "External thing".to_string(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: vec![],
         fields: BTreeMap::new(),
@@ -247,6 +248,7 @@ fn external_link_types_are_not_flagged_unknown() {
         title: "Component".to_string(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         // Use a link type that's likely defined in spar's aadl schema but
         // not in the downstream-only `common` schema set.

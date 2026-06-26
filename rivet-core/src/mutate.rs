@@ -322,6 +322,7 @@ pub const RESERVED_TOP_LEVEL_KEYS: &[&str] = &[
     "title",
     "description",
     "status",
+    "release",
     "tags",
     "links",
     "fields",
@@ -337,6 +338,9 @@ pub const RESERVED_TOP_LEVEL_KEYS: &[&str] = &[
 #[derive(Debug, Default)]
 pub struct ModifyParams {
     pub set_status: Option<String>,
+    /// Set the top-level `release:` scope (e.g. "v0.21.0"). First-class
+    /// release-planning dimension (#516).
+    pub set_release: Option<String>,
     pub set_title: Option<String>,
     /// Set the top-level `description:` of the artifact.
     ///
@@ -529,6 +533,13 @@ fn render_artifact_yaml(artifact: &Artifact) -> String {
 
     if let Some(ref status) = artifact.status {
         lines.push(format!("    status: {}", yaml_quote_inline_scalar(status)));
+    }
+
+    if let Some(ref release) = artifact.release {
+        lines.push(format!(
+            "    release: {}",
+            yaml_quote_inline_scalar(release)
+        ));
     }
 
     if let Some(ref desc) = artifact.description {

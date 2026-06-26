@@ -577,6 +577,7 @@ fn resolve_str(acc: &Accessor, artifact: &Artifact) -> String {
             "title" => artifact.title.clone(),
             "description" => artifact.description.clone().unwrap_or_default(),
             "status" => artifact.status.clone().unwrap_or_default(),
+            "release" => artifact.release.clone().unwrap_or_default(),
             other => artifact
                 .fields
                 .get(other)
@@ -609,6 +610,7 @@ fn resolve_field_exists(name: &str, artifact: &Artifact) -> bool {
         "id" | "type" | "title" => true,
         "description" => artifact.description.is_some(),
         "status" => artifact.status.is_some(),
+        "release" => artifact.release.is_some(),
         "tags" => !artifact.tags.is_empty(),
         other => artifact.fields.contains_key(other),
     }
@@ -1505,6 +1507,7 @@ mod tests {
             title: "Test requirement".into(),
             description: Some("A test requirement for STPA".into()),
             status: Some("approved".into()),
+            release: None,
             tags: vec!["stpa".into(), "safety".into(), "eu".into()],
             links: vec![
                 Link {
@@ -1918,6 +1921,7 @@ mod tests {
             title: format!("Title of {id}"),
             description: None,
             status: Some("approved".into()),
+            release: None,
             tags: tags.iter().map(|t| t.to_string()).collect(),
             links: vec![],
             fields: BTreeMap::new(),
@@ -2129,6 +2133,7 @@ mod tests {
             title: format!("Title of {id}"),
             description: None,
             status: Some(status.into()),
+            release: None,
             tags: vec![],
             links: links
                 .into_iter()

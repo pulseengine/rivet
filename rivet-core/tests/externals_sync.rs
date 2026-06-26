@@ -191,6 +191,7 @@ fn backlinks_from_spar_to_local() {
         title: "Component linking to local req".into(),
         description: None,
         status: None,
+        release: None,
         tags: vec![],
         links: vec![Link {
             link_type: "allocated-from".into(),
