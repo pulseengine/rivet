@@ -1158,7 +1158,7 @@ artifacts:
   - id: REQ-233
     type: requirement
     title: rivet release status <ver> readiness burn-down
-    status: proposed
+    status: verified
     description: "Per-status counts + the not-yet-verified set for a release; cuttable when zero. Reads the release: field. #516 slice 3. v0.22 centerpiece."
     provenance:
       created-by: ai-assisted

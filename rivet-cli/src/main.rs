@@ -917,6 +917,13 @@ enum Command {
         action: BaselineAction,
     },
 
+    /// Release planning: scope artifacts to a release and query readiness
+    /// (#516). Pairs with the `release:` field and `list --release`.
+    Release {
+        #[command(subcommand)]
+        action: ReleaseAction,
+    },
+
     /// Capture or compare project snapshots for delta tracking
     #[cfg(feature = "serve")]
     Snapshot {
@@ -1485,6 +1492,21 @@ enum BaselineAction {
     },
     /// List baselines found across externals
     List,
+}
+
+#[derive(Debug, Subcommand)]
+enum ReleaseAction {
+    /// Readiness burn-down for a release (REQ-233, #516): per-status counts of
+    /// the artifacts scoped to `release: <version>`, plus the set that is not
+    /// yet `verified`/`accepted`. The release is cuttable when that set is
+    /// empty. Exits non-zero when not cuttable (so CI can gate on it).
+    Status {
+        /// Release version, e.g. v0.22.0
+        version: String,
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -2460,6 +2482,9 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Baseline { action } => match action {
             BaselineAction::Verify { name, strict } => cmd_baseline_verify(&cli, name, *strict),
             BaselineAction::List => cmd_baseline_list(&cli),
+        },
+        Command::Release { action } => match action {
+            ReleaseAction::Status { version, format } => cmd_release_status(&cli, version, format),
         },
         #[cfg(feature = "serve")]
         Command::Snapshot { action } => match action {
@@ -6671,6 +6696,82 @@ fn cmd_bundle(cli: &Cli, id: &str, depth: usize, format: &str, incoming: bool) -
             Ok(false)
         }
     }
+}
+
+/// REQ-233 / #516: readiness burn-down for a release — per-status counts of the
+/// artifacts scoped to `release: <version>`, plus the not-yet-`verified` set.
+/// The release is cuttable when that set is empty; returns `Ok(false)` (process
+/// exits non-zero) when it is not, so CI can gate a release on it.
+fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    ctx.warn_parse_error_skips(cli);
+
+    let mut scoped: Vec<&rivet_core::model::Artifact> = ctx
+        .store
+        .iter()
+        .filter(|a| a.release.as_deref() == Some(version))
+        .collect();
+    scoped.sort_by(|a, b| a.id.cmp(&b.id));
+
+    // `verified` and `accepted` are the done states; anything else still blocks.
+    let is_done = |s: Option<&str>| matches!(s, Some("verified") | Some("accepted"));
+    let mut by_status: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    for a in &scoped {
+        *by_status
+            .entry(a.status.as_deref().unwrap_or("(none)").to_string())
+            .or_default() += 1;
+    }
+    let not_done: Vec<&&rivet_core::model::Artifact> = scoped
+        .iter()
+        .filter(|a| !is_done(a.status.as_deref()))
+        .collect();
+    let cuttable = not_done.is_empty();
+
+    if format == "json" {
+        let obj = serde_json::json!({
+            "release": version,
+            "total": scoped.len(),
+            "by_status": by_status,
+            "not_verified": not_done.iter().map(|a| serde_json::json!({
+                "id": a.id,
+                "status": a.status.as_deref().unwrap_or("(none)"),
+                "title": a.title,
+            })).collect::<Vec<_>>(),
+            "cuttable": cuttable,
+        });
+        println!("{}", serde_json::to_string_pretty(&obj)?);
+    } else if scoped.is_empty() {
+        println!(
+            "Release {version}: no artifacts scoped — assign with \
+             `rivet modify <ID> --set-release {version}`."
+        );
+    } else {
+        println!("Release {version} — {} artifact(s)", scoped.len());
+        for (status, count) in &by_status {
+            println!("  {status:<12} {count}");
+        }
+        if cuttable {
+            println!("\n\u{2713} Cuttable — every artifact is verified/accepted.");
+        } else {
+            println!("\nNot yet verified ({}):", not_done.len());
+            for a in &not_done {
+                println!(
+                    "  {:<10} {:<12} {}",
+                    a.id,
+                    a.status.as_deref().unwrap_or("(none)"),
+                    a.title
+                );
+            }
+            println!(
+                "\n\u{2717} NOT cuttable — {} artifact(s) not yet verified.",
+                not_done.len()
+            );
+        }
+    }
+
+    Ok(cuttable)
 }
 
 /// List artifacts.
