@@ -6464,6 +6464,120 @@ fn release_move_retargets_and_logs_scope_change() {
     );
 }
 
+/// REQ-235 (#490, DD-070): `rivet shard <file>` splits a single-file source into
+/// one `<ID>.yaml` per artifact with NO data loss and full field fidelity, and
+/// is reversible — if the project can't re-find the artifacts (the rivet.yaml
+/// source points at the file, not its directory), it restores the original and
+/// refuses.
+///
+/// rivet: verifies REQ-235
+#[test]
+fn shard_splits_source_into_per_id_files_reversibly() {
+    // --- Happy path: a directory source shards cleanly, losslessly. ---
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-9\n    type: requirement\n    title: A\n    status: draft\n    tags: [safety]\n    fields:\n      priority: must\n  \
+         - id: REQ-8\n    type: requirement\n    title: B\n    status: draft\n",
+    )
+    .unwrap();
+    let count = |d: &str| -> usize {
+        let out = Command::new(rivet_bin())
+            .args(["--project", d, "list", "--format", "json"])
+            .output()
+            .expect("list");
+        String::from_utf8_lossy(&out.stdout)
+            .matches("\"id\"")
+            .count()
+    };
+    let before = count(dirs);
+
+    let sh = Command::new(rivet_bin())
+        .args(["--project", dirs, "shard", "artifacts/reqs.yaml"])
+        .output()
+        .expect("shard");
+    assert!(
+        sh.status.success(),
+        "shard must succeed; stderr: {}",
+        String::from_utf8_lossy(&sh.stderr)
+    );
+    assert!(
+        !dir.join("artifacts/reqs.yaml").exists(),
+        "the original single file must be removed"
+    );
+    assert!(
+        dir.join("artifacts/reqs/REQ-9.yaml").exists()
+            && dir.join("artifacts/reqs/REQ-8.yaml").exists(),
+        "one <ID>.yaml per artifact must be written"
+    );
+    assert_eq!(before, count(dirs), "no artifact may be lost in the shard");
+    // Field fidelity — tags and domain fields survive the split.
+    let r9 = std::fs::read_to_string(dir.join("artifacts/reqs/REQ-9.yaml")).unwrap();
+    assert!(
+        r9.contains("safety") && r9.contains("priority") && r9.contains("must"),
+        "all fields must be preserved; got:\n{r9}"
+    );
+    assert!(
+        Command::new(rivet_bin())
+            .args(["--project", dirs, "validate"])
+            .output()
+            .expect("validate")
+            .status
+            .success(),
+        "the project must still validate after sharding"
+    );
+
+    // --- Safety: a file-source shard restores the original and refuses. ---
+    let tmp2 = tempfile::tempdir().expect("temp dir");
+    let d2 = tmp2.path();
+    std::fs::create_dir_all(d2.join("artifacts")).unwrap();
+    std::fs::write(
+        d2.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts/r.yaml\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        d2.join("artifacts/r.yaml"),
+        "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: t\n    status: draft\n",
+    )
+    .unwrap();
+    let d2s = d2.to_str().unwrap();
+    let sh2 = Command::new(rivet_bin())
+        .args(["--project", d2s, "shard", "artifacts/r.yaml"])
+        .output()
+        .expect("shard");
+    assert!(
+        !sh2.status.success(),
+        "shard must refuse when the source points at the file, not its dir"
+    );
+    assert!(
+        String::from_utf8_lossy(&sh2.stderr).contains("Restored"),
+        "must report that it restored the original; stderr: {}",
+        String::from_utf8_lossy(&sh2.stderr)
+    );
+    assert!(
+        d2.join("artifacts/r.yaml").exists() && !d2.join("artifacts/r").exists(),
+        "the original must be restored and the partial dir cleaned up"
+    );
+    assert_eq!(
+        count(d2s),
+        1,
+        "no artifact may be lost on the aborted shard"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.
