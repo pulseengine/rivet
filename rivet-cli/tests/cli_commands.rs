@@ -6326,6 +6326,71 @@ fn list_release_flag_filters_by_release_scope() {
     );
 }
 
+/// REQ-233 (#516): `rivet release status <ver>` reports the readiness burn-down
+/// — the not-yet-verified set — and exits non-zero while the release is not
+/// cuttable, zero once every scoped artifact is verified/accepted.
+///
+/// rivet: verifies REQ-233
+#[test]
+fn release_status_reports_burn_down_and_exit_code() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let reqs = dir.join("artifacts/reqs.yaml");
+    // Two in v1.0.0: one verified, one still proposed → not cuttable.
+    std::fs::write(
+        &reqs,
+        "artifacts:\n  \
+         - id: REQ-9\n    type: requirement\n    title: A\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-8\n    type: requirement\n    title: B\n    status: proposed\n    release: v1.0.0\n",
+    )
+    .unwrap();
+
+    let status = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "status", "v1.0.0"])
+        .output()
+        .expect("release status");
+    let out = String::from_utf8_lossy(&status.stdout);
+    assert!(
+        out.contains("REQ-8") && out.contains("NOT cuttable"),
+        "must list the not-yet-verified artifact and flag not-cuttable; got:\n{out}"
+    );
+    assert!(
+        !status.status.success(),
+        "must exit non-zero while the release is not cuttable (so CI can gate)"
+    );
+
+    // Verify REQ-8 → now everything is done → cuttable, exit zero.
+    std::fs::write(
+        &reqs,
+        "artifacts:\n  \
+         - id: REQ-9\n    type: requirement\n    title: A\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-8\n    type: requirement\n    title: B\n    status: verified\n    release: v1.0.0\n",
+    )
+    .unwrap();
+    let status2 = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "status", "v1.0.0"])
+        .output()
+        .expect("release status");
+    assert!(
+        status2.status.success(),
+        "must exit zero once every scoped artifact is verified; stdout:\n{}",
+        String::from_utf8_lossy(&status2.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&status2.stdout).contains("Cuttable"),
+        "must report the release as cuttable"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.
