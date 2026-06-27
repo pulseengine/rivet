@@ -6578,6 +6578,62 @@ fn shard_splits_source_into_per_id_files_reversibly() {
     );
 }
 
+/// REQ-236 (#556): `cited-source` is declared on the verification types in the
+/// aspice preset, so a hash-stamped pointer to the test source file is accepted
+/// (not rejected as an undeclared field) and `rivet check sources` drift-tracks
+/// it — the requirement→test evidence can no longer silently rot.
+///
+/// rivet: verifies REQ-236
+#[test]
+fn cited_source_accepted_on_sw_verification() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, aspice]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("tests/hal.rs"), "fn t() {}\n").unwrap();
+    std::fs::write(
+        dir.join("artifacts/v.yaml"),
+        "artifacts:\n  \
+         - id: SWR-1\n    type: sw-req\n    title: HAL requirement\n    status: approved\n  \
+         - id: FV-1\n    type: sw-verification\n    title: HAL verification\n    status: draft\n    fields:\n      method: automated-test\n      cited-source:\n        uri: tests/hal.rs\n        kind: file\n    links:\n      - type: verifies\n        target: SWR-1\n",
+    )
+    .unwrap();
+
+    // The cited-source field must NOT be rejected as undeclared on the
+    // verification type (the #556 symptom).
+    let val = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&val.stdout),
+        String::from_utf8_lossy(&val.stderr)
+    );
+    assert!(
+        !combined.contains("'cited-source' is not defined"),
+        "cited-source must be declared on sw-verification; got:\n{combined}"
+    );
+
+    // `check sources` must recognize and drift-track the cited test file.
+    let cs = Command::new(rivet_bin())
+        .args(["--project", dirs, "check", "sources"])
+        .output()
+        .expect("check sources");
+    let cs_out = String::from_utf8_lossy(&cs.stdout);
+    assert!(
+        cs_out.contains("FV-1") && cs_out.contains("tests/hal.rs"),
+        "check sources must track the verification's cited test file; got:\n{cs_out}"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.

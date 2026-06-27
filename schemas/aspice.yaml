@@ -201,6 +201,14 @@ artifact-types:
       - name: steps
         type: structured
         required: false
+      - name: cited-source
+        type: cited-source
+        required: false
+        description: >
+          Sha256-stamped reference to the test source file(s) that perform this
+          verification. `rivet validate` / `rivet check sources` flag drift the
+          moment the cited file changes without a re-stamp, so the
+          requirement→test evidence cannot silently rot (REQ-236, #556).
     link-fields:
       - name: verifies
         link-type: verifies
@@ -232,6 +240,14 @@ artifact-types:
       - name: steps
         type: structured
         required: false
+      - name: cited-source
+        type: cited-source
+        required: false
+        description: >
+          Sha256-stamped reference to the test source file(s) that perform this
+          verification. `rivet validate` / `rivet check sources` flag drift the
+          moment the cited file changes without a re-stamp, so the
+          requirement→test evidence cannot silently rot (REQ-236, #556).
     link-fields:
       - name: verifies
         link-type: verifies
@@ -266,6 +282,14 @@ artifact-types:
       - name: steps
         type: structured
         required: false
+      - name: cited-source
+        type: cited-source
+        required: false
+        description: >
+          Sha256-stamped reference to the test source file(s) that perform this
+          verification. `rivet validate` / `rivet check sources` flag drift the
+          moment the cited file changes without a re-stamp, so the
+          requirement→test evidence cannot silently rot (REQ-236, #556).
     link-fields:
       - name: verifies
         link-type: verifies
@@ -297,6 +321,14 @@ artifact-types:
       - name: steps
         type: structured
         required: false
+      - name: cited-source
+        type: cited-source
+        required: false
+        description: >
+          Sha256-stamped reference to the test source file(s) that perform this
+          verification. `rivet validate` / `rivet check sources` flag drift the
+          moment the cited file changes without a re-stamp, so the
+          requirement→test evidence cannot silently rot (REQ-236, #556).
     link-fields:
       - name: verifies
         link-type: verifies
@@ -328,6 +360,14 @@ artifact-types:
       - name: steps
         type: structured
         required: false
+      - name: cited-source
+        type: cited-source
+        required: false
+        description: >
+          Sha256-stamped reference to the test source file(s) that perform this
+          verification. `rivet validate` / `rivet check sources` flag drift the
+          moment the cited file changes without a re-stamp, so the
+          requirement→test evidence cannot silently rot (REQ-236, #556).
     link-fields:
       - name: verifies
         link-type: verifies
