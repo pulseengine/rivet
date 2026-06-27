@@ -7542,3 +7542,47 @@ artifacts:
       model: claude-opus-4-8
       timestamp: 2026-06-26T18:44:23Z
     release: v0.22.0
+
+  - id: REQ-236
+    type: requirement
+    title: cited-source on verification types + native named-test-exists check
+    status: proposed
+    description: "Declare cited-source on sw/unit/sys-verification types and add a native named-test-exists check so requirement->test evidence is drift-checked, not just asserted. #556. v0.23 centerpiece."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-27T06:51:06Z
+    release: v0.23.0
+
+  - id: REQ-237
+    type: requirement
+    title: direct test->sw-req link (skip full ASPICE design chain)
+    status: proposed
+    description: "Allow a test to link directly to a sw-req for verified status without the full ASPICE design chain; guide the completeness error toward it. #350. v0.23."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-27T06:51:07Z
+    release: v0.23.0
+
+  - id: REQ-238
+    type: requirement
+    title: graphical req->test-result trace view
+    status: proposed
+    description: "A graphical/visual way to trace a requirement to its test results. #547. v0.23."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-27T06:51:07Z
+    release: v0.23.0
+
+  - id: REQ-239
+    type: requirement
+    title: validate <-> commit-name parsing parity
+    status: proposed
+    description: "Sync the validate naming checks with commit-name parsing so naming issues are caught early and consistently. #577. v0.23."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-06-27T06:51:08Z
+    release: v0.23.0
