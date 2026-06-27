@@ -5,6 +5,31 @@
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-06-27
+
+Theme: **Release planning, complete** — turn the v0.21 `release:` field into a
+full, dogfooded workflow. v0.22 is the first rivet release planned, executed,
+and gated entirely with rivet's own tooling: the plan lives in `release:`-tagged
+artifacts, and `rivet release status` is the authority that called it cuttable.
+
+### Added
+- **`rivet list --release <ver>`** (REQ-232, #516) — the release-planning view;
+  keep only artifacts scoped to a release. Sugar for `(= release "<ver>")`,
+  composes with `--type`/`--status`/`--filter`.
+- **`rivet release status <ver>`** (REQ-233, #516) — readiness burn-down:
+  per-status counts of the artifacts in a release, the not-yet-`verified` set
+  that blocks the cut, and a cuttable verdict. **Exits non-zero while not
+  cuttable**, so CI can gate a release on it. `--format json` too.
+- **`rivet release move <id> <ver>`** (REQ-234, #516) — re-target an artifact to
+  a release as a logged scope decision; reports the old → new transition,
+  idempotent, via the safe modify write-path.
+- **`rivet shard <file>`** (REQ-235, #490 / DD-070) — split a single-file
+  artifact source into one `<ID>.yaml` per artifact so existing projects adopt
+  the conflict-free per-id layout (the data-migration half of #490). Reversible
+  and lossless: writes the per-id files, verifies they hold the same id set,
+  backs up the original, reloads the whole project to confirm nothing was lost,
+  and only then removes the backup — restoring + refusing on any mismatch.
+
 ## [0.21.1] - 2026-06-26
 
 ### Fixed
