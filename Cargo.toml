@@ -15,7 +15,7 @@ members = [
 exclude = ["compose-witness"]
 
 [workspace.package]
-version = "0.22.0"
+version = "0.22.1"
 authors = ["PulseEngine <https://github.com/pulseengine>"]
 edition = "2024"
 license = "Apache-2.0"
