@@ -253,6 +253,26 @@ impl YamlEditor {
         while end < block_end {
             let line = &self.lines[end];
             if line.trim().is_empty() {
+                // A blank line belongs to a block scalar (`>`/`|`) only when a
+                // deeper-indented line follows it. Peek past the run of blanks:
+                // if the next non-blank line is still inside the block, the
+                // blanks are part of the scalar; otherwise the block has ended.
+                // Without this, a folded/literal scalar with an internal blank
+                // line is truncated and the new field gets spliced *inside* it,
+                // corrupting the YAML (#613 — `--set-release` on an artifact
+                // with a folded `description:`).
+                let mut peek = end + 1;
+                while peek < block_end && self.lines[peek].trim().is_empty() {
+                    peek += 1;
+                }
+                if peek < block_end {
+                    let next = &self.lines[peek];
+                    let next_indent = next.len() - next.trim_start().len();
+                    if next_indent > field_indent {
+                        end = peek + 1;
+                        continue;
+                    }
+                }
                 break;
             }
             let indent = line.len() - line.trim_start().len();
@@ -1747,6 +1767,57 @@ artifacts:
         assert_eq!(
             parsed["artifacts"][0]["provenance"]["model"].as_str(),
             Some("claude-opus-4-8")
+        );
+    }
+
+    // rivet: verifies REQ-004
+    /// Regression (#613): inserting a new base field (`--set-release`) on an
+    /// artifact with a folded/literal `description:` scalar that contains an
+    /// INTERNAL BLANK LINE used to splice the new key inside the block — the
+    /// blank prematurely ended the scalar, truncating the description and
+    /// producing a misattributed/invalid value. The new field must land after
+    /// the entire scalar.
+    #[test]
+    fn set_field_inserts_after_folded_scalar_with_blank_line() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: implemented
+    description: >
+      Line one of a folded block.
+
+      Line two after a blank.
+    tags:
+      - x";
+        let params = crate::mutate::ModifyParams {
+            set_release: Some("v1.0.0".to_string()),
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out =
+            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        assert_eq!(
+            parsed["artifacts"][0]["release"].as_str(),
+            Some("v1.0.0"),
+            "release must be set as a sibling field"
+        );
+        // The folded description must remain whole — both lines, not truncated.
+        let desc = parsed["artifacts"][0]["description"]
+            .as_str()
+            .expect("description must still be a scalar");
+        assert!(
+            desc.contains("Line one") && desc.contains("Line two"),
+            "the folded description must not be split/truncated; got: {desc:?}"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["tags"][0].as_str(),
+            Some("x"),
+            "sibling fields after the scalar must survive"
         );
     }
 }
