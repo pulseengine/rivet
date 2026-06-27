@@ -525,6 +525,12 @@ enum Command {
         /// artifact or a raw YAML parse (#506). No effect on text output.
         #[arg(long)]
         full: bool,
+
+        /// Filter to artifacts scoped to a release (e.g. v0.22.0) — the
+        /// release-planning view. Sugar for `--filter '(= release "<ver>")'`
+        /// (#516, REQ-232). Combines with --type/--status/--filter.
+        #[arg(long, value_name = "VERSION")]
+        release: Option<String>,
     },
 
     /// Show artifact summary statistics
@@ -2285,6 +2291,7 @@ fn run(cli: Cli) -> Result<bool> {
             orphans,
             rank_by_backlinks,
             full,
+            release,
         } => cmd_list(
             &cli,
             r#type.as_deref(),
@@ -2296,6 +2303,7 @@ fn run(cli: Cli) -> Result<bool> {
             *orphans,
             *rank_by_backlinks,
             *full,
+            release.as_deref(),
         ),
         Command::Get { id, format } => cmd_get(&cli, id, format),
         // REQ-167 / #426: `trace` is the discoverable namesake verb for the
@@ -6678,6 +6686,7 @@ fn cmd_list(
     orphans_only: bool,
     rank_by_backlinks: bool,
     full: bool,
+    release_filter: Option<&str>,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
@@ -6710,6 +6719,13 @@ fn cmd_list(
         results.retain(|a| {
             rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store)
         });
+    }
+
+    // REQ-232 / #516: `--release <ver>` is the release-planning view — keep
+    // only artifacts scoped to that release. Sugar for `(= release "<ver>")`,
+    // composing with the filters above.
+    if let Some(ver) = release_filter {
+        results.retain(|a| a.release.as_deref() == Some(ver));
     }
 
     // REQ-128: `--orphans` keeps only artifacts with no inbound and no
