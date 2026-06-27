@@ -6391,6 +6391,79 @@ fn release_status_reports_burn_down_and_exit_code() {
     );
 }
 
+/// REQ-234 (#516): `rivet release move <id> <ver>` re-targets an artifact to a
+/// release, logging the old → new transition; idempotent when already scoped.
+///
+/// rivet: verifies REQ-234
+#[test]
+fn release_move_retargets_and_logs_scope_change() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-9\n    type: requirement\n    title: A\n    status: draft\n    release: v1.0.0\n  \
+         - id: REQ-8\n    type: requirement\n    title: B\n    status: draft\n",
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        let out = Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .output()
+            .expect("run rivet");
+        (
+            out.status.success(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    };
+
+    // Move an assigned artifact: logs the transition, re-targets the scope.
+    let (ok, out) = run(&["release", "move", "REQ-9", "v2.0.0"]);
+    assert!(ok, "move must succeed; got:\n{out}");
+    assert!(
+        out.contains("v1.0.0") && out.contains("v2.0.0"),
+        "must log the old → new release transition; got:\n{out}"
+    );
+    let (_, v2) = run(&["list", "--release", "v2.0.0", "--format", "json"]);
+    assert!(
+        v2.contains("REQ-9"),
+        "REQ-9 must now be in v2.0.0; got:\n{v2}"
+    );
+    let (_, v1) = run(&["list", "--release", "v1.0.0", "--format", "json"]);
+    assert!(
+        !v1.contains("REQ-9"),
+        "REQ-9 must no longer be in v1.0.0; got:\n{v1}"
+    );
+
+    // Move an unassigned artifact: transition from "(unassigned)".
+    let (ok2, out2) = run(&["release", "move", "REQ-8", "v2.0.0"]);
+    assert!(
+        ok2,
+        "moving an unassigned artifact must succeed; got:\n{out2}"
+    );
+    assert!(
+        out2.contains("unassigned") && out2.contains("v2.0.0"),
+        "must log the move from unassigned; got:\n{out2}"
+    );
+
+    // Idempotent: moving to the same release is a no-op.
+    let (ok3, out3) = run(&["release", "move", "REQ-9", "v2.0.0"]);
+    assert!(
+        ok3 && out3.contains("nothing to do"),
+        "must be idempotent; got:\n{out3}"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.
