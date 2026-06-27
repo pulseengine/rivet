@@ -1507,6 +1507,15 @@ enum ReleaseAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Re-target an artifact to a different release (REQ-234, #516) — a logged
+    /// scope decision. Reports the old → new release transition; the artifact
+    /// edit is the durable record.
+    Move {
+        /// Artifact ID to move (e.g. REQ-042)
+        id: String,
+        /// Destination release version (e.g. v0.23.0)
+        version: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -2485,6 +2494,7 @@ fn run(cli: Cli) -> Result<bool> {
         },
         Command::Release { action } => match action {
             ReleaseAction::Status { version, format } => cmd_release_status(&cli, version, format),
+            ReleaseAction::Move { id, version } => cmd_release_move(&cli, id, version),
         },
         #[cfg(feature = "serve")]
         Command::Snapshot { action } => match action {
@@ -6696,6 +6706,44 @@ fn cmd_bundle(cli: &Cli, id: &str, depth: usize, format: &str, incoming: bool) -
             Ok(false)
         }
     }
+}
+
+/// REQ-234 / #516: re-target an artifact to a different release — a logged scope
+/// decision. The artifact edit (via the shared safe modify write-path) is the
+/// durable record; this surfaces the old → new transition.
+fn cmd_release_move(cli: &Cli, id: &str, version: &str) -> Result<bool> {
+    // Capture the current release for the scope-change log. Scope the borrow so
+    // `cmd_modify` can reload the project below.
+    let old = {
+        let ctx = ProjectContext::load(cli)?;
+        ctx.store
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("artifact '{id}' not found"))?
+            .release
+            .clone()
+    };
+    if old.as_deref() == Some(version) {
+        println!("{id} is already scoped to {version} — nothing to do.");
+        return Ok(true);
+    }
+    let ok = cmd_modify(
+        cli,
+        Some(id),
+        None,
+        false,
+        None,
+        Some(version),
+        None,
+        None,
+        &[],
+        &[],
+        &[],
+    )?;
+    if ok {
+        let from = old.as_deref().unwrap_or("(unassigned)");
+        println!("scope change: {id} moved {from} \u{2192} {version}");
+    }
+    Ok(ok)
 }
 
 /// REQ-233 / #516: readiness burn-down for a release — per-status counts of the

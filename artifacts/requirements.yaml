@@ -7524,7 +7524,7 @@ artifacts:
   - id: REQ-234
     type: requirement
     title: rivet release move <id> <ver> logged scope change
-    status: proposed
+    status: verified
     description: "Re-target an artifact to a release as a logged scope decision (uses --set-release). #516 slice 3. v0.22."
     provenance:
       created-by: ai-assisted
