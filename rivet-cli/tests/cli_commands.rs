@@ -6254,6 +6254,78 @@ fn release_field_loads_sets_and_filters_without_loss() {
     );
 }
 
+/// REQ-232 (#516): `rivet list --release <ver>` is the release-planning view —
+/// it keeps only artifacts scoped to that release and composes with the other
+/// filters. Sugar for `--filter '(= release "<ver>")'`.
+///
+/// rivet: verifies REQ-232
+#[test]
+fn list_release_flag_filters_by_release_scope() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-9\n    type: requirement\n    title: A\n    status: draft\n    release: v1.0.0\n  \
+         - id: REQ-8\n    type: requirement\n    title: B\n    status: draft\n    release: v2.0.0\n  \
+         - id: REQ-7\n    type: requirement\n    title: C\n    status: draft\n",
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        let out = Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .output()
+            .expect("run rivet");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    // --release keeps only the matching artifact.
+    let v1 = run(&["list", "--release", "v1.0.0", "--format", "json"]);
+    assert!(
+        v1.contains("REQ-9") && !v1.contains("REQ-8") && !v1.contains("REQ-7"),
+        "--release v1.0.0 must keep only REQ-9; got:\n{v1}"
+    );
+
+    // Unassigned artifacts (no release) are excluded.
+    let v2 = run(&["list", "--release", "v2.0.0", "--format", "json"]);
+    assert!(
+        v2.contains("REQ-8") && !v2.contains("REQ-7"),
+        "--release v2.0.0 must keep only REQ-8; got:\n{v2}"
+    );
+
+    // Composes with --status (REQ-9 is draft → still matches).
+    let combined = run(&[
+        "list",
+        "--release",
+        "v1.0.0",
+        "--status",
+        "draft",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        combined.contains("REQ-9"),
+        "--release must compose with --status; got:\n{combined}"
+    );
+
+    // Unknown release → empty.
+    let none = run(&["list", "--release", "v9.9.9", "--format", "json"]);
+    assert!(
+        !none.contains("REQ-"),
+        "an unknown release must list nothing; got:\n{none}"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.
