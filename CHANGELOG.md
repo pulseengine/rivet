@@ -5,6 +5,20 @@
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-06-27
+
+### Fixed
+- **`rivet modify --set-release` no longer corrupts an artifact with a folded
+  (`>`) or literal (`|`) `description:` scalar (data loss).** A follow-up to the
+  v0.21.1 fix: the insert-position logic consumed a field's block extent but
+  **broke on the first blank line** — and a block scalar can contain internal
+  blank lines (a folded `description:` with a blank between paragraphs is very
+  common). So `--set-release` spliced the new `release:` key *inside* the scalar,
+  truncating the description and producing an invalid/misattributed value
+  (silent — `modify` reported success). The inserter now peeks past blank runs:
+  a blank belongs to the scalar only when a deeper-indented line follows.
+  Reported on real v0.22.0 use (#613). (REQ-004)
+
 ## [0.22.0] - 2026-06-27
 
 Theme: **Release planning, complete** — turn the v0.21 `release:` field into a
