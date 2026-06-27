@@ -924,6 +924,18 @@ enum Command {
         action: ReleaseAction,
     },
 
+    /// Split a single-file artifact source into one `<ID>.yaml` per artifact
+    /// (REQ-235, #490 / DD-070), so parallel adds never share a file. Writes a
+    /// directory next to the file, verifies the per-id files load identically,
+    /// then removes the original — fully reversible if anything is off. After
+    /// sharding, set `layout: per-id` on the source in rivet.yaml so future
+    /// `rivet add` writes per-id too.
+    Shard {
+        /// The single-file artifact source to split, e.g.
+        /// `artifacts/requirements.yaml`. Becomes `artifacts/requirements/`.
+        file: PathBuf,
+    },
+
     /// Capture or compare project snapshots for delta tracking
     #[cfg(feature = "serve")]
     Snapshot {
@@ -2496,6 +2508,7 @@ fn run(cli: Cli) -> Result<bool> {
             ReleaseAction::Status { version, format } => cmd_release_status(&cli, version, format),
             ReleaseAction::Move { id, version } => cmd_release_move(&cli, id, version),
         },
+        Command::Shard { file } => cmd_shard(&cli, file),
         #[cfg(feature = "serve")]
         Command::Snapshot { action } => match action {
             SnapshotAction::Capture { name, output } => {
@@ -6706,6 +6719,134 @@ fn cmd_bundle(cli: &Cli, id: &str, depth: usize, format: &str, incoming: bool) -
             Ok(false)
         }
     }
+}
+
+/// REQ-235 / #490 (DD-070): split a single-file artifact source into one
+/// `<ID>.yaml` per artifact, so parallel adds never share a file. Reversible —
+/// writes the per-id files, verifies they hold the same artifact id set, backs
+/// up the original to `<file>.bak`, reloads the whole project to confirm nothing
+/// was lost, and only then removes the backup. Aborts + restores on any mismatch.
+fn cmd_shard(cli: &Cli, file: &std::path::Path) -> Result<bool> {
+    use std::collections::BTreeSet;
+    let path = if file.is_absolute() {
+        file.to_path_buf()
+    } else {
+        cli.project.join(file)
+    };
+    if !path.is_file() {
+        anyhow::bail!("not a file: {}", path.display());
+    }
+    let content =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(&content).with_context(|| format!("parsing {}", path.display()))?;
+    let arts = doc
+        .get("artifacts")
+        .and_then(|v| v.as_sequence())
+        .ok_or_else(|| anyhow::anyhow!("{} has no top-level `artifacts:` list", path.display()))?;
+    if arts.is_empty() {
+        anyhow::bail!("{} contains no artifacts", path.display());
+    }
+
+    // Collect (id, element); reject missing or duplicate ids before writing.
+    let mut entries: Vec<(String, serde_yaml::Value)> = Vec::new();
+    let mut ids: BTreeSet<String> = BTreeSet::new();
+    for el in arts {
+        let id = el
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("an artifact in {} has no `id`", path.display()))?;
+        if !ids.insert(id.to_string()) {
+            anyhow::bail!("duplicate id '{id}' in {}", path.display());
+        }
+        entries.push((id.to_string(), el.clone()));
+    }
+
+    // Target directory = the file path without its extension.
+    let dir = path.with_extension("");
+    if dir.exists() {
+        anyhow::bail!(
+            "target directory already exists: {} — remove it or shard elsewhere",
+            dir.display()
+        );
+    }
+    std::fs::create_dir(&dir).with_context(|| format!("creating {}", dir.display()))?;
+
+    // Write one `<ID>.yaml` per artifact, preserving every field (Value round-trip).
+    for (id, el) in &entries {
+        let mut map = serde_yaml::Mapping::new();
+        map.insert(
+            serde_yaml::Value::String("artifacts".into()),
+            serde_yaml::Value::Sequence(vec![el.clone()]),
+        );
+        let body = serde_yaml::to_string(&serde_yaml::Value::Mapping(map))
+            .with_context(|| format!("serializing {id}"))?;
+        std::fs::write(dir.join(format!("{id}.yaml")), body)
+            .with_context(|| format!("writing {id}.yaml"))?;
+    }
+
+    // Verify the new files parse and hold exactly the same id set.
+    let mut written: BTreeSet<String> = BTreeSet::new();
+    for (id, _) in &entries {
+        let f = dir.join(format!("{id}.yaml"));
+        let c = std::fs::read_to_string(&f)?;
+        let v: serde_yaml::Value =
+            serde_yaml::from_str(&c).with_context(|| format!("re-parsing {}", f.display()))?;
+        if let Some(seq) = v.get("artifacts").and_then(|x| x.as_sequence()) {
+            for e in seq {
+                if let Some(i) = e.get("id").and_then(|x| x.as_str()) {
+                    written.insert(i.to_string());
+                }
+            }
+        }
+    }
+    if written != ids {
+        let _ = std::fs::remove_dir_all(&dir);
+        anyhow::bail!(
+            "per-id files did not round-trip the original ids — aborted, original untouched"
+        );
+    }
+
+    // Back up the original (reversible), then confirm the WHOLE project still
+    // loads every original id — catches a rivet.yaml source that points at the
+    // file itself rather than its directory.
+    let bak = path.with_file_name(format!(
+        "{}.bak",
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("source")
+    ));
+    std::fs::rename(&path, &bak).with_context(|| format!("backing up {}", path.display()))?;
+
+    let loaded_ok = match ProjectContext::load(cli) {
+        Ok(ctx) => ids.iter().all(|id| ctx.store.get(id).is_some()),
+        Err(_) => false,
+    };
+    if !loaded_ok {
+        std::fs::rename(&bak, &path).ok();
+        let _ = std::fs::remove_dir_all(&dir);
+        anyhow::bail!(
+            "after sharding, the project no longer loads every artifact — the \
+             rivet.yaml source likely points at the file, not its directory. \
+             Restored the original; no changes made. Point the source at the \
+             directory `{}` and retry.",
+            path.parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        );
+    }
+
+    std::fs::remove_file(&bak).ok();
+    println!(
+        "sharded {} → {} per-id file(s) in {}/ (original removed)",
+        path.display(),
+        entries.len(),
+        dir.display()
+    );
+    println!(
+        "  next: set `layout: per-id` on this source in rivet.yaml so new adds write per-id too."
+    );
+    Ok(true)
 }
 
 /// REQ-234 / #516: re-target an artifact to a different release — a logged scope

@@ -7535,7 +7535,7 @@ artifacts:
   - id: REQ-235
     type: requirement
     title: rivet migrate --explode <source> to per-id files
-    status: proposed
+    status: verified
     description: "Split an existing single-file source into per-id <ID>.yaml files so existing projects adopt the conflict-free layout (DD-070). #490 slice 2. v0.22."
     provenance:
       created-by: ai-assisted
