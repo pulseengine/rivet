@@ -6903,8 +6903,20 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
         .collect();
     scoped.sort_by(|a, b| a.id.cmp(&b.id));
 
-    // `verified` and `accepted` are the done states; anything else still blocks.
-    let is_done = |s: Option<&str>| matches!(s, Some("verified") | Some("accepted"));
+    // Release-ready statuses: the built-in `verified`/`accepted` plus any the
+    // project declares via `release.ready-when` (#612 — V-model / ASPICE
+    // projects verify through links and sit at a terminal status like
+    // `approved`, so the status-only default never greens for them).
+    let extra_ready: std::collections::BTreeSet<String> = ctx
+        .config
+        .release
+        .as_ref()
+        .map(|r| r.ready_when.iter().cloned().collect())
+        .unwrap_or_default();
+    let is_done = |s: Option<&str>| {
+        matches!(s, Some("verified") | Some("accepted"))
+            || s.is_some_and(|x| extra_ready.contains(x))
+    };
     let mut by_status: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     for a in &scoped {
@@ -6942,7 +6954,7 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
             println!("  {status:<12} {count}");
         }
         if cuttable {
-            println!("\n\u{2713} Cuttable — every artifact is verified/accepted.");
+            println!("\n\u{2713} Cuttable — every artifact is release-ready.");
         } else {
             println!("\nNot yet verified ({}):", not_done.len());
             for a in &not_done {

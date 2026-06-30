@@ -7591,7 +7591,7 @@ artifacts:
     type: requirement
     title: release status cuttability derives from coverage/links, not just status string
     status: proposed
-    description: "rivet release status cuttability is status-only (verified/accepted); V-model/ASPICE projects verify via links (validate coverage rules), so the gate never greens for them. Derive release-ready from validate coverage passing, with a release.ready-when escape hatch. #612, follow-up to REQ-233."
+    description: "rivet release status cuttability is status-only (verified/accepted); V-model/ASPICE projects verify via links (validate coverage rules), so the gate never greens for them. Derive release-ready from validate coverage passing, with a release.ready-when escape hatch. #612, follow-up to REQ-233. Partial: the release.ready-when escape hatch is delivered (ProjectConfig.release.ready-when extends the release-ready status set); deriving cuttability from validate coverage is still open before this can be verified."
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8

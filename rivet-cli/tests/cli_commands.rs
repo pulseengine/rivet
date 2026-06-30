@@ -6634,6 +6634,64 @@ fn cited_source_accepted_on_sw_verification() {
     );
 }
 
+/// REQ-240 (#612): `release.ready-when` in rivet.yaml lets a V-model/ASPICE
+/// project add its own terminal statuses (e.g. `approved`) to the release-ready
+/// set, so `rivet release status` can green for link-verified projects whose
+/// artifacts never carry `status: verified`. Default stays verified/accepted.
+///
+/// rivet: verifies REQ-240
+#[test]
+fn release_status_honors_ready_when_config() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("artifacts/r.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: a\n    status: approved\n    release: v0.1.0\n  \
+         - id: REQ-2\n    type: requirement\n    title: b\n    status: approved\n    release: v0.1.0\n",
+    )
+    .unwrap();
+    let write_cfg = |ready_when: &str| {
+        std::fs::write(
+            dir.join("rivet.yaml"),
+            format!(
+                "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n{ready_when}\
+                 sources:\n  - path: artifacts\n    format: generic-yaml\n"
+            ),
+        )
+        .unwrap();
+    };
+
+    // Default (no ready-when): `approved` is not release-ready → exit non-zero.
+    write_cfg("");
+    let default = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "status", "v0.1.0"])
+        .output()
+        .expect("release status");
+    assert!(
+        !default.status.success(),
+        "without ready-when, an all-`approved` release must NOT be cuttable"
+    );
+
+    // With `release.ready-when: [approved]` → cuttable, exit zero.
+    write_cfg("release:\n  ready-when: [approved]\n");
+    let configured = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "status", "v0.1.0"])
+        .output()
+        .expect("release status");
+    assert!(
+        configured.status.success(),
+        "with ready-when: [approved], an all-approved release must be cuttable; stdout:\n{}",
+        String::from_utf8_lossy(&configured.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&configured.stdout).contains("Cuttable"),
+        "must report the release as cuttable"
+    );
+}
+
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.

@@ -978,6 +978,26 @@ impl From<&str> for DocsEntry {
     }
 }
 
+/// Release-readiness configuration for `rivet release status` (#612).
+///
+/// By default an artifact is release-ready only at status `verified`/`accepted`.
+/// V-model / ASPICE projects verify through *links* (a requirement sits at a
+/// terminal status like `approved` and is verified by a link to a passing
+/// verification — what `validate` coverage rules check), so the default gate
+/// never greens. `ready-when` lets a project add its own terminal statuses:
+///
+/// ```yaml
+/// release:
+///   ready-when: [approved]
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ReleaseConfig {
+    /// Extra statuses (beyond the built-in `verified`/`accepted`) that count an
+    /// artifact as release-ready for cuttability.
+    #[serde(default, rename = "ready-when")]
+    pub ready_when: Vec<String>,
+}
+
 /// Project configuration loaded from `rivet.yaml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
@@ -996,6 +1016,9 @@ pub struct ProjectConfig {
     /// Commit traceability configuration.
     #[serde(default)]
     pub commits: Option<CommitsConfig>,
+    /// Release-readiness configuration for `rivet release status` (#612).
+    #[serde(default)]
+    pub release: Option<ReleaseConfig>,
     /// External project dependencies for cross-repo linking.
     #[serde(default)]
     pub externals: Option<BTreeMap<String, ExternalProject>>,
