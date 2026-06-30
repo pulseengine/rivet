@@ -104,11 +104,14 @@ urlencoding = "2"
 quick-xml = { version = "0.37", features = ["serialize", "overlapped-lists"] }
 
 # WASM component model
-# Pinned to 44 (>=44.0.3) for RUSTSEC-2026-0182 — a WASIp1 `fd_renumber`
-# resource leak fixed in 44.0.3 / 45.0.2. rivet's only wasmtime user is
+# Pinned to >=45.0.3 for RUSTSEC-2026-0188 — WASI hard links and renames
+# bypass wasmtime-wasi's FilePerms on the destination path (fixed in 45.0.3 /
+# 46.0.1). Supersedes the earlier 44.0.3 pin for RUSTSEC-2026-0182 (a WASIp1
+# `fd_renumber` resource leak), which 45.x also carries. The 44->45 bump is
+# source-compatible for our usage. rivet's only wasmtime user is
 # rivet-core/src/wasm_runtime.rs (the compose-witness component runner).
-wasmtime = { version = "44.0.3", features = ["component-model"] }
-wasmtime-wasi = "44.0.3"
+wasmtime = { version = "45.0.3", features = ["component-model"] }
+wasmtime-wasi = "45.0.3"
 
 # Lossless syntax trees — pinned to our fork's Miri-soundness branch v3.
 # Upstream will NOT take a patch: rust-analyzer/rowan #210/#211/#212 were all
