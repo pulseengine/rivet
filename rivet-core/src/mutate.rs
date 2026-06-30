@@ -483,8 +483,15 @@ pub fn find_source_file(id: &str, store: &Store) -> Option<PathBuf> {
 
 /// Find the appropriate file for a new artifact of a given type by looking
 /// at where existing artifacts of that type are stored.
+///
+/// Iterates in **id-sorted** order (not `store.iter()`'s HashMap order) so a
+/// type spanning more than one source file always routes a new artifact to
+/// the same destination — the file of the lowest-id existing artifact of that
+/// type. With raw `store.iter()` the destination flipped between runs on
+/// identical input (HashMap uses a per-process random seed), so `rivet add`
+/// could non-deterministically fragment a type across files (#629).
 pub fn find_file_for_type(artifact_type: &str, store: &Store) -> Option<PathBuf> {
-    for artifact in store.iter() {
+    for artifact in store.iter_sorted() {
         if artifact.artifact_type == artifact_type {
             if let Some(ref path) = artifact.source_file {
                 return Some(path.clone());
@@ -743,6 +750,37 @@ mod tests {
         assert_eq!(next_id(&store, "REQ"), "REQ-003");
         assert_eq!(next_id(&store, "FEAT"), "FEAT-002");
         assert_eq!(next_id(&store, "DD"), "DD-001");
+    }
+
+    // #629: when a type spans more than one source file, `rivet add` must
+    // route a new artifact deterministically — to the file of the LOWEST-id
+    // existing artifact of that type — not to whichever file `store.iter()`'s
+    // HashMap order happens to surface first.
+    // rivet: verifies REQ-031
+    #[test]
+    fn find_file_for_type_is_deterministic_when_type_spans_files() {
+        // A `requirement` type split across two files: the lowest id lives in
+        // requirements.yaml; a higher id lives in extra.yaml.
+        let mut store = Store::new();
+        let mut hi = minimal_artifact("REQ-900", "requirement");
+        hi.source_file = Some(PathBuf::from("artifacts/extra.yaml"));
+        store.insert(hi).unwrap();
+        let mut lo = minimal_artifact("REQ-001", "requirement");
+        lo.source_file = Some(PathBuf::from("artifacts/requirements.yaml"));
+        store.insert(lo).unwrap();
+        let mut mid = minimal_artifact("REQ-500", "requirement");
+        mid.source_file = Some(PathBuf::from("artifacts/extra.yaml"));
+        store.insert(mid).unwrap();
+
+        // The lowest-id artifact (REQ-001) decides the destination, every call.
+        let expected = Some(PathBuf::from("artifacts/requirements.yaml"));
+        for _ in 0..16 {
+            assert_eq!(
+                find_file_for_type("requirement", &store),
+                expected,
+                "routing must be stable across calls (lowest-id file wins)"
+            );
+        }
     }
 
     // #479: burned IDs (claimed in git history but absent from the working
