@@ -953,7 +953,14 @@ pub fn validate_structural_with_externals_and_variant(
             // violation while coverage would count the link as satisfying.
             if let Some(required_link) = &rule.required_link {
                 let has_link = artifact.links.iter().any(|l| {
+                    // Self-satisfying links (REQ-X → REQ-X) must not count: an
+                    // author could otherwise close the loop on their own
+                    // artifact and pass validation with zero upstream trace.
+                    // `coverage::compute_coverage` excludes them identically;
+                    // without this guard `validate --direct` and `coverage`
+                    // disagree on the same rule + data (false PASS). #627.
                     l.link_type == *required_link
+                        && l.target != *id
                         && (rule.target_types.is_empty()
                             || store
                                 .get(&l.target)
@@ -990,7 +997,12 @@ pub fn validate_structural_with_externals_and_variant(
                 let backlinks = graph.backlinks_to(id);
                 let matches = |link_name: &str, from_types: &[String]| {
                     backlinks.iter().any(|bl| {
-                        (bl.link_type == link_name || bl.inverse_type.as_deref() == Some(link_name))
+                        // A backlink from the artifact to itself cannot count
+                        // as "satisfied by a different artifact" — same guard
+                        // coverage applies, else validate false-PASSes. #627.
+                        bl.source != *id
+                            && (bl.link_type == link_name
+                                || bl.inverse_type.as_deref() == Some(link_name))
                             && (from_types.is_empty()
                                 || store
                                     .get(&bl.source)
@@ -2632,6 +2644,78 @@ then:
             validate_says_covered, coverage_says_covered,
             "validate and coverage must agree (validate_covered={}, coverage={}/{})",
             validate_says_covered, entry.covered, entry.total
+        );
+    }
+
+    /// #627: a self-satisfying link (REQ-X → REQ-X) must NOT close a
+    /// traceability rule. `coverage` already excludes self-links; `validate`
+    /// did not, so an author could pass `validate --direct` (and the MCP
+    /// `rivet_validate` tool, which shares this path) by linking an artifact
+    /// to itself — a false PASS with zero real upstream trace. validate and
+    /// coverage must agree that the artifact is uncovered.
+    ///
+    /// rivet: verifies REQ-004
+    #[test]
+    fn validate_rejects_self_satisfying_backlink() {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".to_string(),
+            description: "REQ".to_string(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }];
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "req-backlinked-by-any".into(),
+            description: "Every req must be satisfied by something".into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("satisfies".into()),
+            target_types: vec![],
+            from_types: vec![],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+        }];
+        let schema = Schema::merge(&[file]);
+
+        // REQ-001 links `satisfies → itself`: the only backlink to REQ-001 is
+        // from REQ-001. This must NOT count as satisfying the rule.
+        let mut store = Store::new();
+        let mut req = minimal_artifact("REQ-001", "requirement");
+        req.status = Some("approved".to_string());
+        req.links = vec![Link {
+            link_type: "satisfies".to_string(),
+            target: "REQ-001".to_string(),
+            external: None,
+        }];
+        store.insert(req).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        let rule_fired = diags.iter().any(|d| {
+            d.rule == "req-backlinked-by-any" && d.artifact_id.as_deref() == Some("REQ-001")
+        });
+        assert!(
+            rule_fired,
+            "validate must reject a self-satisfying backlink (false PASS otherwise); diags: {diags:?}"
+        );
+
+        // And coverage must agree the artifact is uncovered.
+        let coverage = crate::coverage::compute_coverage(&store, &schema, &graph);
+        let entry = coverage
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "req-backlinked-by-any")
+            .expect("rule should produce a coverage entry");
+        assert_eq!(
+            entry.covered, 0,
+            "coverage must also treat the self-link as uncovered (validate/coverage parity)"
         );
     }
 
