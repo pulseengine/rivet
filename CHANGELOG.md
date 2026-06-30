@@ -5,6 +5,58 @@
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-06-30
+
+Theme: **Dogfooding hardening** — a focused patch from an internal bug-hunt of
+rivet's own write/validate paths, plus a security-advisory bump. One P0
+data-loss fix, three correctness fixes (each with a regression test proven to
+fail without the fix), and a wasmtime security update.
+
+### Fixed
+- **`rivet modify --add-tag` / `--remove-tag` no longer corrupts a block-style
+  `tags:` list (data loss).** The new tag set renders as a flow list
+  (`tags: [a, b, c]`) and replaces the existing `tags:` field; the field-replace
+  path used a scalar-only extent helper that recognised only `|`/`>` block
+  scalars, so a block-style list —
+  ```yaml
+  tags:
+    - core
+    - safety
+  ```
+  had only its `tags:` key line rewritten, orphaning the `- item` children under
+  the new value. The file then failed to parse and **every** artifact in it
+  silently vanished from the loaded store (`rivet list` → 0 artifacts), though
+  `modify` reported success. The replace path now uses the same `field_block_end`
+  extent helper as the insert path (consuming block scalars, nested mappings, and
+  block lists); the scalar-only helper was deleted so it cannot be reintroduced.
+  Same class as #573 / #613. Found by dogfooding (#625). (REQ-034)
+- **`rivet validate` no longer counts a self-satisfying link (`REQ-X → REQ-X`)
+  as closing a traceability rule (false PASS).** An author could pass
+  `validate --direct` (and the MCP `rivet_validate` tool, which shares the same
+  library path) by linking an artifact to itself, with zero real upstream trace.
+  `rivet coverage` already excluded self-links, so the two could give opposite
+  verdicts on the same project. `validate` now applies the same guards
+  (`l.target != id`, `bl.source != id`). (#627, REQ-004)
+- **`rivet release status` no longer reports an empty release scope as
+  cuttable.** A scope with zero artifacts (a version nobody has assigned work to,
+  or — most commonly — a mistyped version) was vacuously cuttable: exit 0,
+  `"cuttable": true`. A `rivet release status vX.Y.Z || fail` CI gate therefore
+  greened on "ship a release containing nothing". An empty scope is now not
+  cuttable (exit non-zero). (#628, REQ-007)
+- **`rivet add` routes new artifacts deterministically when a type spans more
+  than one source file.** Routing used `store.iter()` (HashMap order, seeded
+  per-process), so the destination file flipped run-to-run on identical input.
+  It now iterates in id-sorted order — the lowest-id artifact of the type decides
+  the file, every call. (#629, REQ-007)
+
+### Security
+- **Bumped `wasmtime` / `wasmtime-wasi` 44.0.3 → 45.0.3 for RUSTSEC-2026-0188**
+  (WASI hard links and renames bypass `wasmtime-wasi`'s `FilePerms` on the
+  destination path). rivet's only wasmtime user is the compose-witness component
+  runner (`rivet-core/src/wasm_runtime.rs`, `wasm` feature). The bump is
+  source-compatible — the WASI host code compiles unchanged and all
+  `wasm_runtime` tests pass. (#632, REQ-086)
+
 ## [0.22.1] - 2026-06-27
 
 ### Fixed
