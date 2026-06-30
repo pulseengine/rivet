@@ -6916,7 +6916,11 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
         .iter()
         .filter(|a| !is_done(a.status.as_deref()))
         .collect();
-    let cuttable = not_done.is_empty();
+    // An EMPTY scope is not cuttable: a release nobody has assigned artifacts
+    // to — or, more commonly, a mistyped version — must not green a
+    // `rivet release status vX.Y.Z || fail` CI gate. "Ship a release
+    // containing nothing" is the most common operator typo, not success (#628).
+    let cuttable = !scoped.is_empty() && not_done.is_empty();
 
     if format == "json" {
         let obj = serde_json::json!({
