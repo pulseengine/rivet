@@ -167,37 +167,6 @@ impl YamlEditor {
         None
     }
 
-    /// Determine if a field at a given line is a block scalar (multi-line value).
-    /// Returns the end line (exclusive) of the block scalar content.
-    fn block_scalar_end(&self, field_line: usize, block_end: usize) -> usize {
-        let line = &self.lines[field_line];
-        let trimmed = line.trim();
-        // Check if value is a block scalar indicator (> or |)
-        let after_colon = trimmed.split_once(':').map(|x| x.1.trim());
-        match after_colon {
-            Some(">") | Some("|") | Some(">-") | Some("|-") => {
-                // Content continues on subsequent lines with greater indentation
-                let field_indent = line.len() - line.trim_start().len();
-                let mut end = field_line + 1;
-                while end < block_end {
-                    let next = &self.lines[end];
-                    let next_trimmed = next.trim();
-                    if next_trimmed.is_empty() {
-                        end += 1;
-                        continue;
-                    }
-                    let next_indent = next.len() - next.trim_start().len();
-                    if next_indent <= field_indent {
-                        break;
-                    }
-                    end += 1;
-                }
-                end
-            }
-            _ => field_line + 1,
-        }
-    }
-
     /// Set a scalar field value within an artifact block.
     ///
     /// If the field already exists, its value is replaced (including any
@@ -224,8 +193,15 @@ impl YamlEditor {
         let new_lines: Vec<String> = rendered.split('\n').map(str::to_string).collect();
 
         if let Some(field_line) = self.find_field_in_block(block_start, block_end, key) {
-            // Replace existing field (and any block-scalar continuation).
-            let scalar_end = self.block_scalar_end(field_line, block_end);
+            // Replace existing field AND its full on-disk extent — block
+            // scalars (`|`/`>`), nested block mappings, and block-style LISTS
+            // (e.g. a multi-line `tags:`). `field_block_end` consumes all
+            // deeper-indented continuation lines. A narrower scalar-only
+            // helper used to live here and handled only the `|`/`>` case, so
+            // replacing a block-list `tags:` (via `--add-tag`/`--remove-tag`)
+            // orphaned the `- item` children and corrupted the whole file
+            // (#618, same class as #573/#613).
+            let scalar_end = self.field_block_end(field_line, block_end, field_indent);
             self.lines.splice(field_line..scalar_end, new_lines);
         } else {
             // Insert new field. Place it after the last simple field before
@@ -241,13 +217,15 @@ impl YamlEditor {
     }
 
     /// End (exclusive) of a field's on-disk extent, consuming any continuation
-    /// lines indented deeper than the field key — covering BOTH block scalars
-    /// (`|`/`>`) and nested block MAPPINGS (e.g. `provenance:` with its
-    /// `created-by`/`model` children). `block_scalar_end` only handles the
-    /// scalar case; using it to find an insert position after a block-mapping
-    /// field lands the new field *inside* that block, corrupting the YAML (the
-    /// `--set-release` / `--set-field` regression on artifacts with a trailing
-    /// `provenance:`/`links:` block).
+    /// lines indented deeper than the field key — covering ALL multi-line
+    /// shapes: block scalars (`|`/`>`), nested block MAPPINGS (e.g.
+    /// `provenance:` with its `created-by`/`model` children), and block-style
+    /// LISTS (e.g. a multi-line `tags:`). This is the ONLY extent helper —
+    /// both the insert path (`find_insert_position`) and the replace path
+    /// (`set_field`) use it, so a new field can neither be spliced *inside* a
+    /// block (the `--set-release`/`--set-field` regression on a trailing
+    /// `provenance:`/`links:` block) nor orphan a replaced block-list's items
+    /// (the `--add-tag`/`--remove-tag` corruption, #618).
     fn field_block_end(&self, field_line: usize, block_end: usize, field_indent: usize) -> usize {
         let mut end = field_line + 1;
         while end < block_end {
@@ -1818,6 +1796,62 @@ artifacts:
             parsed["artifacts"][0]["tags"][0].as_str(),
             Some("x"),
             "sibling fields after the scalar must survive"
+        );
+    }
+
+    // rivet: verifies REQ-034
+    #[test]
+    fn set_field_replaces_block_style_list_without_orphaning_items() {
+        // #618 (same data-loss class as #573/#613): replacing a block-style
+        // `tags:` list (what `--add-tag`/`--remove-tag` render to) went through
+        // a scalar-only extent helper, so only the `tags:` key line was
+        // rewritten and the deeper-indented `- item` children were orphaned
+        // under the new flow value — making the whole file unparseable and
+        // silently dropping EVERY artifact in it.
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First
+    status: draft
+    tags:
+      - core
+      - safety
+  - id: REQ-002
+    type: requirement
+    title: Second
+    status: draft";
+        let mut editor = YamlEditor::parse(content);
+        editor
+            .set_field("REQ-001", "tags", "[core, safety, newtag]")
+            .unwrap();
+        let out = editor.to_string();
+
+        // The whole document must still parse — the regression produced a
+        // block-mapping/sequence type clash that serde_yaml rejects outright.
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+
+        // The orphaned `- core` / `- safety` lines must be GONE: the new
+        // flow-style value fully replaces the old block list.
+        assert!(
+            !out.contains("      - core"),
+            "old block-list items must not be orphaned; got:\n{out}"
+        );
+        let tags: Vec<&str> = parsed["artifacts"][0]["tags"]
+            .as_sequence()
+            .expect("tags must be a sequence")
+            .iter()
+            .filter_map(serde_yaml::Value::as_str)
+            .collect();
+        assert_eq!(tags, vec!["core", "safety", "newtag"]);
+
+        // The untouched sibling artifact must survive intact — the corruption
+        // dropped it along with the whole file.
+        assert_eq!(
+            parsed["artifacts"][1]["id"].as_str(),
+            Some("REQ-002"),
+            "sibling artifact after the edited one must survive"
         );
     }
 }
