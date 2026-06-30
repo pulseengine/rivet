@@ -6391,6 +6391,66 @@ fn release_status_reports_burn_down_and_exit_code() {
     );
 }
 
+/// #628: an EMPTY release scope (a version nobody has assigned artifacts to,
+/// or — most commonly — a mistyped version) must NOT report as cuttable. A
+/// `rivet release status vX.Y.Z || fail` CI gate must not green on "ship a
+/// release containing nothing".
+///
+/// rivet: verifies REQ-234
+#[test]
+fn release_status_empty_scope_is_not_cuttable() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    // One artifact, scoped to v1.0.0 — NOT to the version we query below.
+    let reqs = dir.join("artifacts/reqs.yaml");
+    std::fs::write(
+        &reqs,
+        "artifacts:\n  \
+         - id: REQ-9\n    type: requirement\n    title: A\n    status: verified\n    release: v1.0.0\n",
+    )
+    .unwrap();
+
+    // A version nobody scoped: empty scope must be non-zero (text + json).
+    let status = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "status", "v2.0.0"])
+        .output()
+        .expect("release status");
+    assert!(
+        !status.status.success(),
+        "empty scope must exit non-zero so a CI gate can't green a typo'd/empty release; stdout:\n{}",
+        String::from_utf8_lossy(&status.stdout)
+    );
+
+    let json = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "release",
+            "status",
+            "v2.0.0",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("release status json");
+    let v: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("json output must parse");
+    assert_eq!(v["total"], 0, "no artifacts should be scoped to v2.0.0");
+    assert_eq!(
+        v["cuttable"], false,
+        "an empty release scope must not be cuttable"
+    );
+}
+
 /// REQ-234 (#516): `rivet release move <id> <ver>` re-targets an artifact to a
 /// release, logging the old → new transition; idempotent when already scoped.
 ///
