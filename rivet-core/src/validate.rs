@@ -953,7 +953,17 @@ pub fn validate_structural_with_externals_and_variant(
             // violation while coverage would count the link as satisfying.
             if let Some(required_link) = &rule.required_link {
                 let has_link = artifact.links.iter().any(|l| {
+                    // Self-satisfying links (REQ-X → REQ-X) must not close
+                    // a rule: an author could otherwise pass `validate` with
+                    // zero upstream trace. Mirrors `coverage::compute_coverage`
+                    // — see coverage.rs forward-direction filter — so the two
+                    // engines stay in lockstep (REQ-089). Without this guard
+                    // `validate` and `coverage` give opposite verdicts for the
+                    // same project, and the corresponding MCP tools
+                    // (`rivet_validate` vs `rivet_coverage`) contradict each
+                    // other. Issue #627.
                     l.link_type == *required_link
+                        && l.target != *id
                         && (rule.target_types.is_empty()
                             || store
                                 .get(&l.target)
@@ -990,7 +1000,14 @@ pub fn validate_structural_with_externals_and_variant(
                 let backlinks = graph.backlinks_to(id);
                 let matches = |link_name: &str, from_types: &[String]| {
                     backlinks.iter().any(|bl| {
-                        (bl.link_type == link_name || bl.inverse_type.as_deref() == Some(link_name))
+                        // Same self-link guard as the forward path above and as
+                        // `coverage::compute_coverage`'s backward filter
+                        // (coverage.rs `bl.source != *id`). A backlink from the
+                        // artifact to itself cannot count as "satisfied by a
+                        // different artifact". Issue #627.
+                        bl.source != *id
+                            && (bl.link_type == link_name
+                                || bl.inverse_type.as_deref() == Some(link_name))
                             && (from_types.is_empty()
                                 || store
                                     .get(&bl.source)
@@ -2632,6 +2649,154 @@ then:
             validate_says_covered, coverage_says_covered,
             "validate and coverage must agree (validate_covered={}, coverage={}/{})",
             validate_says_covered, entry.covered, entry.total
+        );
+    }
+
+    /// Issue #627: `validate --direct` (and the shared library path used
+    /// by `rivet validate` and the MCP `rivet_validate` tool) counted a
+    /// **self-satisfying** backlink (REQ-X ← REQ-X) as closing a rule —
+    /// a false PASS that let an author validate green with zero upstream
+    /// trace. `coverage::compute_coverage` already excludes self-links
+    /// (`bl.source != *id`); this test pins that `validate` matches it
+    /// so the two engines can't give opposite verdicts on the same data.
+    ///
+    /// rivet: fixes REQ-004
+    #[test]
+    fn validate_rejects_self_satisfying_backlink() {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".to_string(),
+            description: "REQ".to_string(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }];
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "req-needs-downstream".into(),
+            description: "Every req must be satisfied by something downstream".into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("satisfies".into()),
+            target_types: vec![],
+            from_types: vec![], // match any — keeps the self-link trap reachable
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+        }];
+        let schema = Schema::merge(&[file]);
+
+        // REQ-001 has a self-satisfies link (REQ-001 → REQ-001). The
+        // synthesised backlink REQ-001 ← REQ-001 must not count as
+        // "satisfied by a different artifact" for either engine.
+        let mut store = Store::new();
+        let mut req = minimal_artifact("REQ-001", "requirement");
+        req.status = Some("approved".to_string());
+        req.links = vec![Link {
+            link_type: "satisfies".to_string(),
+            target: "REQ-001".to_string(),
+            external: None,
+        }];
+        store.insert(req).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "req-needs-downstream")
+            .collect();
+        assert!(
+            !rule_diags.is_empty(),
+            "validate must flag REQ-001 — a self-satisfies link cannot close \
+             the rule. Without the guard validate silently passes here while \
+             coverage reports REQ-001 uncovered, contradicting #627. Got: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+        );
+
+        let coverage = crate::coverage::compute_coverage(&store, &schema, &graph);
+        let entry = coverage
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "req-needs-downstream")
+            .expect("rule should produce a coverage entry");
+        assert_eq!(
+            entry.covered, 0,
+            "coverage already excludes self-links; if this changes, the \
+             validate guard above must change with it (REQ-089)."
+        );
+        assert_eq!(entry.total, 1);
+
+        let validate_says_covered = rule_diags.is_empty();
+        let coverage_says_covered = entry.covered == entry.total && entry.total > 0;
+        assert_eq!(
+            validate_says_covered, coverage_says_covered,
+            "validate and coverage must agree on the self-link case \
+             (validate_covered={}, coverage={}/{})",
+            validate_says_covered, entry.covered, entry.total
+        );
+    }
+
+    /// Issue #627 forward-direction companion: a `required-link` rule
+    /// must not be closed by a self-satisfying forward link
+    /// (REQ-X → REQ-X). Mirrors the backlink guard above so both
+    /// validate paths stay in lockstep with coverage.
+    ///
+    /// rivet: fixes REQ-004
+    #[test]
+    fn validate_rejects_self_satisfying_forward_link() {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "design-decision".to_string(),
+            description: "DD".to_string(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }];
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "dd-needs-upstream".into(),
+            description: "Every DD must satisfy something upstream".into(),
+            source_type: "design-decision".into(),
+            required_link: Some("satisfies".into()),
+            required_backlink: None,
+            target_types: vec![], // match any — keeps the self-link trap reachable
+            from_types: vec![],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        let mut dd = minimal_artifact("DD-001", "design-decision");
+        dd.status = Some("approved".to_string());
+        dd.links = vec![Link {
+            link_type: "satisfies".to_string(),
+            target: "DD-001".to_string(),
+            external: None,
+        }];
+        store.insert(dd).unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let rule_diags: Vec<_> = diags
+            .iter()
+            .filter(|d| d.rule == "dd-needs-upstream")
+            .collect();
+        assert!(
+            !rule_diags.is_empty(),
+            "validate must flag DD-001 — a self-satisfies forward link \
+             cannot close the rule (#627). Got: {:?}",
+            diags.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
     }
 
