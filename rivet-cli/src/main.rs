@@ -454,6 +454,25 @@ enum Command {
         id: String,
     },
 
+    /// Trace a requirement FORWARD to the test results that cover it (#547).
+    /// Walks backlinks (what verifies it, possibly multi-hop through the ASPICE
+    /// V) and reports each reached artifact with its latest test-result status,
+    /// plus a roll-up verdict. Text or JSON — the JSON is what the `rivet serve`
+    /// graphical trace view consumes.
+    #[command(name = "trace-results")]
+    TraceResults {
+        /// Requirement (or any artifact) ID to trace forward from.
+        id: String,
+
+        /// Maximum hops to walk (default: 4 — the ASPICE V depth).
+        #[arg(long, default_value = "4")]
+        depth: usize,
+
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
     /// Bundle an artifact and its link-graph closure as a single pasteable document
     Bundle {
         /// Root artifact ID
@@ -2370,6 +2389,7 @@ fn run(cli: Cli) -> Result<bool> {
         // per-artifact traceability view; it renders the same as
         // `validate --explain <id>` (which stays as an alias).
         Command::Trace { id } => cmd_explain(&cli, id),
+        Command::TraceResults { id, depth, format } => cmd_trace_results(&cli, id, *depth, format),
         Command::Bundle {
             id,
             depth,
@@ -7707,6 +7727,69 @@ fn cmd_check_verification_evidence(
         );
     }
     Ok(missing.is_empty())
+}
+
+/// #547 (REQ-238): trace a requirement FORWARD to the test results that cover
+/// it — the reverse of the authored `verifies` direction. Text tree or JSON
+/// (the JSON is what the `rivet serve` graphical trace view consumes). Exits
+/// non-zero only when a covering test recorded a FAILING result, so it is
+/// usable as a per-requirement gate.
+fn cmd_trace_results(cli: &Cli, id: &str, depth: usize, format: &str) -> Result<bool> {
+    use rivet_core::result_trace::{TraceVerdict, trace_test_results, verdict};
+    use rivet_core::results::{ResultStore, TestStatus};
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load_full(cli)?;
+    ctx.warn_parse_error_skips(cli);
+    if !ctx.store.contains(id) {
+        anyhow::bail!("artifact '{id}' not found");
+    }
+    let empty = ResultStore::new();
+    let results = ctx.result_store.as_ref().unwrap_or(&empty);
+    let nodes = trace_test_results(id, &ctx.graph, results, depth);
+    let v = verdict(&nodes);
+    let ok = !matches!(v, TraceVerdict::Failing);
+
+    let badge = |s: Option<&TestStatus>| match s {
+        Some(TestStatus::Pass) => "pass",
+        Some(TestStatus::Fail) => "FAIL",
+        Some(TestStatus::Error) => "ERROR",
+        Some(TestStatus::Skip) => "skip",
+        Some(TestStatus::Blocked) => "blocked",
+        None => "·",
+    };
+
+    if format == "json" {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "command": "trace-results",
+                "root": id,
+                "verdict": v,
+                "nodes": nodes,
+            }))?
+        );
+    } else {
+        let verdict_str = match v {
+            TraceVerdict::Passing => "\u{2713} passing",
+            TraceVerdict::Failing => "\u{2717} failing",
+            TraceVerdict::NoEvidence => "\u{2014} no test evidence",
+        };
+        println!("Test-result trace for {id}: {verdict_str}");
+        if nodes.is_empty() {
+            println!("  (nothing traces to {id})");
+        }
+        for n in &nodes {
+            let indent = "  ".repeat(n.distance);
+            println!(
+                "{indent}{} --{}--> {}   [{}]",
+                n.artifact_id,
+                n.link_type,
+                n.via_target,
+                badge(n.status.as_ref())
+            );
+        }
+    }
+    Ok(ok)
 }
 
 /// #559: advance an artifact to `verified` when it has verifying evidence —
@@ -15271,7 +15354,6 @@ impl ProjectContext {
     }
 
     /// Load project with artifacts, schema, link graph, documents, and test results.
-    #[allow(dead_code)]
     fn load_full(cli: &Cli) -> Result<Self> {
         let mut ctx = Self::load_with_docs(cli)?;
 

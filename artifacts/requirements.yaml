@@ -7568,7 +7568,7 @@ artifacts:
   - id: REQ-238
     type: requirement
     title: graphical req->test-result trace view
-    status: proposed
+    status: implemented
     description: "A graphical/visual way to trace a requirement to its test results. #547. v0.23."
     provenance:
       created-by: ai-assisted
