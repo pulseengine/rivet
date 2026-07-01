@@ -564,6 +564,45 @@ fn api_artifacts_unfiltered() {
     child.wait().ok();
 }
 
+/// #622 (REQ-244): the artifacts API surfaces each artifact's lifecycle gaps
+/// (`missing`), so the overview can flag them — not only the per-artifact
+/// validation view. rivet's own corpus has plenty of gaps, so at least one
+/// artifact must report a non-empty `missing`.
+///
+/// rivet: verifies REQ-244
+#[test]
+fn api_artifacts_expose_missing_gaps() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/api/v1/artifacts?limit=1000", false);
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let arts = json["artifacts"].as_array().expect("artifacts array");
+
+    let with_gaps: Vec<(&str, Vec<&str>)> = arts
+        .iter()
+        .filter_map(|a| {
+            let m = a["missing"].as_array()?;
+            if m.is_empty() {
+                return None;
+            }
+            Some((
+                a["id"].as_str().unwrap_or(""),
+                m.iter().filter_map(|x| x.as_str()).collect(),
+            ))
+        })
+        .collect();
+    assert!(
+        !with_gaps.is_empty(),
+        "at least one artifact must expose a non-empty `missing` (lifecycle gaps); \
+         got {} artifacts, none with gaps",
+        arts.len()
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 #[test]
 fn api_artifacts_filter_by_type() {
     let (mut child, port) = start_server();
