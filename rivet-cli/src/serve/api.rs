@@ -373,6 +373,12 @@ struct ApiArtifact {
     links_out: usize,
     links_in: usize,
     source_file: Option<String>,
+    /// Downstream artifact types this artifact is missing to complete its trace
+    /// (from `check_lifecycle_completeness`). Surfaced so the overview can flag
+    /// gaps at a glance, not only the per-artifact validation view (#622). Empty
+    /// (and omitted from JSON) when the artifact's V is complete.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    missing: Vec<String>,
 }
 
 fn resolve_source_file(
@@ -402,6 +408,10 @@ fn to_api_artifact(
         links_out: state.graph.links_from(&artifact.id).len(),
         links_in: state.graph.backlinks_to(&artifact.id).len(),
         source_file: resolve_source_file(artifact, &state.project_path_buf),
+        // This helper is currently unused (`dead_code`); the live list handler
+        // computes gaps in bulk. Left empty rather than paying a per-call
+        // lifecycle pass here.
+        missing: Vec::new(),
     }
 }
 
@@ -487,6 +497,18 @@ pub(crate) async fn artifacts(
             Some(s) => (&s.store, &s.graph),
             None => (&guard.store, &guard.graph),
         };
+        // Per-artifact lifecycle gaps (#622): which downstream types each
+        // artifact is still missing, so the overview can flag gaps at a glance.
+        let gap_artifacts: Vec<rivet_core::model::Artifact> = store_ref.iter().cloned().collect();
+        let gaps: std::collections::HashMap<String, Vec<String>> =
+            rivet_core::lifecycle::check_lifecycle_completeness(
+                &gap_artifacts,
+                &guard.schema,
+                graph_ref,
+            )
+            .into_iter()
+            .map(|g| (g.artifact_id, g.missing))
+            .collect();
         for artifact in store_ref.iter() {
             if !matches_filters(artifact, &params) {
                 continue;
@@ -507,6 +529,7 @@ pub(crate) async fn artifacts(
                 links_out: graph_ref.links_from(&artifact.id).len(),
                 links_in: graph_ref.backlinks_to(&artifact.id).len(),
                 source_file: resolve_source_file(artifact, &guard.project_path_buf),
+                missing: gaps.get(&artifact.id).cloned().unwrap_or_default(),
             });
         }
     }
@@ -531,6 +554,7 @@ pub(crate) async fn artifacts(
                             links_out: 0,
                             links_in: 0,
                             source_file: resolve_source_file(artifact, &guard.project_path_buf),
+                            missing: Vec::new(),
                         });
                     }
                 }

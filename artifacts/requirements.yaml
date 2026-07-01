@@ -7634,7 +7634,7 @@ artifacts:
   - id: REQ-244
     type: requirement
     title: rivet serve overview surfaces per-artifact missing coverage
-    status: proposed
+    status: implemented
     description: "The `rivet serve` validation detail view shows what an artifact is missing, but the overview does not surface it. Expose the missing-coverage signal in the overview so gaps are visible without drilling into each artifact. #622."
     provenance:
       created-by: ai-assisted
