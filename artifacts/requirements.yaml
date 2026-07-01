@@ -7546,7 +7546,7 @@ artifacts:
   - id: REQ-236
     type: requirement
     title: cited-source on verification types + native named-test-exists check
-    status: proposed
+    status: verified
     description: "Declare cited-source on sw/unit/sys-verification types and add a native named-test-exists check so requirement->test evidence is drift-checked, not just asserted. #556. v0.23 centerpiece."
     provenance:
       created-by: ai-assisted

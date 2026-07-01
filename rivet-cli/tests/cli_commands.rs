@@ -723,6 +723,69 @@ fn lifecycle_gap_names_the_aspice_verification_chain() {
     );
 }
 
+/// #556 (REQ-236): `rivet check verification-evidence` flags a verification
+/// step whose `cargo test <filter>` names a test that does not exist — the
+/// silent-drift case (`cargo test typo` exits 0 with "0 passed", keeping the
+/// requirement falsely `verified`). A step naming a real test passes; a
+/// non-cargo step is ignored.
+///
+/// rivet: verifies REQ-236
+#[test]
+fn check_verification_evidence_flags_missing_named_test() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "#[test]\nfn real_relocation_test() { assert!(true); }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: FV-001\n    type: requirement\n    title: v\n    status: implemented\n    \
+             fields:\n      steps:\n        \
+             - run: \"cargo test -p p real_relocation_test\"\n        \
+             - run: \"cargo test -p p renamed_or_typod_test\"\n        \
+             - run: \"make lint\"\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "check",
+            "verification-evidence",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("check");
+    assert!(
+        !out.status.success(),
+        "must exit non-zero when a named test is missing"
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    // 2 cargo-test steps checked (the `make lint` step is ignored).
+    assert_eq!(v["named_test_steps_checked"], 2);
+    let missing: Vec<&str> = v["missing"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["filter"].as_str().unwrap())
+        .collect();
+    assert_eq!(missing, vec!["renamed_or_typod_test"]);
+}
+
 /// #620 (REQ-241): `rivet validate` (default salsa path) and
 /// `rivet validate --direct` (library path) must produce IDENTICAL results
 /// on the same project. A user reported them disagreeing — one flagging

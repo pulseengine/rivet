@@ -89,6 +89,7 @@ pub mod templates;
 pub mod test_scanner;
 pub mod validate;
 pub mod variant_emit;
+pub mod verification_evidence;
 pub mod yaml_cst;
 pub mod yaml_edit;
 pub mod yaml_hir;
