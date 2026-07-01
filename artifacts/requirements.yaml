@@ -7591,9 +7591,129 @@ artifacts:
     type: requirement
     title: release status cuttability derives from coverage/links, not just status string
     status: proposed
-    description: "rivet release status cuttability is status-only (verified/accepted); V-model/ASPICE projects verify via links (validate coverage rules), so the gate never greens for them. Derive release-ready from validate coverage passing, with a release.ready-when escape hatch. #612, follow-up to REQ-233."
+    description: "rivet release status cuttability is status-only (verified/accepted); V-model/ASPICE projects verify via links (validate coverage rules), so the gate never greens for them. Derive release-ready from validate coverage passing, with a release.ready-when escape hatch. #612, follow-up to REQ-233. Partial: the release.ready-when escape hatch is delivered (ProjectConfig.release.ready-when extends the release-ready status set); deriving cuttability from validate coverage is still open before this can be verified."
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-27T09:52:30Z
     release: v0.23.0
+
+  - id: REQ-241
+    type: requirement
+    title: validate and validate --direct must produce identical results
+    status: proposed
+    description: "A user reported `rivet validate` and `rivet validate --direct` returning different results on the same project (one with errors, one without). The self-link case was fixed in #627, but the reporter's broader example (salsa path vs library path divergence) may remain. Reproduce and close the remaining divergence so the two paths never disagree. #620, relates to REQ-089."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.23.0
+
+  - id: REQ-242
+    type: requirement
+    title: rivet verify default scan finds member-crate markers in a mixed workspace
+    status: proposed
+    description: "In a cargo workspace where the repo root has its OWN src/ or tests/ (not just member crates), `rivet verify`'s default scan misses `verifies` markers inside member crates — under-counting real test evidence. Make the default scan cover member-crate src/tests even when a root crate is present. #603."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.23.0
+
+  - id: REQ-243
+    type: requirement
+    title: rivet serve artifact view opens the source file at the artifact location
+    status: proposed
+    description: "In the `rivet serve` artifact view the source file is shown but clicking it does not open the file at the artifact's location, even though sources are configured — this deep-link only exists in the VSIX extension today. Wire the same source open-at-location behaviour into the dashboard. #623."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.24.0
+
+  - id: REQ-244
+    type: requirement
+    title: rivet serve overview surfaces per-artifact missing coverage
+    status: proposed
+    description: "The `rivet serve` validation detail view shows what an artifact is missing, but the overview does not surface it. Expose the missing-coverage signal in the overview so gaps are visible without drilling into each artifact. #622."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.24.0
+
+  - id: REQ-245
+    type: requirement
+    title: rivet serve shows a clear indicator when the backend is down
+    status: proposed
+    description: "When the `rivet serve` backend is down, a reload or any page fetch fails silently with no information to the user. Show a clear backend-unavailable indicator instead of a blank/stuck page. #621."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.24.0
+
+  - id: REQ-246
+    type: requirement
+    title: human-friendly artifact editing UI (reduce raw-YAML friction)
+    status: draft
+    description: "A user reported raw-YAML artifact editing is cumbersome; the core is shared but there is no human-facing UI to help author/edit artifacts. Design a friendlier editing path (dashboard form and/or VSIX assist). Scope TBD — needs a design decision before implementation. #546."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.24.0
+
+  - id: REQ-247
+    type: requirement
+    title: AADL diagrams render in static HTML export (inline SVG at export time)
+    status: proposed
+    description: "AADL diagrams are stuck on 'Loading…' in the static HTML export used for compliance reports — they rely on a runtime fetch that isn't available in a static bundle. Inline the SVG at export time so diagrams render offline. #468."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.24.0
+
+  - id: REQ-248
+    type: requirement
+    title: test results extendable with links to PR artifacts / remote issues
+    status: proposed
+    description: "A failed (or any) test result should be extendable with links back to the tracking tool — a PR artifact or a remote issue — so evidence points at where the work/tracking lives. #548."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.24.0
+
+  - id: REQ-249
+    type: requirement
+    title: pin embedded schema versions so a rivet upgrade can't silently change validation
+    status: proposed
+    description: "Builtin schemas are binary-versioned, not pinned: upgrading rivet can make the same `rivet validate` flag new issues on unchanged artifacts (embedded::load_schemas_with_fallback resolves to whatever the binary ships). Let a project pin the embedded schema version so validation is reproducible across rivet upgrades. REQ-220 shipped the `--vendor-schemas` slice; this is the pinning piece. #431."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.25.0
+
+  - id: REQ-250
+    type: requirement
+    title: publish rivet to crates.io (currently npm-only)
+    status: proposed
+    description: "Distribution is npm-only; add crates.io publishing to the release standard so `cargo install` works and the Rust ecosystem can depend on rivet-core. #557."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
+    release: v0.25.0
+
+  - id: REQ-251
+    type: requirement
+    title: artifact serializer must not silently drop new model fields
+    status: proposed
+    description: "mutate::render_artifact_yaml is a hand-rolled allowlist emitter; any Artifact field not explicitly emitted is silently dropped on write. Currently latent (fields_per_variant, Link.external, provenance.federation are not reachable via add/batch/MCP), but it re-bites the moment those become settable. Replace the allowlist with serde-based emission or a compile-time exhaustiveness guard. #634, same family as REQ-034/#476."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-01T00:00:00Z
