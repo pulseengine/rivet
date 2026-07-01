@@ -786,6 +786,75 @@ fn check_verification_evidence_flags_missing_named_test() {
     assert_eq!(missing, vec!["renamed_or_typod_test"]);
 }
 
+/// #547 (REQ-238): `rivet trace-results <req>` walks FORWARD from a requirement
+/// to the test results that cover it (the reverse of the authored `verifies`
+/// direction) and rolls up a pass/fail verdict — the data behind the graphical
+/// dashboard trace view. Exits non-zero when a covering test failed.
+///
+/// rivet: verifies REQ-238
+#[test]
+fn trace_results_forward_from_requirement_to_test_outcome() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("results")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\nresults: results\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: r\n    status: approved\n  \
+         - id: TEST-1\n    type: test\n    title: t\n    status: approved\n    \
+             links:\n      - type: verifies\n        target: REQ-1\n",
+    )
+    .unwrap();
+    let write_result = |status: &str| {
+        std::fs::write(
+            dir.join("results/run1.yaml"),
+            format!(
+                "run:\n  id: run-1\n  timestamp: \"2026-07-01T00:00:00Z\"\n\
+                 results:\n  - artifact: TEST-1\n    status: {status}\n"
+            ),
+        )
+        .unwrap();
+    };
+
+    // Passing result → verdict passing, exit 0, TEST-1 reached with status.
+    write_result("pass");
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "trace-results",
+            "REQ-1",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("trace-results");
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(v["verdict"], "passing");
+    assert_eq!(v["nodes"][0]["artifact_id"], "TEST-1");
+    assert_eq!(v["nodes"][0]["status"], "pass");
+
+    // Failing result → exit non-zero (gate-usable).
+    write_result("fail");
+    let out2 = Command::new(rivet_bin())
+        .args(["--project", dirs, "trace-results", "REQ-1"])
+        .output()
+        .expect("trace-results");
+    assert!(
+        !out2.status.success(),
+        "a failing covering test must make trace-results exit non-zero"
+    );
+}
+
 /// #620 (REQ-241): `rivet validate` (default salsa path) and
 /// `rivet validate --direct` (library path) must produce IDENTICAL results
 /// on the same project. A user reported them disagreeing — one flagging

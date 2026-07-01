@@ -74,6 +74,7 @@ pub mod ownership;
 pub mod query;
 pub mod remediation;
 pub mod reqif;
+pub mod result_trace;
 pub mod results;
 pub mod rivet_version;
 pub mod runs;
