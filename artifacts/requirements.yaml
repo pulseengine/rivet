@@ -7579,7 +7579,7 @@ artifacts:
   - id: REQ-239
     type: requirement
     title: validate <-> commit-name parsing parity
-    status: proposed
+    status: verified
     description: "Sync the validate naming checks with commit-name parsing so naming issues are caught early and consistently. #577. v0.23."
     provenance:
       created-by: ai-assisted

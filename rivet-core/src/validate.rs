@@ -636,6 +636,32 @@ pub fn validate_structural_with_externals_and_variant(
         if is_external_artifact(artifact) {
             continue;
         }
+        // #577 (REQ-239): an id that looks like a botched numbered id — a
+        // hyphen and a digit but not a parseable artifact id, e.g. a dotted
+        // suffix `H-3.2` — validates fine but cannot be referenced in a commit
+        // trailer (`Implements: <id>`). Warn early so the mismatch isn't
+        // discovered only when `rivet commit` rejects the trailer. Shares the
+        // exact shape rule with the commit parser (`crate::commits`) so the
+        // two never diverge (the relaxation there now accepts digit-bearing
+        // prefixes like `MAD1-101`, so only genuinely un-referenceable shapes
+        // remain flagged here). Externally-prefixed ids are already skipped.
+        if crate::commits::looks_like_artifact_id_attempt(&artifact.id) {
+            diagnostics.push(Diagnostic {
+                source_file: None,
+                line: None,
+                column: None,
+                severity: Severity::Warning,
+                artifact_id: Some(artifact.id.clone()),
+                rule: "commit-ref-shape".to_string(),
+                message: format!(
+                    "id '{}' can't be used as a commit-trailer reference \
+                     (trailers need an uppercase-alphanumeric prefix and an \
+                     all-digit suffix, e.g. REQ-001); rename it to trace this \
+                     artifact through commits",
+                    artifact.id
+                ),
+            });
+        }
         let type_def = match lookup_type(artifact, schema, externals) {
             TypeLookup::Found(td) => td,
             TypeLookup::Unknown => {
@@ -2716,6 +2742,53 @@ then:
         assert_eq!(
             entry.covered, 0,
             "coverage must also treat the self-link as uncovered (validate/coverage parity)"
+        );
+    }
+
+    /// #577 (REQ-239): validate warns when an artifact id can't be used as a
+    /// commit-trailer reference — a dotted suffix (`H-3.2`) is flagged, while a
+    /// now-accepted digit-bearing prefix (`MAD1-101`) is not. Keeps validate
+    /// and the commit parser in sync so naming issues surface at validate time.
+    ///
+    /// rivet: verifies REQ-239
+    #[test]
+    fn validate_warns_on_non_commit_referenceable_id() {
+        let mut file = minimal_schema("test");
+        file.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".to_string(),
+            description: "REQ".to_string(),
+            fields: vec![],
+            link_fields: vec![],
+            aspice_process: None,
+            common_mistakes: vec![],
+            example: None,
+            yaml_section: None,
+            yaml_sections: vec![],
+            yaml_section_suffix: None,
+            shorthand_links: std::collections::BTreeMap::new(),
+        }];
+        file.traceability_rules = vec![];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        store
+            .insert(minimal_artifact("H-3.2", "requirement"))
+            .unwrap();
+        store
+            .insert(minimal_artifact("MAD1-101", "requirement"))
+            .unwrap();
+
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate(&store, &schema, &graph);
+        let flagged: Vec<&str> = diags
+            .iter()
+            .filter(|d| d.rule == "commit-ref-shape")
+            .filter_map(|d| d.artifact_id.as_deref())
+            .collect();
+        assert_eq!(
+            flagged,
+            vec!["H-3.2"],
+            "only the dotted-suffix id is un-referenceable; MAD1-101 is now valid"
         );
     }
 
