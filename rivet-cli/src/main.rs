@@ -1996,6 +1996,23 @@ enum CheckAction {
         format: String,
     },
 
+    /// Check that a verification artifact's named-test steps reference tests
+    /// that actually exist (#556 / REQ-236). `cargo test <filter>` exits 0 with
+    /// "0 passed" when the filter matches nothing, so a renamed/typo'd test name
+    /// silently keeps a requirement `verified`. For each `fields.steps[].run`
+    /// that names a cargo test filter, this asserts a matching test exists in
+    /// the scanned Rust sources. Exits non-zero on any missing test.
+    VerificationEvidence {
+        /// Directories to scan for Rust test sources (default: workspace-aware
+        /// src/ + tests/, same as `rivet verify`).
+        #[arg(long = "scan")]
+        scan: Vec<std::path::PathBuf>,
+
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
     /// List artifacts with `cited-source` and the current hash status
     /// (match / drift / missing-hash / read-error / skipped-remote / stale).
     /// Phase 1 only handles `kind: file` — see
@@ -2685,6 +2702,9 @@ fn run(cli: Cli) -> Result<bool> {
             } => cmd_check_review_signoff(&cli, artifact_id, role.as_deref(), format),
             CheckAction::GapsJson { baseline, format } => {
                 cmd_check_gaps_json(&cli, baseline.as_deref(), format)
+            }
+            CheckAction::VerificationEvidence { scan, format } => {
+                cmd_check_verification_evidence(&cli, scan, format)
             }
             CheckAction::Sources {
                 update,
@@ -7563,6 +7583,130 @@ fn default_marker_scan_paths(project: &std::path::Path) -> Vec<std::path::PathBu
         paths.push(project.to_path_buf());
     }
     paths
+}
+
+/// Recursively collect Rust `fn` names from every `.rs` file under `dir`,
+/// skipping `target/`, `node_modules/`, and dot-dirs (same exclusions as the
+/// marker scanner). Used by `rivet check verification-evidence`.
+fn collect_rust_fn_names(dir: &std::path::Path, out: &mut std::collections::BTreeSet<String>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') || name == "target" || name == "node_modules" {
+                    continue;
+                }
+            }
+            collect_rust_fn_names(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            if let Ok(src) = std::fs::read_to_string(&path) {
+                out.extend(rivet_core::verification_evidence::extract_rust_fn_names(
+                    &src,
+                ));
+            }
+        }
+    }
+}
+
+/// #556 (REQ-236 pt2): assert that a verification artifact's named-test steps
+/// (`fields.steps[].run: "cargo test … <filter>"`) reference tests that
+/// actually exist in the scanned Rust sources — catching the silent-drift case
+/// where `cargo test <typo>` exits 0 with "0 passed" and keeps the requirement
+/// falsely `verified`.
+fn cmd_check_verification_evidence(
+    cli: &Cli,
+    scan: &[std::path::PathBuf],
+    format: &str,
+) -> Result<bool> {
+    use rivet_core::verification_evidence as ve;
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    ctx.warn_parse_error_skips(cli);
+
+    let scan_paths: Vec<std::path::PathBuf> = if scan.is_empty() {
+        default_marker_scan_paths(&cli.project)
+    } else {
+        scan.iter()
+            .map(|p| {
+                if p.is_absolute() {
+                    p.clone()
+                } else {
+                    cli.project.join(p)
+                }
+            })
+            .collect()
+    };
+    let mut fn_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for p in &scan_paths {
+        collect_rust_fn_names(p, &mut fn_names);
+    }
+
+    // Walk every artifact's `steps` for `run` commands naming a cargo filter.
+    #[derive(serde::Serialize)]
+    struct Missing {
+        artifact: String,
+        filter: String,
+        command: String,
+    }
+    let mut missing: Vec<Missing> = Vec::new();
+    let mut checked = 0usize;
+    let mut sorted: Vec<&rivet_core::model::Artifact> = ctx.store.iter().collect();
+    sorted.sort_by(|a, b| a.id.cmp(&b.id));
+    for a in sorted {
+        let Some(steps) = a.fields.get("steps").and_then(|v| v.as_sequence()) else {
+            continue;
+        };
+        for step in steps {
+            let Some(run) = step.get("run").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            let Some(filter) = ve::parse_cargo_test_filter(run) else {
+                continue;
+            };
+            checked += 1;
+            if !ve::filter_matches_any(&filter, &fn_names) {
+                missing.push(Missing {
+                    artifact: a.id.clone(),
+                    filter,
+                    command: run.to_string(),
+                });
+            }
+        }
+    }
+
+    if format == "json" {
+        let obj = serde_json::json!({
+            "command": "check verification-evidence",
+            "named_test_steps_checked": checked,
+            "missing": missing,
+            "ok": missing.is_empty(),
+        });
+        println!("{}", serde_json::to_string_pretty(&obj)?);
+    } else if missing.is_empty() {
+        println!(
+            "\u{2713} verification-evidence: {checked} named-test step(s) all reference an existing test."
+        );
+    } else {
+        println!(
+            "\u{2717} verification-evidence: {} named-test step(s) reference a test that does not exist:",
+            missing.len()
+        );
+        for m in &missing {
+            println!(
+                "  {} — no test matching `{}` found (from `{}`)",
+                m.artifact, m.filter, m.command
+            );
+        }
+        println!(
+            "\n  A `cargo test <filter>` that matches nothing exits 0 with \"0 passed\", so this\n  \
+             would otherwise keep the requirement silently `verified`. Fix the filter or the test name."
+        );
+    }
+    Ok(missing.is_empty())
 }
 
 /// #559: advance an artifact to `verified` when it has verifying evidence —
