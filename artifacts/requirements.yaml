@@ -7569,12 +7569,12 @@ artifacts:
     type: requirement
     title: graphical req->test-result trace view
     status: implemented
-    description: "A graphical/visual way to trace a requirement to its test results. #547. v0.23."
+    description: "A graphical/visual way to trace a requirement to its test results. #547. The forward-trace MECHANISM shipped (rivet-core result_trace + `rivet trace-results`, the JSON the view consumes); the graphical dashboard rendering is the remaining half and needs the serve/frontend work + Playwright E2E gate, so it is scoped to v0.24. Moved from v0.23 so v0.23 cuts on its 6 verified evidence REQs."
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-27T06:51:07Z
-    release: v0.23.0
+    release: v0.24.0
 
   - id: REQ-239
     type: requirement

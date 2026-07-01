@@ -5,6 +5,56 @@
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-07-01
+
+Theme: **Traceability evidence** — make the requirement → verification → test
+chain mechanically drift-proof, and make the validator's own signals
+trustworthy and consistent. Six requirements, each shipped with a regression
+test proven to fail without the fix. Planned, executed, and gated entirely with
+rivet's own `release:` tooling.
+
+### Added
+- **`rivet check verification-evidence`** (REQ-236, #556) — a named-test-exists
+  oracle. A verification step commonly ties a requirement to a test via
+  `fields.steps[].run: "cargo test -p X some_test"`, but `cargo test typo`
+  exits 0 with "0 passed", silently keeping the requirement `verified`. This
+  asserts every named cargo-test filter matches a real test in the scanned Rust
+  sources; a missing test fails the check.
+- **`rivet trace-results <id>`** (REQ-238, #547) — the forward req → test-result
+  trace: from a requirement, walk backlinks (through the ASPICE V) to the tests
+  that cover it and their latest pass/fail, with a roll-up verdict. Text or
+  JSON; exits non-zero on a failing covering test. The graphical dashboard view
+  built on this JSON is scoped to v0.24.
+- **`release:` readiness is configurable** (REQ-240, #612) — `rivet.yaml`'s
+  `release.ready-when: [<status>…]` extends the release-ready status set, and
+  `release.require: coverage` derives readiness from validate V-closure so a
+  V-model/ASPICE project (which verifies via links, not a status flip) can green
+  `rivet release status`. Purely additive; defaults unchanged.
+
+### Changed / Fixed
+- **`rivet validate` and `rivet validate --direct` now produce identical
+  output** (REQ-241, #620). The substantive divergence (self-satisfying links
+  counted as coverage) was the v0.22.2 fix; the last residual difference (an
+  `--explain` hint naming a different example artifact by iteration order) is now
+  deterministic.
+- **The default marker scan reaches member crates in a cargo workspace**
+  (REQ-242, #603) — a workspace whose root also has its own `tests/` (rivet
+  itself) previously hid member-crate `verifies` markers from `rivet verify` /
+  `coverage --tests`. Shared workspace-aware defaults; the two never disagree.
+- **The validator and the commit-trailer parser agree on artifact-id shape**
+  (REQ-239, #577) — a digit-bearing prefix like `MAD1-101` is now a valid commit
+  ref (was rejected, forcing a rename loop), and `rivet validate` warns early
+  (`commit-ref-shape`) when an id can't be used as a trailer reference.
+- **A lifecycle-completeness gap for a sw-req now names the ASPICE chain**
+  (REQ-237, #350) — instead of a bare `missing: unit-verification, …`, it points
+  at the required intermediate (add a `sw-detail-design` that this artifact
+  traces to, verified by a `unit-verification`), so authoring a direct link
+  isn't the first, rejected, guess.
+
+### Deferred
+- **REQ-238's graphical dashboard trace view** → v0.24 (needs the serve/frontend
+  work + the Playwright E2E gate). The trace *mechanism* above ships now.
+
 ## [0.22.2] - 2026-06-30
 
 Theme: **Dogfooding hardening** — a focused patch from an internal bug-hunt of
