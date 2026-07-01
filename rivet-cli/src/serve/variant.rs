@@ -339,6 +339,7 @@ mod tests {
             docs: vec![],
             results: None,
             commits: None,
+            release: None,
             externals: None,
             baselines: None,
             docs_check: None,

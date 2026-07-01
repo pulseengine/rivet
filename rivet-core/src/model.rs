@@ -978,6 +978,29 @@ impl From<&str> for DocsEntry {
     }
 }
 
+/// Release-readiness configuration (`release:` in `rivet.yaml`), consumed by
+/// `rivet release status` (#612 / REQ-240).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ReleaseConfig {
+    /// Extra artifact statuses that count as release-ready, beyond the built-in
+    /// `verified`/`accepted` — e.g. a project whose lifecycle gates on an
+    /// `approved` sign-off. The escape hatch for a project's own definition of
+    /// done.
+    #[serde(default, rename = "ready-when")]
+    pub ready_when: Vec<String>,
+    /// How `rivet release status` decides an artifact is release-ready:
+    /// - `"status"` (default): the status string (plus `ready-when`).
+    /// - `"coverage"`: ALSO count an artifact ready when its V is closed —
+    ///   every validate coverage rule that applies to its type is satisfied —
+    ///   regardless of the status string. This lets V-model / ASPICE projects,
+    ///   which verify via links rather than a status flip, green the gate.
+    ///   Purely additive: a `verified`/`accepted`/`ready-when` artifact still
+    ///   counts, so switching to `coverage` never makes a release *less*
+    ///   cuttable.
+    #[serde(default)]
+    pub require: Option<String>,
+}
+
 /// Project configuration loaded from `rivet.yaml`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
@@ -996,6 +1019,9 @@ pub struct ProjectConfig {
     /// Commit traceability configuration.
     #[serde(default)]
     pub commits: Option<CommitsConfig>,
+    /// Release-readiness configuration for `rivet release status` (#612).
+    #[serde(default)]
+    pub release: Option<ReleaseConfig>,
     /// External project dependencies for cross-repo linking.
     #[serde(default)]
     pub externals: Option<BTreeMap<String, ExternalProject>>,
