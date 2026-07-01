@@ -322,23 +322,38 @@ pub fn extract_artifact_refs(value: &str) -> (Vec<String>, Vec<String>) {
 /// but is not itself a valid artifact ID. This deliberately excludes
 /// ordinary hyphenated prose (no digit) and bare numbers (no hyphen),
 /// so `rivet commits` flags genuine typos without choking on free text.
-fn looks_like_artifact_id_attempt(token: &str) -> bool {
+///
+/// `pub` because `rivet validate` reuses it (#577): an artifact whose id
+/// looks like a botched numbered id (e.g. a dotted suffix `H-3.2`) validates
+/// fine but can't be referenced in a commit trailer — validate warns early so
+/// the mismatch isn't discovered only at commit time.
+pub fn looks_like_artifact_id_attempt(token: &str) -> bool {
     !is_artifact_id(token) && token.contains('-') && token.chars().any(|c| c.is_ascii_digit())
 }
 
-/// Check whether a string looks like an artifact ID.
+/// Check whether a string has the shape rivet recognises as an artifact ID
+/// in a **commit trailer** (`Implements: <ID>`). This is the single source of
+/// truth for that shape — `rivet validate` calls it too, so a project can't
+/// have IDs that validate but silently fail to trace through commits (#577).
 ///
-/// Matches simple IDs like `REQ-001` and compound-prefix IDs like
-/// `UCA-C-10`.  The last hyphen-separated segment must be all digits;
-/// all preceding segments must be non-empty uppercase ASCII.
-fn is_artifact_id(s: &str) -> bool {
+/// Matches simple IDs like `REQ-001` and compound-prefix IDs like `UCA-C-10`.
+/// The last hyphen-separated segment must be all digits; every preceding
+/// segment must be non-empty, contain at least one uppercase ASCII letter, and
+/// consist only of uppercase ASCII letters or digits — so a digit-bearing
+/// prefix like `MAD1-101` is accepted (#577), while `123-4` (no letter),
+/// `mad1-1` (lowercase), and `H-3.2` (dotted suffix) are not.
+pub fn is_artifact_id(s: &str) -> bool {
     if let Some(pos) = s.rfind('-') {
         let prefix = &s[..pos];
         let suffix = &s[pos + 1..];
         !prefix.is_empty()
-            && prefix
-                .split('-')
-                .all(|seg| !seg.is_empty() && seg.chars().all(|c| c.is_ascii_uppercase()))
+            && prefix.split('-').all(|seg| {
+                !seg.is_empty()
+                    && seg
+                        .chars()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+                    && seg.chars().any(|c| c.is_ascii_uppercase())
+            })
             && !suffix.is_empty()
             && suffix.chars().all(|c| c.is_ascii_digit())
     } else {
@@ -1269,6 +1284,30 @@ mod tests {
         // input alone does NOT distinguish — but combined with the
         // double-hyphen test above, mutant 261 is killed.
         assert!(!is_artifact_id("-1"));
+    }
+
+    // #577 (REQ-239): a digit-bearing prefix segment (e.g. `MAD1`) is a valid
+    // commit-trailer ref — the parser used to require letter-only prefixes,
+    // forcing a rename loop. Segments must still contain at least one letter
+    // and the suffix must be all digits.
+    // rivet: verifies REQ-239
+    #[test]
+    fn artifact_id_accepts_digit_bearing_prefix() {
+        assert!(is_artifact_id("MAD1-101"), "digit in prefix segment is ok");
+        assert!(is_artifact_id("A1-B2-3"), "digits across compound segments");
+        assert!(is_artifact_id("REQ-001"), "plain case still works");
+        // Still rejected: no letter, lowercase, dotted suffix, non-digit suffix.
+        assert!(!is_artifact_id("123-4"), "prefix segment needs a letter");
+        assert!(!is_artifact_id("mad1-1"), "lowercase prefix rejected");
+        assert!(!is_artifact_id("H-3.2"), "dotted suffix is not all-digits");
+        assert!(!is_artifact_id("REQ-00A"), "non-digit suffix rejected");
+        // …and the parity heuristic flags the botched-but-digit-bearing ones.
+        assert!(looks_like_artifact_id_attempt("H-3.2"));
+        assert!(!looks_like_artifact_id_attempt("MAD1-101"));
+        assert!(
+            !looks_like_artifact_id_attempt("ARCH-CORE-COMMITS"),
+            "a descriptive (no-digit) id is not a botched numbered id"
+        );
     }
 
     // -- integration: extract_artifact_ids with ranges --
