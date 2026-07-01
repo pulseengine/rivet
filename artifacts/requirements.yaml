@@ -7601,7 +7601,7 @@ artifacts:
   - id: REQ-241
     type: requirement
     title: validate and validate --direct must produce identical results
-    status: proposed
+    status: verified
     description: "A user reported `rivet validate` and `rivet validate --direct` returning different results on the same project (one with errors, one without). The self-link case was fixed in #627, but the reporter's broader example (salsa path vs library path divergence) may remain. Reproduce and close the remaining divergence so the two paths never disagree. #620, relates to REQ-089."
     provenance:
       created-by: ai-assisted

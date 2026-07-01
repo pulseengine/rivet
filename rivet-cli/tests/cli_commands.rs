@@ -679,6 +679,68 @@ fn validate_surfaces_parse_error_on_malformed_artifact_file() {
     );
 }
 
+/// #620 (REQ-241): `rivet validate` (default salsa path) and
+/// `rivet validate --direct` (library path) must produce IDENTICAL results
+/// on the same project. A user reported them disagreeing — one flagging
+/// errors the other didn't. The substantive divergence (self-links counted
+/// as closing a rule) was fixed in #627; the last residual difference was
+/// the `--explain <id>` hint naming a different example artifact because the
+/// two paths collect artifacts in different orders. Both are now covered.
+///
+/// rivet: verifies REQ-241
+#[test]
+fn validate_and_direct_produce_identical_output() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    // A project that exercises coverage gaps, a self-satisfying link (the
+    // #627 case), and multiple artifacts (so any order-dependent hint or
+    // list would diverge between the two paths).
+    std::fs::write(
+        dir.join("artifacts").join("reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: self-sat\n    status: approved\n    \
+           links:\n      - type: satisfies\n        target: REQ-001\n  \
+         - id: REQ-002\n    type: requirement\n    title: second\n    status: approved\n  \
+         - id: REQ-003\n    type: requirement\n    title: third\n    status: approved\n",
+    )
+    .unwrap();
+
+    let run = |extra: &[&str]| -> String {
+        let mut args = vec!["--project", dirs, "validate"];
+        args.extend_from_slice(extra);
+        let out = Command::new(rivet_bin())
+            .args(&args)
+            .output()
+            .expect("validate");
+        // Drop the `Schemas:` provenance footer (identical here, but not the
+        // subject of the test) and sort so ordering of independent diagnostic
+        // lines is not itself the assertion — the content must match.
+        let mut lines: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.starts_with("Schemas:"))
+            .map(str::to_string)
+            .collect();
+        lines.sort();
+        lines.join("\n")
+    };
+
+    let salsa = run(&[]);
+    let direct = run(&["--direct"]);
+    assert_eq!(
+        salsa, direct,
+        "`validate` and `validate --direct` must produce identical results (#620)"
+    );
+}
+
 /// REQ-064: a `derives-from-external` link (the cross-org variant of
 /// `derives-from`, terminating at an `external-anchor`) must satisfy a
 /// required `derives-from` link-field. Before the fix the cardinality

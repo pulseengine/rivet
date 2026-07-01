@@ -5810,8 +5810,15 @@ fn cmd_validate(
         .filter(|a| !a.id.contains(':'))
         .cloned()
         .collect();
-    let lifecycle_gaps =
+    let mut lifecycle_gaps =
         rivet_core::lifecycle::check_lifecycle_completeness(&all_artifacts, &schema, &graph);
+    // Sort by artifact id so the printed gap list AND the `--explain <id>`
+    // hint (which uses `.first()`) are deterministic regardless of the
+    // upstream artifact iteration order. Without this the default (salsa)
+    // and `--direct` paths, which collect artifacts in different orders,
+    // name a different example artifact in the hint — the last observable
+    // divergence between the two validate paths (#620, REQ-241).
+    lifecycle_gaps.sort_by(|a, b| a.artifact_id.cmp(&b.artifact_id));
 
     // REQ-082: external (prefixed `prefix:ID`) artifacts are loaded into
     // the store only so the consumer's `prefix:ID` cross-links resolve.
