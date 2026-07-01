@@ -5276,6 +5276,59 @@ fn cmd_validate_new_since(cli: &Cli, since_ref: &str, fail_on: &str) -> Result<b
     Ok(!hit)
 }
 
+/// Render a list of artifact-type names as `` `a` ``, `` `a` or `b` ``,
+/// `` `a`, `b` or `c` `` for a human-facing hint.
+fn fmt_type_list(types: &[&str]) -> String {
+    let quoted: Vec<String> = types.iter().map(|t| format!("`{t}`")).collect();
+    match quoted.split_last() {
+        None => "(nothing)".to_string(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+    }
+}
+
+/// #350 (REQ-237): explain the ASPICE chain for a lifecycle completeness gap.
+///
+/// Given the schema, the type of the artifact with the gap, and a missing
+/// downstream type, return a hint when that missing type cannot link DIRECTLY
+/// to the source type — naming what it *does* attach to, so the required
+/// intermediate artifact is obvious. e.g. for a `sw-req` missing a
+/// `unit-verification`: "a `unit-verification` `verifies` `sw-detail-design`,
+/// not `sw-req` directly — add an intermediate `sw-detail-design` …". Returns
+/// `None` when the missing type CAN link directly (the gap is just "add this
+/// backlink", already clear) or the schema has no link info for it.
+fn aspice_chain_hint(
+    schema: &rivet_core::schema::Schema,
+    source_type: &str,
+    missing_type: &str,
+) -> Option<String> {
+    let td = schema.artifact_type(missing_type)?;
+    let mut targets: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut via: Option<String> = None;
+    for lf in &td.link_fields {
+        if lf.target_types.is_empty() {
+            continue;
+        }
+        if via.is_none() {
+            via = Some(lf.link_type.clone());
+        }
+        for t in &lf.target_types {
+            targets.insert(t.clone());
+        }
+    }
+    // No link info, or it can attach directly to the source → nothing to
+    // explain (the "missing" line already tells the whole story).
+    if targets.is_empty() || targets.contains(source_type) {
+        return None;
+    }
+    let via = via.unwrap_or_else(|| "its link".to_string());
+    let intermediates: Vec<&str> = targets.iter().map(String::as_str).collect();
+    let tl = fmt_type_list(&intermediates);
+    Some(format!(
+        "a `{missing_type}` `{via}` {tl}, not `{source_type}` directly — add an intermediate {tl} that traces to this artifact and is `{via}`-linked by the `{missing_type}`"
+    ))
+}
+
 /// Validate a full project (with rivet.yaml).
 #[allow(clippy::too_many_arguments)]
 fn cmd_validate(
@@ -6075,12 +6128,21 @@ fn cmd_validate(
                     gap.artifact_status.as_deref().unwrap_or("none"),
                     gap.missing.join(", "),
                 );
+                // #350 (REQ-237): a missing type is often not directly linkable
+                // to this artifact — e.g. a `unit-verification` verifies a
+                // `sw-detail-design`, not a `sw-req` — so authoring a direct
+                // link is rejected and the bare "missing" list points at the
+                // wrong fix. Name the chain: for each missing type whose own
+                // links can't target this artifact's type, say what it DOES
+                // attach to, so the intermediate artifact is obvious.
+                for missing in &gap.missing {
+                    if let Some(hint) = aspice_chain_hint(&schema, &gap.artifact_type, missing) {
+                        eprintln!("      → {hint}");
+                    }
+                }
             }
-            // The bare "missing: <types>" list says what, not how — which link
-            // type connects them, and that some listed types may only attach
-            // further down the chain (issue #350). Point at the per-artifact
-            // explainer, which names the exact incoming link + allowed source
-            // types (and any alternates) for each gap.
+            // The bare "missing: <types>" list says what, not how. Point at the
+            // per-artifact explainer for the exact link types and alternates.
             if let Some(first) = lifecycle_gaps.first() {
                 println!(
                     "  → run `rivet validate --explain {}` to see which link type and source types satisfy a gap",

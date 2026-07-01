@@ -679,6 +679,50 @@ fn validate_surfaces_parse_error_on_malformed_artifact_file() {
     );
 }
 
+/// #350 (REQ-237): the lifecycle completeness gap for an implemented sw-req
+/// must NAME the ASPICE chain — a `unit-verification` verifies a
+/// `sw-detail-design`, not the `sw-req` directly, so authoring a direct link is
+/// rejected and the bare "missing" list points at the wrong fix. The hint tells
+/// the author to add the intermediate.
+///
+/// rivet: verifies REQ-237
+#[test]
+fn lifecycle_gap_names_the_aspice_verification_chain() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, aspice]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    // An implemented sw-req with an upstream link (so the gap lists specific
+    // missing verification types rather than "no downstream artifacts").
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: SYS-001\n    type: system-req\n    title: sys\n    status: approved\n  \
+         - id: SL-TR-003\n    type: sw-req\n    title: sw\n    status: implemented\n    \
+             links:\n      - type: derives-from\n        target: SYS-001\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    // The gap hints are emitted on stderr alongside the gap list.
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("not `sw-req` directly")
+            && err.contains("sw-detail-design")
+            && err.contains("unit-verification"),
+        "the lifecycle gap must name the ASPICE chain for the sw-req; stderr:\n{err}"
+    );
+}
+
 /// #620 (REQ-241): `rivet validate` (default salsa path) and
 /// `rivet validate --direct` (library path) must produce IDENTICAL results
 /// on the same project. A user reported them disagreeing — one flagging
