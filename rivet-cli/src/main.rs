@@ -7431,6 +7431,38 @@ fn cmd_stats_qualification(cli: &Cli) -> Result<bool> {
     Ok(true)
 }
 
+/// Default directories to scan for `// rivet: verifies <ID>` source markers
+/// when the user gives no explicit `--scan`. Shared by `rivet verify` and
+/// `rivet coverage --tests` so the two never disagree on where evidence lives.
+///
+/// In a **cargo workspace** (root `Cargo.toml` has `[workspace]`) this returns
+/// the project root, so the recursive scan reaches member-crate `src/`+`tests/`
+/// (e.g. `rivet-cli/tests/`). `scan_source_files` already skips `target/`,
+/// `node_modules/`, and dot-dirs, so scanning from the root is safe. Otherwise
+/// it returns the root `src/`+`tests/` that exist, falling back to the root.
+///
+/// Before this, the default stopped at root `./src`+`./tests` whenever *either*
+/// existed — so a workspace whose root ALSO has its own `tests/` (rivet itself)
+/// never recursed into member crates, and `rivet verify` reported "no evidence"
+/// for markers that lived in `rivet-cli/tests/` (#603, follow-up to #574).
+fn default_marker_scan_paths(project: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let is_workspace = std::fs::read_to_string(project.join("Cargo.toml"))
+        .map(|c| c.lines().any(|l| l.trim_start().starts_with("[workspace]")))
+        .unwrap_or(false);
+    if is_workspace {
+        return vec![project.to_path_buf()];
+    }
+    let mut paths: Vec<std::path::PathBuf> = ["src", "tests"]
+        .iter()
+        .map(|d| project.join(d))
+        .filter(|c| c.is_dir())
+        .collect();
+    if paths.is_empty() {
+        paths.push(project.to_path_buf());
+    }
+    paths
+}
+
 /// #559: advance an artifact to `verified` when it has verifying evidence —
 /// an incoming `verifies` link, OR a `// rivet: verifies <ID>` source marker.
 /// Opt-in and auditable (no auto-advance); the artifact must be `implemented`.
@@ -7459,18 +7491,10 @@ fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> 
         ctx.graph.backlinks_of_type(id, "verifies").len()
     };
 
-    // Source-marker evidence: `// rivet: verifies <ID>`. Default scan dirs match
-    // `coverage --tests`: src/ + tests/, else the project root.
+    // Source-marker evidence: `// rivet: verifies <ID>`. Default scan dirs are
+    // workspace-aware and shared with `coverage --tests` (#603).
     let paths: Vec<std::path::PathBuf> = if scan.is_empty() {
-        let mut p: Vec<std::path::PathBuf> = ["src", "tests"]
-            .iter()
-            .map(|d| cli.project.join(d))
-            .filter(|c| c.is_dir())
-            .collect();
-        if p.is_empty() {
-            p.push(cli.project.clone());
-        }
-        p
+        default_marker_scan_paths(&cli.project)
     } else {
         scan.to_vec()
     };
@@ -8262,22 +8286,10 @@ fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result
     let ctx = ProjectContext::load(cli)?;
     let (store, schema) = (ctx.store, ctx.schema);
 
-    // Resolve scan paths: default to src/ and tests/ relative to project dir.
+    // Resolve scan paths: workspace-aware defaults shared with `rivet verify`
+    // so the two agree on where markers live (#603).
     let paths: Vec<PathBuf> = if scan_paths.is_empty() {
-        let mut defaults = Vec::new();
-        let src = cli.project.join("src");
-        let tests = cli.project.join("tests");
-        if src.is_dir() {
-            defaults.push(src);
-        }
-        if tests.is_dir() {
-            defaults.push(tests);
-        }
-        // If neither exists, scan the project root.
-        if defaults.is_empty() {
-            defaults.push(cli.project.clone());
-        }
-        defaults
+        default_marker_scan_paths(&cli.project)
     } else {
         scan_paths
             .iter()
@@ -19362,5 +19374,60 @@ mod export_static_links_tests {
         assert!(a.is_empty(), "unsafe paths must not be recorded: {a:?}");
         assert!(!out.contains("_assets/docs/.."), "{out}");
         assert!(!out.contains("_assets/docs//etc"), "{out}");
+    }
+}
+
+#[cfg(test)]
+mod marker_scan_path_tests {
+    use super::default_marker_scan_paths;
+
+    /// #603: in a cargo workspace whose root ALSO has its own `tests/`
+    /// (rivet itself), the default marker scan must reach member crates —
+    /// i.e. it returns the project ROOT (recursive), not just root src/tests.
+    ///
+    /// rivet: verifies REQ-242
+    #[test]
+    fn workspace_with_root_tests_scans_from_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"member\"]\n",
+        )
+        .unwrap();
+        // Root has its own tests/ AND src/ — the exact #603 trigger that used
+        // to stop the scan at the root dirs.
+        std::fs::create_dir_all(root.join("tests")).unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("member/tests")).unwrap();
+
+        let paths = default_marker_scan_paths(root);
+        assert_eq!(
+            paths,
+            vec![root.to_path_buf()],
+            "a workspace must scan from the root so member-crate tests are covered"
+        );
+    }
+
+    /// A non-workspace project still uses root src/+tests/ (unchanged).
+    #[test]
+    fn non_workspace_uses_root_src_and_tests() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::create_dir_all(root.join("tests")).unwrap();
+
+        let paths = default_marker_scan_paths(root);
+        assert_eq!(paths, vec![root.join("src"), root.join("tests")]);
+    }
+
+    /// A bare directory (no src/tests, no workspace) falls back to the root.
+    #[test]
+    fn bare_project_falls_back_to_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let paths = default_marker_scan_paths(root);
+        assert_eq!(paths, vec![root.to_path_buf()]);
     }
 }

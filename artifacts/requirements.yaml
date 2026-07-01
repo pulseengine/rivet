@@ -7612,7 +7612,7 @@ artifacts:
   - id: REQ-242
     type: requirement
     title: rivet verify default scan finds member-crate markers in a mixed workspace
-    status: proposed
+    status: verified
     description: "In a cargo workspace where the repo root has its OWN src/ or tests/ (not just member crates), `rivet verify`'s default scan misses `verifies` markers inside member crates — under-counting real test evidence. Make the default scan cover member-crate src/tests even when a root crate is present. #603."
     provenance:
       created-by: ai-assisted
