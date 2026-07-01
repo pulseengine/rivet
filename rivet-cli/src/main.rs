@@ -6910,8 +6910,45 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
         .collect();
     scoped.sort_by(|a, b| a.id.cmp(&b.id));
 
-    // `verified` and `accepted` are the done states; anything else still blocks.
-    let is_done = |s: Option<&str>| matches!(s, Some("verified") | Some("accepted"));
+    // Release-ready statuses: the built-in `verified`/`accepted`, plus any the
+    // project declares via `release.ready-when` (#612). And, when
+    // `release.require: coverage` is set, an artifact whose V is closed (every
+    // validate coverage rule that applies to its type is satisfied) also counts
+    // as ready regardless of its status string — so V-model / ASPICE projects
+    // that verify via links, not a status flip, can green the gate. Coverage is
+    // purely additive: a verified/accepted/ready-when artifact still counts.
+    let rel = ctx.config.release.as_ref();
+    let extra_ready: std::collections::BTreeSet<String> = rel
+        .map(|r| r.ready_when.iter().cloned().collect())
+        .unwrap_or_default();
+    let coverage_mode = rel.and_then(|r| r.require.as_deref()) == Some("coverage");
+    // In coverage mode, `covered_types` are the artifact types governed by at
+    // least one traceability rule, and `uncovered_ids` are the artifacts
+    // strictly missing on some applicable rule. An artifact is V-closed when
+    // its type is governed AND it is not in `uncovered_ids`.
+    let (covered_types, uncovered_ids): (
+        std::collections::BTreeSet<String>,
+        std::collections::BTreeSet<String>,
+    ) = if coverage_mode {
+        let cov = rivet_core::coverage::compute_coverage(&ctx.store, &ctx.schema, &ctx.graph);
+        (
+            cov.entries.iter().map(|e| e.source_type.clone()).collect(),
+            cov.entries
+                .iter()
+                .flat_map(|e| e.uncovered_ids.iter().cloned())
+                .collect(),
+        )
+    } else {
+        (Default::default(), Default::default())
+    };
+    let is_ready = |a: &rivet_core::model::Artifact| -> bool {
+        let s = a.status.as_deref();
+        matches!(s, Some("verified") | Some("accepted"))
+            || s.is_some_and(|x| extra_ready.contains(x))
+            || (coverage_mode
+                && covered_types.contains(&a.artifact_type)
+                && !uncovered_ids.contains(&a.id))
+    };
     let mut by_status: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     for a in &scoped {
@@ -6919,10 +6956,8 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
             .entry(a.status.as_deref().unwrap_or("(none)").to_string())
             .or_default() += 1;
     }
-    let not_done: Vec<&&rivet_core::model::Artifact> = scoped
-        .iter()
-        .filter(|a| !is_done(a.status.as_deref()))
-        .collect();
+    let not_done: Vec<&&rivet_core::model::Artifact> =
+        scoped.iter().filter(|a| !is_ready(a)).collect();
     // An EMPTY scope is not cuttable: a release nobody has assigned artifacts
     // to — or, more commonly, a mistyped version — must not green a
     // `rivet release status vX.Y.Z || fail` CI gate. "Ship a release
@@ -6953,9 +6988,14 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
             println!("  {status:<12} {count}");
         }
         if cuttable {
-            println!("\n\u{2713} Cuttable — every artifact is verified/accepted.");
+            let how = if coverage_mode {
+                "release-ready (verified/accepted, ready-when, or V-closed)"
+            } else {
+                "release-ready"
+            };
+            println!("\n\u{2713} Cuttable — every artifact is {how}.");
         } else {
-            println!("\nNot yet verified ({}):", not_done.len());
+            println!("\nNot yet release-ready ({}):", not_done.len());
             for a in &not_done {
                 println!(
                     "  {:<10} {:<12} {}",

@@ -6513,6 +6513,103 @@ fn release_status_empty_scope_is_not_cuttable() {
     );
 }
 
+/// REQ-240 (#612): `rivet release status` readiness is configurable via
+/// `rivet.yaml`'s `release:` block — the built-in verified/accepted set can be
+/// extended by `ready-when`, and `require: coverage` derives readiness from
+/// validate V-closure so a V-model/ASPICE project (which verifies via links,
+/// not a status flip) can green the gate. An approved-but-V-closed artifact is
+/// the discriminating case: not ready by status, ready by coverage.
+///
+/// rivet: verifies REQ-240
+#[test]
+fn release_status_ready_when_and_coverage_modes() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("schemas")).unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    // A minimal schema with one traceability rule: a widget must be traced by
+    // a part. WID-001 is `approved` (not verified) but its V is CLOSED via
+    // PART-001 — so it discriminates status-readiness from coverage-readiness.
+    std::fs::write(
+        dir.join("schemas/mini.yaml"),
+        "schema:\n  name: mini\n  version: \"0.1.0\"\n\
+         artifact-types:\n  \
+         - name: widget\n    description: W\n    link-fields:\n      \
+             - name: traces\n        link-type: traces\n        cardinality: zero-or-many\n  \
+         - name: part\n    description: P\n    link-fields:\n      \
+             - name: traces\n        link-type: traces\n        cardinality: zero-or-many\n\
+         traceability-rules:\n  \
+         - name: widget-traced\n    description: every widget must be traced by a part\n    \
+             source-type: widget\n    required-backlink: traces\n    from-types: [part]\n    \
+             severity: warning\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: WID-001\n    type: widget\n    title: closed\n    status: approved\n    release: v1.0.0\n  \
+         - id: PART-001\n    type: part\n    title: part\n    status: approved\n    \
+             links:\n      - type: traces\n        target: WID-001\n",
+    )
+    .unwrap();
+
+    let write_cfg = |release_block: &str| {
+        std::fs::write(
+            dir.join("rivet.yaml"),
+            format!(
+                "project:\n  name: p\n  schemas: [mini]\n\
+                 sources:\n  - path: artifacts\n    format: generic-yaml\n{release_block}"
+            ),
+        )
+        .unwrap();
+    };
+    let cuttable = || -> bool {
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                dirs,
+                "release",
+                "status",
+                "v1.0.0",
+                "--format",
+                "json",
+            ])
+            .output()
+            .expect("release status");
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+        // exit code and the json flag must agree
+        assert_eq!(v["cuttable"].as_bool().unwrap(), out.status.success());
+        v["cuttable"].as_bool().unwrap()
+    };
+
+    // Default (status mode): approved != verified → not cuttable.
+    write_cfg("");
+    assert!(!cuttable(), "status mode: an approved artifact must block");
+
+    // ready-when: [approved] → approved now counts → cuttable.
+    write_cfg("release:\n  ready-when: [approved]\n");
+    assert!(cuttable(), "ready-when must extend the ready set");
+
+    // require: coverage → WID-001's V is closed → cuttable even though approved.
+    write_cfg("release:\n  require: coverage\n");
+    assert!(
+        cuttable(),
+        "coverage mode: a V-closed artifact must be ready"
+    );
+
+    // require: coverage but V OPEN (drop the tracing part) → not cuttable.
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  - id: WID-001\n    type: widget\n    title: open\n    status: approved\n    release: v1.0.0\n",
+    )
+    .unwrap();
+    assert!(
+        !cuttable(),
+        "coverage mode: an artifact with an open V must block"
+    );
+}
+
 /// REQ-234 (#516): `rivet release move <id> <ver>` re-targets an artifact to a
 /// release, logging the old → new transition; idempotent when already scoped.
 ///
