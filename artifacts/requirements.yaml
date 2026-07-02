@@ -7651,7 +7651,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-01T00:00:00Z
-    release: v0.24.0
+    release: v0.25.0
 
   - id: REQ-246
     type: requirement
@@ -7662,7 +7662,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-01T00:00:00Z
-    release: v0.24.0
+    release: v0.25.0
 
   - id: REQ-247
     type: requirement
@@ -7673,7 +7673,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-01T00:00:00Z
-    release: v0.24.0
+    release: v0.25.0
 
   - id: REQ-248
     type: requirement
@@ -7684,7 +7684,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-01T00:00:00Z
-    release: v0.24.0
+    release: v0.25.0
 
   - id: REQ-249
     type: requirement

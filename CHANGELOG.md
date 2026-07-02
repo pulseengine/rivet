@@ -5,7 +5,28 @@
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-07-02
+
+### Added
+- **Graphical req → test-result trace on the dashboard** (REQ-238, #547) — the
+  artifact detail view renders a "Test Result Trace" panel: it walks forward to
+  the verifications/tests that trace back to the artifact, rolls their recorded
+  results into a verdict badge (passing / failing / no test evidence), and lists
+  each reached node with its hop distance, link type, and latest result. The
+  dashboard counterpart of `rivet trace-results` (which shipped in 0.23.0).
+- **Per-artifact lifecycle-gap badge in the serve overview** (REQ-244, #622) —
+  the artifacts overview flags what each artifact is still missing to complete
+  its downstream trace (⚠ N gap(s)), matching the per-artifact validation view.
+  The artifacts API exposes the same per-artifact `missing` field for bulk
+  queries.
+
 ### Changed / Fixed
+- **Artifact-view source link opens the built-in `/source` viewer at the
+  artifact's definition line** (REQ-243, #623) — previously a dead `href="#"`
+  that did nothing in a plain browser and only worked via the VSIX editor shim.
+  The dashboard now deep-links into the source viewer (scrolling to the line)
+  while keeping the `data-source-*` attributes so the VSIX webview still opens
+  the file in the editor.
 - **`rivet check bidirectional` no longer demands non-authorable inverses**
   (#648). When a schema declares `link-types.X.inverse: Y` but does *not*
   declare `Y` as its own `link-types:` entry, authoring a `Y` link would
