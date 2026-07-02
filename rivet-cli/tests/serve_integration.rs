@@ -603,6 +603,35 @@ fn api_artifacts_expose_missing_gaps() {
     child.wait().ok();
 }
 
+/// #622 (REQ-244 pt2): the artifacts OVERVIEW page renders a lifecycle-gap
+/// badge (server-rendered HTML — no client JS), so gaps are visible at a
+/// glance, matching the per-artifact validation view. rivet's own corpus has
+/// requirements without a full downstream trace, so the requirement listing
+/// must contain the badge.
+///
+/// The badge is per-row, so it only appears on the page that actually holds a
+/// gapped artifact. rivet's gaps sit on `requirement` artifacts, which sort
+/// after the ~500-row page cap on the unfiltered list — so we filter to
+/// `types=requirement` to land them on page 1 (matching how a user would
+/// narrow the view to inspect requirement completeness).
+///
+/// rivet: verifies REQ-244
+#[test]
+fn overview_renders_lifecycle_gap_badge() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/artifacts?types=requirement&per_page=500", false);
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("gap</span>") || body.contains("gaps</span>"),
+        "the artifacts overview must render a lifecycle-gap badge; \
+         none found in the server-rendered HTML"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 #[test]
 fn api_artifacts_filter_by_type() {
     let (mut child, port) = start_server();

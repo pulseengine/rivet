@@ -260,14 +260,35 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
     html.push_str("<th>Links</th><th data-col=\"tags\">Tags</th>");
     html.push_str("</tr></thead><tbody>");
 
+    // #622 (REQ-244): per-artifact lifecycle gaps, so the overview flags what's
+    // missing to complete each artifact's trace — not only the per-artifact
+    // validation view. Computed once over the store (same pass the artifacts API
+    // uses); only the page's artifacts are looked up below.
+    let gap_artifacts: Vec<rivet_core::model::Artifact> = store.iter().cloned().collect();
+    let gaps: std::collections::HashMap<String, Vec<String>> =
+        rivet_core::lifecycle::check_lifecycle_completeness(&gap_artifacts, ctx.schema, ctx.graph)
+            .into_iter()
+            .map(|g| (g.artifact_id, g.missing))
+            .collect();
+
     for a in page_artifacts {
         let status = a.status.as_deref().unwrap_or("-");
-        let status_badge = match status {
+        let mut status_cell = match status {
             "approved" => format!("<span class=\"badge badge-ok\">{status}</span>"),
             "draft" => format!("<span class=\"badge badge-warn\">{status}</span>"),
             "obsolete" => format!("<span class=\"badge badge-error\">{status}</span>"),
             _ => format!("<span class=\"badge badge-info\">{status}</span>"),
         };
+        // Gap indicator: warn badge listing the missing downstream types,
+        // appended to the status cell so it reads at a glance.
+        if let Some(missing) = gaps.get(&a.id).filter(|m| !m.is_empty()) {
+            status_cell.push_str(&format!(
+                " <span class=\"badge badge-warn\" title=\"missing: {}\">\u{26a0} {} gap{}</span>",
+                html_escape(&missing.join(", ")),
+                missing.len(),
+                if missing.len() == 1 { "" } else { "s" },
+            ));
+        }
         let tags_csv = a.tags.join(",");
         let tags_display = if a.tags.is_empty() {
             String::from("-")
@@ -293,7 +314,7 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
              <td data-tags=\"{}\">{}</td></tr>",
             badge_for_type(&a.artifact_type),
             html_escape(&a.title),
-            status_badge,
+            status_cell,
             a.links.len(),
             html_escape(&tags_csv),
             tags_display,
