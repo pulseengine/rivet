@@ -751,6 +751,54 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         html.push_str("</tbody></table></div>");
     }
 
+    // Test-result trace (REQ-238, #547): walk forward from this artifact to the
+    // verifications/tests that trace back to it and roll the reached test
+    // results into a one-line verdict. This is the dashboard counterpart of
+    // `rivet trace-results` — previously the only way to see this was the CLI.
+    // Rendered only when something traces back (leaf artifacts stay clean).
+    // Depth 4 mirrors the CLI default (the ASPICE V depth).
+    let trace = rivet_core::result_trace::trace_test_results(id, graph, ctx.result_store, 4);
+    if !trace.is_empty() {
+        let (verdict_class, verdict_label) = match rivet_core::result_trace::verdict(&trace) {
+            rivet_core::result_trace::TraceVerdict::Passing => ("badge-ok", "passing"),
+            rivet_core::result_trace::TraceVerdict::Failing => ("badge-error", "failing"),
+            rivet_core::result_trace::TraceVerdict::NoEvidence => {
+                ("badge-warn", "no test evidence")
+            }
+        };
+        html.push_str(&format!(
+            "<div class=\"card\"><h3>Test Result Trace \
+             <span class=\"badge {verdict_class}\">{verdict_label}</span></h3>\
+             <table><thead><tr><th>Hops</th><th>Artifact</th><th>Via</th><th>Result</th></tr></thead><tbody>"
+        ));
+        for node in &trace {
+            let node_id = html_escape(&node.artifact_id);
+            let result_cell = match &node.status {
+                Some(status) => {
+                    let (cls, label) = match status {
+                        rivet_core::results::TestStatus::Pass => ("badge-ok", "pass"),
+                        rivet_core::results::TestStatus::Fail => ("badge-error", "fail"),
+                        rivet_core::results::TestStatus::Error => ("badge-error", "error"),
+                        rivet_core::results::TestStatus::Skip => ("badge-warn", "skip"),
+                        rivet_core::results::TestStatus::Blocked => ("badge-warn", "blocked"),
+                    };
+                    format!("<span class=\"badge {cls}\">{label}</span>")
+                }
+                None => String::from("<span class=\"meta\">&mdash;</span>"),
+            };
+            html.push_str(&format!(
+                "<tr><td>{hops}</td>\
+                 <td><a hx-get=\"/artifacts/{node_id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{node_id}\">{node_id}</a></td>\
+                 <td><span class=\"link-pill\">{link_type}</span> {via}</td>\
+                 <td>{result_cell}</td></tr>",
+                hops = node.distance,
+                link_type = html_escape(&node.link_type),
+                via = html_escape(&node.via_target),
+            ));
+        }
+        html.push_str("</tbody></table></div>");
+    }
+
     // Documents referencing this artifact — reverse index from DocumentStore.
     // Groups [[ID]] occurrences per document so the user can jump from an
     // artifact to every doc that cites it.

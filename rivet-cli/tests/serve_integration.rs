@@ -850,6 +850,41 @@ fn artifact_detail_source_link_opens_source_view() {
     child.wait().ok();
 }
 
+/// REQ-238 (#547): the artifact detail view renders a graphical "Test Result
+/// Trace" panel — the dashboard counterpart of `rivet trace-results`. It walks
+/// forward from the artifact to the verifications/tests that trace back to it,
+/// rolls them into a verdict badge, and lists each reached node with its
+/// result. REQ-001 has downstream links, so the card (with the Hops/Via table)
+/// must be present.
+///
+/// rivet: verifies REQ-238
+#[test]
+fn artifact_detail_renders_test_result_trace() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/artifacts/REQ-001", false);
+    assert_eq!(status, 200);
+
+    assert!(
+        body.contains("Test Result Trace"),
+        "artifact detail must render the Test Result Trace panel for an artifact \
+         with downstream verifications"
+    );
+    // A verdict badge must be present (passing / failing / no test evidence).
+    assert!(
+        body.contains("passing") || body.contains("failing") || body.contains("no test evidence"),
+        "the trace panel must show a rolled-up verdict badge"
+    );
+    // The reached-node table columns are unique to this panel.
+    assert!(
+        body.contains("<th>Hops</th>") && body.contains("<th>Via</th>"),
+        "the trace panel must list reached nodes in a Hops/Artifact/Via/Result table"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 // ── Embed resolution in documents ──────────────────────────────────────
 
 /// The documents page should not contain any embed-error spans for valid
