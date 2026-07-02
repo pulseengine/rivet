@@ -1380,3 +1380,69 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-06-25T09:00:00Z
+
+  - id: DD-071
+    type: design-decision
+    title: Reduce raw-YAML authoring friction via schema-aware LSP completion, not a new write surface
+    status: proposed
+    description: >
+      REQ-246 (#546): a user finds raw-YAML artifact editing cumbersome — "we
+      should have all in common but we miss the UI for helping humans to work
+      with." Decision: deliver the human-authoring help on the surface that IS
+      "all in common" — the rivet LSP — by making its completion schema-aware,
+      rather than standing up a new editing surface (a serve write form or a
+      VSIX webview form). YAML stays the artifact and the single source of
+      truth; no new write path is introduced; and the help reaches every
+      LSP-capable editor (VSIX, Neovim, Helix, …), not just VS Code.
+    tags: [lsp, authoring, ux, editing, vsix, schema, dogfooding]
+    links:
+      - type: satisfies
+        target: REQ-246
+    fields:
+      baseline: v0.24.0-track
+      source-ref: >
+        rivet-cli/src/main.rs:18192 (lsp_completions — the surface to enrich),
+        :17205 (completion_provider capability, trigger chars `[`/`:`),
+        rivet-core/src/schema.rs:1320 (Schema::artifact_type),
+        :1334 (from_type_can_link), :258 (FieldDef.required),
+        :272 (LinkFieldDef.target_types); vscode-rivet/src/extension.ts:176
+        (VSIX already runs the LSP as a LanguageClient).
+      rationale: >
+        Grounded in the existing surfaces (source-read, not README): artifact
+        WRITES already funnel through one core — rivet-core/src/mutate.rs
+        (render_artifact_yaml allowlist at :526, reserved-key guard at :308) —
+        shared by the CLI (cmd_add/cmd_modify) and the MCP tools
+        (rivet_add/rivet_modify in mcp.rs). The gap is not a missing writer; it
+        is that nothing helps a human FILL IN a correct artifact at the point of
+        editing. The LSP already registers completion + code-action capability
+        (main.rs:17205/:17209) and the VSIX already consumes it
+        (extension.ts:176), but lsp_completions (:18205-18224) only offers
+        artifact-IDs after `target:`/`[[` and already-seen types after `type:` —
+        it ignores the schema entirely. The schema already exposes everything a
+        human needs: per-type fields with required flags (FieldDef.required),
+        link-types with allowed target types (from_type_can_link,
+        LinkFieldDef.target_types), and enum field values. Enriching completion
+        (field names with required markers, enum values, link types + valid
+        targets, and a per-artifact-type skeleton snippet) reuses the schema
+        API that validate_add/validate_modify already consume — so what the
+        editor suggests is exactly what the writer will accept. This is
+        completing an existing surface on the shared core, matching the issue's
+        own "all in common" framing and the project's "design on existing
+        patterns, not new directives" doctrine.
+      alternatives: >
+        (1) Dashboard edit form in `rivet serve` — rejected as the primary
+        mechanism: serve is today strictly read-only for artifacts (every route
+        is GET; the only POST, /api/v1/sql, hard-rejects non-SELECT and rejects
+        cross-origin), so this would stand up the first-ever server write path
+        plus CSRF/origin surface, for VS-Code-external users only. (2) VSIX
+        webview form — rejected as primary: a new UI bound to one editor, and it
+        would still need the same schema-driven field model this decision builds
+        for the LSP; viable as a LATER increment that reuses the schema model.
+        (3) Do nothing / docs — rejected: the friction is real and repeatable.
+        Chosen: schema-aware LSP completion + snippets first (reaches all
+        editors, no new write surface, YAML stays canonical); leave a dashboard
+        or VSIX form as an optional follow-up if demand persists.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-02T08:15:00Z
