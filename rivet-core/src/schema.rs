@@ -1354,6 +1354,20 @@ impl Schema {
     pub fn inverse_of(&self, link_type: &str) -> Option<&str> {
         self.inverse_map.get(link_type).map(|s| s.as_str())
     }
+
+    /// True if `link_type` is declared as its own `link-types:` entry — i.e.
+    /// a project may materialize links of that type. A name that only appears
+    /// as an `inverse:` on some other link type (with no `LinkTypeDef` of its
+    /// own) is not authorable: `rivet validate` will reject artifacts that
+    /// carry such links with `unknown-link-type`. Callers that reason about
+    /// what a project can *write* (as opposed to what edges the schema
+    /// implies) use this predicate. Notably the `bidirectional` oracle uses
+    /// it to avoid demanding an inverse the schema forbids authoring — see
+    /// #648.
+    #[inline]
+    pub fn is_authorable_link_type(&self, link_type: &str) -> bool {
+        self.link_types.contains_key(link_type)
+    }
 }
 
 #[cfg(test)]
