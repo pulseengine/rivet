@@ -7623,7 +7623,7 @@ artifacts:
   - id: REQ-243
     type: requirement
     title: rivet serve artifact view opens the source file at the artifact location
-    status: proposed
+    status: verified
     description: "In the `rivet serve` artifact view the source file is shown but clicking it does not open the file at the artifact's location, even though sources are configured — this deep-link only exists in the VSIX extension today. Wire the same source open-at-location behaviour into the dashboard. #623."
     provenance:
       created-by: ai-assisted
