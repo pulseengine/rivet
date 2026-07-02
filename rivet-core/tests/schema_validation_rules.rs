@@ -486,3 +486,26 @@ fn common_status_accepts_accepted_and_still_rejects_typos() {
          allowed-values guard exactly once; got {dd_typo_status_diags:#?}"
     );
 }
+
+/// The embedded aspice schema's `swe1-has-verification` coverage rule
+/// lists `unit-verification` and `sw-integration-verification` as
+/// `verifies` satisfiers for `sw-req`. Both types must therefore declare
+/// a `verifies` link-field whose `target-types` includes `sw-req` — else
+/// the satisfier is unreachable and the schema warns against itself
+/// (issue #652). This regression asserts the embedded common+aspice
+/// schema set surfaces zero `coverage-rule-consistency` diagnostics.
+#[test]
+fn aspice_embedded_schema_has_no_coverage_rule_consistency_diagnostics() {
+    let common = parse_schema("common");
+    let aspice = parse_schema("aspice");
+    let schema = Schema::merge(&[common, aspice]);
+
+    let diags = schema.check_coverage_rule_consistency();
+    assert!(
+        diags.is_empty(),
+        "embedded common+aspice schema must not warn against itself with \
+         coverage-rule-consistency diagnostics; got {} warning(s): {:#?}",
+        diags.len(),
+        diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+    );
+}
