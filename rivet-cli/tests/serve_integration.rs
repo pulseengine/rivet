@@ -807,6 +807,49 @@ fn artifact_detail_has_oembed_discovery_link() {
     child.wait().ok();
 }
 
+/// REQ-243 (#623): the artifact detail view's source link must navigate the
+/// dashboard to the built-in `/source` viewer at the artifact's definition
+/// line (previously a dead `href="#"` that only worked in the VSIX editor
+/// shim). It must also keep the `data-source-*` attributes so the VSIX shim
+/// still opens the file in the editor.
+///
+/// rivet: verifies REQ-243
+#[test]
+fn artifact_detail_source_link_opens_source_view() {
+    let (mut child, port) = start_server();
+
+    let (status, body, _headers) = fetch(port, "/artifacts/REQ-001", false);
+    assert_eq!(status, 200);
+
+    // Browser path: deep-links into the /source viewer via htmx (no dead #).
+    assert!(
+        body.contains("hx-get=\"/source/") && body.contains("href=\"/source/"),
+        "artifact detail source link must navigate to the /source viewer, \
+         not a dead href=\"#\""
+    );
+    // The header file link uses a DISTINCT class from inline cited-source refs
+    // (`source-ref-link`), so selectors targeting inline refs don't catch it —
+    // see aadl.spec.ts, which picks the first `a.source-ref-link`.
+    assert!(
+        body.contains("class=\"source-file-link\""),
+        "artifact detail source link must use the distinct source-file-link class"
+    );
+    // VSIX path: the editor shim still gets the file + line attributes.
+    assert!(
+        body.contains("data-source-file="),
+        "artifact detail source link must keep data-source-file for the VSIX shim"
+    );
+    // REQ-001 lives in a source file, so its definition line resolves and the
+    // browser scroll target / VSIX line attribute must be present.
+    assert!(
+        body.contains("data-source-line=") && body.contains("scrollIntoView"),
+        "artifact detail source link must target the artifact's definition line"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 // ── Embed resolution in documents ──────────────────────────────────────
 
 /// The documents page should not contain any embed-error spans for valid

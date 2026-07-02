@@ -533,24 +533,45 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
             })
         });
 
-    // Source file link (shown at top for quick access)
-    // Uses data-source-file + data-source-line attributes — the VS Code
-    // nav shim in shell.ts picks these up and opens the file at the
-    // exact line of the artifact definition.
+    // Source file link (shown at top for quick access).
+    //
+    // REQ-243 (#623): the link now navigates the dashboard to the built-in
+    // `/source` viewer at the artifact's definition line — previously it was a
+    // dead `href="#"` that did nothing in a plain browser and only worked via
+    // the VSIX editor shim. Two runtimes, one anchor:
+    //   * Browser dashboard (htmx loaded): `hx-get` swaps in the `/source`
+    //     view and the `onclick` scrolls to the artifact's line.
+    //   * VSIX webview (no htmx): the `shell.ts` shim intercepts the
+    //     `data-source-*` attributes and opens the file in the editor.
+    // Off-by-one: `/source` row anchors are 1-based, so the browser fragment is
+    // `source_line + 1`; `data-source-line` stays 0-based for the VSIX host.
     let source_link = if let Some(ref sf) = source_file {
         let filename = std::path::Path::new(sf)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(sf);
+        let encoded_path = urlencoding::encode(sf);
         let line_attr = source_line
             .map(|l| format!(" data-source-line=\"{l}\""))
             .unwrap_or_default();
+        let onclick = source_line
+            .map(|l| {
+                format!(
+                    " onclick=\"setTimeout(function(){{var e=document.getElementById('L{}');if(e)e.scrollIntoView({{behavior:'smooth',block:'center'}})}},200)\"",
+                    l + 1
+                )
+            })
+            .unwrap_or_default();
+        // Distinct class (`source-file-link`, not `source-ref-link`): the
+        // header file link and the inline cited-source refs must not share a
+        // selector — a Playwright test picks the first `a.source-ref-link` on
+        // the detail page expecting an inline `.aadl` ref (aadl.spec.ts).
         format!(
             " <span class=\"meta\" style=\"float:right;font-size:.85rem\">\
-             <a href=\"#\" data-source-file=\"{}\"{} title=\"Open source file\">&#128196; {}</a></span>",
-            html_escape(sf),
-            line_attr,
-            html_escape(filename),
+             <a class=\"source-file-link\" hx-get=\"/source/{enc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source/{enc}\" data-source-file=\"{sf_esc}\"{line_attr}{onclick} title=\"Open source file\">&#128196; {fn_esc}</a></span>",
+            enc = encoded_path,
+            sf_esc = html_escape(sf),
+            fn_esc = html_escape(filename),
         )
     } else {
         String::new()
