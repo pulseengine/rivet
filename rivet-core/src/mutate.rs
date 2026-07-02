@@ -51,7 +51,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Error;
 use crate::links::LinkGraph;
-use crate::model::{Artifact, Link};
+use crate::model::{Artifact, Link, Provenance};
 use crate::schema::Schema;
 use crate::store::Store;
 
@@ -524,50 +524,70 @@ pub fn append_artifact_to_file(artifact: &Artifact, file_path: &Path) -> Result<
 
 /// Render a single artifact as YAML suitable for appending under `artifacts:`.
 fn render_artifact_yaml(artifact: &Artifact) -> String {
+    // Exhaustiveness guard (#634): destructure `Artifact` here so any new
+    // struct field fails to compile — forcing an explicit decision about
+    // whether the emitter needs to serialize it. Do NOT collapse this into
+    // `..` — that defeats the whole point (the failure mode is REQ-203/#476:
+    // a model field silently dropped on write). Fields intentionally not
+    // emitted today are bound with a leading underscore and a comment naming
+    // the write-path that would need to populate them.
+    let Artifact {
+        id,
+        artifact_type,
+        title,
+        description,
+        status,
+        release,
+        tags,
+        links,
+        fields,
+        // No add/batch/MCP entry point populates variant overlays today (#255,
+        // #634). If a write path starts writing them, emit here as a
+        // `fields-per-variant:` block to avoid the REQ-203/#476 silent-drop.
+        fields_per_variant: _fields_per_variant,
+        provenance,
+        // `source_file` is `#[serde(skip)]` — the on-disk location the artifact
+        // was loaded from is intentionally never round-tripped.
+        source_file: _source_file,
+    } = artifact;
+
     let mut lines = Vec::new();
 
     use crate::yaml_edit::{yaml_quote_inline_scalar, yaml_render_scalar_value};
 
-    lines.push(format!("  - id: {}", artifact.id));
-    lines.push(format!("    type: {}", artifact.artifact_type));
+    lines.push(format!("  - id: {id}"));
+    lines.push(format!("    type: {artifact_type}"));
     // Values are YAML-safe-quoted (colons, leading specials, etc.) and
     // multi-line values become block-literal scalars — reusing the same emitter
     // the modify/set path uses, so `add` never writes invalid YAML.
-    lines.push(format!(
-        "    title: {}",
-        yaml_quote_inline_scalar(&artifact.title)
-    ));
+    lines.push(format!("    title: {}", yaml_quote_inline_scalar(title)));
 
-    if let Some(ref status) = artifact.status {
+    if let Some(status) = status {
         lines.push(format!("    status: {}", yaml_quote_inline_scalar(status)));
     }
 
-    if let Some(ref release) = artifact.release {
+    if let Some(release) = release {
         lines.push(format!(
             "    release: {}",
             yaml_quote_inline_scalar(release)
         ));
     }
 
-    if let Some(ref desc) = artifact.description {
+    if let Some(desc) = description {
         lines.push(format!(
             "    description: {}",
             yaml_render_scalar_value(desc, 4)
         ));
     }
 
-    if !artifact.tags.is_empty() {
-        let tag_list: Vec<String> = artifact
-            .tags
-            .iter()
-            .map(|t| yaml_quote_inline_scalar(t))
-            .collect();
+    if !tags.is_empty() {
+        let tag_list: Vec<String> = tags.iter().map(|t| yaml_quote_inline_scalar(t)).collect();
         lines.push(format!("    tags: [{}]", tag_list.join(", ")));
     }
 
-    if !artifact.fields.is_empty() {
+    if !fields.is_empty() {
         lines.push("    fields:".to_string());
-        for (key, value) in &artifact.fields {
+        for (key, value) in fields {
             match value {
                 serde_yaml::Value::String(s) => {
                     lines.push(format!("      {key}: {}", yaml_render_scalar_value(s, 6)));
@@ -592,11 +612,24 @@ fn render_artifact_yaml(artifact: &Artifact) -> String {
         }
     }
 
-    if !artifact.links.is_empty() {
+    if !links.is_empty() {
         lines.push("    links:".to_string());
-        for link in &artifact.links {
-            lines.push(format!("      - type: {}", link.link_type));
-            lines.push(format!("        target: {}", link.target));
+        for link in links {
+            // Exhaustiveness guard (#634): same rationale as the outer
+            // destructure. `Link.external` is only populated for `*-external`
+            // link types (currently `derives-from-external`), and no add-path
+            // writes those today. When one does, the flat `target: <id>` shape
+            // below has to grow the mapping form documented in
+            // `model.rs::Link` — else the structured cross-org payload
+            // (org/contract/doc-id/last-synced/sha256/anchor) is silently
+            // dropped on write.
+            let Link {
+                link_type,
+                target,
+                external: _external,
+            } = link;
+            lines.push(format!("      - type: {link_type}"));
+            lines.push(format!("        target: {target}"));
         }
     }
 
@@ -605,19 +638,32 @@ fn render_artifact_yaml(artifact: &Artifact) -> String {
     // silently dropped on write (the serializer is the single source of truth
     // for `add` output). Field order matches yaml_edit::set_provenance so the
     // add-path and stamp-path produce identical blocks.
-    if let Some(ref prov) = artifact.provenance {
+    if let Some(prov) = provenance {
+        // Exhaustiveness guard (#634): same rationale as the outer
+        // destructure. `Provenance.federation` is only populated by
+        // `rivet supplier pull` (#288), which routes through a separate write
+        // path today. When any add/stamp/MCP entry point learns to set it,
+        // this block needs a `federation:` sub-block to avoid the silent-drop.
+        let Provenance {
+            created_by,
+            model,
+            session_id,
+            timestamp,
+            reviewed_by,
+            federation: _federation,
+        } = prov;
         lines.push("    provenance:".to_string());
-        lines.push(format!("      created-by: {}", prov.created_by));
-        if let Some(ref m) = prov.model {
+        lines.push(format!("      created-by: {created_by}"));
+        if let Some(m) = model {
             lines.push(format!("      model: {m}"));
         }
-        if let Some(ref sid) = prov.session_id {
+        if let Some(sid) = session_id {
             lines.push(format!("      session-id: {sid}"));
         }
-        if let Some(ref ts) = prov.timestamp {
+        if let Some(ts) = timestamp {
             lines.push(format!("      timestamp: {ts}"));
         }
-        if let Some(ref rb) = prov.reviewed_by {
+        if let Some(rb) = reviewed_by {
             lines.push(format!("      reviewed-by: {rb}"));
         }
     }
@@ -1121,6 +1167,135 @@ mod tests {
         assert!(
             !body.contains("provenance:"),
             "unstamped add must not emit a provenance block, got:\n{body}"
+        );
+    }
+
+    // ── #634: exhaustiveness-guard companion tests ──────────────────────
+    //
+    // Three fields exist in the model today but are intentionally NOT
+    // written by `render_artifact_yaml` because no add/batch/MCP entry
+    // point populates them:
+    //
+    //   - `Artifact.fields_per_variant`   (variant overlays,       #255)
+    //   - `Link.external`                 (structured cross-org,   #543/#288)
+    //   - `Provenance.federation`         (supplier-pull metadata, #288)
+    //
+    // The compile-time destructure guards at the top of the emitter
+    // ensure a *new* model field can't be added without touching the
+    // emitter. These runtime tests capture the *current* latent-drop
+    // shape for those three: they lock today's behavior so that when a
+    // write path starts populating any of them, this test file is the
+    // clear place the change surfaces — flip the assertion, emit the
+    // block. That's the second half of the guard.
+
+    #[test]
+    fn render_artifact_yaml_drops_fields_per_variant_when_populated_latent_gap_634() {
+        // See #634: if this test ever fails, a write path has learned to
+        // populate variant overlays — good — and the emitter must grow a
+        // `fields-per-variant:` block above. Do NOT delete the test;
+        // instead invert it (assert the block IS present) and update
+        // `render_artifact_yaml` to serialize it. The destructure guard
+        // above will hold that step in place for the next field.
+        let mut artifact = artifact_with_links("REQ-099", "requirement", &[]);
+        artifact.title = "T".to_string();
+        let mut overlay = std::collections::BTreeMap::new();
+        overlay.insert(
+            "priority".to_string(),
+            serde_yaml::Value::String("must".to_string()),
+        );
+        artifact
+            .fields_per_variant
+            .insert("automotive".to_string(), overlay);
+
+        let body = render_artifact_yaml(&artifact);
+        assert!(
+            !body.contains("fields-per-variant:"),
+            "no add-path populates fields_per_variant today (#634). If this now \
+             fires, flip the assertion and add serialization to \
+             render_artifact_yaml — the destructure guard above will hold you \
+             honest on the next field. Got:\n{body}"
+        );
+    }
+
+    #[test]
+    fn render_artifact_yaml_drops_link_external_when_populated_latent_gap_634() {
+        // See #634: same shape as the fields_per_variant test — when a
+        // write path starts populating `Link.external` (i.e. an add-path
+        // for `derives-from-external` links), the flat
+        // `target: <anchor-id>` shape here must grow the mapping form
+        // documented in `model.rs` (org/contract/doc-id/last-synced/
+        // sha256/anchor). Flip this assertion + emit the mapping.
+        use crate::model::ExternalLinkTarget;
+        let mut artifact = artifact_with_links("REQ-099", "requirement", &[]);
+        artifact.title = "T".to_string();
+        artifact.links = vec![Link {
+            link_type: "derives-from-external".to_string(),
+            target: "ANCHOR-ACME-001".to_string(),
+            external: Some(ExternalLinkTarget {
+                org: "acme-electronics".to_string(),
+                contract: Some("PO-4711".to_string()),
+                doc_id: Some("REQ-SW-022".to_string()),
+                last_synced: Some("2026-07-02".to_string()),
+                sha256: Some("deadbeef".to_string()),
+                anchor: "ANCHOR-ACME-001".to_string(),
+            }),
+        }];
+
+        let body = render_artifact_yaml(&artifact);
+        // Emitter today writes only the flat `target: <id>` — no `org:`,
+        // no `contract:`, no `sha256:`, no `anchor:` sub-keys.
+        assert!(
+            body.contains("target: ANCHOR-ACME-001"),
+            "flat target still emitted, got:\n{body}"
+        );
+        for latent_key in ["org:", "contract:", "doc-id:", "last-synced:", "sha256:"] {
+            assert!(
+                !body.contains(latent_key),
+                "no add-path populates Link.external today (#634). If \
+                 `{latent_key}` now appears, flip this assertion and emit the \
+                 mapping form. Got:\n{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn render_artifact_yaml_drops_provenance_federation_when_populated_latent_gap_634() {
+        // See #634: `Provenance.federation` is set only by
+        // `rivet supplier pull` (#288), which routes through its own write
+        // path. When any add/stamp/MCP entry point learns to set it, this
+        // block must gain a `federation:` sub-block. Until then this
+        // regression test locks the current-behavior drop so the moment
+        // it changes is loud, not silent.
+        use crate::model::FederationProvenance;
+        let mut artifact = artifact_with_links("REQ-099", "requirement", &[]);
+        artifact.title = "T".to_string();
+        artifact.provenance = Some(Provenance {
+            created_by: "supplier-pull".to_string(),
+            model: None,
+            session_id: None,
+            timestamp: None,
+            reviewed_by: None,
+            federation: Some(FederationProvenance {
+                source_org: "acme-electronics".to_string(),
+                source_tool: "reqif-1.2".to_string(),
+                source_id: "REQ-SW-022".to_string(),
+                anchor: "ANCHOR-ACME-001".to_string(),
+                fetched_at: "2026-07-02T00:00:00Z".to_string(),
+                source_hash: "deadbeef".to_string(),
+                mapping_recipe: None,
+            }),
+        });
+
+        let body = render_artifact_yaml(&artifact);
+        assert!(
+            body.contains("created-by: supplier-pull"),
+            "existing provenance fields still emitted, got:\n{body}"
+        );
+        assert!(
+            !body.contains("federation:"),
+            "no add-path populates provenance.federation today (#634). If \
+             `federation:` now appears, flip this assertion and emit the \
+             sub-block. Got:\n{body}"
         );
     }
 }
