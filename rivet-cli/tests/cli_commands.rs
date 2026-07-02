@@ -1482,6 +1482,152 @@ fn validate_does_not_count_external_repo_violations() {
     );
 }
 
+/// #649 / DD-017 / REQ-065 (AoU-X1): the consumer's default `rivet
+/// validate` must NOT fail on the SUPPLIER'S own outgoing external
+/// references — a consumer that declares only supplier `sup` cannot be
+/// expected to know or declare supplier's own externals (DD-017:
+/// "declare direct deps only"). The consumer's cross-ref check now
+/// walks only consumer-owned links; supplier internals stay in the
+/// supplier's validation gate.
+///
+/// The reverse case must still fire: a consumer artifact whose own link
+/// targets an undeclared prefix continues to surface `UnknownPrefix`.
+///
+/// rivet: verifies REQ-065
+#[test]
+fn validate_does_not_leak_transitive_external_prefixes() {
+    let root = tempfile::tempdir().expect("temp dir");
+    let supplier = root.path().join("supplier");
+    let consumer = root.path().join("consumer");
+    std::fs::create_dir_all(&supplier).unwrap();
+    std::fs::create_dir_all(&consumer).unwrap();
+
+    // Supplier: a dev project whose own artifact carries an outgoing
+    // link to `super:REQ-EXT` — a prefix that would be one of the
+    // supplier's own externals. The consumer never declares `super:`.
+    let init_s = Command::new(rivet_bin())
+        .args([
+            "init",
+            "--preset",
+            "dev",
+            "--dir",
+            supplier.to_str().unwrap(),
+        ])
+        .output()
+        .expect("init supplier");
+    assert!(
+        init_s.status.success(),
+        "init supplier: {}",
+        String::from_utf8_lossy(&init_s.stderr)
+    );
+    std::fs::write(
+        supplier.join("artifacts").join("with-transitive.yaml"),
+        "artifacts:\n\
+         \x20 - id: REQ-SUPPLIER-A\n    type: requirement\n\
+         \x20   title: Supplier req linking to its own external\n\
+         \x20   status: approved\n\
+         \x20   fields: {priority: must, category: functional}\n\
+         \x20   links:\n\
+         \x20     - type: satisfies\n\
+         \x20       target: super:REQ-EXT\n",
+    )
+    .expect("write supplier with-transitive.yaml");
+
+    // Consumer: declares supplier ONLY; never mentions `super:`. It
+    // ALSO carries a legitimately broken outgoing ref of its own
+    // (`xyz:REQ-BOGUS`) so we can assert the counter-case: the fix
+    // must not silently accept the consumer's own broken external refs.
+    let init_c = Command::new(rivet_bin())
+        .args([
+            "init",
+            "--preset",
+            "dev",
+            "--dir",
+            consumer.to_str().unwrap(),
+        ])
+        .output()
+        .expect("init consumer");
+    assert!(
+        init_c.status.success(),
+        "init consumer: {}",
+        String::from_utf8_lossy(&init_c.stderr)
+    );
+    std::fs::write(
+        consumer.join("artifacts").join("bogus.yaml"),
+        "artifacts:\n\
+         \x20 - id: REQ-CONS-A\n    type: requirement\n\
+         \x20   title: Consumer req with a locally-broken external ref\n\
+         \x20   status: approved\n\
+         \x20   fields: {priority: must, category: functional}\n\
+         \x20   links:\n\
+         \x20     - type: satisfies\n\
+         \x20       target: xyz:REQ-BOGUS\n",
+    )
+    .expect("write consumer bogus.yaml");
+    std::fs::write(
+        consumer.join("rivet.yaml"),
+        format!(
+            "project:\n  name: consumer\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+             externals:\n  sup:\n    path: {}\n    prefix: sup\n\
+             sources:\n  - path: artifacts\n    format: generic-yaml\n",
+            supplier.display()
+        ),
+    )
+    .expect("write consumer rivet.yaml");
+    let sync = Command::new(rivet_bin())
+        .args(["--project", consumer.to_str().unwrap(), "sync"])
+        .output()
+        .expect("rivet sync");
+    assert!(
+        sync.status.success(),
+        "sync: {}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            consumer.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("validate");
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON");
+    let broken = parsed
+        .get("broken_cross_refs")
+        .and_then(|v| v.as_array())
+        .expect("broken_cross_refs array");
+    let leaked: Vec<_> = broken
+        .iter()
+        .filter(|b| {
+            b.get("reference")
+                .and_then(|r| r.as_str())
+                .is_some_and(|r| r.starts_with("super:"))
+        })
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "#649: supplier's own external refs must NOT leak into the \
+         consumer's cross-ref check; got: {leaked:?}"
+    );
+    let own_bad: Vec<_> = broken
+        .iter()
+        .filter(|b| {
+            b.get("reference")
+                .and_then(|r| r.as_str())
+                .is_some_and(|r| r.starts_with("xyz:"))
+        })
+        .collect();
+    assert!(
+        !own_bad.is_empty(),
+        "the consumer's own broken external ref (`xyz:REQ-BOGUS`) must \
+         still surface as an UnknownPrefix broken cross-ref; got only: {broken:?}"
+    );
+}
+
 // ── rivet stats ─────────────────────────────────────────────────────────
 
 /// `rivet stats --format json` produces valid JSON with total count.

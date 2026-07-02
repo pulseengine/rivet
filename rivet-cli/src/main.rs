@@ -5815,11 +5815,24 @@ fn cmd_validate(
                             external_ids.insert(ext.prefix.clone(), ids);
                         }
 
-                        // Collect local IDs and all link targets
-                        let local_ids: std::collections::HashSet<String> =
-                            store.iter().map(|a| a.id.clone()).collect();
+                        // Collect local IDs and all link targets — consumer-owned
+                        // artifacts only. External (`prefix:ID`) artifacts are
+                        // in the store solely so the consumer's `prefix:ID`
+                        // cross-links resolve (REQ-082); walking their outgoing
+                        // links here would fail the consumer on the supplier's
+                        // OWN external refs (e.g. supplier A's link to `B:foo`
+                        // where the consumer never declared B) — precisely the
+                        // DD-017 / REQ-065 contradiction reported in #649. The
+                        // `--with-externals-validate` opt-in below is the only
+                        // gate that walks supplier internals.
+                        let local_ids: std::collections::HashSet<String> = store
+                            .iter()
+                            .filter(|a| !a.id.contains(':'))
+                            .map(|a| a.id.clone())
+                            .collect();
                         let all_refs: Vec<&str> = store
                             .iter()
+                            .filter(|a| !a.id.contains(':'))
                             .flat_map(|a| a.links.iter().map(|l| l.target.as_str()))
                             .collect();
 
