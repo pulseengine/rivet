@@ -7656,8 +7656,8 @@ artifacts:
   - id: REQ-246
     type: requirement
     title: human-friendly artifact editing UI (reduce raw-YAML friction)
-    status: draft
-    description: "A user reported raw-YAML artifact editing is cumbersome; the core is shared but there is no human-facing UI to help author/edit artifacts. Design a friendlier editing path (dashboard form and/or VSIX assist). Scope TBD — needs a design decision before implementation. #546."
+    status: approved
+    description: "A user reported raw-YAML artifact editing is cumbersome; the core is shared but there is no human-facing UI to help author/edit artifacts. DD-071 decides the direction: deliver the help on the shared LSP (schema-aware completion + snippets — field names with required markers, enum field values, link types + valid target types, per-artifact-type skeletons), not a new serve/VSIX write surface, so YAML stays canonical and every LSP editor benefits. #546."
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
