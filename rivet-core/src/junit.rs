@@ -372,9 +372,20 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
             {
                 if let Some(ref mut c) = current_case {
                     if c.body.is_none() {
+                        // quick-xml 0.41 (RUSTSEC-2026-0194/0195 fix) removed
+                        // `BytesText::unescape()`; it split into `decode()`
+                        // (bytes→str) + the standalone `escape::unescape`
+                        // (entity resolution). Preserve the old decode+unescape
+                        // behavior — JUnit failure/error bodies carry entities
+                        // like `&lt;`/`&amp;` in stack traces.
                         let text = e
-                            .unescape()
-                            .map(|s| s.trim().to_string())
+                            .decode()
+                            .ok()
+                            .and_then(|d| {
+                                quick_xml::escape::unescape(&d)
+                                    .ok()
+                                    .map(|u| u.trim().to_string())
+                            })
                             .unwrap_or_default();
                         if !text.is_empty() {
                             c.body = Some(text);
@@ -416,7 +427,10 @@ fn collect_attrs(e: &quick_xml::events::BytesStart<'_>) -> HashMap<String, Strin
     for attr in e.attributes().flatten() {
         if let (Ok(key), Ok(val)) = (
             std::str::from_utf8(attr.key.local_name().as_ref()),
-            attr.unescape_value(),
+            // quick-xml 0.41 deprecated `unescape_value()` for
+            // `normalized_value(version)` — the spec-compliant attribute-value
+            // normalization (entity resolution + whitespace). JUnit XML is 1.0.
+            attr.normalized_value(quick_xml::XmlVersion::Implicit1_0),
         ) {
             map.insert(key.to_string(), val.into_owned());
         }
