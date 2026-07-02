@@ -5,6 +5,17 @@
 
 ## [Unreleased]
 
+### Changed / Fixed
+- **`rivet check bidirectional` no longer demands non-authorable inverses**
+  (#648). When a schema declares `link-types.X.inverse: Y` but does *not*
+  declare `Y` as its own `link-types:` entry, authoring a `Y` link would
+  make `rivet validate` FAIL with `unknown-link-type`. The oracle now
+  treats such forward links as bidirectionally-implicit — the schema is
+  unidirectionally declared and demanding a materialized inverse would
+  make the oracle unsatisfiable in tandem with `validate`. Fixes the
+  aspice-schema case (`satisfies`, `verifies`, `derives-from`) where one
+  oracle's green was another's red. Adds `Schema::is_authorable_link_type`.
+
 ## [0.23.0] - 2026-07-01
 
 Theme: **Traceability evidence** — make the requirement → verification → test

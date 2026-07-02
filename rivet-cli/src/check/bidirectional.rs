@@ -4,6 +4,21 @@
 //! `type` has an `inverse:`, verify that `B -(inverse)-> A` is present in
 //! the store. If any forward link lacks its inverse, the oracle fires.
 //!
+//! ### Unidirectionally-declared inverses (issue #648)
+//!
+//! When a schema declares `link-types.X.inverse: Y` but does *not* declare
+//! `Y` as its own authorable `link-types:` entry, the reverse edge cannot
+//! be materialized on the target: authoring a `Y` link makes `rivet
+//! validate` FAIL with `unknown-link-type`. In that case the schema author
+//! is expressing "the inverse is a reading of the same edge, not a
+//! separately-authored link" — and this oracle honors that by skipping the
+//! forward link (its bidirectionality is implicit in the schema's
+//! declaration, no target-side materialization required). This keeps the
+//! oracle satisfiable simultaneously with `rivet validate` PASS. Projects
+//! that want dual-materialized inverses declare both directions in
+//! `link-types:` (see `allocated-to`/`allocated-from`), and the oracle
+//! then verifies both sides as before.
+//!
 //! Exit codes:
 //! * 0 — every inverse-bearing forward link has its inverse on the target.
 //! * 1 — one or more inverses missing; violations printed (and emitted as
@@ -60,6 +75,16 @@ pub fn compute(store: &Store, schema: &Schema, graph: &LinkGraph) -> Report {
             let Some(expected_inverse) = schema.inverse_of(&link.link_type) else {
                 continue;
             };
+            // #648: if the schema declares `inverse: Y` but Y is not itself
+            // an authorable `link-types:` entry, the target cannot carry a
+            // Y-link without `rivet validate` rejecting it as
+            // `unknown-link-type`. Treat such forward links as
+            // bidirectionally-implicit — the schema is unidirectionally
+            // declared and demanding a materialized inverse would make the
+            // oracle unsatisfiable in tandem with `validate`.
+            if !schema.is_authorable_link_type(expected_inverse) {
+                continue;
+            }
             // Skip broken links — those are a separate validator concern.
             // The target must exist for us to check its backlinks.
             if !store.contains(&link.target) {

@@ -39,6 +39,13 @@ fn rivet_bin() -> PathBuf {
 
 /// Minimal schema: one artifact type, one link type with inverse, plus
 /// whatever else is needed for validation to accept a clean project.
+///
+/// Both `satisfies` and `satisfied-by` are declared as authorable link
+/// types so that `rivet check bidirectional` fires when the inverse is
+/// missing (per #648, the oracle skips forward links whose declared
+/// inverse is not itself authorable). Test 1 (`_passes_when_every_forward_link_has_inverse`)
+/// and test 2 (`_fires_when_inverse_missing`) both rely on this schema
+/// staying bidirectionally-authorable.
 const MINIMAL_SCHEMA: &str = r#"schema:
   name: oracle-test
   version: "0.1.0"
@@ -57,6 +64,12 @@ link-types:
     description: Source satisfies target
     source-types: [design-decision]
     target-types: [requirement]
+
+  - name: satisfied-by
+    inverse: satisfies
+    description: Target is satisfied by source
+    source-types: [requirement]
+    target-types: [design-decision]
 "#;
 
 const MINIMAL_RIVET_YAML: &str = r#"project:
@@ -196,6 +209,126 @@ fn bidirectional_fires_when_inverse_missing() {
     assert_eq!(viols[0]["link_type"], "satisfies");
     assert_eq!(viols[0]["target"], "REQ-001");
     assert_eq!(viols[0]["expected_inverse"], "satisfied-by");
+}
+
+/// Schema that declares `satisfies` with an inverse name but does NOT
+/// declare that inverse (`satisfied-by`) as its own authorable link type.
+/// This is the shape called out in #648 (aspice embeds `satisfies`,
+/// `verifies`, `derives-from` this way): the inverse cannot be
+/// materialized without failing `rivet validate` — so the bidirectional
+/// oracle must treat the forward link as sufficient.
+const UNIDIRECTIONAL_SCHEMA: &str = r#"schema:
+  name: oracle-test-uni
+  version: "0.1.0"
+  description: Schema whose `satisfies` inverse is not itself authorable.
+
+artifact-types:
+  - name: requirement
+    description: A requirement
+
+  - name: design-decision
+    description: A design decision
+
+link-types:
+  - name: satisfies
+    inverse: satisfied-by
+    description: Source satisfies target
+    source-types: [design-decision]
+    target-types: [requirement]
+"#;
+
+const UNIDIRECTIONAL_RIVET_YAML: &str = r#"project:
+  name: oracle-test-uni
+  version: "0.1.0"
+  schemas:
+    - oracle-test-uni
+sources:
+  - path: artifacts
+    format: generic-yaml
+"#;
+
+fn seed_unidirectional_project(dir: &Path) {
+    std::fs::create_dir_all(dir.join("schemas")).unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(dir.join("rivet.yaml"), UNIDIRECTIONAL_RIVET_YAML).unwrap();
+    std::fs::write(
+        dir.join("schemas").join("oracle-test-uni.yaml"),
+        UNIDIRECTIONAL_SCHEMA,
+    )
+    .unwrap();
+}
+
+/// #648 kill criterion: on a schema whose `satisfies.inverse` is not
+/// declared as an authorable link type, a project that only authors
+/// forward `satisfies` links must reach `bidirectional: OK` *and* pass
+/// `rivet validate` at the same time. Before this fix, the oracle
+/// demanded a `satisfied-by` inverse on every REQ, but validate rejected
+/// that inverse as `unknown-link-type` — one oracle's green was another
+/// oracle's red.
+#[test]
+fn bidirectional_and_validate_both_pass_when_inverse_is_not_authorable() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    seed_unidirectional_project(dir);
+
+    // DD-001 authors the forward `satisfies` link. REQ-001 authors
+    // nothing — the schema forbids `satisfied-by`, and the fix means the
+    // bidirectional oracle no longer demands it.
+    write_artifact(
+        dir,
+        "req.yaml",
+        r#"artifacts:
+  - id: REQ-001
+    type: requirement
+    title: a requirement
+    status: draft
+"#,
+    );
+    write_artifact(
+        dir,
+        "dd.yaml",
+        r#"artifacts:
+  - id: DD-001
+    type: design-decision
+    title: a design decision
+    status: draft
+    links:
+      - type: satisfies
+        target: REQ-001
+"#,
+    );
+
+    // Half 1: bidirectional oracle green.
+    let bi = run_rivet(dir, &["check", "bidirectional", "--format", "json"]);
+    let bi_stdout = String::from_utf8_lossy(&bi.stdout);
+    let bi_stderr = String::from_utf8_lossy(&bi.stderr);
+    assert!(
+        bi.status.success(),
+        "expected bidirectional OK; stdout={bi_stdout}; stderr={bi_stderr}"
+    );
+    let bi_v: serde_json::Value =
+        serde_json::from_str(&bi_stdout).expect("bidirectional stdout must be valid JSON");
+    assert_eq!(bi_v["oracle"], "bidirectional");
+    assert_eq!(
+        bi_v["violations"].as_array().unwrap().len(),
+        0,
+        "expected zero bidirectional violations, got: {bi_stdout}"
+    );
+
+    // Half 2: validate green — no unknown-link-type error for the inverse,
+    // because we never authored it.
+    let val = run_rivet(dir, &["validate", "--format", "json"]);
+    let val_stdout = String::from_utf8_lossy(&val.stdout);
+    let val_stderr = String::from_utf8_lossy(&val.stderr);
+    assert!(
+        val.status.success(),
+        "expected validate PASS; stdout={val_stdout}; stderr={val_stderr}"
+    );
+    // No `unknown-link-type` diagnostic anywhere in the validate output.
+    assert!(
+        !val_stdout.contains("unknown-link-type") && !val_stderr.contains("unknown-link-type"),
+        "validate should not emit unknown-link-type; stdout={val_stdout}; stderr={val_stderr}"
+    );
 }
 
 // ── review-signoff oracle ──────────────────────────────────────────────
