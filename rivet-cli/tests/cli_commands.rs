@@ -1594,8 +1594,7 @@ fn validate_does_not_leak_transitive_external_prefixes() {
         ])
         .output()
         .expect("validate");
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("validate JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&out.stdout).expect("validate JSON");
     let broken = parsed
         .get("broken_cross_refs")
         .and_then(|v| v.as_array())
