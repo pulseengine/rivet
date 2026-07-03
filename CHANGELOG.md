@@ -5,6 +5,22 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Embedded aspice schema is self-consistent** (#652). The
+  `swe1-has-verification` coverage rule lists `unit-verification` and
+  `sw-integration-verification` as `verifies` satisfiers for `sw-req`, but
+  those types' `verifies` link-fields only allowed
+  `sw-detail-design` / `sw-arch-component` targets — the satisfiers were
+  unreachable and `rivet validate` warned against its own embedded schema
+  (facets 1 & 2 of #648; facet 3 was fixed in #650). `sw-req` is now an
+  allowed `verifies` target for both types, so the coverage rule is
+  reachable and an `implemented` sw-req with a real unit / integration
+  verification linked no longer carries a permanent, unfixable
+  lifecycle-coverage gap. Regression test in
+  `rivet-core/tests/schema_validation_rules.rs` asserts the embedded
+  common+aspice schema surfaces zero `coverage-rule-consistency`
+  diagnostics.
+
 ## [0.24.0] - 2026-07-02
 
 ### Added

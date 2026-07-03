@@ -212,7 +212,13 @@ artifact-types:
     link-fields:
       - name: verifies
         link-type: verifies
-        target-types: [sw-detail-design]
+        # `sw-req` is included so the SWE.1 coverage rule
+        # `swe1-has-verification` (which lists unit-verification as a
+        # satisfier for sw-req) is reachable — a unit-verification may
+        # link `verifies -> sw-req` alongside the SWE.3 sw-detail-design
+        # link required by the `swe4-verifies-swe3` traceability rule.
+        # Issue #652.
+        target-types: [sw-detail-design, sw-req]
         required: true
         cardinality: one-or-many
 
@@ -251,7 +257,10 @@ artifact-types:
     link-fields:
       - name: verifies
         link-type: verifies
-        target-types: [sw-arch-component, sw-detail-design]
+        # `sw-req` is included so the SWE.1 coverage rule
+        # `swe1-has-verification` (which lists sw-integration-verification
+        # as a satisfier for sw-req) is reachable. Issue #652.
+        target-types: [sw-arch-component, sw-detail-design, sw-req]
         required: true
         cardinality: one-or-many
 
