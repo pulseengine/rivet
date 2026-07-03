@@ -28,9 +28,45 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  # Gate the compile-heavy Rust jobs so artifact/docs-only PRs stop running the
+  # full matrix and saturating the shared self-hosted pool. Pure `git diff` — no
+  # third-party action, so the supply chain stays auditable. On push/main,
+  # schedule and workflow_dispatch the filter always reports rust=true, so a
+  # merge or the nightly run still exercises everything. Content-validating jobs
+  # (traceability = `rivet validate`, docs-check, yaml-lint) are deliberately
+  # NOT gated on this — they must run on artifact/doc PRs.
+  changes:
+    name: Detect changed areas
+    runs-on: [self-hosted, linux, x64, light]
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: filter
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "non-PR event (${{ github.event_name }}) → full matrix"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          changed="$(git diff --name-only "$base"...HEAD)"
+          echo "changed files:"; echo "$changed"
+          if echo "$changed" | grep -qE '(\.rs$)|((^|/)Cargo\.(toml|lock)$)|(^\.github/workflows/)'; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "→ Rust/Cargo/workflow changes present; running full matrix"
+          else
+            echo "rust=false" >> "$GITHUB_OUTPUT"
+            echo "→ no Rust/Cargo/workflow changes; skipping compile-heavy jobs"
+          fi
+
   # ── Fast checks ───────────────────────────────────────────────────────
   fmt:
     name: Format
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6
@@ -41,6 +77,8 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
@@ -154,6 +192,8 @@ jobs:
   # ── Tests ─────────────────────────────────────────────────────────────
   test:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     env:
       RIVET_ACTIONLINT: "1"
@@ -338,6 +378,8 @@ jobs:
     # Renamed: skipping advisories until smithy ships an upgraded
     # rustsec parser (see audit job comment). Same workaround as spar.
     name: Cargo Deny (licenses, bans, sources)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6
@@ -363,7 +405,8 @@ jobs:
   # escape to a release.
   semver-checks:
     name: Semver Checks (rivet-core public API)
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
@@ -384,7 +427,8 @@ jobs:
   # ── Code coverage (Rust nightly for source-based instrumentation) ───
   coverage:
     name: Code Coverage
-    needs: [test]
+    needs: [changes, test]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
@@ -424,7 +468,8 @@ jobs:
   # (sexpr + yaml_cst); the FULL sweep runs nightly (miri-full, #498 pattern).
   miri:
     name: Miri (safety surface)
-    if: github.event_name != 'schedule'
+    needs: changes
+    if: github.event_name != 'schedule' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, lean-mem]
     steps:
       - uses: actions/checkout@v6
@@ -483,6 +528,8 @@ jobs:
   # ── Property-based testing (extended) ───────────────────────────────
   proptest:
     name: Proptest (extended)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
@@ -626,7 +673,8 @@ jobs:
   # RAM-bound gating jobs (Miri, Verus) and the nightly mutants-core fan-out.
   mutants-cli:
     name: Mutation Testing (rivet-cli)
-    needs: [test]
+    needs: [changes, test]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     steps:
@@ -703,6 +751,8 @@ jobs:
   # ── Supply chain verification ───────────────────────────────────────
   supply-chain:
     name: Supply Chain (cargo-vet)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, light]
     timeout-minutes: 10
     steps:
@@ -866,6 +916,8 @@ jobs:
   # ── MSRV check ──────────────────────────────────────────────────────
   msrv:
     name: MSRV (1.89)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
