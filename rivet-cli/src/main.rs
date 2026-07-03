@@ -1529,8 +1529,20 @@ enum BaselineAction {
 enum ReleaseAction {
     /// Readiness burn-down for a release (REQ-233, #516): per-status counts of
     /// the artifacts scoped to `release: <version>`, plus the set that is not
-    /// yet `verified`/`accepted`. The release is cuttable when that set is
-    /// empty. Exits non-zero when not cuttable (so CI can gate on it).
+    /// yet release-ready. The release is cuttable when that set is empty.
+    /// Exits non-zero when not cuttable (so CI can gate on it).
+    ///
+    /// By default an artifact is release-ready at `status ∈
+    /// {verified, accepted}`. `rivet.yaml`'s `release:` block widens that:
+    /// `ready-when: [<status>...]` extends the ready status set;
+    /// `require: coverage` (REQ-240, #612) ALSO counts an artifact ready
+    /// when every applicable validate coverage rule passes for its type —
+    /// the escape hatch for V-model / ASPICE projects that verify via
+    /// links rather than a status flip. `require: coverage` greens when
+    /// the configured coverage-rules pass, which is NOT the same as
+    /// "every verification level present" — see `docs/release-status.md`
+    /// for the precision note and how to tighten the schema when a
+    /// stricter meaning is required.
     Status {
         /// Release version, e.g. v0.22.0
         version: String,
