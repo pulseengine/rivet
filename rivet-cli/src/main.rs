@@ -18200,6 +18200,175 @@ fn artifact_id_completions(store: &Store) -> Vec<lsp_types::CompletionItem> {
         .collect()
 }
 
+/// Leading-whitespace width of a line (spaces; YAML forbids tabs for indent).
+#[cfg(feature = "lsp")]
+fn lsp_indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// The `type:` value of the artifact enclosing `line_idx` (REQ-246). Scans
+/// upward for the nearest artifact-level `type: <X>` line, stopping at the
+/// artifact's `- id:` anchor. A link's `- type:` line is skipped — its trimmed
+/// form starts with `-`, not `type:`, so it never matches.
+#[cfg(feature = "lsp")]
+fn lsp_enclosing_artifact_type(lines: &[&str], line_idx: usize) -> Option<String> {
+    for i in (0..line_idx).rev() {
+        let t = lines[i].trim_start();
+        if let Some(rest) = t.strip_prefix("type:") {
+            let v = rest.trim().trim_matches('"');
+            if !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+        // Reached this artifact's anchor without an artifact-level type above
+        // the cursor (malformed or cursor sits above `type:`): give up.
+        if t.starts_with("- id:") {
+            break;
+        }
+    }
+    None
+}
+
+/// The key of the mapping block that directly contains `line_idx` (REQ-246) —
+/// the nearest non-empty line above with a strictly smaller indent. Used to
+/// tell `fields:` context from `links:` context. The leading `- ` of a
+/// sequence item and the trailing `:` are stripped, so `    fields:` yields
+/// `Some("fields")` and `    links:` yields `Some("links")`.
+#[cfg(feature = "lsp")]
+fn lsp_current_block_key(lines: &[&str], line_idx: usize) -> Option<String> {
+    let mut target_indent = lsp_indent_of(lines.get(line_idx)?);
+    for i in (0..line_idx).rev() {
+        let l = lines[i];
+        if l.trim().is_empty() {
+            continue;
+        }
+        let ind = lsp_indent_of(l);
+        if ind < target_indent {
+            let content = l.trim_start();
+            // A sequence item (`- key:`) is not itself the enclosing block —
+            // the block is the mapping key that owns the sequence, one or more
+            // levels shallower. Keep climbing (e.g. `target:` inside a link
+            // item resolves to `links`, not the item's first key `type`).
+            if content.starts_with("- ") {
+                target_indent = ind;
+                continue;
+            }
+            let key = content.split(':').next().unwrap_or("").trim();
+            if key.is_empty() {
+                return None;
+            }
+            return Some(key.to_string());
+        }
+    }
+    None
+}
+
+/// Schema-aware completion items for `fields:` (field names) and artifact/link
+/// `type:` (REQ-246, DD-071). Returns None when the schema has nothing to add
+/// for the current context, so the caller can fall back to other completions.
+#[cfg(feature = "lsp")]
+fn lsp_schema_completions(
+    lines: &[&str],
+    line_idx: usize,
+    trimmed: &str,
+    schema: &rivet_core::schema::Schema,
+    store: &Store,
+) -> Option<Vec<lsp_types::CompletionItem>> {
+    let block = lsp_current_block_key(lines, line_idx);
+
+    // A link's `- type:` inside a `links:` block → link types authorable from
+    // the enclosing artifact's type (falls back to all link types if the type
+    // is unknown).
+    if trimmed.starts_with("- type:") && block.as_deref() == Some("links") {
+        let from_type = lsp_enclosing_artifact_type(lines, line_idx);
+        let mut items: Vec<lsp_types::CompletionItem> = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        if let Some(ft) = from_type.as_deref().and_then(|t| schema.artifact_type(t)) {
+            for lf in &ft.link_fields {
+                if seen.insert(lf.link_type.clone()) {
+                    let targets = lf.target_types.join(", ");
+                    items.push(lsp_types::CompletionItem {
+                        label: lf.link_type.clone(),
+                        kind: Some(lsp_types::CompletionItemKind::KEYWORD),
+                        detail: Some(if targets.is_empty() {
+                            format!("link{}", if lf.required { " (required)" } else { "" })
+                        } else {
+                            format!(
+                                "→ {targets}{}",
+                                if lf.required { " (required)" } else { "" }
+                            )
+                        }),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+        if items.is_empty() {
+            for lt in schema.link_types.keys() {
+                items.push(lsp_types::CompletionItem {
+                    label: lt.clone(),
+                    kind: Some(lsp_types::CompletionItemKind::KEYWORD),
+                    ..Default::default()
+                });
+            }
+        }
+        return Some(items);
+    }
+
+    // Artifact `type:` → every schema-declared type (union store types), so a
+    // new project can complete a type it has not used yet.
+    if (trimmed.starts_with("type:") || trimmed.starts_with("- type:"))
+        && block.as_deref() != Some("links")
+    {
+        let mut names: std::collections::BTreeSet<String> =
+            schema.artifact_types.keys().cloned().collect();
+        names.extend(store.types().map(|t| t.to_string()));
+        return Some(
+            names
+                .into_iter()
+                .map(|t| {
+                    let desc = schema
+                        .artifact_type(&t)
+                        .map(|td| td.description.clone())
+                        .filter(|d| !d.is_empty());
+                    lsp_types::CompletionItem {
+                        label: t,
+                        kind: Some(lsp_types::CompletionItemKind::CLASS),
+                        detail: desc,
+                        ..Default::default()
+                    }
+                })
+                .collect(),
+        );
+    }
+
+    // Inside a `fields:` block → the enclosing type's declared field names,
+    // required ones marked, each carrying its type + description.
+    if block.as_deref() == Some("fields") {
+        let type_def =
+            lsp_enclosing_artifact_type(lines, line_idx).and_then(|t| schema.artifact_type(&t))?;
+        let items = type_def
+            .fields
+            .iter()
+            .map(|f| lsp_types::CompletionItem {
+                label: f.name.clone(),
+                kind: Some(lsp_types::CompletionItemKind::FIELD),
+                detail: Some(format!(
+                    "{}{}",
+                    f.field_type,
+                    if f.required { " (required)" } else { "" }
+                )),
+                documentation: f.description.clone().map(lsp_types::Documentation::String),
+                insert_text: Some(format!("{}: ", f.name)),
+                ..Default::default()
+            })
+            .collect();
+        return Some(items);
+    }
+
+    None
+}
+
 #[cfg(feature = "lsp")]
 fn lsp_completion(
     params: &lsp_types::CompletionParams,
@@ -18213,26 +18382,22 @@ fn lsp_completion(
     let line_text = content.lines().nth(pos.line as usize).unwrap_or("");
     let trimmed = line_text.trim();
 
+    let lines: Vec<&str> = content.lines().collect();
+    let line_idx = pos.line as usize;
+
     let mut items = Vec::new();
 
     if trimmed.starts_with("target:") || trimmed.starts_with("- target:") || trimmed.contains("[[")
     {
         // Suggest artifact IDs (sorted — see artifact_id_completions; #415).
         items.extend(artifact_id_completions(store));
-    } else if trimmed.starts_with("type:") || trimmed.starts_with("- type:") {
-        // Suggest artifact types seen in the store
-        let mut types: Vec<String> = store.types().map(|t| t.to_string()).collect();
-        types.sort();
-        types.dedup();
-        for t in types {
-            let desc = schema.artifact_type(&t).map(|td| td.description.clone());
-            items.push(lsp_types::CompletionItem {
-                label: t,
-                kind: Some(lsp_types::CompletionItemKind::CLASS),
-                detail: desc,
-                ..Default::default()
-            });
-        }
+    } else if let Some(schema_items) =
+        lsp_schema_completions(&lines, line_idx, trimmed, schema, store)
+    {
+        // REQ-246 (DD-071): schema-aware completion for artifact/link `type:`
+        // and `fields:` field names, so humans author correct YAML without
+        // memorizing the schema.
+        items.extend(schema_items);
     }
 
     Some(lsp_types::CompletionList {
@@ -18594,6 +18759,93 @@ mod new_since_diff_tests {
         ];
         let current = vec![d];
         assert!(diff_new_diagnostics(&current, &baseline).is_empty());
+    }
+}
+
+#[cfg(all(test, feature = "lsp"))]
+mod lsp_completion_context_tests {
+    use super::{lsp_current_block_key, lsp_enclosing_artifact_type, lsp_schema_completions};
+
+    // Field-name completion is the core REQ-246 win: inside a `fields:` block
+    // for a known artifact type, offer that type's declared fields with their
+    // required flag — validated against the real embedded schema.
+    // rivet: verifies REQ-246
+    #[test]
+    fn schema_completions_offer_type_field_names_with_required_marker() {
+        let schema = rivet_core::embedded::load_schemas_with_fallback(
+            &["common".to_string()],
+            std::path::Path::new("/nonexistent-schemas-dir"),
+        )
+        .expect("embedded common schema must load");
+        let store = rivet_core::store::Store::new();
+        // Cursor on the empty line inside an ai-session's `fields:` block.
+        let lines = &[
+            "artifacts:",
+            "  - id: AI-1",
+            "    type: ai-session",
+            "    fields:",
+            "      ",
+        ];
+        let items = lsp_schema_completions(lines, 4, "", &schema, &store)
+            .expect("a fields: block for a known type yields field completions");
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert!(
+            labels.contains(&"session-id") && labels.contains(&"model-id"),
+            "field completions must include the type's declared fields; got {labels:?}"
+        );
+        let sid = items.iter().find(|i| i.label == "session-id").unwrap();
+        assert!(
+            sid.detail.as_deref().unwrap_or("").contains("required"),
+            "a required field must be marked required; detail={:?}",
+            sid.detail
+        );
+    }
+
+    // A representative artifact block; index each line by its position.
+    // rivet: verifies REQ-246
+    const DOC: &[&str] = &[
+        "artifacts:",              // 0
+        "  - id: REQ-001",         // 1
+        "    type: requirement",   // 2
+        "    title: Example",      // 3
+        "    fields:",             // 4
+        "      priority: high",    // 5
+        "      ",                  // 6  (cursor: new field under fields:)
+        "    links:",              // 7
+        "      - type: satisfies", // 8
+        "        target: DD-001",  // 9
+    ];
+
+    #[test]
+    fn enclosing_type_found_from_fields_block() {
+        assert_eq!(
+            lsp_enclosing_artifact_type(DOC, 6).as_deref(),
+            Some("requirement")
+        );
+    }
+
+    #[test]
+    fn enclosing_type_found_from_link_type_line() {
+        // The link's `- type:` line must resolve the ARTIFACT type, skipping
+        // itself — it is `- type:`, not `type:`.
+        assert_eq!(
+            lsp_enclosing_artifact_type(DOC, 8).as_deref(),
+            Some("requirement")
+        );
+    }
+
+    #[test]
+    fn block_key_distinguishes_fields_from_links() {
+        assert_eq!(lsp_current_block_key(DOC, 6).as_deref(), Some("fields"));
+        assert_eq!(lsp_current_block_key(DOC, 9).as_deref(), Some("links"));
+        // The link's own `- type:` line sits directly under `links:`.
+        assert_eq!(lsp_current_block_key(DOC, 8).as_deref(), Some("links"));
+    }
+
+    #[test]
+    fn no_enclosing_type_before_first_type_line() {
+        // On the `- id:` line itself, no artifact-level type is above it.
+        assert_eq!(lsp_enclosing_artifact_type(DOC, 1), None);
     }
 }
 
