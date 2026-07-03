@@ -1388,9 +1388,14 @@ mod tests {
 
         // sw-verification CAN `verifies` a sw-req (its link-field allows it)…
         assert!(schema.from_type_can_link("sw-verification", "verifies", "sw-req"));
-        // …but unit-verification CANNOT — its `verifies` only targets sw-detail-design.
-        assert!(!schema.from_type_can_link("unit-verification", "verifies", "sw-req"));
+        // …and after #652, unit-verification CAN too — its `verifies` now targets
+        // sw-req alongside sw-detail-design so the `swe1-has-verification`
+        // coverage-rule satisfier is reachable.
+        assert!(schema.from_type_can_link("unit-verification", "verifies", "sw-req"));
         assert!(schema.from_type_can_link("unit-verification", "verifies", "sw-detail-design"));
+        // …but the check still respects the target list: sw-arch-component is not
+        // among unit-verification's `verifies` targets, so this stays false.
+        assert!(!schema.from_type_can_link("unit-verification", "verifies", "sw-arch-component"));
         // Unknown types / undeclared links are treated as permitted (no over-assert).
         assert!(schema.from_type_can_link("made-up-type", "verifies", "sw-req"));
     }

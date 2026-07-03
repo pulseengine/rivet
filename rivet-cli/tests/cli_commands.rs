@@ -679,11 +679,14 @@ fn validate_surfaces_parse_error_on_malformed_artifact_file() {
     );
 }
 
-/// #350 (REQ-237): the lifecycle completeness gap for an implemented sw-req
-/// must NAME the ASPICE chain — a `unit-verification` verifies a
-/// `sw-detail-design`, not the `sw-req` directly, so authoring a direct link is
-/// rejected and the bare "missing" list points at the wrong fix. The hint tells
-/// the author to add the intermediate.
+/// #350 / #652 (REQ-237): the lifecycle completeness gap for an implemented
+/// sw-req must NAME the verification types the author can attach. REQ-237's
+/// goal (#350, "direct test -> sw-req link without full ASPICE chain") is
+/// completed by #652, which made `unit-verification` /
+/// `sw-integration-verification` reach `sw-req` via `verifies`. So the gap now
+/// names all three directly-linkable verification types and no longer routes
+/// through the `sw-detail-design` chain — the chain hint was the stopgap for
+/// the pre-#652 schema where direct linking was impossible.
 ///
 /// rivet: verifies REQ-237
 #[test]
@@ -715,11 +718,14 @@ fn lifecycle_gap_names_the_aspice_verification_chain() {
         .expect("validate");
     // The gap hints are emitted on stderr alongside the gap list.
     let err = String::from_utf8_lossy(&out.stderr);
+    // Post-#652 the hint names every directly-linkable verification type for the
+    // sw-req, instead of routing through the design chain.
     assert!(
-        err.contains("not `sw-req` directly")
-            && err.contains("sw-detail-design")
-            && err.contains("unit-verification"),
-        "the lifecycle gap must name the ASPICE chain for the sw-req; stderr:\n{err}"
+        err.contains("unit-verification")
+            && err.contains("sw-integration-verification")
+            && err.contains("sw-verification"),
+        "the lifecycle gap must name the directly-linkable verification types for \
+         the sw-req; stderr:\n{err}"
     );
 }
 
@@ -2982,9 +2988,11 @@ fn schema_sources_reports_resolution() {
 }
 
 /// `validate --explain` on an aspice `sw-req` with a verification coverage gap
-/// surfaces the verification type that can attach directly (`sw-verification`)
-/// and annotates the ones that can't — instead of listing all three terminal
-/// types as if any could link straight to the req. #350 / REQ-178.
+/// surfaces the verification types that can attach directly. After #652 made
+/// the `swe1-has-verification` satisfiers reachable (unit-verification and
+/// sw-integration-verification gained `verifies -> sw-req`), all three
+/// verification types link directly — so explain lists all three and no longer
+/// annotates any as attaching only via the design chain. #350 / #652 / REQ-178.
 // rivet: verifies REQ-178
 #[test]
 fn explain_names_directly_linkable_verification_type() {
@@ -3013,13 +3021,14 @@ fn explain_names_directly_linkable_verification_type() {
         .output()
         .expect("run validate --explain");
     let text = String::from_utf8_lossy(&out.stdout);
+    // Explain surfaces the set of directly-linkable verification types. Post-#652
+    // that set is all three (not just sw-verification).
     assert!(
-        text.contains("from one of [\"sw-verification\"]"),
-        "explain should surface the directly-linkable verification type. got:\n{text}"
-    );
-    assert!(
-        text.contains("not 'sw-req' directly"),
-        "explain should note the indirect types attach via the design chain. got:\n{text}"
+        text.contains("from one of")
+            && text.contains("sw-verification")
+            && text.contains("unit-verification")
+            && text.contains("sw-integration-verification"),
+        "explain should list every directly-linkable verification type. got:\n{text}"
     );
 }
 
