@@ -77,6 +77,19 @@ impl std::fmt::Display for TestStatus {
     }
 }
 
+/// A link from a test result to where the work/tracking lives — a PR, a CI
+/// artifact, or a remote issue (REQ-248, #548). Lets a failing (or any) result
+/// point at the tracking tool instead of being a dead end.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ResultLink {
+    /// The link target (a PR / issue / artifact URL).
+    pub url: String,
+    /// Optional human label (e.g. "issue #42", "flaky-tracker"). Falls back to
+    /// the URL when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
 /// A single test result for one artifact in a run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestResult {
@@ -87,6 +100,11 @@ pub struct TestResult {
     pub duration: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// Links to external tracking (PR artifacts, remote issues) — REQ-248.
+    /// Parsed from the result file; empty for results that declare none, so
+    /// existing result files round-trip unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<ResultLink>,
 }
 
 /// Metadata for a test run.
@@ -280,7 +298,43 @@ mod tests {
             status,
             duration: None,
             message: None,
+            links: Vec::new(),
         }
+    }
+
+    // REQ-248 (#548): a test result carries links to external tracking (PR
+    // artifacts, remote issues), parsed from the result file. An absent `links`
+    // key round-trips as empty, and a present one deserializes with labels.
+    // rivet: verifies REQ-248
+    #[test]
+    fn result_links_round_trip_from_result_file() {
+        let json = r#"{
+            "run": { "id": "r1", "timestamp": "2026-07-08T00:00:00Z" },
+            "results": [
+                { "artifact": "REQ-1", "status": "fail",
+                  "links": [
+                    { "url": "https://github.com/o/r/issues/42", "label": "issue #42" },
+                    { "url": "https://github.com/o/r/pull/7" }
+                  ] },
+                { "artifact": "REQ-2", "status": "pass" }
+            ]
+        }"#;
+        let file: TestRunFile = serde_json::from_str(json).expect("parse result file");
+        // First result: two links, second with a URL-only (label absent).
+        assert_eq!(file.results[0].links.len(), 2);
+        assert_eq!(file.results[0].links[0].label.as_deref(), Some("issue #42"));
+        assert_eq!(file.results[0].links[1].label, None);
+        assert_eq!(
+            file.results[0].links[1].url,
+            "https://github.com/o/r/pull/7"
+        );
+        // Second result: no `links` key → empty, and it does not serialize back.
+        assert!(file.results[1].links.is_empty());
+        let reserialized = serde_json::to_string(&file.results[1]).unwrap();
+        assert!(
+            !reserialized.contains("links"),
+            "empty links must be skipped on serialize: {reserialized}"
+        );
     }
 
     // rivet: verifies REQ-009
@@ -476,30 +530,35 @@ mod tests {
                     status: TestStatus::Pass,
                     duration: Some("1.5s".to_string()),
                     message: None,
+                    links: Vec::new(),
                 },
                 TestResult {
                     artifact: "UVER-2".to_string(),
                     status: TestStatus::Fail,
                     duration: None,
                     message: Some("Threshold exceeded".to_string()),
+                    links: Vec::new(),
                 },
                 TestResult {
                     artifact: "UVER-3".to_string(),
                     status: TestStatus::Skip,
                     duration: None,
                     message: None,
+                    links: Vec::new(),
                 },
                 TestResult {
                     artifact: "UVER-4".to_string(),
                     status: TestStatus::Error,
                     duration: None,
                     message: Some("Runtime panic".to_string()),
+                    links: Vec::new(),
                 },
                 TestResult {
                     artifact: "UVER-5".to_string(),
                     status: TestStatus::Blocked,
                     duration: None,
                     message: Some("Dependency unavailable".to_string()),
+                    links: Vec::new(),
                 },
             ],
         };

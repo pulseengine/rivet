@@ -175,6 +175,7 @@ mod tests {
                     status: st.clone(),
                     duration: None,
                     message: None,
+                    links: Vec::new(),
                 })
                 .collect(),
             source_file: None,

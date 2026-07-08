@@ -7678,8 +7678,8 @@ artifacts:
   - id: REQ-248
     type: requirement
     title: test results extendable with links to PR artifacts / remote issues
-    status: proposed
-    description: "A failed (or any) test result should be extendable with links back to the tracking tool — a PR artifact or a remote issue — so evidence points at where the work/tracking lives. #548."
+    status: implemented
+    description: "A failed (or any) test result should be extendable with links back to the tracking tool — a PR artifact or a remote issue — so evidence points at where the work/tracking lives. DD-072 decides: per-result `links: [{url, label?}]` on the rivet-native result file (additive, serde-default), rendered as a Tracking column in the serve results view. JUnit `<property name=\"link\">` mapping is a follow-on slice. #548."
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
