@@ -7645,7 +7645,7 @@ artifacts:
   - id: REQ-245
     type: requirement
     title: rivet serve shows a clear indicator when the backend is down
-    status: proposed
+    status: implemented
     description: "When the `rivet serve` backend is down, a reload or any page fetch fails silently with no information to the user. Show a clear backend-unavailable indicator instead of a blank/stuck page. #621."
     provenance:
       created-by: ai-assisted

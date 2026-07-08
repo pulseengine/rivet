@@ -22,6 +22,21 @@ pub(crate) const GRAPH_JS: &str = r#"
     });
   }
 
+  // ── Backend-down indicator (REQ-245, #621) ───────────────
+  // When the rivet serve process is down, an htmx request fails with no
+  // response (`htmx:sendError`) or a timeout — previously the page just sat
+  // there silently. Surface a banner; clear it as soon as any request
+  // succeeds again (backend recovered).
+  var backendStatus=document.getElementById('backend-status');
+  if(backendStatus){
+    var showBackendDown=function(){backendStatus.hidden=false;};
+    document.body.addEventListener('htmx:sendError',showBackendDown);
+    document.body.addEventListener('htmx:timeout',showBackendDown);
+    document.body.addEventListener('htmx:afterRequest',function(e){
+      if(e.detail&&e.detail.successful) backendStatus.hidden=true;
+    });
+  }
+
   // ── Nav active state ─────────────────────────────────────
   function setActiveNav(url){
     document.querySelectorAll('nav a[hx-get]').forEach(function(a){

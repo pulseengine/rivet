@@ -78,6 +78,9 @@ main.htmx-settling{opacity:1;transition:opacity 200ms ease-in}
              z-index:9999;transition:none;pointer-events:none}
 #loading-bar.active{width:85%;transition:width 8s cubic-bezier(.1,.05,.1,1)}
 #loading-bar.done{width:100%;transition:width 100ms ease;opacity:0;transition:width 100ms ease,opacity 300ms ease 100ms}
+/* REQ-245 (#621): backend-unavailable banner. Shown by js.rs on htmx sendError/timeout. */
+#backend-status{position:fixed;top:0;left:0;right:0;z-index:10000;padding:.55rem 1rem;text-align:center;font-size:.88rem;font-weight:600;color:#fff;background:#c0392b;box-shadow:0 1px 8px rgba(0,0,0,.3)}
+#backend-status[hidden]{display:none}
 
 /* ── Typography ───────────────────────────────────────────────── */
 h2{font-size:1.4rem;font-weight:700;margin-bottom:1.25rem;color:var(--text);letter-spacing:-.01em;padding-bottom:.75rem;border-bottom:1px solid var(--border)}

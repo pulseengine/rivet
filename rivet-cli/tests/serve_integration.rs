@@ -954,6 +954,33 @@ fn test_csp_header_present() {
     child.wait().ok();
 }
 
+/// REQ-245 (#621): the serve shell ships a backend-unavailable banner plus the
+/// htmx `sendError`/`timeout` handlers that reveal it, so a down backend is
+/// signaled instead of leaving the page silently stuck. Runtime behavior
+/// (kill the server, click, see the banner) is covered by Playwright; this
+/// pins that the mechanism is present server-side on the full page shell.
+///
+/// rivet: verifies REQ-245
+#[test]
+fn shell_ships_backend_down_indicator() {
+    let (mut child, port) = start_server();
+
+    // Full-page load (htmx=false) returns the shell that carries the banner + JS.
+    let (status, body, _headers) = fetch(port, "/stats", false);
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("id=\"backend-status\""),
+        "the shell must include the backend-status banner element"
+    );
+    assert!(
+        body.contains("htmx:sendError"),
+        "the shell JS must handle htmx:sendError to reveal the banner when the backend is down"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 // ── STPA-Sec Section 12.4: Dashboard Reload Failure (H-16, SC-18) ─────────
 
 /// POST /reload and parse the HTTP status from the response. Retries

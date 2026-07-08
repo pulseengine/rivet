@@ -359,6 +359,7 @@ document.addEventListener('DOMContentLoaded',renderMermaid);
 <body>
 <a href="#content" class="skip-link">Skip to content</a>
 <div id="loading-bar"></div>
+<div id="backend-status" role="alert" aria-live="assertive" hidden>&#9888; Backend unavailable &mdash; the <code>rivet serve</code> process looks down. This page is cached; navigation and actions won&#39;t work until it&#39;s back.</div>
 <div class="shell">
 <nav role="navigation" aria-label="Main navigation">
   <h1>Rivet</h1>
