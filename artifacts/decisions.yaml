@@ -1446,3 +1446,51 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-02T08:15:00Z
+
+  - id: DD-072
+    type: design-decision
+    title: Test-result tracking links attach per-result, sourced from the result file
+    status: proposed
+    description: >
+      REQ-248 (#548): a test result should carry links to where the work or
+      tracking lives — a PR artifact or a remote issue — so a failing result
+      points at the tracking tool instead of dead-ending. Decision: attach the
+      links PER TestResult (not per run) and source them from the result file
+      itself, so the same file that reports pass/fail also carries its tracking
+      context. rivet's native JSON/YAML result format gains an optional
+      per-result `links: [{url, label?}]`; a JUnit `<property name="link">`
+      convention maps to the same shape in a follow-on slice.
+    tags: [results, tracking, links, ux, data-model, dogfooding]
+    links:
+      - type: satisfies
+        target: REQ-248
+    fields:
+      baseline: v0.24.0-track
+      source-ref: >
+        rivet-core/src/results.rs (ResultLink + TestResult.links),
+        rivet-cli/src/render/results.rs (Tracking column),
+        rivet-core/src/junit.rs (Slice 2 property mapping).
+      rationale: >
+        Per-result (not per-run) matches the issue's wording ("tests should be
+        extendable to add links") and the granularity that matters: a single
+        failing test points at its own issue, not a run-wide bucket. Sourcing
+        from the result file (vs a separate annotation file) keeps one artifact
+        authoritative and lets the emitter that already knows pass/fail attach
+        the tracking link at the same time — no second file to keep in sync.
+        Implemented as `#[serde(default, skip_serializing_if = "Vec::is_empty")]`
+        so existing result files round-trip byte-identical and the field is
+        purely additive. Rendered as a "Tracking" column in the serve results
+        detail view (opens in a new tab; label falls back to the URL).
+      alternatives: >
+        (1) Per-run links (RunMetadata) — rejected: too coarse; can't point at
+        the specific failing test. (2) Separate annotation file mapping
+        artifact/test -> URLs — rejected: a second file to maintain and keep in
+        sync with results, and it decouples the link from the result that
+        motivates it. (3) Reuse the artifact `links:` model — rejected: those
+        are typed traceability links between artifacts, not free-form external
+        URLs, and a test RESULT is not an artifact. Chosen: additive per-result
+        `links` on the result file.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-08T00:00:00Z

@@ -41,6 +41,15 @@ use rivet_core::document::html_escape;
 use super::RenderContext;
 use super::helpers::badge_for_type;
 
+/// True only for `http://` / `https://` URLs (case-insensitive, leading
+/// whitespace tolerated). REQ-248 result links can come from CI output or
+/// synced externals, so anything else — notably `javascript:`/`data:` — must
+/// not become a live `href` (stored-XSS guard).
+fn is_http_url(url: &str) -> bool {
+    let u = url.trim_start().to_ascii_lowercase();
+    u.starts_with("http://") || u.starts_with("https://")
+}
+
 pub(crate) fn render_verification_view(ctx: &RenderContext) -> String {
     let store = ctx.store;
     let graph = ctx.graph;
@@ -453,7 +462,7 @@ pub(crate) fn render_result_detail(ctx: &RenderContext, run_id: &str) -> String 
 
     html.push_str("<div class=\"card\"><h3>Results</h3>");
     html.push_str(
-        "<table><thead><tr><th>Artifact</th><th>Title</th><th>Status</th><th>Duration</th><th>Message</th></tr></thead><tbody>",
+        "<table><thead><tr><th>Artifact</th><th>Title</th><th>Status</th><th>Duration</th><th>Message</th><th>Tracking</th></tr></thead><tbody>",
     );
 
     for result in &run.results {
@@ -485,6 +494,38 @@ pub(crate) fn render_result_detail(ctx: &RenderContext, run_id: &str) -> String 
         let duration = result.duration.as_deref().unwrap_or("-");
         let message = result.message.as_deref().unwrap_or("");
 
+        // REQ-248 (#548): links from this result to where the work/tracking
+        // lives — a PR artifact or a remote issue. Open in a new tab; the label
+        // falls back to the URL. Result files can originate from CI or synced
+        // externals, so only http(s) URLs become a live `href` — a
+        // `javascript:`/`data:` scheme is rendered inert (escaped text, no
+        // href) to prevent stored XSS.
+        let tracking = if result.links.is_empty() {
+            String::from("<span class=\"meta\">&mdash;</span>")
+        } else {
+            result
+                .links
+                .iter()
+                .map(|l| {
+                    let label = l.label.as_deref().unwrap_or(&l.url);
+                    if is_http_url(&l.url) {
+                        format!(
+                            "<a href=\"{url}\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"badge badge-info\" title=\"{url}\">&#128279; {label}</a>",
+                            url = html_escape(&l.url),
+                            label = html_escape(label),
+                        )
+                    } else {
+                        format!(
+                            "<span class=\"badge badge-warn\" title=\"non-http link omitted for safety: {url}\">&#128279; {label}</span>",
+                            url = html_escape(&l.url),
+                            label = html_escape(label),
+                        )
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+
         html.push_str(&format!(
             "<tr class=\"{status_class}\">\
              <td><a hx-get=\"/artifacts/{aid}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{aid}\">{aid}</a></td>\
@@ -492,6 +533,7 @@ pub(crate) fn render_result_detail(ctx: &RenderContext, run_id: &str) -> String 
              <td>{status_badge}</td>\
              <td>{duration}</td>\
              <td>{msg}</td>\
+             <td>{tracking}</td>\
              </tr>",
             aid = html_escape(&result.artifact),
             title = html_escape(title),
@@ -506,4 +548,26 @@ pub(crate) fn render_result_detail(ctx: &RenderContext, run_id: &str) -> String 
     );
 
     html
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_http_url;
+
+    // REQ-248 XSS guard: only http(s) result links become a live href.
+    // rivet: verifies REQ-248
+    #[test]
+    fn only_http_urls_are_treated_as_safe_links() {
+        assert!(is_http_url("https://github.com/o/r/issues/1"));
+        assert!(is_http_url("http://example.test/x"));
+        assert!(is_http_url("  HTTPS://Example.test")); // trimmed, case-insensitive
+        // Dangerous or non-navigable schemes must NOT be linkified.
+        assert!(!is_http_url("javascript:alert(1)"));
+        assert!(!is_http_url("JavaScript:alert(1)"));
+        assert!(!is_http_url("data:text/html,<script>alert(1)</script>"));
+        assert!(!is_http_url("file:///etc/passwd"));
+        assert!(!is_http_url("ftp://example.test"));
+        assert!(!is_http_url("/relative/path"));
+        assert!(!is_http_url(""));
+    }
 }

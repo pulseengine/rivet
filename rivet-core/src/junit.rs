@@ -607,6 +607,9 @@ fn case_to_result_with_markers(
         status,
         duration,
         message,
+        // REQ-248 Slice 2 will map JUnit `<property name="link">` here; for now
+        // JUnit imports carry no result links.
+        links: Vec::new(),
     }
 }
 
