@@ -345,6 +345,47 @@ pub fn schema_version_of(name: &str, source: &SchemaSource) -> String {
     }
 }
 
+/// A declared `schema-pins` entry whose pinned version differs from the version
+/// actually resolved for a `rivet validate` (REQ-249, #431).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaPinMismatch {
+    pub name: String,
+    /// The version the project pinned in `rivet.yaml :: project.schema-pins`.
+    pub pinned: String,
+    /// The version actually resolved (embedded in this binary, or on-disk).
+    pub resolved: String,
+    /// `"embedded"` or `"on-disk"` — an embedded mismatch is the silent-upgrade
+    /// case the pin exists to catch; on-disk means a vendored file drifted.
+    pub source: &'static str,
+}
+
+/// Compare declared `schema-pins` against the versions actually resolved for a
+/// `rivet validate` (REQ-249, #431). Returns one mismatch per pinned schema
+/// whose resolved version differs from its pin, in a deterministic order (by
+/// schema name). Pins for schemas that aren't in the resolved set are ignored —
+/// there's nothing loaded to check. This is what makes an upgrade-induced
+/// schema change loud instead of silent: the resolved embedded version moved
+/// but the pin didn't.
+pub fn check_schema_pins(
+    pins: &std::collections::BTreeMap<String, String>,
+    provenance: &[SchemaProvenance],
+) -> Vec<SchemaPinMismatch> {
+    let mut out: Vec<SchemaPinMismatch> = provenance
+        .iter()
+        .filter_map(|prov| {
+            let pinned = pins.get(&prov.name)?;
+            (pinned != &prov.version).then(|| SchemaPinMismatch {
+                name: prov.name.clone(),
+                pinned: pinned.clone(),
+                resolved: prov.version.clone(),
+                source: prov.source,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
 /// Expand a requested schema-name list to the full effective set the loader
 /// uses: the requested names plus any auto-discovered bridge schemas (dedup'd,
 /// order-preserving). Shared by `validate` and `rivet schema sources` so both
@@ -467,6 +508,35 @@ pub fn load_schemas_with_fallback(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // REQ-249 (#431): schema-pin drift check flags a resolved version that
+    // differs from the pin, ignores schemas with no pin or a matching pin, and
+    // ignores pins for schemas not in the resolved set.
+    // rivet: verifies REQ-249
+    #[test]
+    fn schema_pin_drift_is_detected() {
+        let prov = |name: &str, version: &str| SchemaProvenance {
+            name: name.to_string(),
+            version: version.to_string(),
+            source: "embedded",
+            path: None,
+        };
+        let provenance = vec![prov("common", "0.4.0"), prov("aspice", "0.2.0")];
+        let mut pins = std::collections::BTreeMap::new();
+        pins.insert("common".to_string(), "0.3.0".to_string()); // drifted 0.3.0 -> 0.4.0
+        pins.insert("aspice".to_string(), "0.2.0".to_string()); // matches → no mismatch
+        pins.insert("stpa".to_string(), "9.9.9".to_string()); // not loaded → ignored
+
+        let mismatches = check_schema_pins(&pins, &provenance);
+        assert_eq!(mismatches.len(), 1, "only common drifted: {mismatches:?}");
+        assert_eq!(mismatches[0].name, "common");
+        assert_eq!(mismatches[0].pinned, "0.3.0");
+        assert_eq!(mismatches[0].resolved, "0.4.0");
+        assert_eq!(mismatches[0].source, "embedded");
+
+        // No pins → no mismatches, regardless of resolved versions.
+        assert!(check_schema_pins(&std::collections::BTreeMap::new(), &provenance).is_empty());
+    }
 
     // rivet: verifies REQ-213
     #[test]

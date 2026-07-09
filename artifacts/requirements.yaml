@@ -7689,7 +7689,7 @@ artifacts:
   - id: REQ-249
     type: requirement
     title: pin embedded schema versions so a rivet upgrade can't silently change validation
-    status: proposed
+    status: implemented
     description: "Builtin schemas are binary-versioned, not pinned: upgrading rivet can make the same `rivet validate` flag new issues on unchanged artifacts (embedded::load_schemas_with_fallback resolves to whatever the binary ships). Let a project pin the embedded schema version so validation is reproducible across rivet upgrades. REQ-220 shipped the `--vendor-schemas` slice; this is the pinning piece. #431."
     provenance:
       created-by: ai-assisted

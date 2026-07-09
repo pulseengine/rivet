@@ -5429,6 +5429,28 @@ fn cmd_validate(
         &resolve_schemas_dir(cli),
     );
 
+    // REQ-249 (#431): a schema `version` that drifts from the project's
+    // `schema-pins` means this run may validate differently than the pinned
+    // baseline — the silent-upgrade case the pin exists to catch. Warn on
+    // stderr (so `--format json` on stdout stays clean); the emitter that
+    // changed the version must bump the pin after reviewing the diff, or vendor
+    // the schema to freeze it. (Escalating to a hard error under a strict flag
+    // is a follow-on slice.)
+    for m in
+        rivet_core::embedded::check_schema_pins(&config.project.schema_pins, &schema_provenance)
+    {
+        eprintln!(
+            "warning: schema '{name}' resolved to version {resolved} but rivet.yaml pins \
+             {pinned} ({source}) — validation may have changed since the pin; review the \
+             schema diff then update `project.schema-pins.{name}`, or vendor the schema to \
+             freeze it (REQ-249).",
+            name = m.name,
+            resolved = m.resolved,
+            pinned = m.pinned,
+            source = m.source,
+        );
+    }
+
     // REQ-062 / F2: `load_artifacts` swallows per-file YAML parse failures
     // to a stderr `log::warn!`, so a malformed artifact file produced a
     // green `Result: PASS` over an effectively-empty load. Re-walk every
