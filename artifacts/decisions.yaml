@@ -1494,3 +1494,54 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-08T00:00:00Z
+
+  - id: DD-073
+    type: design-decision
+    title: Pin embedded schema versions via a user-owned rivet.yaml schema-pins map
+    status: proposed
+    description: >
+      REQ-249 (#431): builtin schemas are binary-versioned — `rivet validate`
+      resolves to whatever the rivet binary ships, so upgrading rivet can make
+      the same run flag new issues on unchanged artifacts, silently. Decision:
+      a project declares expected versions in `rivet.yaml :: project.schema-pins`
+      (a `name -> version` map); at validate time rivet compares each pin
+      against the resolved schema version and WARNS on mismatch (a hard error
+      under a strict flag is a follow-on). The pin is USER-OWNED, so it survives
+      rivet upgrades intentionally — the whole point is that an upgrade which
+      moves a schema version trips the pin instead of passing silently.
+    tags: [schema, pinning, reproducibility, validate, dogfooding]
+    links:
+      - type: satisfies
+        target: REQ-249
+    fields:
+      baseline: v0.24.0-track
+      source-ref: >
+        rivet-core/src/model.rs (ProjectMetadata.schema_pins),
+        rivet-core/src/embedded.rs (check_schema_pins + SchemaPinMismatch,
+        reuses resolve_schema_provenance), rivet-cli/src/main.rs (cmd_validate
+        warning).
+      rationale: >
+        The check reuses the existing `resolve_schema_provenance` (REQ-177/#431),
+        which already reports each schema's resolved version and
+        embedded-vs-vendored source — so pinning is a comparison, not new
+        resolution machinery. The pin lives in `rivet.yaml` (user-owned) rather
+        than `.rivet/.rivet-version`: the latter DOES record
+        `scaffolded_from.schemas`, but it is rivet-owned and regenerated on
+        `rivet upgrade`, so its pins would auto-bump to the new binary's
+        versions on upgrade — useless as a stable drift baseline. A rivet.yaml
+        pin is additive (`#[serde(default)]` empty map = no pinning; existing
+        configs unaffected) and composes with vendoring: `--vendor-schemas`
+        (REQ-220) is the HARD freeze (on-disk, git-pinned); the pin is the SOFT
+        check that catches embedded drift and reminds you to vendor or re-pin.
+      alternatives: >
+        (1) Reuse `.rivet-version` scaffolded_from.schemas — rejected: it is
+        regenerated on upgrade, so it can't be a stable baseline. (2) A new
+        auto-managed `schema.lock` — rejected: adds a managed file and the same
+        regenerate-on-drift ambiguity; a user-owned explicit pin is clearer
+        about intent. (3) Vendor-only (no pin syntax) — rejected as the sole
+        mechanism: forces on-disk vendoring just to detect drift, heavier than a
+        one-line pin; but vendoring remains the complementary hard freeze.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-09T00:00:00Z

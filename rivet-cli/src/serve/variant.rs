@@ -328,6 +328,7 @@ mod tests {
                 name: "t".into(),
                 version: None,
                 schemas: vec![],
+                schema_pins: std::collections::BTreeMap::new(),
             },
             sources: vec![SourceConfig {
                 path: "artifacts".into(),

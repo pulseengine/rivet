@@ -1077,6 +1077,13 @@ pub struct ProjectMetadata {
     pub version: Option<String>,
     #[serde(default)]
     pub schemas: Vec<String>,
+    /// REQ-249 (#431): pin the expected version of each declared schema so a
+    /// rivet upgrade can't silently change validation. `rivet validate` warns
+    /// (errors under `--strict`) when a resolved schema's version differs from
+    /// its pin. User-owned (unlike the regenerated `.rivet-version`), so the
+    /// pin survives upgrades intentionally. Empty map = no pinning.
+    #[serde(default, rename = "schema-pins")]
+    pub schema_pins: std::collections::BTreeMap<String, String>,
 }
 
 /// On-disk layout for how `rivet add` writes new artifacts into a directory
