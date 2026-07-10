@@ -5,7 +5,41 @@
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-07-10
+
+### Added
+- **Schema-aware LSP completion** (REQ-246, DD-071, #546) — the language server
+  now offers context-sensitive completions for artifact `type`, link `type`, and
+  field keys, driven by the active schema. First slice; enum-value and snippet
+  completion are follow-ons.
+- **Backend-unavailable banner on the dashboard** (REQ-245, #621) — when the
+  `rivet serve` backend is down, the browser view surfaces a clear banner instead
+  of silently serving stale or broken content.
+- **Per-result tracking links** (REQ-248, DD-072, #548) — test results can carry
+  links to the PRs / remote issues that produced them, and the dashboard renders
+  a Tracking column. Only `http`/`https` URLs become live links (XSS guard).
+- **Schema version pin drift warning** (REQ-249, DD-073, #431) — a project can
+  declare expected schema versions in `rivet.yaml :: project.schema-pins`;
+  `rivet validate` warns on stderr when a resolved embedded-schema version drifts
+  from its pin, catching silent-upgrade changes to validation semantics.
+
+### Changed
+- **crates.io publishing investigated; decision + blocker recorded** (REQ-250,
+  REQ-252, DD-074, #557). Publishing is blocked on two walls — the natural crate
+  names are squatted upstream (resolved by a deferred `rivet-sdlc-*` rename,
+  DD-074) and the dependency closure includes git-only crates (`pulseengine/spar`
+  + a `rowan` fork) that crates.io rejects transitively (REQ-252). No packaging
+  code lands until those clear; rivet remains npm-distributed for now.
+
 ### Fixed
+- **Security: crossbeam-epoch 0.9.18 → 0.9.20** (RUSTSEC-2026-0204).
+- **Security: quick-xml 0.37 → 0.41** (RUSTSEC-2026-0194, RUSTSEC-2026-0195).
+- **Serializer field-drop guard** (#634) — `mutate::render_artifact_yaml` is a
+  hand-rolled allowlist emitter; a compile-time exhaustiveness guard now fails
+  the build if an `Artifact` field is added without wiring it into the emitter,
+  so new fields can no longer be silently dropped on write.
+- **Cross-repo UnknownPrefix scoping** (#649) — `rivet validate` no longer flags
+  externally-owned link prefixes; the check is scoped to consumer-owned links.
 - **Embedded aspice schema is self-consistent** (#652). The
   `swe1-has-verification` coverage rule lists `unit-verification` and
   `sw-integration-verification` as `verifies` satisfiers for `sw-req`, but
