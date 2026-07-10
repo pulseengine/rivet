@@ -1186,7 +1186,7 @@ fn graph_focused_view_renders_svg() {
     assert!(
         body.contains("<svg"),
         "focused /graph must render SVG, got body starting with: {}",
-        &body.chars().take(200).collect::<String>()
+        body.chars().take(200).collect::<String>()
     );
 
     child.kill().ok();
