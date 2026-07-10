@@ -7701,12 +7701,21 @@ artifacts:
     type: requirement
     title: publish rivet to crates.io (currently npm-only)
     status: proposed
-    description: "Distribution is npm-only; add crates.io publishing to the release standard so `cargo install` works and the Rust ecosystem can depend on rivet-core. #557."
+    description: "Distribution is npm-only; add crates.io publishing to the release standard so `cargo install` works and the Rust ecosystem can depend on the core library. #557. Investigated in the v0.25 loop: the publish is BLOCKED on two independent walls, so no packaging code lands yet. (1) All natural crate names are squatted upstream (rivet-core, rivet-cli, etch, rivet) — resolved by the rivet-sdlc-* rename decided in DD-074, but that rename ripples through ~40 `-p <crate>` specifiers across CI + scripts so it is deferred to the publish PR to land atomically with the publish rather than ahead of an indefinitely-blocked one. (2) REQ-252: the dependency closure includes git-only crates (pulseengine/spar's 9 spar-* crates + a rowan fork) and crates.io forbids git deps transitively, so those must reach crates.io first. This requirement stays open (unassigned to a release) until REQ-252 clears and a CARGO_REGISTRY_TOKEN secret exists."
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-01T00:00:00Z
-    release: v0.25.0
+
+  - id: REQ-252
+    type: requirement
+    title: publish the git-only dependency closure (spar + rowan fork) to crates.io
+    status: proposed
+    description: "Prerequisite for REQ-250. rivet-core's dependency closure pulls git-only crates that crates.io will not accept: the 9 pulseengine/spar crates (spar-hir, spar-hir-def, spar-base-db, spar-annex, spar-syntax, spar-parser, spar-analysis, spar-network, + facade) pinned at tag v0.10.0 via the default `aadl` feature, and the pulseengine/rowan fork (branch fix/miri-soundness-v3, 0.16.2) pulled by the default `rowan-yaml` parser — carrying a Stacked-Borrows soundness fix over upstream rowan 0.16.1. crates.io requires every transitive dep to be a published version (git deps are rejected even behind non-default features), so rivet cannot `cargo publish` until this closure is on crates.io. Scope: publish the spar toolchain from its own repo, and either upstream the rowan SB fix (so the published crate can depend on a crates.io rowan) or publish the fork under a distinct name. Cross-repo; larger than a single rivet release."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-10T00:00:00Z
 
   - id: REQ-251
     type: requirement
