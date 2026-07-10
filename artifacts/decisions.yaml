@@ -1545,3 +1545,56 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-09T00:00:00Z
+
+  - id: DD-074
+    type: design-decision
+    title: Publish crates.io packages as rivet-sdlc-* with unchanged lib/bin names
+    status: proposed
+    description: >
+      REQ-250 (#557): to distribute rivet via crates.io the workspace crates
+      must be published, but the natural names are all taken by unrelated
+      authors — `rivet-core` (0.1.0), `rivet-cli` (0.17.0), `etch` (0.4.2) and
+      even `rivet` (0.1.0). Decision: publish under `rivet-sdlc-core`,
+      `rivet-sdlc-cli`, and `rivet-etch`, while KEEPING the in-tree/import names
+      via Cargo target renames — `[lib] name = "rivet_core"`, the etch lib name
+      `etch`, and `[[bin]] name = "rivet"`. Downstream `package =` renames on the
+      path deps preserve `use rivet_core::` / `use etch::` at every call site, so
+      the public-name change is confined to three Cargo.toml manifests with zero
+      source churn.
+    tags: [release, cratesio, packaging, naming]
+    links:
+      - type: satisfies
+        target: REQ-250
+    fields:
+      baseline: v0.25.0-track
+      source-ref: >
+        Decision only — no code change lands here. The mechanism is: rename the
+        packages in etch/Cargo.toml (name = rivet-etch, [lib] name = etch),
+        rivet-core/Cargo.toml (name = rivet-sdlc-core, [lib] name = rivet_core,
+        etch dep package rename), rivet-cli/Cargo.toml (name = rivet-sdlc-cli,
+        [[bin]] name = rivet, core + etch dep package renames), plus per-crate
+        crates.io metadata + README.md and a leaf-first release-crates.yml. That
+        rename is DEFERRED to the REQ-252 publish PR: it ripples through every
+        `-p rivet-cli` / `-p rivet-core` specifier across ci.yml, release.yml,
+        rivet-delta.yml, the compliance action, and scripts/*.sh (~40 sites), so
+        it must land atomically with the publish, not ahead of an
+        indefinitely-blocked one.
+      rationale: >
+        Keeping the lib and bin target names decouples the public crates.io
+        identity from the import surface: the binary users run is still `rivet`,
+        existing `use rivet_core::…` and `use etch::…` lines are untouched, and
+        only the crates.io package identity carries the `-sdlc-`/`rivet-`
+        disambiguating prefix. `rivet-sdlc-*` reads as "the rivet SDLC
+        traceability toolchain" and sidesteps the four squatted short names.
+      alternatives: >
+        (1) pulseengine-rivet-* org prefix — rejected: longer, and the org is
+        already implied by the repository field. (2) rivet-trace-* — rejected:
+        narrower than the tool's SDLC-wide scope. (3) Contact the existing
+        `rivet*`/`etch` owners to transfer names — rejected: slow, uncertain,
+        and out of our control. (4) Publish a reduced no-AADL core to dodge the
+        git-dep wall — rejected (see REQ-252): materially weaker than the shipped
+        binary, user-confusing.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-10T00:00:00Z
