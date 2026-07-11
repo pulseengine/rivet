@@ -91,6 +91,19 @@ inputs:
     required: false
     default: '.'
 
+  max-archive-size-mb:
+    description: >
+      Hard upper bound on the produced tarball size, in megabytes.
+      When `archive: true`, the action fails immediately if the tarball
+      exceeds this cap — prevents a producer regression from shipping an
+      oversized "compliance report" again (issue #671: v0.4.x / v0.7-0.9
+      shipped ~800 MB tarballs due to bundled build output). Legitimate
+      reports are 1-5 MB single-page and ~100s of MB multi-page, so pick
+      50 MB for single-page (default) or bump this input for multi-page
+      callers. Set to '0' to disable the guard.
+    required: false
+    default: '50'
+
   # ── Audit bundle additions (REQ-090) ───────────────────────────────
   include-data-formats:
     description: >
@@ -298,3 +311,13 @@ runs:
         tar -czf "${NAME}.tar.gz" -C "$REPORT_OUTPUT" .
         echo "archive-path=${NAME}.tar.gz" >> "$GITHUB_OUTPUT"
         echo "Created ${NAME}.tar.gz"
+
+    - name: Verify archive size (#671 regression guard)
+      if: inputs.archive == 'true'
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      env:
+        ARCHIVE_PATH: ${{ steps.archive.outputs.archive-path }}
+        MAX_MB: ${{ inputs.max-archive-size-mb }}
+      run: |
+        "${GITHUB_ACTION_PATH}/verify_archive_size.sh" "$ARCHIVE_PATH" "$MAX_MB"

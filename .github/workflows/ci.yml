@@ -103,6 +103,11 @@ jobs:
           python-version: '3.12'
       - run: pip install yamllint
       - run: yamllint -c .yamllint.yaml schemas/ artifacts/ rivet.yaml .github/
+      # #671 regression coverage — the compliance-report size guard is a
+      # shell script exercised by a shell test; run it here (no compile
+      # cost) so a broken guard fails PRs early.
+      - name: Compliance report size-guard tests (#671)
+        run: bash .github/actions/compliance/verify_archive_size_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
