@@ -7720,9 +7720,32 @@ artifacts:
   - id: REQ-251
     type: requirement
     title: artifact serializer must not silently drop new model fields
-    status: proposed
-    description: "mutate::render_artifact_yaml is a hand-rolled allowlist emitter; any Artifact field not explicitly emitted is silently dropped on write. Currently latent (fields_per_variant, Link.external, provenance.federation are not reachable via add/batch/MCP), but it re-bites the moment those become settable. Replace the allowlist with serde-based emission or a compile-time exhaustiveness guard. #634, same family as REQ-034/#476."
+    status: implemented
+    description: "mutate::render_artifact_yaml is a hand-rolled allowlist emitter; any Artifact field not explicitly emitted is silently dropped on write. Currently latent (fields_per_variant, Link.external, provenance.federation are not reachable via add/batch/MCP), but it re-bites the moment those become settable. Resolved via the compile-time exhaustiveness guard (#634, shipped v0.25.0): the build now fails if an Artifact field is added without being wired into the emitter, so a new field can no longer be silently dropped. Same family as REQ-034/#476."
+    release: v0.25.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-01T00:00:00Z
+
+  - id: REQ-253
+    type: requirement
+    title: "serve: richer artifact filtering (tags / field predicates / SQL), not just basic type+status"
+    status: proposed
+    description: "#674. The serve dashboard only supports basic filtering (type/status). Users want to narrow by tag, by field predicate, and ideally by the full query surface rivet already has on the CLI. Reuse the existing engines rather than inventing a serve-only filter language: the s-expr filter used by `rivet list` (e.g. `(= status \"approved\")`, `(has-tag \"safety\")`) and/or the gluesql-backed `rivet sql` facade (REQ-229/231). Slice 1: tag + field-predicate filter in the artifacts view wired to the s-expr evaluator; a SQL-query box is a plausible slice 2. Must preserve the active variant scope on filter (see the existing ?variant= handling)."
+    release: v0.26.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-11T00:00:00Z
+
+  - id: REQ-254
+    type: requirement
+    title: "check a release against variant scope — what artifacts a variant includes, and whether a release is variant-consistent"
+    status: proposed
+    description: "#673. rivet has releases (the `release:` field, REQ-232 family) and variants (feature-model composition, REQ-083/109), but no way to ask how they intersect: which artifacts a given variant includes/excludes, and whether the artifacts tagged for a release are consistent with a specified variant (e.g. a release that must ship a specific variant configuration). Design-first — needs a decision (DD) on the semantics of release ∩ variant before implementation: what 'a release is part of a variant' means, and what the check reports (missing/extra artifacts vs the variant's resolved feature set). Likely surfaces as `rivet release check --variant <name>` and/or a `rivet variant` sub-check. Build on the existing variant resolution + release-status machinery, not a new mechanism."
+    release: v0.26.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-11T00:00:00Z
