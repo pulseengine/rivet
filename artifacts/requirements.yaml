@@ -7731,7 +7731,7 @@ artifacts:
   - id: REQ-253
     type: requirement
     title: "serve: richer artifact filtering (tags / field predicates / SQL), not just basic type+status"
-    status: proposed
+    status: implemented
     description: "#674. The serve dashboard only supports basic filtering (type/status). Users want to narrow by tag, by field predicate, and ideally by the full query surface rivet already has on the CLI. Reuse the existing engines rather than inventing a serve-only filter language: the s-expr filter used by `rivet list` (e.g. `(= status \"approved\")`, `(has-tag \"safety\")`) and/or the gluesql-backed `rivet sql` facade (REQ-229/231). Slice 1: tag + field-predicate filter in the artifacts view wired to the s-expr evaluator; a SQL-query box is a plausible slice 2. Must preserve the active variant scope on filter (see the existing ?variant= handling)."
     release: v0.26.0
     provenance:
