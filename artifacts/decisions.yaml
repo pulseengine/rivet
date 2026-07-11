@@ -1598,3 +1598,66 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-10T00:00:00Z
+
+  - id: DD-075
+    type: design-decision
+    title: "`rivet release check --variant` reports release ∩ variant consistency AND variant-scoped cuttability"
+    status: proposed
+    description: >
+      REQ-254 (#673): rivet has releases (the `release:` field) and variants
+      (feature-model composition) but no way to check how they intersect.
+      Decision: a new `rivet release check <version> --variant <name>`
+      subcommand that reports BOTH facets in one view (the option chosen over
+      membership-only or cuttability-only):
+      (1) CONSISTENCY — partition the release-tagged artifacts against the
+      variant's resolved artifact-id set: `in-scope` (tagged for the release AND
+      bound by the variant) vs `out-of-scope` (tagged for the release but NOT in
+      the variant — the artifacts that would ship in this release yet are
+      excluded by the variant, the primary inconsistency to surface). Also
+      report `variant-only` artifacts bound by the variant but not tagged for
+      the release (informational — the variant expects them but the release
+      hasn't claimed them).
+      (2) CUTTABILITY — run the existing release readiness logic
+      (verified/accepted, `release.ready-when`, and coverage-closed — the exact
+      `is_ready` predicate from cmd_release_status) but scoped to the
+      INTERSECTION (in-scope set), answering "is this release cuttable FOR this
+      variant." An empty intersection is NOT cuttable (same rule as
+      cmd_release_status #628).
+      Exit code: non-zero when not cuttable OR when out-of-scope is non-empty
+      under a `--strict` flag (default: out-of-scope is a warning, cuttability
+      drives the exit code). `--format json` mirrors cmd_release_status's shape
+      plus `in_scope`/`out_of_scope`/`variant_only` id lists.
+    tags: [release, variant, traceability, cli]
+    links:
+      - type: satisfies
+        target: REQ-254
+    fields:
+      baseline: v0.26.0-track
+      source-ref: >
+        New `ReleaseAction::Check` in rivet-cli/src/main.rs (enum at ~1529),
+        dispatched near cmd_release_status (~7050) which it reuses for the
+        `is_ready` predicate and JSON shape; variant→artifact-id resolution
+        reuses the existing CLI path (load_feature_model_via_project +
+        solve + bound_ids, main.rs ~5539-5577). Not the serve-only
+        build_variant_scope.
+      rationale: >
+        Composes two functions that already exist rather than adding new
+        mechanism (per the reuse-existing-patterns doctrine): the release-scope
+        filter + readiness predicate from cmd_release_status, and the variant→
+        artifact-id resolution already used for `--variant` scoping in list/serve.
+        Reporting both facets in one command matches the issue's need ("if a
+        release has to be specific we have no chance to check what is part of a
+        variant") — you need to see both what the variant includes AND whether
+        the release is ready within that scope.
+      alternatives: >
+        (1) Membership only (list in/out, no readiness) — rejected: doesn't
+        answer "can I cut this release for this variant." (2) Cuttability only
+        (pass/fail scoped to variant) — rejected: hides WHICH artifacts fall
+        outside the variant, the diagnostic the user actually needs. (3) A
+        `rivet variant check --release` spelling under VariantAction — viable,
+        but release-cuttability is the driving question so it reads better under
+        `release`; a thin alias could be added later if desired.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-11T00:00:00Z

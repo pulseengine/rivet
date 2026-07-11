@@ -7742,7 +7742,7 @@ artifacts:
   - id: REQ-254
     type: requirement
     title: "check a release against variant scope — what artifacts a variant includes, and whether a release is variant-consistent"
-    status: proposed
+    status: implemented
     description: "#673. rivet has releases (the `release:` field, REQ-232 family) and variants (feature-model composition, REQ-083/109), but no way to ask how they intersect: which artifacts a given variant includes/excludes, and whether the artifacts tagged for a release are consistent with a specified variant (e.g. a release that must ship a specific variant configuration). Design-first — needs a decision (DD) on the semantics of release ∩ variant before implementation: what 'a release is part of a variant' means, and what the check reports (missing/extra artifacts vs the variant's resolved feature set). Likely surfaces as `rivet release check --variant <name>` and/or a `rivet variant` sub-check. Build on the existing variant resolution + release-status machinery, not a new mechanism."
     release: v0.26.0
     provenance:

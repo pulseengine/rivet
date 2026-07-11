@@ -1559,6 +1559,34 @@ enum ReleaseAction {
         /// Destination release version (e.g. v0.23.0)
         version: String,
     },
+    /// Cross-check a release against a variant (REQ-254, #673): partition the
+    /// release-tagged artifacts against the variant's resolved artifact-id set
+    /// AND report whether the release is cuttable within that variant.
+    ///
+    /// Consistency partitions into `in-scope` (tagged for the release AND
+    /// bound by the variant), `out-of-scope` (tagged for the release but NOT
+    /// in the variant — the primary inconsistency), and `variant-only` (bound
+    /// by the variant but not tagged for the release, informational).
+    ///
+    /// Cuttability runs the same release-readiness predicate as
+    /// `rivet release status`, scoped to the in-scope (intersection) set. An
+    /// empty intersection is NOT cuttable (same rule as `status`, #628). Exits
+    /// non-zero when not cuttable; under `--strict` also non-zero when any
+    /// artifact is out-of-scope (default: out-of-scope is a warning).
+    Check {
+        /// Release version, e.g. v0.26.0
+        version: String,
+        /// Variant name (`artifacts/variants/<NAME>.yaml`) or a direct path.
+        #[arg(long)]
+        variant: String,
+        /// Output format: "text" (default) or "json"
+        #[arg(long, default_value = "text")]
+        format: String,
+        /// Also exit non-zero when any release-tagged artifact falls outside
+        /// the variant (default: out-of-scope is a warning).
+        #[arg(long)]
+        strict: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -2556,6 +2584,12 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Release { action } => match action {
             ReleaseAction::Status { version, format } => cmd_release_status(&cli, version, format),
             ReleaseAction::Move { id, version } => cmd_release_move(&cli, id, version),
+            ReleaseAction::Check {
+                version,
+                variant,
+                format,
+                strict,
+            } => cmd_release_check(&cli, version, variant, format, *strict),
         },
         Command::Shard { file } => cmd_shard(&cli, file),
         #[cfg(feature = "serve")]
@@ -7043,6 +7077,69 @@ fn cmd_release_move(cli: &Cli, id: &str, version: &str) -> Result<bool> {
     Ok(ok)
 }
 
+/// Shared release-readiness predicate (REQ-233 / #612 / #628), extracted from
+/// `cmd_release_status` so that command and `cmd_release_check` (REQ-254 /
+/// #673) compute "is this artifact release-ready" identically instead of
+/// drifting a copy-pasted closure.
+///
+/// Release-ready statuses: the built-in `verified`/`accepted`, plus any the
+/// project declares via `release.ready-when` (#612). And, when
+/// `release.require: coverage` is set, an artifact whose V is closed (every
+/// validate coverage rule that applies to its type is satisfied) also counts
+/// as ready regardless of its status string — so V-model / ASPICE projects
+/// that verify via links, not a status flip, can green the gate. Coverage is
+/// purely additive: a verified/accepted/ready-when artifact still counts.
+struct ReadinessCtx {
+    extra_ready: std::collections::BTreeSet<String>,
+    coverage_mode: bool,
+    // In coverage mode, `covered_types` are the artifact types governed by at
+    // least one traceability rule, and `uncovered_ids` are the artifacts
+    // strictly missing on some applicable rule. An artifact is V-closed when
+    // its type is governed AND it is not in `uncovered_ids`.
+    covered_types: std::collections::BTreeSet<String>,
+    uncovered_ids: std::collections::BTreeSet<String>,
+}
+
+impl ReadinessCtx {
+    fn compute(ctx: &ProjectContext) -> Self {
+        let rel = ctx.config.release.as_ref();
+        let extra_ready: std::collections::BTreeSet<String> = rel
+            .map(|r| r.ready_when.iter().cloned().collect())
+            .unwrap_or_default();
+        let coverage_mode = rel.and_then(|r| r.require.as_deref()) == Some("coverage");
+        let (covered_types, uncovered_ids): (
+            std::collections::BTreeSet<String>,
+            std::collections::BTreeSet<String>,
+        ) = if coverage_mode {
+            let cov = rivet_core::coverage::compute_coverage(&ctx.store, &ctx.schema, &ctx.graph);
+            (
+                cov.entries.iter().map(|e| e.source_type.clone()).collect(),
+                cov.entries
+                    .iter()
+                    .flat_map(|e| e.uncovered_ids.iter().cloned())
+                    .collect(),
+            )
+        } else {
+            (Default::default(), Default::default())
+        };
+        Self {
+            extra_ready,
+            coverage_mode,
+            covered_types,
+            uncovered_ids,
+        }
+    }
+
+    fn is_ready(&self, a: &rivet_core::model::Artifact) -> bool {
+        let s = a.status.as_deref();
+        matches!(s, Some("verified") | Some("accepted"))
+            || s.is_some_and(|x| self.extra_ready.contains(x))
+            || (self.coverage_mode
+                && self.covered_types.contains(&a.artifact_type)
+                && !self.uncovered_ids.contains(&a.id))
+    }
+}
+
 /// REQ-233 / #516: readiness burn-down for a release — per-status counts of the
 /// artifacts scoped to `release: <version>`, plus the not-yet-`verified` set.
 /// The release is cuttable when that set is empty; returns `Ok(false)` (process
@@ -7059,45 +7156,9 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
         .collect();
     scoped.sort_by(|a, b| a.id.cmp(&b.id));
 
-    // Release-ready statuses: the built-in `verified`/`accepted`, plus any the
-    // project declares via `release.ready-when` (#612). And, when
-    // `release.require: coverage` is set, an artifact whose V is closed (every
-    // validate coverage rule that applies to its type is satisfied) also counts
-    // as ready regardless of its status string — so V-model / ASPICE projects
-    // that verify via links, not a status flip, can green the gate. Coverage is
-    // purely additive: a verified/accepted/ready-when artifact still counts.
-    let rel = ctx.config.release.as_ref();
-    let extra_ready: std::collections::BTreeSet<String> = rel
-        .map(|r| r.ready_when.iter().cloned().collect())
-        .unwrap_or_default();
-    let coverage_mode = rel.and_then(|r| r.require.as_deref()) == Some("coverage");
-    // In coverage mode, `covered_types` are the artifact types governed by at
-    // least one traceability rule, and `uncovered_ids` are the artifacts
-    // strictly missing on some applicable rule. An artifact is V-closed when
-    // its type is governed AND it is not in `uncovered_ids`.
-    let (covered_types, uncovered_ids): (
-        std::collections::BTreeSet<String>,
-        std::collections::BTreeSet<String>,
-    ) = if coverage_mode {
-        let cov = rivet_core::coverage::compute_coverage(&ctx.store, &ctx.schema, &ctx.graph);
-        (
-            cov.entries.iter().map(|e| e.source_type.clone()).collect(),
-            cov.entries
-                .iter()
-                .flat_map(|e| e.uncovered_ids.iter().cloned())
-                .collect(),
-        )
-    } else {
-        (Default::default(), Default::default())
-    };
-    let is_ready = |a: &rivet_core::model::Artifact| -> bool {
-        let s = a.status.as_deref();
-        matches!(s, Some("verified") | Some("accepted"))
-            || s.is_some_and(|x| extra_ready.contains(x))
-            || (coverage_mode
-                && covered_types.contains(&a.artifact_type)
-                && !uncovered_ids.contains(&a.id))
-    };
+    let readiness = ReadinessCtx::compute(&ctx);
+    let coverage_mode = readiness.coverage_mode;
+    let is_ready = |a: &rivet_core::model::Artifact| -> bool { readiness.is_ready(a) };
     let mut by_status: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     for a in &scoped {
@@ -7161,6 +7222,290 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
     }
 
     Ok(cuttable)
+}
+
+/// Discover the project's feature model file by convention — the same
+/// candidate names the dashboard's variant discovery uses, but resolved
+/// through `load_feature_model_via_project` so `extends`/externals compose.
+/// Searches `artifacts/`, then each declared source `path`, then the project
+/// root. Returns `None` when no candidate file exists.
+fn discover_feature_model_path(
+    project: &std::path::Path,
+    config: &ProjectConfig,
+) -> Option<std::path::PathBuf> {
+    let mut roots: Vec<std::path::PathBuf> = vec![project.join("artifacts")];
+    for s in &config.sources {
+        let p = project.join(&s.path);
+        if !roots.contains(&p) {
+            roots.push(p);
+        }
+    }
+    let proj = project.to_path_buf();
+    if !roots.contains(&proj) {
+        roots.push(proj);
+    }
+    let candidates = ["feature-model.yaml", "feature_model.yaml"];
+    roots
+        .iter()
+        .flat_map(|r| candidates.iter().map(move |n| r.join(n)))
+        .find(|p| p.is_file())
+}
+
+/// Resolve the feature-binding for a variant: prefer the variant file's own
+/// embedded `bindings:` section (REQ-106), else the project-level
+/// `bindings.yaml` / `feature-bindings.yaml`. Returns an empty binding when
+/// neither exists (⇒ the variant binds no artifacts).
+fn discover_variant_binding(
+    project: &std::path::Path,
+    config: &ProjectConfig,
+    variant_yaml: &str,
+) -> Result<rivet_core::feature_model::FeatureBinding> {
+    // REQ-106: a variant file may embed its own `bindings:` — it IS its own
+    // binding model. Mirrors `rivet variant solve --binding <variant-file>`.
+    if let Ok(fb) = serde_yaml::from_str::<rivet_core::feature_model::FeatureBinding>(variant_yaml)
+    {
+        if !fb.bindings.is_empty() {
+            return Ok(fb);
+        }
+    }
+    let mut roots: Vec<std::path::PathBuf> = vec![project.join("artifacts")];
+    for s in &config.sources {
+        let p = project.join(&s.path);
+        if !roots.contains(&p) {
+            roots.push(p);
+        }
+    }
+    let proj = project.to_path_buf();
+    if !roots.contains(&proj) {
+        roots.push(proj);
+    }
+    let candidates = ["bindings.yaml", "feature-bindings.yaml"];
+    if let Some(p) = roots
+        .iter()
+        .flat_map(|r| candidates.iter().map(move |n| r.join(n)))
+        .find(|p| p.is_file())
+    {
+        let yaml =
+            std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
+        return serde_yaml::from_str(&yaml)
+            .with_context(|| format!("parsing feature binding {}", p.display()));
+    }
+    Ok(rivet_core::feature_model::FeatureBinding {
+        bindings: std::collections::BTreeMap::new(),
+        variants: Vec::new(),
+    })
+}
+
+/// Resolve `--variant <NAME|path>` to `(variant_name, bound_artifact_ids)`
+/// using the project-convention feature model + binding — the same
+/// solve-then-bind path as `rivet validate --variant` (see main.rs ~5539),
+/// NOT the serve-only `build_variant_scope`.
+fn resolve_variant_bound_ids(
+    cli: &Cli,
+    config: &ProjectConfig,
+    variant_arg: &str,
+) -> Result<(String, std::collections::BTreeSet<String>)> {
+    // 1. Resolve the variant config file (bare name → artifacts/variants/<name>.yaml).
+    let (variant_path, _name) = resolve_variant_arg(&cli.project, variant_arg)?;
+    let variant_yaml = std::fs::read_to_string(&variant_path)
+        .with_context(|| format!("reading variant config {}", variant_path.display()))?;
+    let vc = rivet_core::feature_model::VariantConfig::from_yaml_str(&variant_yaml)
+        .with_context(|| format!("parsing variant config {}", variant_path.display()))?;
+
+    // 2. Discover + load the feature model (loud when absent — we cannot solve).
+    let model_path = discover_feature_model_path(&cli.project, config).ok_or_else(|| {
+        anyhow::anyhow!(
+            "no feature model found — expected artifacts/feature-model.yaml (or \
+             feature_model.yaml) under {}",
+            cli.project.display()
+        )
+    })?;
+    let fm = load_feature_model_via_project(&model_path)?;
+
+    // 3. Solve the variant against the model.
+    let resolved = rivet_core::feature_model::solve(&fm, &vc).map_err(|errs| {
+        let msgs: Vec<String> = errs.iter().map(|e| format!("{e}")).collect();
+        anyhow::anyhow!("variant solve failed:\n  {}", msgs.join("\n  "))
+    })?;
+
+    // 4. Collect bound artifact IDs from the effective features.
+    let fb = discover_variant_binding(&cli.project, config, &variant_yaml)?;
+    let bound_ids: std::collections::BTreeSet<String> = resolved
+        .effective_features
+        .iter()
+        .flat_map(|f| {
+            fb.bindings
+                .get(f)
+                .map(|b| b.artifacts.clone())
+                .unwrap_or_default()
+        })
+        .collect();
+
+    Ok((resolved.name, bound_ids))
+}
+
+/// REQ-254 / #673: cross-check a release against a variant — partition the
+/// release-tagged artifacts against the variant's resolved artifact-id set AND
+/// report whether the release is cuttable within that variant.
+///
+/// Consistency partitions the two id sets into `in-scope` (tagged AND bound),
+/// `out-of-scope` (tagged but NOT bound — the primary inconsistency), and
+/// `variant-only` (bound but NOT tagged — informational). Cuttability runs the
+/// shared `ReadinessCtx` predicate scoped to the `in-scope` (intersection) set
+/// — an empty intersection is NOT cuttable (same rule as `cmd_release_status`,
+/// #628). The returned bool (→ process exit) is the cuttability, AND-ed with
+/// "no out-of-scope artifacts" under `--strict`.
+fn cmd_release_check(
+    cli: &Cli,
+    version: &str,
+    variant: &str,
+    format: &str,
+    strict: bool,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    ctx.warn_parse_error_skips(cli);
+
+    let (variant_name, bound_ids) = resolve_variant_bound_ids(cli, &ctx.config, variant)?;
+
+    // Release-tagged artifact ids.
+    let release_ids: std::collections::BTreeSet<String> = ctx
+        .store
+        .iter()
+        .filter(|a| a.release.as_deref() == Some(version))
+        .map(|a| a.id.clone())
+        .collect();
+
+    // Consistency partition (BTreeSet ⇒ deterministic, id-sorted).
+    let in_scope: std::collections::BTreeSet<String> =
+        release_ids.intersection(&bound_ids).cloned().collect();
+    let out_of_scope: std::collections::BTreeSet<String> =
+        release_ids.difference(&bound_ids).cloned().collect();
+    let variant_only: std::collections::BTreeSet<String> =
+        bound_ids.difference(&release_ids).cloned().collect();
+
+    // Cuttability: readiness predicate scoped to the intersection set.
+    let readiness = ReadinessCtx::compute(&ctx);
+    let coverage_mode = readiness.coverage_mode;
+    let mut in_scope_arts: Vec<&rivet_core::model::Artifact> = ctx
+        .store
+        .iter()
+        .filter(|a| in_scope.contains(&a.id))
+        .collect();
+    in_scope_arts.sort_by(|a, b| a.id.cmp(&b.id));
+
+    let mut by_status: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    for a in &in_scope_arts {
+        *by_status
+            .entry(a.status.as_deref().unwrap_or("(none)").to_string())
+            .or_default() += 1;
+    }
+    let not_done: Vec<&&rivet_core::model::Artifact> = in_scope_arts
+        .iter()
+        .filter(|a| !readiness.is_ready(a))
+        .collect();
+    // An empty intersection is not cuttable (same rule as cmd_release_status,
+    // #628): a release with nothing in this variant must not green a gate.
+    let cuttable = !in_scope.is_empty() && not_done.is_empty();
+    // `--strict` also fails when any release-tagged artifact is out-of-scope.
+    let ok = cuttable && (!strict || out_of_scope.is_empty());
+
+    if format == "json" {
+        let obj = serde_json::json!({
+            "release": version,
+            "variant": variant_name,
+            "total": in_scope_arts.len(),
+            "by_status": by_status,
+            "not_verified": not_done.iter().map(|a| serde_json::json!({
+                "id": a.id,
+                "status": a.status.as_deref().unwrap_or("(none)"),
+                "title": a.title,
+            })).collect::<Vec<_>>(),
+            "in_scope": in_scope.iter().cloned().collect::<Vec<_>>(),
+            "out_of_scope": out_of_scope.iter().cloned().collect::<Vec<_>>(),
+            "variant_only": variant_only.iter().cloned().collect::<Vec<_>>(),
+            "cuttable": cuttable,
+            "strict": strict,
+            "ok": ok,
+        });
+        println!("{}", serde_json::to_string_pretty(&obj)?);
+    } else {
+        println!("Release {version} \u{2229} variant '{variant_name}'");
+        println!(
+            "  in-scope     {:>3}  (tagged for {version} AND bound by the variant)",
+            in_scope.len()
+        );
+        println!(
+            "  out-of-scope {:>3}  (tagged for {version} but NOT in the variant)",
+            out_of_scope.len()
+        );
+        println!(
+            "  variant-only {:>3}  (bound by the variant but NOT tagged for {version})",
+            variant_only.len()
+        );
+
+        if !out_of_scope.is_empty() {
+            let tag = if strict { "\u{2717}" } else { "warning:" };
+            println!("\n{tag} {} out-of-scope artifact(s):", out_of_scope.len());
+            for id in &out_of_scope {
+                let title = ctx.store.get(id).map(|a| a.title.as_str()).unwrap_or("");
+                println!("  {id:<10} {title}");
+            }
+        }
+        if !variant_only.is_empty() {
+            println!(
+                "\nvariant-only ({}) — bound by the variant but not tagged for {version}:",
+                variant_only.len()
+            );
+            for id in &variant_only {
+                println!("  {id}");
+            }
+        }
+
+        // Cuttability, scoped to the intersection.
+        println!(
+            "\nCuttability (in-scope set, {} artifact(s)):",
+            in_scope.len()
+        );
+        if in_scope.is_empty() {
+            println!(
+                "\u{2717} NOT cuttable — no artifact is both tagged for {version} and \
+                 bound by the variant."
+            );
+        } else {
+            for (status, count) in &by_status {
+                println!("  {status:<12} {count}");
+            }
+            if cuttable {
+                let how = if coverage_mode {
+                    "release-ready (verified/accepted, ready-when, or V-closed)"
+                } else {
+                    "release-ready"
+                };
+                println!("\n\u{2713} Cuttable — every in-scope artifact is {how}.");
+            } else {
+                println!("\nNot yet release-ready ({}):", not_done.len());
+                for a in &not_done {
+                    println!(
+                        "  {:<10} {:<12} {}",
+                        a.id,
+                        a.status.as_deref().unwrap_or("(none)"),
+                        a.title
+                    );
+                }
+                println!(
+                    "\n\u{2717} NOT cuttable — {} in-scope artifact(s) not yet release-ready.",
+                    not_done.len()
+                );
+            }
+        }
+        if strict && !out_of_scope.is_empty() && cuttable {
+            println!("\n(--strict: exiting non-zero due to out-of-scope artifacts.)");
+        }
+    }
+
+    Ok(ok)
 }
 
 /// List artifacts.

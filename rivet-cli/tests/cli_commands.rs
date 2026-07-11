@@ -6843,6 +6843,194 @@ fn release_status_empty_scope_is_not_cuttable() {
     );
 }
 
+/// REQ-254 (#673): `rivet release check <ver> --variant <name>` cross-checks a
+/// release against a variant — partitioning release-tagged artifacts into
+/// in-scope / out-of-scope / variant-only AND running the release-readiness
+/// predicate scoped to the intersection. Verifies: (a) an artifact tagged for
+/// the release but outside the variant lands in out-of-scope; (b) cuttability
+/// reflects ONLY the in-scope set (an unready out-of-scope artifact does not
+/// block, but an unready in-scope one does); (c) `--format json` carries the id
+/// lists; (d) `--strict` fails on any out-of-scope artifact.
+///
+/// rivet: verifies REQ-254
+#[test]
+fn release_check_partitions_release_against_variant() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+
+    // Three requirements, all tagged for v1.0.0. REQ-1/REQ-2 are bound by the
+    // `core` feature; REQ-3 by `extra`. REQ-3 is deliberately NOT release-ready.
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: Core one\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-2\n    type: requirement\n    title: Core two\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-3\n    type: requirement\n    title: Extra\n    status: proposed\n    release: v1.0.0\n",
+    )
+    .unwrap();
+
+    // Feature model: `core` and `extra` are freely-selectable children.
+    std::fs::write(
+        dir.join("artifacts/feature-model.yaml"),
+        "kind: feature-model\nroot: product\nfeatures:\n  \
+         product:\n    group: optional\n    children: [core, extra]\n  \
+         core:\n    group: leaf\n  \
+         extra:\n    group: leaf\nconstraints: []\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/bindings.yaml"),
+        "bindings:\n  \
+         core:\n    artifacts: [REQ-1, REQ-2]\n  \
+         extra:\n    artifacts: [REQ-3]\n",
+    )
+    .unwrap();
+
+    let variants_dir = dir.join("artifacts/variants");
+    std::fs::create_dir_all(&variants_dir).unwrap();
+    // `minimal` selects only `core` → binds {REQ-1, REQ-2}.
+    std::fs::write(
+        variants_dir.join("minimal.yaml"),
+        "name: minimal\nselects:\n  - core\n",
+    )
+    .unwrap();
+    // `full` selects both → binds {REQ-1, REQ-2, REQ-3}.
+    std::fs::write(
+        variants_dir.join("full.yaml"),
+        "name: full\nselects:\n  - core\n  - extra\n",
+    )
+    .unwrap();
+
+    // ── minimal: REQ-3 (unready) is OUT of scope → cuttable, exit 0. ──────
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "release",
+            "check",
+            "v1.0.0",
+            "--variant",
+            "minimal",
+        ])
+        .output()
+        .expect("release check");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "in-scope set (REQ-1, REQ-2) is all verified → cuttable → exit 0; stdout:\n{text}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        text.contains("out-of-scope") && text.contains("REQ-3"),
+        "REQ-3 is tagged for the release but outside `minimal` → must appear as out-of-scope; got:\n{text}"
+    );
+    assert!(
+        text.contains("Cuttable"),
+        "release must be cuttable within the variant; got:\n{text}"
+    );
+
+    // ── minimal --format json: id lists + cuttable. ─────────────────────
+    let jout = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "release",
+            "check",
+            "v1.0.0",
+            "--variant",
+            "minimal",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("release check json");
+    let v: serde_json::Value = serde_json::from_slice(&jout.stdout).expect("json parses");
+    let ids = |k: &str| -> Vec<String> {
+        v[k].as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(
+        ids("in_scope"),
+        vec!["REQ-1", "REQ-2"],
+        "in_scope = intersection"
+    );
+    assert_eq!(
+        ids("out_of_scope"),
+        vec!["REQ-3"],
+        "out_of_scope = tagged \\ variant"
+    );
+    assert!(
+        ids("variant_only").is_empty(),
+        "no variant-only artifacts here"
+    );
+    assert_eq!(v["cuttable"], true, "in-scope all verified → cuttable");
+    assert_eq!(v["variant"], "minimal");
+
+    // ── minimal --strict: out-of-scope non-empty → exit non-zero. ───────
+    let sout = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "release",
+            "check",
+            "v1.0.0",
+            "--variant",
+            "minimal",
+            "--strict",
+        ])
+        .output()
+        .expect("release check strict");
+    assert!(
+        !sout.status.success(),
+        "--strict must fail when any release artifact is out-of-scope; stdout:\n{}",
+        String::from_utf8_lossy(&sout.stdout)
+    );
+
+    // ── full: REQ-3 (unready) is now IN scope → NOT cuttable, exit non-zero.
+    // This proves cuttability tracks the in-scope set, not the whole release.
+    let fout = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "release",
+            "check",
+            "v1.0.0",
+            "--variant",
+            "full",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("release check full");
+    let fv: serde_json::Value = serde_json::from_slice(&fout.stdout).expect("json parses");
+    assert_eq!(
+        fv["cuttable"], false,
+        "REQ-3 is now in-scope and not release-ready → not cuttable"
+    );
+    assert!(
+        !fout.status.success(),
+        "an unready in-scope artifact must drive a non-zero exit"
+    );
+    let fin_scope = fv["in_scope"].as_array().unwrap();
+    assert_eq!(
+        fin_scope.len(),
+        3,
+        "all three artifacts are in scope for `full`"
+    );
+}
+
 /// REQ-240 (#612): `rivet release status` readiness is configurable via
 /// `rivet.yaml`'s `release:` block — the built-in verified/accepted set can be
 /// extended by `ready-when`, and `require: coverage` derives readiness from
