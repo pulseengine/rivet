@@ -5,6 +5,34 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-07-11
+
+### Added
+- **Richer serve dashboard filtering** (REQ-253, #674) — the `/artifacts` view now
+  accepts a `tags=` filter (comma-separated; matches artifacts carrying all listed
+  tags) and a full **s-expression `filter=`** predicate — the same language as
+  `rivet list --filter` and the JSON API, e.g. `(has-tag "safety")`,
+  `(= status "approved")`, `(and (= type "requirement") (has-tag "stpa"))`. A
+  filter input is added to the toolbar; the filter composes with the active
+  variant scope and survives the type/status/sort/pagination controls. An
+  unparseable filter narrows to nothing with an inline error rather than passing
+  silently.
+- **`rivet release check --variant`** (REQ-254, DD-075, #673) — checks a release
+  against a variant's scope in one view: partitions release-tagged artifacts into
+  in-scope (release ∩ variant), out-of-scope (tagged but excluded by the variant),
+  and variant-only, then reports cuttability scoped to the intersection. Exits
+  non-zero when not cuttable, or under `--strict` when any artifact is out-of-scope.
+  The release-readiness predicate is now shared with `rivet release status` so the
+  two cannot drift.
+
+### Fixed
+- **Compliance-report tarball size guard** (#671) — the release compliance action
+  now fails if the produced tarball exceeds a hard MB cap (default 50 MB), so a
+  producer regression can't ship an ~800 MB "compliance report" again.
+- **cargo-mutants memory guard** (#590) — both mutation-testing jobs cap per-process
+  address space at 48 GiB (`ulimit -v`) so a memory-runaway mutant aborts ENOMEM
+  process-local instead of tripping the system-wide OOM-killer on shared runners.
+
 ## [0.25.0] - 2026-07-10
 
 ### Added
