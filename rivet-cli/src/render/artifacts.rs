@@ -123,6 +123,46 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
         .filter(|s| !s.trim().is_empty())
         .map(|s| s.trim().to_lowercase());
 
+    // Tag filter: comma-separated; an artifact must carry ALL listed
+    // tags. Compared case-insensitively (trimmed) for ergonomics, unlike
+    // the exact-case `(has-tag …)` s-expr predicate.
+    let tag_filter: Vec<String> = params
+        .tags
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| {
+            s.split(',')
+                .map(|t| t.trim().to_lowercase())
+                .filter(|t| !t.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // S-expression predicate filter (reuses the JSON API / `rivet list`
+    // evaluator). Parse once before iterating. On parse error we render a
+    // note and match nothing rather than silently ignoring the filter.
+    let raw_filter = params
+        .filter
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let (sexpr_filter, filter_error): (Option<rivet_core::sexpr_eval::Expr>, Option<String>) =
+        match raw_filter {
+            Some(f) => match rivet_core::sexpr_eval::parse_filter(f) {
+                Ok(expr) => (Some(expr), None),
+                Err(errs) => {
+                    let msg = errs
+                        .first()
+                        .map(|e| e.message.clone())
+                        .unwrap_or_else(|| "could not parse filter".to_string());
+                    (None, Some(msg))
+                }
+            },
+            None => (None, None),
+        };
+    // A filter that was supplied but failed to parse matches nothing.
+    let filter_supplied_but_invalid = raw_filter.is_some() && sexpr_filter.is_none();
+
     let sort_col = params.sort.as_deref().unwrap_or("id");
     let sort_desc = !params.sort_ascending();
     let per_page = params.items_per_page();
@@ -132,8 +172,24 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
     let mut artifacts: Vec<_> = store
         .iter()
         .filter(|a| {
+            // A supplied-but-unparseable s-expr filter narrows to nothing.
+            if filter_supplied_but_invalid {
+                return false;
+            }
             if let Some(ref tf) = type_filter {
                 if !tf.contains(&a.artifact_type.to_lowercase()) {
+                    return false;
+                }
+            }
+            if !tag_filter.is_empty() {
+                let have: Vec<String> = a.tags.iter().map(|t| t.trim().to_lowercase()).collect();
+                if !tag_filter.iter().all(|want| have.contains(want)) {
+                    return false;
+                }
+            }
+            if let Some(ref expr) = sexpr_filter {
+                if !rivet_core::sexpr_eval::matches_filter_with_store(expr, a, ctx.graph, ctx.store)
+                {
                     return false;
                 }
             }
@@ -193,18 +249,34 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
         "Search artifacts...",
         q_val,
         "/artifacts",
-        &["types", "sort", "dir", "per_page"],
+        &["types", "filter", "tags", "sort", "dir", "per_page"],
     ));
     html.push_str(&crate::serve::components::type_select(
         &all_types,
         types_val,
         "/artifacts",
-        &["q", "sort", "dir", "per_page"],
+        &["q", "filter", "tags", "sort", "dir", "per_page"],
     ));
     html.push_str(&crate::serve::components::per_page_select(
         per_page,
         "/artifacts",
-        &["q", "types", "sort", "dir"],
+        &["q", "types", "filter", "tags", "sort", "dir"],
+    ));
+    // S-expression predicate filter — same language as the JSON API's
+    // `filter=` param and `rivet list --filter` (REQ-253). Debounced keyup
+    // like the free-text search; `search` fires on native input clear.
+    let filter_val = params.filter.as_deref().unwrap_or("");
+    let filter_hx_include = "[name='q'],[name='types'],[name='tags'],[name='sort'],[name='dir'],[name='per_page'],#variant-selector";
+    html.push_str(&format!(
+        "<input type=\"text\" name=\"filter\" placeholder=\"{ph}\" value=\"{val}\" \
+         hx-get=\"/artifacts\" hx-target=\"#content\" hx-push-url=\"true\" \
+         hx-trigger=\"keyup changed delay:400ms, search\" hx-include=\"{inc}\" \
+         style=\"flex:1;min-width:240px;padding:.6rem .75rem;border:1px solid var(--border);\
+         border-radius:var(--radius-sm);font-size:.875rem;font-family:var(--font-mono,monospace);\
+         background:var(--surface);color:var(--text);outline:none\">",
+        ph = html_escape("(has-tag \"safety\") and (= status \"approved\")"),
+        val = html_escape(filter_val),
+        inc = filter_hx_include,
     ));
     html.push_str(&format!(
         "<input type=\"hidden\" name=\"sort\" value=\"{}\">",
@@ -214,7 +286,22 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
         "<input type=\"hidden\" name=\"dir\" value=\"{}\">",
         html_escape(params.dir.as_deref().unwrap_or("asc")),
     ));
+    // Preserve the active `tags` param across the other toolbar controls
+    // (there is no visible tags input in slice 1; the s-expr filter's
+    // `(has-tag …)` covers interactive tag filtering).
+    html.push_str(&format!(
+        "<input type=\"hidden\" name=\"tags\" value=\"{}\">",
+        html_escape(params.tags.as_deref().unwrap_or("")),
+    ));
     html.push_str("</div>"); // form-row
+    // Inline note when the supplied s-expr filter failed to parse.
+    if let Some(ref msg) = filter_error {
+        html.push_str(&format!(
+            "<div class=\"badge badge-error\" style=\"margin-top:.5rem;display:inline-block\">\
+             invalid filter: {}</div>",
+            html_escape(msg),
+        ));
+    }
     html.push_str("</div>"); // filter-bar
 
     // Layout: sidebar + main table

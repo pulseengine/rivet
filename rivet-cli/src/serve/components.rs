@@ -47,8 +47,14 @@ pub(crate) struct ViewParams {
     pub types: Option<String>,
     /// Status filter (e.g. "approved", "draft", "error", "warning").
     pub status: Option<String>,
-    /// Comma-separated tag filter.
+    /// Comma-separated tag filter. An artifact matches when it carries
+    /// ALL listed tags.
     pub tags: Option<String>,
+    /// S-expression predicate filter (same language as the JSON API's
+    /// `filter=` param and `rivet list --filter`), e.g.
+    /// `(and (= status "approved") (has-tag "safety"))`. Applied via
+    /// `rivet_core::sexpr_eval`.
+    pub filter: Option<String>,
     /// Free-text search query.
     pub q: Option<String>,
     /// Sort column name.
@@ -86,6 +92,11 @@ impl ViewParams {
         if let Some(ref v) = self.tags {
             if !v.is_empty() {
                 parts.push(format!("tags={}", urlencoding::encode(v)));
+            }
+        }
+        if let Some(ref v) = self.filter {
+            if !v.is_empty() {
+                parts.push(format!("filter={}", urlencoding::encode(v)));
             }
         }
         if let Some(ref v) = self.q {

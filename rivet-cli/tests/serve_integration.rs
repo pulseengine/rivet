@@ -651,6 +651,55 @@ fn api_artifacts_filter_by_type() {
     child.wait().ok();
 }
 
+/// REQ-253: the HTML `/artifacts` view applies the s-expression predicate
+/// filter (same evaluator as the JSON API), narrowing to matching artifacts.
+#[test]
+fn artifacts_html_sexpr_filter_narrows_results() {
+    let (mut child, port) = start_server();
+
+    // `(has-tag "s-expression")` matches FEAT-106..108 (tagged s-expression)
+    // but not FEAT-110 (tagged variant). URL-encoded in the request line.
+    let (status, body, _headers) = fetch(
+        port,
+        "/artifacts?filter=%28has-tag%20%22s-expression%22%29&per_page=500",
+        false,
+    );
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("FEAT-106"),
+        "s-expr filter (has-tag \"s-expression\") must include FEAT-106"
+    );
+    assert!(
+        !body.contains("FEAT-110"),
+        "s-expr filter (has-tag \"s-expression\") must exclude FEAT-110 (tagged variant)"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// REQ-253: the HTML `/artifacts` view applies the comma-separated `tags`
+/// param (an artifact must carry all listed tags).
+#[test]
+fn artifacts_html_tags_param_narrows_results() {
+    let (mut child, port) = start_server();
+
+    // tag `variant` matches FEAT-110..114 but not FEAT-106 (tagged s-expression).
+    let (status, body, _headers) = fetch(port, "/artifacts?tags=variant&per_page=500", false);
+    assert_eq!(status, 200);
+    assert!(
+        body.contains("FEAT-110"),
+        "tags=variant must include FEAT-110"
+    );
+    assert!(
+        !body.contains("FEAT-106"),
+        "tags=variant must exclude FEAT-106 (tagged s-expression, not variant)"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 #[test]
 fn api_artifacts_pagination() {
     let (mut child, port) = start_server();
