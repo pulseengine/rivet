@@ -639,7 +639,17 @@ jobs:
         # each shard takes ~2x as long (was 12-20 min, now 20-40 min),
         # but the lean-mem pool stops needing emergency cgroup-ceiling
         # bumps every quarter.
-        run: cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 2 --output mutants-out -- --lib || true
+        # #590 memory guard: cap per-process virtual address space at 48 GiB
+        # (RLIMIT_AS) so a memory-runaway MUTANT — cargo-mutants can delete an
+        # allocation bound and produce a rivet_core test binary that allocates
+        # ~100 G in seconds, faster than the 30 s timeout — aborts with ENOMEM
+        # inside its own process instead of tripping the system-wide OOM-killer
+        # and taking down neighboring jobs on the shared lean-mem host. The
+        # `|| true` already records a clipped mutant as timeout/error, not a
+        # gate failure. Defense-in-depth alongside the infra cgroup MemoryMax.
+        run: |
+          ulimit -v 50331648
+          cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 2 --output mutants-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0
@@ -697,7 +707,13 @@ jobs:
           rm -rf mutants-out
           find target -maxdepth 2 -name 'mutants.out*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
       - name: Run cargo-mutants
-        run: cargo mutants -p rivet-cli --shard 0/1 --timeout 30 --jobs 2 --output mutants-out -- --lib || true
+        # #590 memory guard (see mutants-core above): cap address space at
+        # 48 GiB so a memory-runaway mutant aborts ENOMEM process-local instead
+        # of OOM-killing the shared host. `|| true` keeps a clipped mutant as
+        # error, not a gate failure.
+        run: |
+          ulimit -v 50331648
+          cargo mutants -p rivet-cli --shard 0/1 --timeout 30 --jobs 2 --output mutants-out -- --lib || true
       - name: Check surviving mutants
         run: |
           MISSED=0
