@@ -839,6 +839,14 @@ pub fn modify_artifact_yaml(
         let (block_start, block_end) = editor.find_artifact_block(id).unwrap();
         let field_indent = editor.field_indent(block_start);
 
+        // #687: block-style writes below used to emit the CLI-supplied value
+        // RAW, so a value containing `: ` (or any other plain-scalar indicator
+        // — `#`, leading `-`/`?`/`[`/`{`, …) produced invalid YAML. The parser
+        // then failed on the whole file and every artifact in it silently
+        // vanished. Route through the same helper the sibling setters
+        // (`set_title`/`set_status`/`set_release`) use.
+        let quoted_value = yaml_quote_inline_scalar(value);
+
         if let Some(fields_line) = editor.find_field_in_block(block_start, block_end, "fields") {
             let sub_indent = field_indent + 2;
 
@@ -894,7 +902,7 @@ pub fn modify_artifact_yaml(
                     break;
                 }
                 if this_indent == sub_indent && trimmed.starts_with(&sub_prefix) {
-                    editor.lines[i] = format!("{}{key}: {value}", " ".repeat(sub_indent));
+                    editor.lines[i] = format!("{}{key}: {quoted_value}", " ".repeat(sub_indent));
                     found = true;
                     break;
                 }
@@ -917,7 +925,7 @@ pub fn modify_artifact_yaml(
                 }
                 editor.lines.insert(
                     insert_at,
-                    format!("{}{key}: {value}", " ".repeat(sub_indent)),
+                    format!("{}{key}: {quoted_value}", " ".repeat(sub_indent)),
                 );
             }
         } else {
@@ -934,7 +942,7 @@ pub fn modify_artifact_yaml(
             let sub_indent = field_indent + 2;
             editor.lines.insert(
                 insert_at,
-                format!("{}{key}: {value}", " ".repeat(sub_indent)),
+                format!("{}{key}: {quoted_value}", " ".repeat(sub_indent)),
             );
             editor
                 .lines
@@ -1852,6 +1860,129 @@ artifacts:
             parsed["artifacts"][1]["id"].as_str(),
             Some("REQ-002"),
             "sibling artifact after the edited one must survive"
+        );
+    }
+
+    // rivet: verifies REQ-034
+    /// #687: `rivet modify --set-field` used to write the value RAW under a
+    /// block-style `fields:` sub-map — so a value containing `: ` (or any
+    /// other plain-scalar indicator) produced invalid YAML, the whole file
+    /// then failed to parse, and every artifact in it silently vanished.
+    /// The write must be quoted so the file stays parseable, and every
+    /// sibling artifact must survive.
+    #[test]
+    fn set_field_quotes_value_with_colon_space_and_preserves_siblings() {
+        let content = "\
+artifacts:
+  - id: DD-1
+    type: design-decision
+    title: First
+    status: approved
+    fields:
+      priority: must
+  - id: DD-2
+    type: design-decision
+    title: Second
+    status: approved";
+        let hostile = "CURVE-AGILE: Ed25519 preferred, ECDSA-P256 fallback";
+        let params = crate::mutate::ModifyParams {
+            set_fields: vec![("rationale".to_string(), hostile.to_string())],
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out =
+            modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
+
+        // Must still be valid YAML — the raw-write corruption made this fail.
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let arts = parsed["artifacts"].as_sequence().expect("artifacts seq");
+        assert_eq!(arts.len(), 2, "both artifacts must survive the edit");
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["rationale"].as_str(),
+            Some(hostile),
+            "hostile value must round-trip verbatim"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["priority"].as_str(),
+            Some("must"),
+            "pre-existing sibling sub-field must be preserved"
+        );
+        assert_eq!(
+            parsed["artifacts"][1]["id"].as_str(),
+            Some("DD-2"),
+            "sibling artifact must not silently vanish"
+        );
+    }
+
+    // rivet: verifies REQ-034
+    /// #687 companion: quoting must ALSO apply when `--set-field` creates the
+    /// `fields:` section from scratch (no pre-existing `fields:` line). Same
+    /// data-loss shape otherwise — an unquoted colon-space corrupts the file.
+    #[test]
+    fn set_field_creating_fields_section_quotes_hostile_value() {
+        let content = "\
+artifacts:
+  - id: DD-1
+    type: design-decision
+    title: First
+    status: approved
+  - id: DD-2
+    type: design-decision
+    title: Second
+    status: approved";
+        let hostile = "note: something: with colons";
+        let params = crate::mutate::ModifyParams {
+            set_fields: vec![("rationale".to_string(), hostile.to_string())],
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out =
+            modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
+
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        assert_eq!(
+            parsed["artifacts"].as_sequence().map(Vec::len),
+            Some(2),
+            "sibling artifact must survive when fields section is created"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["rationale"].as_str(),
+            Some(hostile),
+        );
+    }
+
+    // rivet: verifies REQ-034
+    /// #687 companion: updating an EXISTING key inside a block-style `fields:`
+    /// map with a hostile value must also quote. This exercises the replace
+    /// branch (line finds an existing sub-key and overwrites it) — a distinct
+    /// write site from the insert branch above.
+    #[test]
+    fn set_field_updating_existing_key_quotes_hostile_value() {
+        let content = "\
+artifacts:
+  - id: DD-1
+    type: design-decision
+    title: First
+    status: approved
+    fields:
+      rationale: old-value";
+        let hostile = "CURVE-AGILE: X, Y";
+        let params = crate::mutate::ModifyParams {
+            set_fields: vec![("rationale".to_string(), hostile.to_string())],
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out =
+            modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
+
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["rationale"].as_str(),
+            Some(hostile),
+            "hostile replacement value must round-trip verbatim"
         );
     }
 }
