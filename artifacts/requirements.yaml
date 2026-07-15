@@ -7841,7 +7841,7 @@ artifacts:
     title: "variant source-linkage completeness (externals, binding source globs, export --variant)"
     status: proposed
     description: "P3 (DD-076). Local variant scoping preserves source_file correctly (confirmed). It degrades at every boundary beyond one repo: (a) external artifact source links are dead — resolve_source_file (api.rs:388) can't strip_prefix an out-of-project absolute path and /source rejects it (render/source.rs:281,294); (b) externals bypass variant scoping entirely (api.rs:538-563 never consults variant_scope) — a scope leak; (c) binding `source:` globs (ResolvedVariant.source_manifest via solve_with_bindings, feature_model.rs:1413) never reach serve or `variant solve` (which call plain solve()), and are emitted unverified against disk (missing dirs, exit 0); (d) no `export --variant` — a variant-scoped compliance export is impossible without hand-translating IDs to an s-expr --filter. Address as slices."
-    release: v0.28.0
+    release: v0.29.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
 
   - id: REQ-266
@@ -7849,7 +7849,7 @@ artifacts:
     title: "constraint-solver property-test coverage (currently zero)"
     status: proposed
     description: "P4 (DD-076). rivet-core/tests/proptest_feature_model.rs:142 hard-codes `constraints: vec![]`, so every fuzzed model is constraint-free — the highest-risk code (eval_constraint's _ => true fallback, implies propagation, excludes, cross-tree assertions) has zero property-test coverage. Add proptest strategies that generate constraints so REQ-257's fail-loud behaviour and the solver's constraint handling are fuzzed. Also add coverage for the shared-child/duplicate-child mis-reported-as-cycle case (feature_model.rs:884-894 last-writer-wins parent + :1129-1134 BFS)."
-    release: v0.28.0
+    release: v0.29.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
 
   - id: REQ-267
@@ -7857,6 +7857,17 @@ artifacts:
     title: "pin CI nightly toolchain to a known-good date while upstream nightly ICEs"
     status: implemented
     description: "CI health. The Miri (safety + full), Code Coverage, and Fuzz jobs use `dtolnay/rust-toolchain@nightly` (unpinned → latest). Nightlies from 2026-07-14 ICE the compiler while building rivet-core (rustc panic in rustc_ast/src/attr/mod.rs, exit 104), reddening every nightly job repo-wide and masking the Miri UB/safety signal — while the core gates (Test/Clippy/Format) stayed green, so main was healthy but CI read red. Pin all four to nightly-2026-07-11 (the last run where Miri passed on main) so they keep ENFORCING on a working compiler. Not a versioned release (CI-config only, shipped binary unchanged). Unpin to @nightly once a newer nightly stops ICEing. Kani's exit-143 failures are a separate runner-shutdown flake, not this ICE."
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-15T00:00:00Z
+
+  - id: REQ-268
+    type: requirement
+    title: "per-PR CI gate builds the wasm seam (compose-witness component + wasm feature)"
+    status: proposed
+    description: "v0.30 (CI resilience). rivet's composition core is exposed as a Wasm component — compose-witness/ (cdylib + WIT in compose-witness/wit/, built via `cargo component build` or Bazel) — plus the host `wasm` feature (rivet-core/src/wasm_runtime.rs, wasmtime) and the spar-wasm browser assets. That component is the SEAM consumed downstream (melded → loomed → synth'd), so a broken/buggy wasm build is a downstream breakage. Today the wasm seam is built ONLY in release.yml, not per-PR ci.yml, so a change can rot the seam and nothing catches it until release. Add a per-PR CI job that at minimum runs `cargo build -p rivet-cli --features wasm` (cheap, host-side) and ideally `cargo component build` on compose-witness (needs cargo-component + wasi-sdk on the runner, mirror the release.yml wasm setup). Gate it behind the existing changes/paths-filter so it only runs when the composition core / wasm_runtime / compose-witness / WIT / wasm feature / spar-wasm assets change."
+    release: v0.30.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
