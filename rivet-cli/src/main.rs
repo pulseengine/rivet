@@ -18746,6 +18746,73 @@ fn lsp_schema_completions(
         return Some(items);
     }
 
+    // Enum-value completion (REQ-256): the current line is a `<field>:`
+    // assignment (optionally with a trailing space / partial value) whose
+    // FieldDef declares `allowed-values` — e.g. `status:` completes
+    // draft/proposed/approved/... . Placed AFTER the type:/link/fields cases
+    // so it never shadows them (a line inside a `fields:` block is already
+    // returned above as a field-NAME completion). The value set always comes
+    // from the schema (base-fields carry `status`), never a hardcoded list.
+    if let Some((raw_key, _)) = trimmed.split_once(':') {
+        let key = raw_key.trim_start_matches("- ").trim();
+        if !key.is_empty() && !key.contains(char::is_whitespace) && key != "type" {
+            // Resolve the FieldDef: the enclosing artifact type's declared
+            // fields first, then the schema's `base-fields` — where `status`
+            // and other cross-cutting enums live (schema.rs base_fields).
+            let field_def = lsp_enclosing_artifact_type(lines, line_idx)
+                .and_then(|t| schema.artifact_type(&t))
+                .and_then(|td| td.fields.iter().find(|f| f.name == key))
+                .or_else(|| schema.base_fields.iter().find(|f| f.name == key));
+            if let Some(vals) = field_def.and_then(|f| f.allowed_values.as_ref()) {
+                return Some(
+                    vals.iter()
+                        .map(|v| lsp_types::CompletionItem {
+                            label: v.clone(),
+                            kind: Some(lsp_types::CompletionItemKind::ENUM_MEMBER),
+                            detail: Some(key.to_string()),
+                            ..Default::default()
+                        })
+                        .collect(),
+                );
+            }
+        }
+    }
+
+    // Base-key completion (REQ-256): at the artifact level (not inside a
+    // `fields:`/`links:` block) with a bare/partial key being typed (no colon
+    // yet, not a sequence-item dash), offer the artifact's fixed top-level
+    // keys. `type`/`links`/`fields` are STRUCTURAL model keys, not schema
+    // base-fields, so the set is the model's fixed top-level shape rather than
+    // a schema accessor (id/title/description/status/tags come from base-fields;
+    // the structural keys do not, so a single fixed list is the honest source).
+    if block.as_deref() != Some("fields")
+        && block.as_deref() != Some("links")
+        && !trimmed.contains(':')
+        && !trimmed.starts_with('-')
+    {
+        const BASE_KEYS: &[&str] = &[
+            "id",
+            "type",
+            "title",
+            "description",
+            "status",
+            "tags",
+            "links",
+            "fields",
+        ];
+        return Some(
+            BASE_KEYS
+                .iter()
+                .map(|k| lsp_types::CompletionItem {
+                    label: (*k).to_string(),
+                    kind: Some(lsp_types::CompletionItemKind::FIELD),
+                    insert_text: Some(format!("{k}: ")),
+                    ..Default::default()
+                })
+                .collect(),
+        );
+    }
+
     None
 }
 
@@ -19226,6 +19293,105 @@ mod lsp_completion_context_tests {
     fn no_enclosing_type_before_first_type_line() {
         // On the `- id:` line itself, no artifact-level type is above it.
         assert_eq!(lsp_enclosing_artifact_type(DOC, 1), None);
+    }
+
+    // REQ-256: `status:` completes the lifecycle enum. The value set must come
+    // from the schema's base-fields (never hardcoded), so we assert against the
+    // real embedded `common` schema's declared allowed-values.
+    // rivet: verifies REQ-256
+    #[test]
+    fn schema_completions_offer_status_enum_values() {
+        let schema = rivet_core::embedded::load_schemas_with_fallback(
+            &["common".to_string()],
+            std::path::Path::new("/nonexistent-schemas-dir"),
+        )
+        .expect("embedded common schema must load");
+        let store = rivet_core::store::Store::new();
+        // Cursor on a `status:` assignment at the artifact level of a
+        // requirement (trailing space, no value yet).
+        let lines = &[
+            "artifacts:",
+            "  - id: REQ-001",
+            "    type: requirement",
+            "    status: ",
+        ];
+        let items = lsp_schema_completions(lines, 3, "status:", &schema, &store)
+            .expect("a status: line yields enum-value completions");
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        for expected in ["draft", "proposed", "approved", "implemented", "verified"] {
+            assert!(
+                labels.contains(&expected),
+                "status enum must include {expected}; got {labels:?}"
+            );
+        }
+        assert!(
+            items.iter().all(|i| i.detail.as_deref() == Some("status")),
+            "each enum item should carry the field name in detail"
+        );
+    }
+
+    // REQ-256: a bare/partial key at the artifact level completes the fixed
+    // top-level model keys, including the structural `links`/`fields`.
+    // rivet: verifies REQ-256
+    #[test]
+    fn schema_completions_offer_base_keys_at_artifact_level() {
+        let schema = rivet_core::embedded::load_schemas_with_fallback(
+            &["common".to_string()],
+            std::path::Path::new("/nonexistent-schemas-dir"),
+        )
+        .expect("embedded common schema must load");
+        let store = rivet_core::store::Store::new();
+        // Cursor on a partial key being typed under a requirement (no colon).
+        let lines = &[
+            "artifacts:",
+            "  - id: REQ-001",
+            "    type: requirement",
+            "    ti",
+        ];
+        let items = lsp_schema_completions(lines, 3, "ti", &schema, &store)
+            .expect("a bare partial key at artifact level yields base-key completions");
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        for expected in ["id", "type", "title", "status", "tags", "links", "fields"] {
+            assert!(
+                labels.contains(&expected),
+                "base keys must include {expected}; got {labels:?}"
+            );
+        }
+    }
+
+    // REQ-256 regression: the slice-1 type: / field-name completions must keep
+    // working after the new enum/base-key cases were appended to the dispatch.
+    // rivet: verifies REQ-246
+    #[test]
+    fn schema_completions_type_and_field_still_work() {
+        let schema = rivet_core::embedded::load_schemas_with_fallback(
+            &["common".to_string()],
+            std::path::Path::new("/nonexistent-schemas-dir"),
+        )
+        .expect("embedded common schema must load");
+        let store = rivet_core::store::Store::new();
+        // Artifact `type:` line → non-empty schema type completions.
+        let type_lines = &["artifacts:", "  - id: REQ-001", "    type: "];
+        let type_items = lsp_schema_completions(type_lines, 2, "type:", &schema, &store)
+            .expect("a type: line yields type completions");
+        assert!(
+            !type_items.is_empty(),
+            "artifact type: completion must remain non-empty"
+        );
+        // Field-name completion inside a `fields:` block still returns names.
+        let field_lines = &[
+            "artifacts:",
+            "  - id: AI-1",
+            "    type: ai-session",
+            "    fields:",
+            "      ",
+        ];
+        let field_items = lsp_schema_completions(field_lines, 4, "", &schema, &store)
+            .expect("a fields: block yields field-name completions");
+        assert!(
+            field_items.iter().any(|i| i.label == "session-id"),
+            "field-name completion must remain intact"
+        );
     }
 }
 

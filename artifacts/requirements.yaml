@@ -7759,3 +7759,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-11T00:00:00Z
+
+  - id: REQ-256
+    type: requirement
+    title: "LSP slice 2 — enum-value completion + base-key completion for artifact YAML"
+    status: implemented
+    description: "#546 (LSP authoring UX; slice 1 = REQ-246 shipped type/link-type/field-name completion). Slice 2 adds the two highest-value remaining completions: (1) ENUM-VALUE completion — when the cursor is on a field line `<field>: ` whose schema FieldDef carries `allowed_values` (e.g. the `status` enum: draft/proposed/approved/implemented/verified/accepted), complete those values; (2) BASE-KEY completion — at the artifact top level (not inside a fields:/links: block), complete the base artifact keys (id, type, title, description, status, tags, links, fields). Reuses the existing lsp_schema_completions dispatch (rivet-cli/src/main.rs) and the schema FieldDef.allowed_values (rivet-core/src/schema.rs). Reduces YAML authoring friction without a bespoke editor UI — the DD-071 direction."
+    release: v0.27.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-15T00:00:00Z
