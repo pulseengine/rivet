@@ -7759,3 +7759,84 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-11T00:00:00Z
+
+  # ── Variant hardening (multi-persona review, DD-076) ──────────────────
+  - id: REQ-257
+    type: requirement
+    title: "variant constraints must fail loud, not silently pass (eval_constraint _ => true)"
+    status: proposed
+    description: "P0 correctness (DD-076). rivet-core/src/feature_model.rs:1600 — eval_constraint returns `true` for every expression shape it does not implement. The preprocessor allowlist (:796-823) ACCEPTS `>`, `<`, `=`, `matches`, `count`, `in`, `has-field`, comparisons, etc., but eval_constraint only implements And/Or/Not/Implies/Excludes/BoolLit + feature-name leaves, so e.g. `(> asil-numeric 2)` parses and is SILENTLY SATISFIED without evaluation. For a safety-configuration tool this is the worst failure mode: an author believes a guard is enforced; solve() reports PASS unconditionally. Fix: either implement the accepted comparators/attribute predicates, or make an unevaluatable constraint a hard error (fail-loud) — never a vacuous pass. This is a behaviour change (models that silently passed may now error) — see DD-076."
+    release: v0.27.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-258
+    type: requirement
+    title: "validate that variant binding artifact IDs reference real artifacts (dangling-binding detection)"
+    status: proposed
+    description: "P0 correctness (DD-076). collect_bound_ids (rivet-cli/src/serve/variant.rs:287-304) and resolve_variant_bound_ids (main.rs:7333-7342) union binding.artifacts strings without ever checking the ID names a real artifact. A phantom ID (GHOST-999) flows through `variant solve`, `release check --variant` (lands in variant_only indistinguishable from real), and scoped validate (main.rs:5602-5608 silently skips missing IDs). Only cosmetic, exit-neutral 'N/M resolved' hints exist, absent from --format json. Add a real check: a binding referencing a nonexistent artifact ID is an error (or explicit warning under a flag). Also FIX the committed broken data: artifacts/variants/full-desktop.yaml selects 30+ features absent from artifacts/feature-model.yaml (variant check fails it; no gate ran it)."
+    release: v0.27.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-259
+    type: requirement
+    title: "constraint/binding feature-names must resolve to real model features (no vacuous satisfaction)"
+    status: proposed
+    description: "P0 correctness (DD-076). A constraint referencing a non-existent feature is vacuously satisfied — `(implies (= id \"ghost\") ...)` with ghost absent is trivially true (feature_model.rs:1594); a typo silently disables the guard. Likewise binding entries keyed on a non-effective/typo'd feature contribute zero artifacts and are never flagged (collect_bound_ids iterates effective_features and looks up, never validating binding keys, variant.rs:294-303). Validate that feature names inside constraints and binding keys resolve to real model features; a typo must error, not silently no-op."
+    release: v0.27.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-260
+    type: requirement
+    title: "ProjectVariants::discover must surface parse errors, not .ok()-swallow them"
+    status: proposed
+    description: "P1 silent-drop (DD-076). serve/variant.rs:118-137 — FeatureModel::from_yaml(&y).ok() and serde_yaml::from_str::<FeatureBinding>(&y).ok() turn a malformed/cyclic/attribute-invalid model into model:None and a malformed binding into binding:None. resolve() then reports 'no feature model configured for this project' (:227) — actively misleading: the model exists but is broken; broken bindings render artifact_count:0 with no error. Surface the parse error loudly (dashboard + logs) instead of presenting a broken config as an absent one."
+    release: v0.28.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-261
+    type: requirement
+    title: "surface attribute_warnings (unknown feature-attribute keys) via validate/--strict"
+    status: proposed
+    description: "P1 silent-drop (DD-076). FeatureModel.attribute_warnings (feature_model.rs:71-75, populated :942) documents 'callers can surface these via --strict or log them on every load' but NO rivet-cli/rivet-mcp caller reads it (only rivet-core unit tests). A misspelled attribute key bypasses type/range checking AND its warning is dropped — bad input, green load. Wire attribute_warnings to `rivet validate` output and/or a --strict flag that fails on them."
+    release: v0.28.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-262
+    type: requirement
+    title: "serve variant discovery must accept the wrapped variant shape (regression of #514 on serve path)"
+    status: proposed
+    description: "P1 silent-drop (DD-076). serve/variant.rs:161 parses variant files with raw serde_yaml::from_str::<VariantConfig> (flat shape only), but VariantConfig::from_yaml_str (feature_model.rs:163-179, #514) was added because `rivet variant init` writes the `variant:`-WRAPPED shape. So an init-scaffolded wrapped variant file is silently invisible in the serve dashboard — the exact init/check disagreement #514 fixed, reintroduced on the serve path. Use from_yaml_str (and `load`, not `from_yaml`, so a composed feature-model-binding file isn't dropped)."
+    release: v0.28.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-263
+    type: requirement
+    title: "CI gate: run variant check-all + binding validation so broken variants can't ship"
+    status: proposed
+    description: "P1 (DD-076). No local or CI gate exercises variant bindings; plain `rivet validate` is binding-unaware; the repo's own artifacts/variants/full-desktop.yaml is committed broken (proof nothing runs it). Add a ci.yml gate that runs `rivet variant check-all` (and, once REQ-258/259 land, the binding-artifact validation) over the project's variants, failing the PR on a nonsensical variant/binding."
+    release: v0.28.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-264
+    type: requirement
+    title: "canonical feature-model attributes documentation — disambiguate attribute-schema vs attributes"
+    status: proposed
+    description: "P2 docs (DD-076), the review's trigger. The word 'attribute' does triple duty with zero reference coverage: attribute-schema: (top-level TYPE DECLARATIONS, feature_model.rs:70), per-feature attributes: (the VALUES, :128), and a design-doc PHANTOM variant-config attributes: (never implemented). docs/feature-model-schema.md never mentions attributes at all; getting-started.md:1060 calls them 'typed' though they are untyped without a schema; docs/pure-variants-comparison.md frames the SHIPPED attribute-schema: as an unbuilt 'Gap/Remediation'; the design doc mixes shipped reality with never-built proposals (variant-config attributes:, fields-per-variant:) unlabeled. There is NO `documentation` field (a phantom the colleagues confused for real). Deliver: a canonical attributes section in feature-model-schema.md disambiguating the two real mechanisms + a worked example threading schema+typed-attrs+variant+bindings; relabel design/comparison docs shipped-vs-proposed; document `required:` + accepted type synonyms (bool/boolean, int/integer, float/double, string/str); fix the stale file:line citations."
+    release: v0.27.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-265
+    type: requirement
+    title: "variant source-linkage completeness (externals, binding source globs, export --variant)"
+    status: proposed
+    description: "P3 (DD-076). Local variant scoping preserves source_file correctly (confirmed). It degrades at every boundary beyond one repo: (a) external artifact source links are dead — resolve_source_file (api.rs:388) can't strip_prefix an out-of-project absolute path and /source rejects it (render/source.rs:281,294); (b) externals bypass variant scoping entirely (api.rs:538-563 never consults variant_scope) — a scope leak; (c) binding `source:` globs (ResolvedVariant.source_manifest via solve_with_bindings, feature_model.rs:1413) never reach serve or `variant solve` (which call plain solve()), and are emitted unverified against disk (missing dirs, exit 0); (d) no `export --variant` — a variant-scoped compliance export is impossible without hand-translating IDs to an s-expr --filter. Address as slices."
+    release: v0.28.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
+
+  - id: REQ-266
+    type: requirement
+    title: "constraint-solver property-test coverage (currently zero)"
+    status: proposed
+    description: "P4 (DD-076). rivet-core/tests/proptest_feature_model.rs:142 hard-codes `constraints: vec![]`, so every fuzzed model is constraint-free — the highest-risk code (eval_constraint's _ => true fallback, implies propagation, excludes, cross-tree assertions) has zero property-test coverage. Add proptest strategies that generate constraints so REQ-257's fail-loud behaviour and the solver's constraint handling are fuzzed. Also add coverage for the shared-child/duplicate-child mis-reported-as-cycle case (feature_model.rs:884-894 last-writer-wins parent + :1129-1134 BFS)."
+    release: v0.28.0
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
