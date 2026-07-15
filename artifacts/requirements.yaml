@@ -7799,7 +7799,7 @@ artifacts:
   - id: REQ-260
     type: requirement
     title: "ProjectVariants::discover must surface parse errors, not .ok()-swallow them"
-    status: proposed
+    status: implemented
     description: "P1 silent-drop (DD-076). serve/variant.rs:118-137 — FeatureModel::from_yaml(&y).ok() and serde_yaml::from_str::<FeatureBinding>(&y).ok() turn a malformed/cyclic/attribute-invalid model into model:None and a malformed binding into binding:None. resolve() then reports 'no feature model configured for this project' (:227) — actively misleading: the model exists but is broken; broken bindings render artifact_count:0 with no error. Surface the parse error loudly (dashboard + logs) instead of presenting a broken config as an absent one."
     release: v0.28.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
@@ -7815,7 +7815,7 @@ artifacts:
   - id: REQ-262
     type: requirement
     title: "serve variant discovery must accept the wrapped variant shape (regression of #514 on serve path)"
-    status: proposed
+    status: implemented
     description: "P1 silent-drop (DD-076). serve/variant.rs:161 parses variant files with raw serde_yaml::from_str::<VariantConfig> (flat shape only), but VariantConfig::from_yaml_str (feature_model.rs:163-179, #514) was added because `rivet variant init` writes the `variant:`-WRAPPED shape. So an init-scaffolded wrapped variant file is silently invisible in the serve dashboard — the exact init/check disagreement #514 fixed, reintroduced on the serve path. Use from_yaml_str (and `load`, not `from_yaml`, so a composed feature-model-binding file isn't dropped)."
     release: v0.28.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
