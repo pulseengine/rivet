@@ -5,6 +5,36 @@
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-07-15
+
+### Added
+- **LSP enum-value + base-key completion** (REQ-256, #546) — the language server
+  completes a field's allowed values from the schema (e.g. `status:` →
+  draft/proposed/…/accepted, sourced from `schema.base_fields`, never hardcoded)
+  and the base artifact keys (id/type/title/status/tags/links/fields) at the
+  artifact top level.
+
+### Fixed (variant hardening — a 4-persona review, DD-076: fail-loud over silent-pass)
+- **Constraints fail loud** (REQ-257) — a feature-model constraint using a
+  predicate the solver can't evaluate (e.g. `(> asil-numeric 2)`) previously
+  *silently passed*; `solve()` now emits `SolveError::UnevaluatableConstraint`
+  instead of a vacuous success.
+- **Binding + constraint linkage is validated** (REQ-258, REQ-259) —
+  `rivet validate --model --binding` now errors on a binding that maps a feature
+  to a **nonexistent artifact ID**, and a constraint referencing a **feature name
+  not in the model** now errors instead of being vacuously satisfied. Also fixes
+  the committed-broken `artifacts/variants/full-desktop.yaml` (it selected
+  features absent from the model) and widens the model's `scope` group so a
+  composite CLI+dashboard variant is expressible.
+- **`modify --set-field` colon-space corruption** (#687) — values are now quoted
+  so a `key: value`-style field value no longer corrupts the YAML on write.
+
+### Docs
+- **Canonical feature-model attributes documentation** (REQ-264, #546) —
+  disambiguates the "attribute" overload (top-level `attribute-schema:` type
+  declarations vs per-feature `attributes:` values), documents that there is no
+  `documentation` field, and relabels the design/comparison docs shipped-vs-proposed.
+
 ## [0.26.0] - 2026-07-11
 
 ### Added
