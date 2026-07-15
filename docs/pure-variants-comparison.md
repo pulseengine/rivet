@@ -8,6 +8,13 @@ tags: [research, comparison, variant, feature-model, pure-variants]
 
 # Rivet vs pure::variants — Feature Framework Comparison
 
+> **This is a comparison/research note, not the reference.** For the
+> shipped, canonical spec of feature-model attributes (`attribute-schema:`
+> and per-feature `attributes:`), see
+> [`feature-model-schema.md`](feature-model-schema.md). The "Gap" list
+> below was written against the v0.4.3 baseline; **Gap 1 (typed feature
+> attributes) has since shipped** and is relabelled accordingly.
+
 Status: research report, v0.4.3 baseline.
 Scope: Rivet's `rivet-core/src/feature_model.rs` + `variant_emit.rs` + the
 `rivet variant *` CLI commands, compared against the pure::variants User
@@ -66,7 +73,8 @@ update/merge loop (§5.10 line 1610).
 
 ## 1. Feature Model Semantics
 
-Rivet declares five group types (`rivet-core/src/feature_model.rs:82`):
+Rivet declares five group types (`enum GroupType` in
+`rivet-core/src/feature_model.rs`):
 
 | Rivet | PV analogue (§10.3 line 6314) | Notes |
 |-------|-------------------------------|-------|
@@ -79,8 +87,8 @@ Rivet declares five group types (`rivet-core/src/feature_model.rs:82`):
 PV supports **range-bounded cardinality** on `ps:alternative` and
 `ps:or` groups (line 6335 — "although this can be changed using range
 expressions"). Rivet's `Alternative` is hard-coded to exactly-one
-(`feature_model.rs:548-560`) and `Or` is hard-coded to at-least-one
-(`feature_model.rs:562-568`). There is no way in Rivet to say "select
+and `Or` is hard-coded to at-least-one (the group-cardinality checks in
+`solve`, `feature_model.rs`). There is no way in Rivet to say "select
 exactly 2-of-3 sensors" or "at most 1 of these optional diagnostics".
 
 **PV exclusion constraint:** PV forbids having both an `ps:or` and
@@ -88,7 +96,7 @@ exactly 2-of-3 sensors" or "at most 1 of these optional diagnostics".
 allows only one ps:or group for the same parent element."). Rivet's
 tree schema allows one group type per feature, so the constraint is
 structurally honoured but not checked by `validate_tree`
-(`feature_model.rs:322`).
+(`feature_model.rs`).
 
 ## 2. Attribute Types
 
@@ -103,14 +111,15 @@ required value) or **non-fixed** (default, overridable), can be
 determine which value from a list of candidate values wins (§5.8 line
 1488 — first-value-with-true-restriction semantics).
 
-Rivet's attributes (`feature_model.rs:78`) are
-`BTreeMap<String, serde_yaml::Value>`. They have **no declared types**
+Rivet's per-feature attributes (`Feature.attributes` in
+`feature_model.rs`) are a `BTreeMap<String, serde_yaml::Value>`. Absent
+an `attribute-schema:` they have **no declared types**
 (a YAML integer and a YAML string are silently acceptable in the same
 slot), no collection flavour (list vs set), no restriction machinery,
 no default/fixed distinction, and no cross-attribute references
 (PV's `ps:feature` type allows an attribute to point at another
 feature; the solver resolves the reference). The emitter
-(`variant_emit.rs:114`) accepts only scalars and errors loudly on
+(`emit` in `variant_emit.rs`) accepts only scalars and errors loudly on
 maps/sequences for every non-JSON format — deliberately loud, but the
 root problem is that the schema never committed to a type.
 
@@ -159,7 +168,7 @@ What Rivet's constraints **cannot** express:
 - `LET` or named sub-expressions.
 - User-defined functions / macros (`DEF`).
 - Iterators over a feature's *children* (`forall` is artifact-scoped).
-- Three-valued logic — `eval_constraint` (`feature_model.rs:707`)
+- Three-valued logic — `eval_constraint` (`feature_model.rs:1592`)
   defaults unknown expression shapes to `true`, which is the opposite
   of PV's behaviour (open = not-yet-decided).
 - Cardinality at the group level inside a constraint (e.g.
@@ -256,7 +265,7 @@ actual source code: the Family Model enumerates parts and source
 elements; their restrictions reference features from the FM.
 
 Rivet's closest analogue is `bindings.yaml`
-(`feature_model.rs:152-167`):
+(`struct FeatureBinding` in `feature_model.rs`):
 ```yaml
 bindings:
   pedestrian-detection:
@@ -289,7 +298,7 @@ PV VDM inheritance (§5.7 line 1295) supports:
 - Four error rules (line 1342): conflicting selects, conflicting
   attribute values, missing inherited VDM, self-inheritance.
 
-**Rivet: no inheritance.** A `VariantConfig` (`feature_model.rs:101`)
+**Rivet: no inheritance.** A `VariantConfig` (`feature_model.rs:151`)
 is
 ```rust
 pub struct VariantConfig { name: String, selects: Vec<String> }
@@ -312,36 +321,46 @@ is a defect waiting to surface at a later release.
 Ordered by user impact for safety-critical variants. Each gap has a
 concrete remediation path.
 
-### Gap 1 — Typed Feature Attributes
+### Gap 1 — Typed Feature Attributes — **SHIPPED**
 
-**Description.** Rivet attributes are
-`BTreeMap<String, serde_yaml::Value>` (feature_model.rs:78). There is
-no declared type per attribute key, no cross-feature checks, no
-constraint that `asil-numeric` is an integer 0..=4.
+> **Status: implemented.** The remediation below was built. Rivet now
+> accepts an optional top-level `attribute-schema:` section that
+> type-checks every feature attribute at load time. See
+> [`feature-model-schema.md` → Feature attributes](feature-model-schema.md#feature-attributes)
+> for the canonical reference. The rest of this entry is the original
+> gap analysis, retained for history.
+
+**Description (v0.4.3).** Rivet attributes were an untyped
+`BTreeMap<String, serde_yaml::Value>` (`Feature.attributes` in
+`feature_model.rs`). There was no declared type per attribute key, no
+cross-feature checks, no constraint that `asil-numeric` is an integer
+0..=4.
 
 **User impact.** Attribute values leak into every emitted format;
 wrong type = wrong `-D` / `#define` / `set(... VAR ...)` in
 downstream builds. For safety audits, attribute provenance and
-type-correctness need to be machine-checkable. Today they are not.
+type-correctness need to be machine-checkable.
 
-**Remediation.** Introduce an optional per-feature-model
-`attribute-schema:` section with keys like
+**Remediation — DONE.** An optional per-feature-model
+`attribute-schema:` section, with keys like
 ```yaml
 attribute-schema:
   asil-numeric: { type: int, range: [0, 4] }
   compliance:   { type: enum, values: [unece-r157, fmvss-127, gb-7258] }
 ```
-Parsed in `feature_model.rs::from_yaml` around line 250, stored on
-`FeatureModel`, validated after `validate_tree` at line 375. The
-emitter (`variant_emit.rs:114`) consumes the schema instead of
-duck-typing the YAML node.
+It is parsed in `FeatureModel::from_yaml` (via `from_yaml_struct` /
+`build_attribute_decl`), stored on `FeatureModel.attribute_schema`, and
+validated at load time **before** `validate_tree` runs. Accepted type
+kinds are `bool`/`boolean`, `int`/`integer`, `float`/`double`,
+`string`/`str`, and `enum`, plus a `required:` flag. Type / range / enum
+/ missing-required mismatches are hard errors; undeclared keys warn.
 
 ### Gap 2 — Partial Configuration / Three-Valued Logic
 
-**Description.** `solve` (feature_model.rs:430) is all-or-nothing —
+**Description.** `solve` (feature_model.rs:1227) is all-or-nothing —
 features are either in `effective_features` or not. PV's
 three-valued `open` state (§5.8.2 line 1447) is absent. `eval_constraint`
-(feature_model.rs:707) silently treats unknown shapes as `true`; a
+(feature_model.rs:1592) silently treats unknown shapes as `true`; a
 partial solver would treat them as `open`.
 
 **User impact.** Cannot model "150% configurations" (product-line
@@ -355,11 +374,11 @@ one. New `solve_partial` returning
 `BTreeMap<String, FeatureState>` instead of `BTreeSet<String>`. Keep
 the existing `solve` as `solve_full` (full-configuration mode) for
 back-compat. New location: fresh `solve_partial` function next to
-`solve` at feature_model.rs:430.
+`solve` at feature_model.rs:1227.
 
 ### Gap 3 — Variant Description Inheritance
 
-**Description.** `VariantConfig` (feature_model.rs:101) has no
+**Description.** `VariantConfig` (feature_model.rs:151) has no
 `extends` field. Each variant repeats its full select list.
 
 **User impact.** Products with shared baselines drift; ASIL-D variants
@@ -379,12 +398,12 @@ pub struct VariantConfig {
 Plus `resolve_inheritance` that topologically sorts the `extends` DAG,
 detects cycles, unions `selects`, unions `deselects`, errors on
 conflict per PV rules (§5.7.1 line 1342). Location: new function in
-`feature_model.rs`, called by `solve` before propagation at line 446.
+`feature_model.rs`, called by `solve` before propagation.
 
 ### Gap 4 — Group Cardinality Ranges
 
 **Description.** Rivet's `Alternative` is hard-coded to exactly-1
-(feature_model.rs:548) and `Or` to at-least-1 (line 562). PV
+(the group-cardinality checks in `solve`, feature_model.rs) and `Or` to at-least-1. PV
 range expressions on groups (line 6335) allow `[2..3]`,
 `[1..]`, `[..2]` etc.
 
@@ -397,14 +416,14 @@ group semantics and complicates error messages.
 `GroupType::Or` with `GroupType::Cardinality { min: usize, max:
 Option<usize> }`. Keep YAML shortcuts: `group: alternative` maps to
 `{min:1, max:Some(1)}`, `group: or` to `{min:1, max:None}`. Add a
-`group: [2, 3]` tuple syntax. Validation at feature_model.rs:357 must
+`group: [2, 3]` tuple syntax. Validation in `validate_tree` (feature_model.rs) must
 learn the new shape. New `SolveError::CardinalityViolation { parent,
 selected, min, max }`.
 
 ### Gap 5 — Family-Model-Level Artifact Restrictions
 
 **Description.** `bindings.yaml` maps each feature to a static list of
-source globs (feature_model.rs:152). There is no per-source restriction
+source globs (`Binding.source` in feature_model.rs). There is no per-source restriction
 expression; a file is either always in scope for a feature or never.
 
 **User impact.** Cannot express "`src/perception/pedestrian/**` is
@@ -423,7 +442,7 @@ pub struct SourceEntry {
     #[serde(default)] when: Option<String>,  // s-expr constraint
 }
 ```
-`solve` (feature_model.rs:430) evaluates each `when` expression against
+`solve` (feature_model.rs:1227) evaluates each `when` expression against
 the resolved selection and emits an expanded `BTreeMap<String, Vec<PathBuf>>`
 on the `ResolvedVariant`. The emitter can then produce a manifest
 (`--format manifest`) listing exactly which files participate in the

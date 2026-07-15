@@ -1057,8 +1057,12 @@ rivet variant attr   --model fm.yaml --variant v.yaml asil-c asil-numeric
 
 ### Feature attributes
 
-Each feature may declare an `attributes:` map — typed key/value metadata
-that a release script can turn into build-system configuration. Example:
+Each feature may declare an `attributes:` map — key/value metadata that a
+release script can turn into build-system configuration. Attributes are
+free-form (untyped) unless the model declares a top-level
+`attribute-schema:`, which type-checks them at load time; see
+[feature-model-schema.md](feature-model-schema.md#feature-attributes) for
+the reference. Example:
 
 ```yaml
 # feature-model.yaml (excerpt)

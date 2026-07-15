@@ -134,6 +134,205 @@ constraints:
   - (implies adas (or asil-b asil-c asil-d))
 ```
 
+### Feature attributes
+
+Features can carry key/value **attributes** — for example an ISO 26262
+numeric rating on each safety level, or the market-compliance standard on
+each market. This subsection is the canonical reference for how attributes
+are declared, typed, and validated.
+
+> **There is no `documentation` field.** A `Feature` in rivet is exactly
+> `{ name, group, children, parent, attributes }` and nothing else
+> (`rivet-core/src/feature_model.rs`, `struct Feature`). Free-form
+> descriptive text is not a first-class feature field. If you want to
+> attach a human-readable note to a feature, add it as a *string
+> attribute* (e.g. `attributes: { note: "…" }`) — there is no separate
+> documentation slot.
+
+#### The word "attribute" means two different things
+
+Two distinct YAML keys both use the word "attribute", at two different
+levels. Keeping them apart is the single most important thing to
+understand:
+
+| Key                 | Level                 | Holds            | Purpose                                                              |
+| ------------------- | --------------------- | ---------------- | ------------------------------------------------------------------- |
+| `attribute-schema:` | **top-level** (once)  | TYPE declarations | Declares the *type* (and optional range / enum / required-ness) of each attribute key. |
+| `attributes:`       | **per-feature**       | VALUES           | The actual key/value data attached to one feature.                  |
+
+`attribute-schema:` is optional and appears at most once, at the top level
+of the model file next to `root:` and `features:`. `attributes:` appears
+inside any `features[name]` entry. The schema names a key *once* and
+constrains it everywhere; each feature supplies its own values.
+
+> A third variant — an `attributes:` block on a **variant configuration**
+> — appears in some design notes but is **not implemented**. A
+> `VariantConfig` is `{ name, selects }` only. See
+> [design/variant-aware-properties.md](design/variant-aware-properties.md)
+> for what is and isn't shipped.
+
+#### `attribute-schema:` — type declarations (top-level, optional)
+
+Each entry under `attribute-schema:` is keyed by attribute name and
+declares its type:
+
+| Field      | Type                 | Applies to         | Meaning                                                          |
+| ---------- | -------------------- | ------------------ | --------------------------------------------------------------- |
+| `type`     | string               | all                | One of the type kinds below. Required.                          |
+| `range`    | `[lo, hi]`           | `int`, `float`     | Inclusive numeric bounds. Optional.                             |
+| `values`   | `[v1, v2, …]`        | `enum`             | The allowed string values. Required for `enum`.                 |
+| `required` | bool (default false) | all                | When `true`, the attribute must be present on **every feature** in the model; a missing value is a hard error. |
+
+Accepted type kinds — each with its synonyms (both spellings are
+accepted; see `build_attribute_decl` in `feature_model.rs`):
+
+| `type:` value        | Accepts                          | Extra fields          |
+| -------------------- | -------------------------------- | --------------------- |
+| `bool` / `boolean`   | YAML boolean                     | —                     |
+| `int` / `integer`    | YAML integer                     | optional `range: [lo, hi]` |
+| `float` / `double`   | YAML number                      | optional `range: [lo, hi]` |
+| `string` / `str`     | YAML string                      | —                     |
+| `enum`               | a string equal to one of `values` | required `values: [..]` |
+
+```yaml
+attribute-schema:
+  asil-numeric:
+    type: int
+    range: [0, 4]
+  reqs:
+    type: string
+  compliance:
+    type: enum
+    values: [unece-r157, fmvss-127, gb-7258]
+```
+
+#### `attributes:` — values (per-feature)
+
+A feature attaches values under its own `attributes:` map. Values are kept
+as raw YAML, so a feature can carry strings, integers, booleans, or small
+sub-maps:
+
+```yaml
+features:
+  asil-c:
+    group: leaf
+    attributes:
+      asil-numeric: 3
+      reqs: "fmea-dfa"
+```
+
+Attribute values are looked up by `rivet variant attr FEATURE KEY` and are
+consumed by the variant emitters when producing build-system output.
+
+#### Typed only when a schema is declared
+
+Validation of attribute values runs **only when an `attribute-schema:` is
+present**. This validation happens at load time, *before* the tree is
+structurally validated.
+
+- **No `attribute-schema:`** — `attributes:` are entirely free-form and
+  untyped. A YAML string and a YAML integer are both accepted in the same
+  slot; nothing is range- or enum-checked.
+- **With an `attribute-schema:`** — for every feature, each attribute
+  whose key appears in the schema is checked: type match, `range` bounds,
+  `enum` membership, and `required:` presence. A mismatch is a **hard
+  error**. An attribute key that is *not* declared in the schema produces
+  a **warning** (not an error), so new keys can be introduced before the
+  schema is updated.
+
+#### Worked example: schema + attributes + variant + bindings
+
+This is the real, working example in
+[`examples/variant/`](../examples/variant/). It threads all four pieces
+together: a typed `attribute-schema:`, per-feature `attributes:`, a
+variant configuration, and a binding model.
+
+`feature-model.yaml` (typed attributes on a FODA tree):
+
+```yaml
+kind: feature-model
+root: vehicle-platform
+
+attribute-schema:
+  asil-numeric: { type: int, range: [0, 4] }
+  reqs:         { type: string }
+  compliance:   { type: enum, values: [unece-r157, fmvss-127, gb-7258] }
+  locale:       { type: string }
+
+features:
+  vehicle-platform:
+    group: mandatory
+    children: [market, safety-level, feature-set]
+
+  market:
+    group: alternative
+    children: [eu, us, cn]
+  eu:
+    group: leaf
+    attributes: { compliance: "unece-r157", locale: "en_EU" }
+  us:
+    group: leaf
+    attributes: { compliance: "fmvss-127", locale: "en_US" }
+  cn:
+    group: leaf
+    attributes: { compliance: "gb-7258", locale: "zh_CN" }
+
+  safety-level:
+    group: alternative
+    children: [qm, asil-a, asil-b, asil-c, asil-d]
+  asil-c:
+    group: leaf
+    attributes: { asil-numeric: 3, reqs: "fmea-dfa" }
+  asil-d:
+    group: leaf
+    attributes: { asil-numeric: 4, reqs: "fmea-dfa-fta" }
+  # … qm, asil-a, asil-b likewise carry asil-numeric + reqs …
+
+  feature-set:
+    group: or
+    children: [base, adas, autonomous]
+  adas:
+    group: mandatory
+    children: [lane-keeping, adaptive-cruise, pedestrian-detection]
+  # … remaining features omitted for brevity …
+
+constraints:
+  - (implies eu pedestrian-detection)
+  - (implies adas (or asil-b asil-c asil-d))
+```
+
+A **variant configuration** picks a leaf on each alternative axis
+(`eu-adas-c.yaml`):
+
+```yaml
+name: eu-adas-c
+selects: [eu, adas, asil-c]
+```
+
+A **binding model** ties features (including the attribute-bearing `eu`
+and `asil-c`) to artifacts and source (`bindings.yaml`):
+
+```yaml
+bindings:
+  pedestrian-detection:
+    artifacts: [REQ-042, REQ-043]
+    source: ["src/perception/pedestrian/**"]
+  eu:
+    artifacts: [REQ-200]
+  asil-c:
+    artifacts: [REQ-101]
+```
+
+Resolving the variant selects `eu`, `adas`, `asil-c` (plus their
+ancestors, mandatory descendants, and constraint-implied features), and
+the emitter carries each selected feature's typed attributes — e.g.
+`asil-c` contributes `asil-numeric: 3` — into the build configuration:
+
+```sh
+rivet variant solve --model feature-model.yaml \
+  --variant eu-adas-c.yaml --binding bindings.yaml
+```
+
 ## 2. Variant configuration
 
 A user-level selection against a feature model.
