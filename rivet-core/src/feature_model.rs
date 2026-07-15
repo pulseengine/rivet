@@ -1182,6 +1182,12 @@ pub enum SolveError {
     OrViolation { parent: String },
     /// A constraint is violated after propagation.
     ConstraintViolation(String),
+    /// A constraint uses a predicate shape the feature-model solver cannot
+    /// evaluate over a bare feature selection (e.g. an attribute comparison
+    /// like `(> asil-numeric 2)`). Such shapes used to hit `eval_constraint`'s
+    /// permissive `_ => true` arm and were silently satisfied; REQ-257 makes
+    /// them fail loud instead.
+    UnevaluatableConstraint(String),
     /// A mandatory child is missing (should not happen after propagation,
     /// but reported defensively).
     MandatoryMissing { parent: String, child: String },
@@ -1203,6 +1209,7 @@ impl std::fmt::Display for SolveError {
                 write!(f, "or group `{parent}` requires at least 1 child selected")
             }
             SolveError::ConstraintViolation(msg) => write!(f, "constraint violated: {msg}"),
+            SolveError::UnevaluatableConstraint(msg) => write!(f, "{msg}"),
             SolveError::MandatoryMissing { parent, child } => {
                 write!(f, "mandatory child `{child}` of `{parent}` not selected")
             }
@@ -1366,6 +1373,21 @@ pub fn solve(
     // cannot (e.g. `(implies X (not Y))`, where the consequent is a
     // negation rather than a feature to be auto-selected).
     for constraint in &model.constraints {
+        // REQ-257: refuse to silently satisfy constraints whose predicate
+        // shape `eval_constraint` cannot actually evaluate over a bare
+        // feature selection (attribute comparisons, regex/collection
+        // predicates, link queries, quantifiers). These used to reach the
+        // `_ => true` arm and pass unnoticed; fail loud instead.
+        if let Err(node) = constraint_evaluatable(constraint) {
+            errors.push(SolveError::UnevaluatableConstraint(format!(
+                "constraint '{}' uses a predicate that feature-model constraints cannot evaluate ({}) \
+                 — constraints support boolean composition (and/or/not/implies/excludes) over feature names; \
+                 attribute/comparison predicates are not evaluated and were previously silently satisfied (REQ-257)",
+                describe_constraint(constraint),
+                node,
+            )));
+            continue;
+        }
         // `excludes` produces a dedicated message to preserve pre-fix
         // diagnostics; all other constraint shapes fall through to the
         // generic evaluator.
@@ -1571,6 +1593,46 @@ fn describe_constraint(expr: &Expr) -> String {
     }
 }
 
+/// Check that every node in a constraint expression is a shape
+/// [`eval_constraint`] can actually evaluate over a bare feature selection.
+///
+/// `eval_constraint` only understands boolean composition
+/// (`and`/`or`/`not`/`implies`/`excludes`/bool-literal) over feature-name
+/// leaves. Any other shape — attribute comparisons (`>`, `<`, `=` on a
+/// non-`id` field), collection/regex predicates (`in`, `matches`,
+/// `contains`), link queries, quantifiers, `count` — has no meaning over a
+/// set of selected feature names. Before REQ-257 those shapes fell through
+/// to `eval_constraint`'s permissive `_ => true` arm and were *silently
+/// satisfied*.
+///
+/// This walk returns `Err(describe_expr(node))` naming the first
+/// unevaluatable node so [`solve`] can raise a hard
+/// [`SolveError::UnevaluatableConstraint`] instead of passing quietly.
+fn constraint_evaluatable(expr: &Expr) -> Result<(), String> {
+    // A feature-name leaf (via `(= id "feat")`, `has-field`, `has-tag`) is
+    // always evaluatable — it resolves to set membership.
+    if extract_feature_name(expr).is_some() {
+        return Ok(());
+    }
+    match expr {
+        Expr::And(children) | Expr::Or(children) => {
+            for child in children {
+                constraint_evaluatable(child)?;
+            }
+            Ok(())
+        }
+        Expr::Not(inner) => constraint_evaluatable(inner),
+        Expr::Implies(a, b) | Expr::Excludes(a, b) => {
+            constraint_evaluatable(a)?;
+            constraint_evaluatable(b)
+        }
+        Expr::BoolLit(_) => Ok(()),
+        // Everything else (attribute comparisons, collection/regex/link
+        // predicates, quantifiers, count) is the `_ => true` blind spot.
+        other => Err(describe_expr(other)),
+    }
+}
+
 /// Evaluate a constraint expression as a boolean over the selected set.
 ///
 /// Distinct from `is_feature_selected` in two ways:
@@ -1580,9 +1642,12 @@ fn describe_constraint(expr: &Expr) -> String {
 ///
 /// Leaves (feature-name equality, `HasTag`, `HasField` on a known name)
 /// are resolved via `extract_feature_name` + membership in `selected`.
-/// Unknown expression shapes evaluate to `true` so the solver remains
-/// permissive for constraint flavours it does not understand (forward
-/// compatibility with richer predicates).
+///
+/// For the constraint-solving path this is now gated by
+/// [`constraint_evaluatable`], so the `_ => true` fallback is unreachable
+/// for `solve`'s constraints (REQ-257). It is retained because the
+/// `when:`-predicate path (`eval_feature_when`) intentionally treats
+/// unknown/artifact-oriented shapes as satisfied rather than failing.
 fn eval_constraint(expr: &Expr, selected: &BTreeSet<String>) -> bool {
     if let Some(name) = extract_feature_name(expr) {
         return selected.contains(&name);
@@ -1595,8 +1660,11 @@ fn eval_constraint(expr: &Expr, selected: &BTreeSet<String>) -> bool {
         Expr::Excludes(a, b) => !(eval_constraint(a, selected) && eval_constraint(b, selected)),
         Expr::BoolLit(v) => *v,
         // Unknown / artifact-oriented predicates (link queries, regex
-        // matches, etc.) are not meaningful over a feature selection;
-        // treat as satisfied so we do not raise spurious violations.
+        // matches, etc.) are not meaningful over a feature selection.
+        // Unreachable for `solve`'s constraints (gated by
+        // `constraint_evaluatable`, REQ-257); still reached by the
+        // `when:`-predicate path, which treats such shapes as satisfied
+        // rather than raising a spurious violation.
         _ => true,
     }
 }
@@ -2088,6 +2156,155 @@ constraints:
         };
         let resolved = solve(&model, &config).unwrap();
         assert!(resolved.effective_features.contains("feature-y"));
+    }
+
+    // ── REQ-257: unevaluatable constraints must fail loud ────────────
+
+    #[test]
+    fn unevaluatable_attribute_constraint_fails_loud() {
+        // REQ-257 / DD-076: a constraint using an attribute comparison
+        // predicate — `(> asil-numeric 2)` — parses (the preprocessor
+        // allowlist accepts `>`) but `eval_constraint` cannot evaluate it
+        // over a bare feature selection. Before the fix it hit the
+        // `_ => true` arm and was SILENTLY SATISFIED (solve returned Ok).
+        // It must now be a hard SolveError naming the constraint.
+        let yaml = r#"
+kind: feature-model
+root: system
+features:
+  system:
+    group: mandatory
+    children: [base]
+  base:
+    group: leaf
+constraints:
+  - (> asil-numeric 2)
+"#;
+        let model = FeatureModel::from_yaml(yaml).unwrap();
+        let config = VariantConfig {
+            name: "any".into(),
+            selects: vec![],
+        };
+        let result = solve(&model, &config);
+        assert!(
+            result.is_err(),
+            "expected FAIL for unevaluatable `(> asil-numeric 2)`, got PASS: {result:?}"
+        );
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| matches!(
+                e,
+                SolveError::UnevaluatableConstraint(msg)
+                    if msg.contains("REQ-257") && msg.contains("cannot evaluate")
+            )),
+            "expected UnevaluatableConstraint mentioning REQ-257, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn example_variant_implies_and_or_constraints_still_solve() {
+        // REQ-257 regression: the project's real constraints are
+        // boolean composition (implies/and/or) over feature names —
+        // `examples/variant/feature-model.yaml`. Fail-loud must NOT
+        // regress them: a satisfying selection still solves cleanly.
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/variant/feature-model.yaml"
+        );
+        let yaml = std::fs::read_to_string(path).expect("read example feature model");
+        let model = FeatureModel::from_yaml(&yaml).unwrap();
+        // A fully-specified valid variant: one market (eu), one safety
+        // level (asil-d), and the adas+autonomous feature-set. This
+        // satisfies every alternative/or group AND all three `implies`
+        // constraints — `(implies eu pedestrian-detection)` (an adas
+        // mandatory child), `(implies autonomous (and adas asil-d))`,
+        // `(implies adas (or asil-b asil-c asil-d))`.
+        let config = VariantConfig {
+            name: "eu-autonomous".into(),
+            selects: vec![
+                "eu".into(),
+                "asil-d".into(),
+                "adas".into(),
+                "autonomous".into(),
+            ],
+        };
+        let result = solve(&model, &config);
+        assert!(
+            result.is_ok(),
+            "expected the example's implies/and/or constraints to solve, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn excludes_and_not_constraints_still_evaluate() {
+        // REQ-257 regression: `excludes` and `not` are evaluatable shapes
+        // and must keep their semantics — an excludes with both sides
+        // selected is a violation; a `not` guard passes when the negated
+        // feature is absent.
+        let yaml = r#"
+kind: feature-model
+root: system
+features:
+  system:
+    group: mandatory
+    children: [opts]
+  opts:
+    group: optional
+    children: [feat-a, feat-b, feat-c]
+  feat-a:
+    group: leaf
+  feat-b:
+    group: leaf
+  feat-c:
+    group: leaf
+constraints:
+  - (excludes feat-a feat-b)
+  - (not feat-c)
+"#;
+        let model = FeatureModel::from_yaml(yaml).unwrap();
+
+        // Both excluded features selected → violation.
+        let bad = solve(
+            &model,
+            &VariantConfig {
+                name: "a-and-b".into(),
+                selects: vec!["feat-a".into(), "feat-b".into()],
+            },
+        );
+        assert!(bad.is_err(), "excludes(feat-a, feat-b) must fail: {bad:?}");
+        assert!(
+            bad.unwrap_err().iter().any(|e| matches!(
+                e,
+                SolveError::ConstraintViolation(msg) if msg.contains("excludes")
+            )),
+            "expected an excludes ConstraintViolation"
+        );
+
+        // feat-c not selected → (not feat-c) holds; feat-a alone is fine.
+        let good = solve(
+            &model,
+            &VariantConfig {
+                name: "a-only".into(),
+                selects: vec!["feat-a".into()],
+            },
+        );
+        assert!(
+            good.is_ok(),
+            "excludes/not should pass for a-only: {good:?}"
+        );
+
+        // feat-c selected → (not feat-c) violated.
+        let not_bad = solve(
+            &model,
+            &VariantConfig {
+                name: "c".into(),
+                selects: vec!["feat-c".into()],
+            },
+        );
+        assert!(
+            not_bad.is_err(),
+            "(not feat-c) must fail when feat-c selected"
+        );
     }
 
     // ── Feature origin tracking (pain point #8) ─────────────────────

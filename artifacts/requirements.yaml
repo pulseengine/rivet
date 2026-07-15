@@ -7775,7 +7775,7 @@ artifacts:
   - id: REQ-257
     type: requirement
     title: "variant constraints must fail loud, not silently pass (eval_constraint _ => true)"
-    status: proposed
+    status: implemented
     description: "P0 correctness (DD-076). rivet-core/src/feature_model.rs:1600 — eval_constraint returns `true` for every expression shape it does not implement. The preprocessor allowlist (:796-823) ACCEPTS `>`, `<`, `=`, `matches`, `count`, `in`, `has-field`, comparisons, etc., but eval_constraint only implements And/Or/Not/Implies/Excludes/BoolLit + feature-name leaves, so e.g. `(> asil-numeric 2)` parses and is SILENTLY SATISFIED without evaluation. For a safety-configuration tool this is the worst failure mode: an author believes a guard is enforced; solve() reports PASS unconditionally. Fix: either implement the accepted comparators/attribute predicates, or make an unevaluatable constraint a hard error (fail-loud) — never a vacuous pass. This is a behaviour change (models that silently passed may now error) — see DD-076."
     release: v0.27.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
