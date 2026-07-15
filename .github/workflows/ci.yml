@@ -437,7 +437,13 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly
+      # REQ-267: nightly pinned to 2026-07-11 (last known-good) across every
+      # nightly job (this Coverage job + both Miri jobs + Fuzz). Nightlies from
+      # 2026-07-14 on ICE the compiler while building rivet-core (rustc panic in
+      # rustc_ast/src/attr/mod.rs), reddening those jobs and masking the Miri UB
+      # signal. The pin keeps them ENFORCING on a working compiler. UNPIN back
+      # to @nightly once a newer nightly no longer ICEs (retry periodically).
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-11
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
@@ -478,7 +484,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, lean-mem]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-11
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
@@ -515,7 +521,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, lean-mem]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-11
         with:
           components: miri
       - uses: Swatinem/rust-cache@v2
@@ -745,7 +751,7 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-11
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-fuzz
         uses: taiki-e/install-action@v2
