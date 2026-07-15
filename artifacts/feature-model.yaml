@@ -4,8 +4,13 @@ features:
   rivet-core:
     group: mandatory
     children: [scope]
+  # `scope` selects which rivet surfaces a build ships. It is an `or`
+  # group (at least one surface) rather than `alternative` so composite
+  # builds — e.g. the full-desktop variant, which ships CLI + dashboard
+  # together — are expressible. Single-surface variants (dashboard-only,
+  # minimal-ci) remain valid as an `or` group with one child selected.
   scope:
-    group: alternative
+    group: or
     children: [core-cli, dashboard, minimal]
   core-cli:
     group: leaf

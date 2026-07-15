@@ -1188,6 +1188,13 @@ pub enum SolveError {
     /// permissive `_ => true` arm and were silently satisfied; REQ-257 makes
     /// them fail loud instead.
     UnevaluatableConstraint(String),
+    /// A constraint references a feature NAME that does not exist in the
+    /// model (REQ-259). Such a leaf resolves to "never selected", so any
+    /// constraint built on it degenerates to a vacuous truth (e.g. an
+    /// `implies` whose antecedent can never fire) and is silently
+    /// satisfied. A typo'd feature name is almost always a mistake, so
+    /// fail loud instead of passing quietly.
+    UnknownConstraintFeature { constraint: String, feature: String },
     /// A mandatory child is missing (should not happen after propagation,
     /// but reported defensively).
     MandatoryMissing { parent: String, child: String },
@@ -1210,6 +1217,16 @@ impl std::fmt::Display for SolveError {
             }
             SolveError::ConstraintViolation(msg) => write!(f, "constraint violated: {msg}"),
             SolveError::UnevaluatableConstraint(msg) => write!(f, "{msg}"),
+            SolveError::UnknownConstraintFeature {
+                constraint,
+                feature,
+            } => write!(
+                f,
+                "constraint '{constraint}' references unknown feature `{feature}` \
+                 — a feature name that is not in the model is never selected, so the \
+                 constraint is vacuously satisfied and enforces nothing (REQ-259); \
+                 fix the feature name or add the feature to the model"
+            ),
             SolveError::MandatoryMissing { parent, child } => {
                 write!(f, "mandatory child `{child}` of `{parent}` not selected")
             }
@@ -1386,6 +1403,29 @@ pub fn solve(
                 describe_constraint(constraint),
                 node,
             )));
+            continue;
+        }
+        // REQ-259: every feature NAME referenced by a constraint must
+        // resolve to a real feature in the model. A leaf naming a feature
+        // that does not exist is never in the selected set, so a constraint
+        // built on it degenerates to a vacuous truth (an `implies` whose
+        // antecedent can never fire, a `not` of a never-selected feature)
+        // and is silently satisfied. Fail loud on the typo instead.
+        let mut unknown_features = Vec::new();
+        collect_constraint_feature_names(constraint, &mut unknown_features);
+        let mut reported = false;
+        for feature in &unknown_features {
+            if !model.features.contains_key(feature) {
+                errors.push(SolveError::UnknownConstraintFeature {
+                    constraint: describe_constraint(constraint),
+                    feature: feature.clone(),
+                });
+                reported = true;
+            }
+        }
+        if reported {
+            // Don't also evaluate a constraint we've already flagged as
+            // referencing phantom features — the evaluation is meaningless.
             continue;
         }
         // `excludes` produces a dedicated message to preserve pre-fix
@@ -1630,6 +1670,37 @@ fn constraint_evaluatable(expr: &Expr) -> Result<(), String> {
         // Everything else (attribute comparisons, collection/regex/link
         // predicates, quantifiers, count) is the `_ => true` blind spot.
         other => Err(describe_expr(other)),
+    }
+}
+
+/// Collect every feature NAME referenced by a constraint expression
+/// (REQ-259).
+///
+/// Walks the boolean composition (`and`/`or`/`not`/`implies`/`excludes`)
+/// and records each feature-name leaf recognised by [`extract_feature_name`]
+/// (`(= id "feat")`, `(has-tag "feat")`, `(has-field "feat")`, and bare
+/// feature names, which `preprocess_feature_constraint` rewrites to
+/// `has-tag`). Callers cross-check the collected names against the model's
+/// feature map to reject typo'd / non-existent references. Non-feature
+/// predicate shapes are ignored here — they are handled separately by
+/// [`constraint_evaluatable`] (REQ-257).
+fn collect_constraint_feature_names(expr: &Expr, out: &mut Vec<String>) {
+    if let Some(name) = extract_feature_name(expr) {
+        out.push(name);
+        return;
+    }
+    match expr {
+        Expr::And(children) | Expr::Or(children) => {
+            for child in children {
+                collect_constraint_feature_names(child, out);
+            }
+        }
+        Expr::Not(inner) => collect_constraint_feature_names(inner, out),
+        Expr::Implies(a, b) | Expr::Excludes(a, b) => {
+            collect_constraint_feature_names(a, out);
+            collect_constraint_feature_names(b, out);
+        }
+        _ => {}
     }
 }
 
@@ -2199,6 +2270,82 @@ constraints:
             )),
             "expected UnevaluatableConstraint mentioning REQ-257, got: {errors:?}"
         );
+    }
+
+    // ── REQ-259: constraint feature-names must resolve to real features ──
+
+    #[test]
+    fn constraint_referencing_unknown_feature_fails_loud() {
+        // REQ-259 / DD-076: a constraint referencing a feature NAME that
+        // is not in the model — here `ghost-feature` in the consequent of
+        // an `implies` — used to pass silently. `ghost-feature` is never
+        // in the selected set, so the implication degenerates to a
+        // vacuous truth (or a spurious violation) and the intended guard
+        // enforces nothing. It must now be a hard SolveError naming the
+        // phantom feature.
+        let yaml = r#"
+kind: feature-model
+root: system
+features:
+  system:
+    group: mandatory
+    children: [base]
+  base:
+    group: leaf
+constraints:
+  - (implies (= id "base") (= id "ghost-feature"))
+"#;
+        let model = FeatureModel::from_yaml(yaml).unwrap();
+        let config = VariantConfig {
+            name: "any".into(),
+            selects: vec![],
+        };
+        let result = solve(&model, &config);
+        assert!(
+            result.is_err(),
+            "expected FAIL for constraint referencing unknown feature `ghost-feature`, got PASS: {result:?}"
+        );
+        let errors = result.unwrap_err();
+        assert!(
+            errors.iter().any(|e| matches!(
+                e,
+                SolveError::UnknownConstraintFeature { feature, .. }
+                    if feature == "ghost-feature"
+            )),
+            "expected UnknownConstraintFeature naming `ghost-feature`, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn constraint_with_all_known_features_still_solves() {
+        // REQ-259 regression: a constraint whose every feature-name leaf
+        // resolves to a real model feature must keep solving cleanly —
+        // the fail-loud check must not flag valid references.
+        let yaml = r#"
+kind: feature-model
+root: system
+features:
+  system:
+    group: mandatory
+    children: [extras]
+  extras:
+    group: optional
+    children: [feature-x, feature-y]
+  feature-x:
+    group: leaf
+  feature-y:
+    group: leaf
+constraints:
+  - (implies (= id "feature-x") (= id "feature-y"))
+"#;
+        let model = FeatureModel::from_yaml(yaml).unwrap();
+        let config = VariantConfig {
+            name: "x-only".into(),
+            selects: vec!["feature-x".into()],
+        };
+        let resolved = solve(&model, &config).expect("valid constraint must solve");
+        // The `implies` still propagates feature-y — behaviour unchanged.
+        assert!(resolved.effective_features.contains("feature-y"));
     }
 
     #[test]
