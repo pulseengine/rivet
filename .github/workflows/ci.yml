@@ -443,7 +443,9 @@ jobs:
       # rustc_ast/src/attr/mod.rs), reddening those jobs and masking the Miri UB
       # signal. The pin keeps them ENFORCING on a working compiler. UNPIN back
       # to @nightly once a newer nightly no longer ICEs (retry periodically).
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-11
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-11
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
@@ -484,8 +486,9 @@ jobs:
     runs-on: [self-hosted, linux, x64, lean-mem]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-11
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-07-11
           components: miri
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -521,8 +524,9 @@ jobs:
     runs-on: [self-hosted, linux, x64, lean-mem]
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-11
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-07-11
           components: miri
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
@@ -751,7 +755,9 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-11
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-11
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-fuzz
         uses: taiki-e/install-action@v2
