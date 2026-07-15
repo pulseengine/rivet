@@ -176,6 +176,125 @@ fn validate_flags_unknown_features_in_binding() {
     );
 }
 
+/// REQ-258 / DD-076: a binding entry whose key IS a valid feature but
+/// whose `artifacts:` list names an ID that does not exist in the store
+/// must FAIL loud. Before the fix, the union of `binding.artifacts` flowed
+/// through scoped validate with phantom IDs silently dropped — the
+/// mirror-image gap of the unknown-feature-KEY check.
+#[test]
+fn validate_flags_dangling_artifact_id_in_binding() {
+    let (_keep, dir, model, _binding) = setup_variant_project();
+
+    // `oauth` is a real feature (so the feature-KEY check passes), but
+    // GHOST-999 is not a real artifact in the project store.
+    let dangling = dir.join("dangling-binding.yaml");
+    std::fs::write(
+        &dangling,
+        r#"bindings:
+  oauth:
+    artifacts: [GHOST-999]
+"#,
+    )
+    .unwrap();
+
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--model",
+            model.to_str().unwrap(),
+            "--binding",
+            dangling.to_str().unwrap(),
+        ])
+        .output()
+        .expect("rivet validate");
+
+    assert!(
+        !output.status.success(),
+        "validate must fail on a dangling binding artifact ID"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("unknown artifact") && stderr.contains("GHOST-999"),
+        "expected an 'unknown artifact IDs' diagnostic naming GHOST-999. stderr: {stderr}"
+    );
+}
+
+/// REQ-258 regression: a binding whose feature keys AND artifact IDs are
+/// all real must still pass `validate --model --binding`. Guards the
+/// dangling-ID check against flagging valid bindings. REQ-001 is
+/// scaffolded by `rivet init --preset dev`.
+#[test]
+fn validate_accepts_binding_with_real_artifact_ids() {
+    let (_keep, dir, model, _binding) = setup_variant_project();
+
+    let good = dir.join("good-binding.yaml");
+    std::fs::write(
+        &good,
+        r#"bindings:
+  oauth:
+    artifacts: [REQ-001]
+"#,
+    )
+    .unwrap();
+
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--model",
+            model.to_str().unwrap(),
+            "--binding",
+            good.to_str().unwrap(),
+        ])
+        .output()
+        .expect("rivet validate");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("unknown artifact"),
+        "a binding with a real artifact ID (REQ-001) must not be flagged as dangling. stderr: {stderr}"
+    );
+}
+
+/// The committed `artifacts/variants/full-desktop.yaml` must pass
+/// `rivet variant check` against the project's real feature model. This
+/// is the regression guard for the previously-broken data (33 phantom
+/// feature selections). REQ-258 / DD-076.
+#[test]
+fn committed_full_desktop_variant_passes_check() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest.parent().expect("workspace root");
+    let model = repo_root.join("artifacts/feature-model.yaml");
+    let variant = repo_root.join("artifacts/variants/full-desktop.yaml");
+
+    let output = Command::new(rivet_bin())
+        .args([
+            "variant",
+            "check",
+            "--model",
+            model.to_str().unwrap(),
+            "--variant",
+            variant.to_str().unwrap(),
+        ])
+        .output()
+        .expect("rivet variant check");
+
+    assert!(
+        output.status.success(),
+        "committed full-desktop.yaml must pass variant check.\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("PASS"),
+        "expected PASS for full-desktop. stdout: {stdout}"
+    );
+}
+
 /// `rivet variant check-all` iterates declared variants and exits 0 if all
 /// pass. Our fixture has three passing variants.
 #[test]

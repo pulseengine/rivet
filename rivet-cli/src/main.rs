@@ -5633,6 +5633,31 @@ fn cmd_validate(
                     unknown.join(", ")
                 );
             }
+
+            // REQ-258: every artifact ID a binding maps a feature to must
+            // name a real artifact in the loaded store. The store is
+            // available at this layer (feature_model::solve has no artifact
+            // knowledge), so this is where dangling IDs must be caught.
+            // Previously the union of `binding.artifacts` flowed through
+            // scoped validate / `variant solve` / `release check --variant`
+            // with phantom IDs silently dropped — the mirror-image gap of
+            // the unknown-feature-KEY check above. Report the same way.
+            let mut dangling: Vec<String> = Vec::new();
+            for (feature, bind) in &fb.bindings {
+                for id in &bind.artifacts {
+                    if store.get(id).is_none() {
+                        dangling.push(format!("{id} (bound to feature `{feature}`)"));
+                    }
+                }
+            }
+            if !dangling.is_empty() {
+                dangling.sort();
+                dangling.dedup();
+                anyhow::bail!(
+                    "binding references unknown artifact IDs: {}",
+                    dangling.join(", ")
+                );
+            }
             if format != "json" {
                 println!(
                     "Feature model + binding: {} features, {} bindings (OK)\n",
