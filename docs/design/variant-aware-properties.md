@@ -1,6 +1,15 @@
 # Variant-Aware Properties on Requirements
 
-Status: design report, draft.
+> **This is a design/exploration note, not the reference.** For the
+> shipped, canonical spec of feature-model attributes and per-variant
+> field overrides, see
+> [`feature-model-schema.md`](../feature-model-schema.md). This document
+> records the design space that led to those features; where it proposes
+> shapes, they are labelled **SHIPPED** or **NOT IMPLEMENTED** inline.
+
+Status: design report. Its two headline proposals have since diverged:
+option A (`fields-per-variant:` on artifacts) **shipped** as issue #255;
+the variant-config `attributes:` shape (option D) was **not implemented**.
 Audience: rivet maintainers; future SAT/SMT solver authors; safety
 auditors evaluating rivet's variant story.
 Date: 2026-04-27.
@@ -75,20 +84,22 @@ tool that produces it from a maintained-once source.
 What rivet's data model commits to right now:
 
 - `Artifact.fields: BTreeMap<String, serde_yaml::Value>` — the
-  field map is variant-blind. There is one slot per field name.
-  (`rivet-core/src/model.rs:131`)
+  default field map. **Update:** since this doc was drafted, `Artifact`
+  also gained `fields_per_variant` (option A below shipped as #255).
+  (`Artifact` in `rivet-core/src/model.rs`)
 - `FeatureBinding.bindings[feature].artifacts: Vec<String>` — features
   bind to artifact *IDs*, not field-level slots.
-  (`rivet-core/src/feature_model.rs:213`)
+  (`struct FeatureBinding` in `rivet-core/src/feature_model.rs`)
 - `SourceEntry.when: Option<String>` — *source globs* can carry a
   per-variant `when:` predicate (Gap 5 in the PV comparison). This is
-  the only existing per-variant-value mechanism in rivet, and it
+  one existing per-variant-value mechanism in rivet, and it
   proves the predicate plumbing is already in place.
-  (`rivet-core/src/feature_model.rs:243`)
+  (`struct SourceEntry` in `rivet-core/src/feature_model.rs`)
 - `attribute-schema:` on the feature model gives typed feature
   attributes (`AttributeKind::{Bool, Int, Float, Str, Enum}`), but
-  again these live on the *feature*, not the artifact field.
-  (`rivet-core/src/feature_model.rs:87`)
+  these live on the *feature*, not the artifact field. **This is
+  shipped** — see [`feature-model-schema.md`](../feature-model-schema.md).
+  (`struct AttributeTypeDecl` in `rivet-core/src/feature_model.rs`)
 - `rivet variant solve / value / attr / verify-config` operate on
   `ResolvedVariant` — a flat selected feature set plus per-feature
   origins and source manifest. There is no
@@ -231,7 +242,14 @@ Five candidate shapes. I score each on
 **(T) traceability preservation**, **(A) AI-tool friendliness**,
 **(F) audit-friendliness**.
 
-### A. Field overrides per variant — `fields-per-variant:`
+### A. Field overrides per variant — `fields-per-variant:` — **SHIPPED (#255)**
+
+> **Status: implemented.** This is the option that was built.
+> `Artifact.fields_per_variant` deserializes from a `fields-per-variant:`
+> YAML block, `Artifact::fields_for_variant(Some(name))` returns the
+> merged (default-overlaid-by-variant) view, and `rivet validate
+> --variant <name>` validates the merged view (`validate_with_variant`).
+> The description below is the original proposal; it matches what shipped.
 
 ```yaml
 - id: REQ-THERMAL-01
@@ -317,7 +335,14 @@ artifact, linked back to a parent abstract requirement.
 
 This is the no-design option. Including it for completeness; rejected.
 
-### D. Reference into variant attributes — `max-temp-c: "$variant.max-temp-c"`
+### D. Reference into variant attributes — `max-temp-c: "$variant.max-temp-c"` — **NOT IMPLEMENTED**
+
+> **Status: not implemented.** This shape relies on a `VariantConfig`
+> carrying an `attributes:` map. It does not: a `VariantConfig` is
+> `{ name, selects }` only (`struct VariantConfig` in
+> `rivet-core/src/feature_model.rs`). There is no `$variant.X` resolver
+> and no variant-config `attributes:` block. Treat the YAML below as
+> design-only.
 
 The values live on the **variant config** (or on a feature attribute);
 the artifact field references them.
@@ -378,6 +403,13 @@ artifact with the variants it applies to, and filter at render time.
 Rejected. Too disruptive.
 
 ## 5. Recommendation
+
+> **Outcome: option A was adopted and shipped (#255).** The subsections
+> below are the original design detail. `fields-per-variant:` on
+> artifacts, the merged-view resolver, and variant-aware `validate` are
+> in the shipped product; the remaining items (option B expressions,
+> predicate-keyed overrides, exhaustiveness checks, ReqIF explode) remain
+> unbuilt design.
 
 **Adopt option A as the v1 mechanism, with a forward-compatible
 escape hatch into option B for advanced cases.**

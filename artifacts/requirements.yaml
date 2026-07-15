@@ -7820,7 +7820,7 @@ artifacts:
   - id: REQ-264
     type: requirement
     title: "canonical feature-model attributes documentation — disambiguate attribute-schema vs attributes"
-    status: proposed
+    status: implemented
     description: "P2 docs (DD-076), the review's trigger. The word 'attribute' does triple duty with zero reference coverage: attribute-schema: (top-level TYPE DECLARATIONS, feature_model.rs:70), per-feature attributes: (the VALUES, :128), and a design-doc PHANTOM variant-config attributes: (never implemented). docs/feature-model-schema.md never mentions attributes at all; getting-started.md:1060 calls them 'typed' though they are untyped without a schema; docs/pure-variants-comparison.md frames the SHIPPED attribute-schema: as an unbuilt 'Gap/Remediation'; the design doc mixes shipped reality with never-built proposals (variant-config attributes:, fields-per-variant:) unlabeled. There is NO `documentation` field (a phantom the colleagues confused for real). Deliver: a canonical attributes section in feature-model-schema.md disambiguating the two real mechanisms + a worked example threading schema+typed-attrs+variant+bindings; relabel design/comparison docs shipped-vs-proposed; document `required:` + accepted type synonyms (bool/boolean, int/integer, float/double, string/str); fix the stale file:line citations."
     release: v0.27.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
