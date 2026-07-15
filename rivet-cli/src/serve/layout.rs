@@ -490,6 +490,23 @@ pub(crate) fn render_variants_overview(state: &AppState) -> String {
     use super::variant::VariantStatus;
 
     if !state.variants.has_model() {
+        // REQ-260: a feature-model file that EXISTS but failed to
+        // parse/compose must surface the parse error, NOT the misleading
+        // "this project has no feature model" hint (a broken config is not
+        // an absent one).
+        if let Some(ref err) = state.variants.model_error {
+            return format!(
+                "<div class=\"card\" style=\"margin:2rem\">\
+                 <h2 style=\"margin-top:0\">Variants</h2>\
+                 <p style=\"color:#7f1d1d;background:#fef2f2;padding:.6rem .8rem;\
+                 border-radius:6px;border:1px solid #fecaca\">\
+                 <strong>Feature model failed to load.</strong><br>{}</p>\
+                 <p style=\"color:var(--text-muted)\">Fix the file above, then \
+                 reload. Until it parses, variant scoping is unavailable.</p>\
+                 </div>",
+                html_escape(err),
+            );
+        }
         return String::from(
             "<div class=\"card\" style=\"margin:2rem\">\
              <h2 style=\"margin-top:0\">Variants</h2>\
@@ -519,6 +536,22 @@ pub(crate) fn render_variants_overview(state: &AppState) -> String {
              Feature model: <code>{}</code></div>",
             html_escape(&p.display().to_string()),
         ));
+    }
+
+    // REQ-260: a binding or variant file that was present on disk but
+    // failed to parse is reported here rather than silently degrading a
+    // variant to `artifact_count: 0` / making it vanish.
+    if !state.variants.diagnostics.is_empty() {
+        html.push_str(
+            "<div style=\"color:#7f1d1d;background:#fef2f2;border:1px solid #fecaca;\
+             border-radius:6px;padding:.6rem .8rem;margin:.5rem 0 1rem\">\
+             <strong>Some variant configuration files could not be parsed:</strong><ul \
+             style=\"margin:.4rem 0 0;padding-left:1.2rem\">",
+        );
+        for d in &state.variants.diagnostics {
+            html.push_str(&format!("<li>{}</li>", html_escape(d)));
+        }
+        html.push_str("</ul></div>");
     }
 
     if state.variants.variants.is_empty() {

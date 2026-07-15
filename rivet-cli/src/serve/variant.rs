@@ -85,6 +85,17 @@ pub(crate) struct ProjectVariants {
     pub(crate) variant_bindings: BTreeMap<String, FeatureBinding>,
     /// All discovered variants, sorted by name.
     pub(crate) variants: Vec<VariantConfig>,
+    /// Parse error captured when a feature-model file EXISTS on disk but
+    /// fails to parse/compose. When this is `Some`, `model` is `None` but
+    /// the project is NOT model-less: the model is present but broken, and
+    /// `resolve()` returns this message instead of the misleading
+    /// "no feature model configured" (REQ-260).
+    pub(crate) model_error: Option<String>,
+    /// Human-readable diagnostics for config files that were present on
+    /// disk but failed to parse (feature model, binding, or a variant
+    /// file). Surfaced to the dashboard and logged on load so a broken
+    /// config never silently degrades to `None` (REQ-260).
+    pub(crate) diagnostics: Vec<String>,
 }
 
 impl ProjectVariants {
@@ -110,32 +121,57 @@ impl ProjectVariants {
             roots.push(proj_buf);
         }
 
+        let mut diagnostics: Vec<String> = Vec::new();
+
+        // Feature model. Use `FeatureModel::load`, not `from_yaml`, so a
+        // composed `kind: feature-model-binding` file named
+        // feature-model.yaml is composed rather than rejected (REQ-262).
+        // If the file EXISTS but fails to parse/compose, capture the error
+        // in `model_error` (and `diagnostics`) instead of silently dropping
+        // to `None` — a broken model must not masquerade as an absent one
+        // (REQ-260).
         let model_candidates = ["feature-model.yaml", "feature_model.yaml"];
-        let (model_path, model) = roots
+        let (model_path, model, model_error) = match roots
             .iter()
             .flat_map(|r| model_candidates.iter().map(move |n| r.join(n)))
             .find(|p| p.is_file())
-            .and_then(|p| {
-                std::fs::read_to_string(&p).ok().and_then(|y| {
-                    FeatureModel::from_yaml(&y)
-                        .ok()
-                        .map(|m| (Some(p.clone()), Some(m)))
-                })
-            })
-            .unwrap_or((None, None));
+        {
+            Some(p) => match FeatureModel::load(&p) {
+                Ok(m) => (Some(p), Some(m), None),
+                Err(e) => {
+                    let msg = format!("feature model {} failed to parse: {e}", p.display());
+                    diagnostics.push(msg.clone());
+                    (Some(p), None, Some(msg))
+                }
+            },
+            None => (None, None, None),
+        };
 
+        // Project-level binding. A present-but-malformed binding is captured
+        // as a diagnostic rather than silently becoming `None` (which would
+        // render variants with `artifact_count: 0` and no explanation) —
+        // REQ-260.
         let binding_candidates = ["bindings.yaml", "feature-bindings.yaml"];
-        let (binding_path, binding) = roots
+        let (binding_path, binding) = match roots
             .iter()
             .flat_map(|r| binding_candidates.iter().map(move |n| r.join(n)))
             .find(|p| p.is_file())
-            .and_then(|p| {
-                std::fs::read_to_string(&p)
-                    .ok()
-                    .and_then(|y| serde_yaml::from_str::<FeatureBinding>(&y).ok())
-                    .map(|b| (Some(p), Some(b)))
-            })
-            .unwrap_or((None, None));
+        {
+            Some(p) => match std::fs::read_to_string(&p) {
+                Ok(y) => match serde_yaml::from_str::<FeatureBinding>(&y) {
+                    Ok(b) => (Some(p), Some(b)),
+                    Err(e) => {
+                        diagnostics.push(format!("binding {} failed to parse: {e}", p.display()));
+                        (Some(p), None)
+                    }
+                },
+                Err(e) => {
+                    diagnostics.push(format!("binding {} could not be read: {e}", p.display()));
+                    (Some(p), None)
+                }
+            },
+            None => (None, None),
+        };
 
         let mut variants: Vec<VariantConfig> = Vec::new();
         let mut variant_bindings: BTreeMap<String, FeatureBinding> = BTreeMap::new();
@@ -158,26 +194,50 @@ impl ProjectVariants {
                     continue;
                 }
                 if let Ok(yaml) = std::fs::read_to_string(&path) {
-                    if let Ok(vc) = serde_yaml::from_str::<VariantConfig>(&yaml) {
-                        // dedup by name — first hit wins
-                        if !variants.iter().any(|v| v.name == vc.name) {
-                            // REQ-106: a variant file may embed its own
-                            // `bindings:` section (it IS its own binding
-                            // model). Capture it so scope resolves without
-                            // a separate bindings.yaml — mirrors the CLI's
-                            // `variant solve --binding <variant-file>`.
-                            if let Ok(fb) = serde_yaml::from_str::<FeatureBinding>(&yaml) {
-                                if !fb.bindings.is_empty() {
-                                    variant_bindings.insert(vc.name.clone(), fb);
+                    // REQ-262: accept BOTH the flat shape and the
+                    // `variant:`-wrapped shape that `rivet variant init`
+                    // scaffolds (feature-model-bindings form). Raw
+                    // `serde_yaml::from_str::<VariantConfig>` only accepted
+                    // the flat shape, so init-scaffolded variant files were
+                    // silently invisible on the serve dashboard (#514
+                    // regression on the serve path).
+                    match VariantConfig::from_yaml_str(&yaml) {
+                        Ok(vc) => {
+                            // dedup by name — first hit wins
+                            if !variants.iter().any(|v| v.name == vc.name) {
+                                // REQ-106: a variant file may embed its own
+                                // `bindings:` section (it IS its own binding
+                                // model). Capture it so scope resolves without
+                                // a separate bindings.yaml — mirrors the CLI's
+                                // `variant solve --binding <variant-file>`.
+                                if let Ok(fb) = serde_yaml::from_str::<FeatureBinding>(&yaml) {
+                                    if !fb.bindings.is_empty() {
+                                        variant_bindings.insert(vc.name.clone(), fb);
+                                    }
                                 }
+                                variants.push(vc);
                             }
-                            variants.push(vc);
+                        }
+                        Err(e) => {
+                            // REQ-260: a variant file present on disk that
+                            // fails to parse is captured, not dropped — it
+                            // would otherwise silently vanish from the
+                            // dashboard.
+                            diagnostics
+                                .push(format!("variant {} failed to parse: {e}", path.display()));
                         }
                     }
                 }
             }
         }
         variants.sort_by(|a, b| a.name.cmp(&b.name));
+
+        // Surface every captured diagnostic to the server log so a broken
+        // config is visible even to an operator who never opens the
+        // dashboard (REQ-260).
+        for d in &diagnostics {
+            log::warn!("variant discovery: {d}");
+        }
 
         Self {
             model_path,
@@ -186,6 +246,8 @@ impl ProjectVariants {
             binding,
             variant_bindings,
             variants,
+            model_error,
+            diagnostics,
         }
     }
 
@@ -221,10 +283,17 @@ impl ProjectVariants {
     /// * the requested variant doesn't exist, or
     /// * the variant fails solver checks.
     pub(crate) fn resolve(&self, name: &str) -> Result<ResolvedScope, String> {
-        let model = self
-            .model
-            .as_ref()
-            .ok_or_else(|| "no feature model configured for this project".to_string())?;
+        // REQ-260: distinguish "model file present but broken" (return the
+        // parse error) from "no model file at all" (the friendly hint). A
+        // broken config must NOT masquerade as an absent one.
+        let model = match self.model.as_ref() {
+            Some(m) => m,
+            None => {
+                return Err(self.model_error.clone().unwrap_or_else(|| {
+                    "no feature model configured for this project".to_string()
+                }));
+            }
+        };
         let vc = self
             .get(name)
             .ok_or_else(|| format!("variant '{name}' not found"))?;
@@ -438,6 +507,109 @@ mod tests {
             }
             other => panic!("expected Pass, got {other:?}"),
         }
+    }
+
+    /// REQ-260: a feature-model.yaml that EXISTS but is malformed must be
+    /// captured as a diagnostic + `model_error`, and `resolve()` must
+    /// return that parse error — NOT the misleading "no feature model
+    /// configured" message (a broken config is not an absent one).
+    #[test]
+    fn discover_broken_model_records_diagnostic_and_resolve_reports_parse_error() {
+        let dir = tmpdir();
+        // Malformed YAML (unterminated flow sequence) — file present, unparseable.
+        write(
+            &dir.path().join("artifacts/feature-model.yaml"),
+            "kind: feature-model\nroot: r\nfeatures: [: : :\n",
+        );
+        write(&dir.path().join("artifacts/variants/only-a.yaml"), VAR_A);
+        let pv = ProjectVariants::discover(dir.path(), &empty_cfg());
+
+        // Model file was present but broken.
+        assert!(!pv.has_model(), "broken model must not count as loaded");
+        assert!(
+            pv.model_path.is_some(),
+            "the broken file's path is still recorded"
+        );
+        assert!(pv.model_error.is_some(), "parse error captured");
+        assert!(
+            pv.diagnostics.iter().any(|d| d.contains("failed to parse")),
+            "diagnostic recorded, got {:?}",
+            pv.diagnostics
+        );
+
+        // resolve() must surface the parse error, NOT the absent-model hint.
+        let err = pv.resolve("only-a").expect_err("broken model → Err");
+        assert!(
+            err.contains("failed to parse"),
+            "resolve must report the parse error, got: {err}"
+        );
+        assert!(
+            !err.contains("no feature model configured"),
+            "a broken model must NOT masquerade as an absent one, got: {err}"
+        );
+    }
+
+    /// REQ-260 companion: a genuinely ABSENT model still yields the friendly
+    /// "no feature model configured" message (broken vs absent stay
+    /// distinct).
+    #[test]
+    fn discover_absent_model_still_reports_absent_message() {
+        let dir = tmpdir();
+        let pv = ProjectVariants::discover(dir.path(), &empty_cfg());
+        assert!(pv.model_error.is_none());
+        let err = pv.resolve("anything").expect_err("no model → Err");
+        assert!(
+            err.contains("no feature model configured"),
+            "absent model keeps the friendly hint, got: {err}"
+        );
+    }
+
+    /// REQ-262: a `variant:`-WRAPPED variant file — the shape `rivet variant
+    /// init` scaffolds — must be discovered. Raw
+    /// `serde_yaml::from_str::<VariantConfig>` only accepted the flat shape,
+    /// so init-scaffolded files were silently invisible on the dashboard
+    /// (#514 regression on the serve path).
+    #[test]
+    fn discover_accepts_wrapped_variant_shape() {
+        let dir = tmpdir();
+        write(&dir.path().join("artifacts/feature-model.yaml"), FM);
+        // The wrapped shape: name/selects live under `variant:`, alongside a
+        // top-level `bindings:` — exactly what `rivet variant init` writes.
+        let wrapped = "variant:\n  name: wrapped-b\n  selects: [b]\nbindings:\n  b:\n    artifacts: [B-1, B-2]\n";
+        write(
+            &dir.path().join("artifacts/variants/wrapped-b.yaml"),
+            wrapped,
+        );
+        let pv = ProjectVariants::discover(dir.path(), &empty_cfg());
+
+        let names: Vec<&str> = pv.variants.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["wrapped-b"],
+            "wrapped variant file must be discovered (REQ-262)"
+        );
+
+        // The embedded binding still resolves (REQ-106 path unaffected).
+        let scope = pv.resolve("wrapped-b").expect("solve");
+        assert_eq!(scope.artifact_ids.len(), 2);
+        assert!(scope.artifact_ids.contains("B-1"));
+        assert!(scope.artifact_ids.contains("B-2"));
+    }
+
+    /// REQ-262 regression guard: the FLAT shape still discovers and resolves
+    /// (from_yaml_str must not break the pre-existing path).
+    #[test]
+    fn discover_flat_variant_still_works() {
+        let dir = tmpdir();
+        write(&dir.path().join("artifacts/feature-model.yaml"), FM);
+        write(&dir.path().join("artifacts/bindings.yaml"), BIND);
+        write(&dir.path().join("artifacts/variants/only-a.yaml"), VAR_A);
+        let pv = ProjectVariants::discover(dir.path(), &empty_cfg());
+        assert_eq!(pv.variant_count(), 1);
+        assert!(pv.diagnostics.is_empty(), "clean config → no diagnostics");
+        let scope = pv.resolve("only-a").expect("solve");
+        assert_eq!(scope.artifact_ids.len(), 1);
+        assert!(scope.artifact_ids.contains("A-1"));
     }
 
     /// REQ-106: a project-level `bindings.yaml` still works (and an
