@@ -1661,3 +1661,70 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-11T00:00:00Z
+
+  - id: DD-076
+    type: design-decision
+    title: "Variant/feature-model hardening — fail-loud over silent-pass, from a 4-persona review"
+    status: proposed
+    description: >
+      A four-persona honest review (technical-writer, traceability-auditor,
+      Rust code-reviewer, integrator) of rivet's variant/feature-model handling
+      found the code more capable than the docs admit, wrapped in a ring of
+      silent-drop failure modes that make a green run untrustworthy for a
+      safety-configuration tool. Confirmed: there is NO `documentation` field —
+      the colleagues' confusion is the word "attribute" doing triple duty
+      (top-level `attribute-schema:` type declarations vs per-feature
+      `attributes:` values vs a design-doc phantom variant-config `attributes:`),
+      undocumented in the canonical reference. Governing decision for the
+      remediation: **prefer fail-loud over silent-pass** — an unevaluatable
+      constraint, a dangling binding artifact id, a typo'd feature name, a
+      malformed model/binding, or an unknown attribute key must surface as an
+      error/warning, never a vacuous PASS or a config that renders as "absent".
+      This is a deliberate behaviour change (models that silently passed may now
+      error), traded for trustworthiness. Scoped into REQ-257..266: P0 fail-loud
+      correctness (REQ-257 eval_constraint, REQ-258 dangling artifact ids +
+      broken full-desktop.yaml, REQ-259 feature-name resolution), P1 stop the
+      silent drops (REQ-260 discover .ok(), REQ-261 attribute_warnings, REQ-262
+      serve wrapped-variant, REQ-263 CI gate), P2 docs (REQ-264), P3 source
+      linkage (REQ-265), P4 solver proptests (REQ-266). Execution order per the
+      maintainer: file all (this), then P0 + P2 first.
+    tags: [variant, feature-model, review, correctness, documentation, fail-loud]
+    links:
+      - type: satisfies
+        target: REQ-257
+      - type: satisfies
+        target: REQ-258
+      - type: satisfies
+        target: REQ-259
+      - type: satisfies
+        target: REQ-264
+    fields:
+      baseline: v0.27.0-track
+      source-ref: >
+        Review evidence: eval_constraint blanket-pass feature_model.rs:1600;
+        collect_bound_ids no id-existence check serve/variant.rs:287-304;
+        discover .ok() swallow serve/variant.rs:118-137; attribute_warnings
+        unsurfaced feature_model.rs:71-75,942; serve raw-serde variant parse
+        variant.rs:161; committed-broken artifacts/variants/full-desktop.yaml;
+        docs/feature-model-schema.md omits attributes entirely; source linkage
+        externals api.rs:538-563 + render/source.rs:281.
+      rationale: >
+        A traceability/safety tool's whole value is that a green result is
+        evidence. Every finding here is a place where a green result is NOT
+        evidence — the constraint wasn't evaluated, the binding pointed at
+        nothing, the broken config looked absent. Fail-loud restores the
+        evidence property; the cost (previously-silent models now erroring) is
+        the correct trade for a tool whose output auditors rely on. Grounds the
+        fix in the existing solve/validate/discover machinery rather than a new
+        subsystem.
+      alternatives: >
+        (1) Keep silent-pass, add opt-in strict flags only — rejected: the
+        default must be trustworthy; a safety default that silently passes is
+        the bug. (2) Docs-only (explain the silent behaviour) — rejected:
+        documenting a footgun is not fixing it. (3) One big rewrite — rejected
+        in favour of sliced REQ-257..266 so each fix ships and is verified
+        independently.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-15T00:00:00Z
