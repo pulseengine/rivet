@@ -7807,7 +7807,7 @@ artifacts:
   - id: REQ-261
     type: requirement
     title: "surface attribute_warnings (unknown feature-attribute keys) via validate/--strict"
-    status: proposed
+    status: implemented
     description: "P1 silent-drop (DD-076). FeatureModel.attribute_warnings (feature_model.rs:71-75, populated :942) documents 'callers can surface these via --strict or log them on every load' but NO rivet-cli/rivet-mcp caller reads it (only rivet-core unit tests). A misspelled attribute key bypasses type/range checking AND its warning is dropped — bad input, green load. Wire attribute_warnings to `rivet validate` output and/or a --strict flag that fails on them."
     release: v0.28.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
