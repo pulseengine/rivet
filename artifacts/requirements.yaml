@@ -7876,7 +7876,7 @@ artifacts:
   - id: REQ-269
     type: requirement
     title: "feature-model validate_tree mis-reports a shared child (diamond/DAG) as a cycle"
-    status: proposed
+    status: implemented
     description: "Surfaced by REQ-266 coverage. FeatureModel::from_yaml -> validate_tree() detects cycles with a BFS that inserts each node into a global `visited` set on dequeue and errors if a node is seen twice (rivet-core/src/feature_model.rs ~1129). A feature reachable through two parents (a diamond: root->a, root->b, a->shared, b->shared) is enqueued from BOTH parents, dequeued twice, and wrongly reported as `cycle detected involving feature shared` — even though it is an acyclic DAG. Real feature models legitimately share a child (a common sub-feature under two optional branches). Fix: detect genuine cycles via the current DFS/BFS PATH (recursion stack), not global-visited-as-cycle; a node already fully visited on a different path is a shared child, not a cycle. The parent link is separately last-writer-wins (~888-892) which is acceptable, but the traversal must not treat re-encounter as a cycle. Regression test exists (ignored): rivet-core/tests/proptest_feature_model.rs::diamond_shared_child_is_not_a_cycle — un-ignore when fixed. Composition core touches the wasm seam, so verify `cargo build -p rivet-cli --features wasm` after the fix."
     release: v0.29.0
     provenance:

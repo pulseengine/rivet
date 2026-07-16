@@ -42,7 +42,7 @@
     clippy::print_stderr
 )]
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -1121,25 +1121,53 @@ impl FeatureModel {
             )));
         }
 
-        // Cycle detection via BFS from root, tracking visited.
+        // Cycle detection via iterative DFS, tracking the current path (the
+        // recursion stack) separately from fully-explored nodes.
+        //
+        // A feature re-encountered while still ON the current path is a
+        // genuine cycle (a back edge — a feature that is its own ancestor).
+        // A feature reached again by a second, disjoint path — a shared
+        // child / diamond, e.g. `root -> {a, b}` and `a -> shared`,
+        // `b -> shared` — is a legal DAG edge, NOT a cycle: it is skipped
+        // once fully explored. The previous BFS used a single global
+        // `visited` set and reported every second encounter as a cycle,
+        // so it mis-flagged any shared child (REQ-269).
+        enum Step {
+            Enter(String),
+            Leave(String),
+        }
         let mut visited = BTreeSet::new();
-        let mut queue = VecDeque::new();
-        queue.push_back(self.root.clone());
+        let mut on_path: BTreeSet<String> = BTreeSet::new();
+        let mut stack: Vec<Step> = vec![Step::Enter(self.root.clone())];
 
-        while let Some(name) = queue.pop_front() {
-            if !visited.insert(name.clone()) {
-                return Err(Error::Schema(format!(
-                    "cycle detected involving feature `{name}`"
-                )));
-            }
-            if let Some(f) = self.features.get(&name) {
-                for child in &f.children {
-                    if !self.features.contains_key(child) {
+        while let Some(step) = stack.pop() {
+            match step {
+                Step::Leave(name) => {
+                    on_path.remove(&name);
+                }
+                Step::Enter(name) => {
+                    if on_path.contains(&name) {
                         return Err(Error::Schema(format!(
-                            "feature `{name}` references unknown child `{child}`"
+                            "cycle detected involving feature `{name}`"
                         )));
                     }
-                    queue.push_back(child.clone());
+                    // Already fully explored via another path — a shared
+                    // child (diamond), not a cycle. Skip re-traversal.
+                    if !visited.insert(name.clone()) {
+                        continue;
+                    }
+                    on_path.insert(name.clone());
+                    stack.push(Step::Leave(name.clone()));
+                    if let Some(f) = self.features.get(&name) {
+                        for child in &f.children {
+                            if !self.features.contains_key(child) {
+                                return Err(Error::Schema(format!(
+                                    "feature `{name}` references unknown child `{child}`"
+                                )));
+                            }
+                            stack.push(Step::Enter(child.clone()));
+                        }
+                    }
                 }
             }
         }
@@ -2045,6 +2073,42 @@ constraints: []
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("cycle"), "expected cycle error, got: {msg}");
+    }
+
+    #[test]
+    fn validate_tree_rejects_dangling_child_reference() {
+        // The `from_yaml` path auto-inserts any referenced-but-undefined child
+        // as a Leaf before `validate_tree` runs, so this guard is only
+        // reachable by constructing the model directly (e.g. a future internal
+        // path that skips the auto-insert pass). Exercise it here so the
+        // safety net stays covered — `root` names a child `ghost` that is not
+        // in the feature map.
+        let mut features = BTreeMap::new();
+        features.insert(
+            "root".to_string(),
+            Feature {
+                name: "root".to_string(),
+                group: GroupType::Mandatory,
+                children: vec!["ghost".to_string()],
+                parent: None,
+                attributes: BTreeMap::new(),
+            },
+        );
+        let model = FeatureModel {
+            root: "root".to_string(),
+            features,
+            constraints: vec![],
+            attribute_schema: BTreeMap::new(),
+            attribute_warnings: vec![],
+        };
+        let err = model
+            .validate_tree()
+            .expect_err("a dangling child reference must be rejected");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("unknown child") && msg.contains("ghost"),
+            "expected unknown-child error, got: {msg}"
+        );
     }
 
     #[test]
