@@ -8153,3 +8153,151 @@ fn next_id_skips_ids_burned_in_git_history() {
         "tree-only id must be below the burned id; got {bare}"
     );
 }
+
+// ── REQ-261: feature-model attribute_warnings surfaced by validate ──────────
+// rivet: verifies REQ-261
+
+/// Scaffold a project whose feature-model declares an `attribute-schema:` and
+/// a per-feature `attributes:` map carrying ONE unknown key (`asil-numric`, a
+/// typo of `asil-numeric`). That unknown key bypasses the type/range audit and
+/// populates `FeatureModel::attribute_warnings`. Returns the project dir.
+fn write_attribute_warning_project(unknown_key: bool) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+
+    // `compliance` is declared + valid; the typo'd `asil-numric` is only
+    // present in the unknown-key variant of the fixture.
+    let unit_attrs = if unknown_key {
+        "    attributes:\n      compliance: unece-r157\n      asil-numric: 3\n"
+    } else {
+        "    attributes:\n      compliance: unece-r157\n"
+    };
+    let model = format!(
+        "kind: feature-model\nroot: app\nattribute-schema:\n  \
+         compliance:\n    type: enum\n    values: [unece-r157]\nfeatures:\n  \
+         app:\n    group: mandatory\n    children: [unit]\n  \
+         unit:\n    group: leaf\n{unit_attrs}"
+    );
+    std::fs::write(dir.join("artifacts/feature-model.yaml"), model).unwrap();
+    // Empty bindings keep the model+binding path clean of unknown-feature /
+    // dangling-artifact errors, isolating the attribute-warning behaviour.
+    std::fs::write(dir.join("artifacts/bindings.yaml"), "bindings: {}\n").unwrap();
+    tmp
+}
+
+/// (a) A model with an unknown attribute key surfaces a `warning:`-prefixed
+/// line on stderr through `validate --model … --binding …`, and still exits 0
+/// (the load succeeded; the warning is advisory without `--strict-variants`).
+#[test]
+fn validate_model_binding_surfaces_attribute_warning_on_stderr() {
+    let tmp = write_attribute_warning_project(true);
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "validate",
+            "--model",
+            dir.join("artifacts/feature-model.yaml").to_str().unwrap(),
+            "--binding",
+            dir.join("artifacts/bindings.yaml").to_str().unwrap(),
+        ])
+        .output()
+        .expect("validate --model --binding");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("warning: feature-model attribute:") && stderr.contains("asil-numric"),
+        "unknown attribute key must be surfaced on stderr; stderr:\n{stderr}"
+    );
+    // Advisory only: exit 0.
+    assert!(
+        out.status.success(),
+        "without --strict-variants the attribute warning must not fail the run; \
+         stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+/// (b) `--strict-variants` escalates the attribute warning to a hard error, so
+/// the run exits non-zero.
+#[test]
+fn validate_strict_variants_escalates_attribute_warning_to_error() {
+    let tmp = write_attribute_warning_project(true);
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "validate",
+            "--model",
+            dir.join("artifacts/feature-model.yaml").to_str().unwrap(),
+            "--binding",
+            dir.join("artifacts/bindings.yaml").to_str().unwrap(),
+            "--strict-variants",
+        ])
+        .output()
+        .expect("validate --strict-variants");
+
+    assert!(
+        !out.status.success(),
+        "--strict-variants must fail the run when the model has attribute warnings; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("asil-numric"),
+        "the failing run must still name the offending key; stderr:\n{stderr}"
+    );
+}
+
+/// (c) Regression: a model whose every attribute key IS declared produces no
+/// attribute warning and passes clean (exit 0, no `feature-model attribute`
+/// line on stderr) even under `--strict-variants`.
+#[test]
+fn validate_known_attributes_only_produces_no_warning() {
+    let tmp = write_attribute_warning_project(false);
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "validate",
+            "--model",
+            dir.join("artifacts/feature-model.yaml").to_str().unwrap(),
+            "--binding",
+            dir.join("artifacts/bindings.yaml").to_str().unwrap(),
+            "--strict-variants",
+        ])
+        .output()
+        .expect("validate known-only --strict-variants");
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("feature-model attribute:"),
+        "a model with only declared attribute keys must emit no attribute warning; \
+         stderr:\n{stderr}"
+    );
+    assert!(
+        out.status.success(),
+        "known-only attributes must pass even under --strict-variants; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}

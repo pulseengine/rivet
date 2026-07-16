@@ -5568,9 +5568,17 @@ fn cmd_validate(
     //     name becomes the active overlay key applied via
     //     `validate_variants` on top of the default-view validation.
     //   nothing : ordinary project validation.
+    // REQ-261 / DD-076: attribute warnings from the loaded feature model
+    // (unknown attribute keys) are always surfaced on stderr by
+    // `load_feature_model_via_project`; when `--strict-variants` is set we
+    // additionally fold them into the run's Error diagnostics so the
+    // validate exit code is non-zero. Captured here from whichever
+    // model-bearing arm loads the model.
+    let mut model_attribute_warnings: Vec<String> = Vec::new();
     let (store, graph, variant_scope_name) = match (model_path, variant_path, binding_path) {
         (Some(mp), Some(vp), Some(bp)) => {
             let fm = load_feature_model_via_project(mp)?;
+            model_attribute_warnings = fm.attribute_warnings.clone();
 
             let variant_yaml = std::fs::read_to_string(vp)
                 .with_context(|| format!("reading variant config {}", vp.display()))?;
@@ -5615,6 +5623,7 @@ fn cmd_validate(
             // without resolving a specific variant. Unknown feature names in
             // the binding file are reported as errors.
             let fm = load_feature_model_via_project(mp)?;
+            model_attribute_warnings = fm.attribute_warnings.clone();
 
             let binding_yaml = std::fs::read_to_string(bp)
                 .with_context(|| format!("reading binding {}", bp.display()))?;
@@ -5784,6 +5793,23 @@ fn cmd_validate(
             strict_variants,
         );
         diagnostics.extend(variant_diags);
+    }
+
+    // REQ-261 / DD-076: `--strict-variants` escalates feature-model attribute
+    // warnings (unknown attribute keys, which silently bypass the
+    // type/range/enum audit) to hard errors. They are always emitted on
+    // stderr by the loader; here we additionally fold them into the Error
+    // diagnostic set so `rivet validate --model … --binding … --strict-variants`
+    // exits non-zero.
+    if strict_variants {
+        for w in &model_attribute_warnings {
+            diagnostics.push(validate::Diagnostic::new(
+                Severity::Error,
+                None,
+                "feature-model-attribute",
+                format!("feature-model attribute: {w}"),
+            ));
+        }
     }
 
     // Cited-source validation (Phase 1: kind: file backend).
@@ -14300,8 +14326,19 @@ fn load_feature_model_via_project(
     model_path: &std::path::Path,
 ) -> anyhow::Result<rivet_core::feature_model::FeatureModel> {
     let externals = project_externals_map_for(model_path);
-    rivet_core::feature_model::FeatureModel::load_with_externals(model_path, &externals)
-        .map_err(|e| anyhow::anyhow!("{e}"))
+    let fm = rivet_core::feature_model::FeatureModel::load_with_externals(model_path, &externals)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    // REQ-261 / DD-076: `attribute_warnings` (unknown feature-attribute keys
+    // that thereby bypass the type/range/enum audit) were collected by
+    // `FeatureModel::load` but never surfaced by any CLI path — a typo'd key
+    // like `asil-numric: 3` was silently dropped. Every CLI feature-model
+    // consumer funnels through this loader, so emit them here once, on stderr
+    // (keeping `--format json` on stdout clean). `validate --strict-variants`
+    // additionally escalates them to hard errors at its call site.
+    for w in &fm.attribute_warnings {
+        eprintln!("warning: feature-model attribute: {w}");
+    }
+    Ok(fm)
 }
 
 /// Walk up from `model_path` looking for a `rivet.yaml`; if found, load
