@@ -171,6 +171,31 @@ jobs:
       # above `--fail-on` (default: error).
       - name: rivet validate (fail on errors)
         run: cargo run --release -p rivet-cli -- validate
+      # Gate 1b (REQ-263): the project's own variants + bindings must be sound.
+      # Every artifacts/variants/*.yaml must solve against the feature model
+      # (catches a broken variant like the once-committed full-desktop.yaml,
+      # which selected features absent from the model), and the binding must
+      # reference real features + real artifact IDs with no unknown-attribute
+      # warnings (REQ-258/259/261, --strict-variants). Reuses the binary the
+      # validate step above already built, so no extra compile.
+      - name: rivet variant + binding validation (REQ-263)
+        run: |
+          set -euo pipefail
+          model=artifacts/feature-model.yaml
+          if [ ! -f "$model" ]; then
+            echo "no $model — skipping variant gate"; exit 0
+          fi
+          shopt -s nullglob
+          for v in artifacts/variants/*.yaml artifacts/variants/*.yml; do
+            echo "::group::variant check $v"
+            cargo run --release -q -p rivet-cli -- variant check --model "$model" --variant "$v"
+            echo "::endgroup::"
+          done
+          if [ -f artifacts/bindings.yaml ]; then
+            echo "::group::binding validation (artifact IDs + feature names + attribute keys)"
+            cargo run --release -q -p rivet-cli -- validate --model "$model" --binding artifacts/bindings.yaml --strict-variants
+            echo "::endgroup::"
+          fi
       # Gate 2: no ORPHAN commits and no BROKEN trailer refs introduced by
       # THIS PR. Scoped to the PR's own commits (base..HEAD). NOT `--strict`,
       # which promotes whole-store "artifact has no commit coverage" findings

@@ -7823,7 +7823,7 @@ artifacts:
   - id: REQ-263
     type: requirement
     title: "CI gate: run variant check-all + binding validation so broken variants can't ship"
-    status: proposed
+    status: implemented
     description: "P1 (DD-076). No local or CI gate exercises variant bindings; plain `rivet validate` is binding-unaware; the repo's own artifacts/variants/full-desktop.yaml is committed broken (proof nothing runs it). Add a ci.yml gate that runs `rivet variant check-all` (and, once REQ-258/259 land, the binding-artifact validation) over the project's variants, failing the PR on a nonsensical variant/binding."
     release: v0.28.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}
