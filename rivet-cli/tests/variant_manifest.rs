@@ -210,3 +210,118 @@ bindings:
         "us is not selected; the us-conditional glob must not appear"
     );
 }
+
+/// Write a minimal model + variant + single-source-glob binding into `dir`.
+/// The variant selects `core`, whose binding carries one `source:` glob.
+fn write_min_manifest_fixture(dir: &std::path::Path, glob: &str) {
+    fs::write(
+        dir.join("model.yaml"),
+        "kind: feature-model\nroot: app\nfeatures:\n  app:\n    group: mandatory\n    children: [core]\n  core:\n    group: leaf\nconstraints: []\n",
+    )
+    .unwrap();
+    fs::write(dir.join("variant.yaml"), "name: v\nselects: [core]\n").unwrap();
+    fs::write(
+        dir.join("bindings.yaml"),
+        format!("bindings:\n  core:\n    artifacts: []\n    source:\n      - glob: {glob}\n"),
+    )
+    .unwrap();
+}
+
+fn manifest_args(dir: &std::path::Path, extra: &[&str]) -> Vec<String> {
+    let mut a = vec![
+        "--project".to_string(),
+        dir.to_str().unwrap().to_string(),
+        "variant".to_string(),
+        "manifest".to_string(),
+        "--model".to_string(),
+        dir.join("model.yaml").to_str().unwrap().to_string(),
+        "--variant".to_string(),
+        dir.join("variant.yaml").to_str().unwrap().to_string(),
+        "--binding".to_string(),
+        dir.join("bindings.yaml").to_str().unwrap().to_string(),
+    ];
+    a.extend(extra.iter().map(|s| s.to_string()));
+    a
+}
+
+/// REQ-265c: a source glob whose literal base directory does not exist on
+/// disk is surfaced as a loud stderr warning AND a JSON `source_warnings`
+/// entry — but without `--strict` the command still exits 0.
+#[test]
+fn manifest_warns_on_missing_source_base() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_min_manifest_fixture(tmp.path(), "src/absent/**");
+    // `src/absent` is deliberately NOT created under tmp.
+
+    let output = Command::new(rivet_bin())
+        .args(manifest_args(tmp.path(), &["--format", "json"]))
+        .output()
+        .expect("rivet variant manifest");
+
+    assert!(
+        output.status.success(),
+        "must exit 0 without --strict. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning") && stderr.contains("src/absent"),
+        "expected a loud missing-source warning. stderr: {stderr}"
+    );
+    let v: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    let warns = v["source_warnings"]
+        .as_array()
+        .expect("source_warnings array");
+    assert_eq!(warns.len(), 1, "exactly one missing base. json: {v}");
+    assert_eq!(warns[0]["missing_base"], "src/absent");
+    assert_eq!(warns[0]["feature"], "core");
+}
+
+/// REQ-265c: `--strict` escalates a missing source base to a nonzero exit.
+#[test]
+fn manifest_strict_fails_on_missing_source_base() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_min_manifest_fixture(tmp.path(), "src/absent/**");
+
+    let output = Command::new(rivet_bin())
+        .args(manifest_args(tmp.path(), &["--strict"]))
+        .output()
+        .expect("rivet variant manifest --strict");
+
+    assert!(
+        !output.status.success(),
+        "--strict must exit nonzero when a source base is missing"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--strict") && stderr.contains("missing base"),
+        "expected a strict-mode error. stderr: {stderr}"
+    );
+}
+
+/// REQ-265c guard: a source glob whose base directory DOES exist produces no
+/// warning and an empty `source_warnings` list — verification must not flag
+/// valid sources.
+#[test]
+fn manifest_no_warning_when_source_base_exists() {
+    let tmp = tempfile::tempdir().unwrap();
+    write_min_manifest_fixture(tmp.path(), "src/present/**");
+    fs::create_dir_all(tmp.path().join("src").join("present")).unwrap();
+
+    let output = Command::new(rivet_bin())
+        .args(manifest_args(tmp.path(), &["--strict", "--format", "json"]))
+        .output()
+        .expect("rivet variant manifest");
+
+    assert!(
+        output.status.success(),
+        "a present source base must not warn or fail, even under --strict. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    assert_eq!(
+        v["source_warnings"].as_array().expect("array").len(),
+        0,
+        "no warnings expected for an existing base. json: {v}"
+    );
+}

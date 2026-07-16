@@ -1956,6 +1956,13 @@ enum VariantAction {
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
         format: String,
+
+        /// Escalate a source glob whose base directory does not exist on
+        /// disk from a warning to a nonzero exit (REQ-265c). Off by default
+        /// the manifest still WARNS loudly on missing sources, but only
+        /// `--strict` fails the command — matching `validate --strict-variants`.
+        #[arg(long)]
+        strict: bool,
     },
 
     /// Emit a CI matrix driven by the declared variants in a binding file.
@@ -2662,7 +2669,15 @@ fn run(cli: Cli) -> Result<bool> {
                     variant,
                     binding,
                     format,
-                } => cmd_variant_manifest(model, &rv(variant)?, binding, format),
+                    strict,
+                } => cmd_variant_manifest(
+                    model,
+                    &rv(variant)?,
+                    binding,
+                    format,
+                    &cli.project,
+                    *strict,
+                ),
                 VariantAction::Matrix {
                     model,
                     binding,
@@ -15027,6 +15042,62 @@ fn cmd_variant_explain(
     Ok(true)
 }
 
+/// A source glob from a variant's binding manifest whose literal base
+/// directory does not exist on disk under the project root (REQ-265c).
+struct MissingSourceBase {
+    feature: String,
+    glob: String,
+    base: std::path::PathBuf,
+}
+
+/// The leading run of a glob's path components that contain no glob
+/// metacharacter (`*`, `?`, `[`, `{`) — the literal directory prefix a
+/// pattern like `src/auth/**/*.rs` is rooted at (`src/auth`). A pattern with
+/// no metacharacters returns the whole path (a literal file/dir); a pattern
+/// that starts with a wildcard returns an empty path (anchored at the root).
+fn glob_literal_base(glob: &std::path::Path) -> std::path::PathBuf {
+    let mut base = std::path::PathBuf::new();
+    for comp in glob.components() {
+        let s = comp.as_os_str().to_string_lossy();
+        if s.contains(['*', '?', '[', '{']) {
+            break;
+        }
+        base.push(comp);
+    }
+    base
+}
+
+/// Return every source glob in a resolved manifest whose literal base
+/// directory is absent from disk under `project_root`. A binding source
+/// manifest that points at nonexistent directories is emitted `exit 0`
+/// today (REQ-265c); surfacing these lets the caller warn — or, under
+/// `--strict`, fail — instead of trusting a manifest whose sources don't
+/// exist.
+fn missing_source_bases(
+    manifest: &std::collections::BTreeMap<String, Vec<std::path::PathBuf>>,
+    project_root: &std::path::Path,
+) -> Vec<MissingSourceBase> {
+    let mut missing = Vec::new();
+    for (feature, globs) in manifest {
+        for glob in globs {
+            let base = glob_literal_base(glob);
+            // An empty base means the pattern begins with a wildcard, so it
+            // is anchored at the project root itself — nothing to verify.
+            if base.as_os_str().is_empty() {
+                continue;
+            }
+            if !project_root.join(&base).exists() {
+                missing.push(MissingSourceBase {
+                    feature: feature.clone(),
+                    glob: glob.display().to_string(),
+                    base,
+                });
+            }
+        }
+    }
+    missing
+}
+
 /// `rivet variant manifest` — print the per-feature source manifest for
 /// a resolved variant. The manifest is the audit-facing output
 /// described in `docs/pure-variants-comparison.md` Gap 5.
@@ -15035,6 +15106,8 @@ fn cmd_variant_manifest(
     variant_path: &std::path::Path,
     binding_path: &std::path::Path,
     format: &str,
+    project_root: &std::path::Path,
+    strict: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
 
@@ -15060,6 +15133,11 @@ fn cmd_variant_manifest(
             )
         })?;
 
+    // REQ-265c: verify every source glob's base directory exists under the
+    // project root, so a manifest pointing at nonexistent sources is surfaced
+    // rather than emitted unverified.
+    let missing = missing_source_bases(&resolved.source_manifest, project_root);
+
     if format == "json" {
         let manifest_json: serde_json::Map<String, serde_json::Value> = resolved
             .source_manifest
@@ -15073,12 +15151,23 @@ fn cmd_variant_manifest(
             })
             .collect();
         let total_globs: usize = resolved.source_manifest.values().map(|v| v.len()).sum();
+        let warnings_json: Vec<serde_json::Value> = missing
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "feature": m.feature,
+                    "glob": m.glob,
+                    "missing_base": m.base.display().to_string(),
+                })
+            })
+            .collect();
         let output = serde_json::json!({
             "variant": resolved.name,
             "feature_count": resolved.effective_features.len(),
             "manifest_entry_count": resolved.source_manifest.len(),
             "manifest_glob_count": total_globs,
             "manifest": manifest_json,
+            "source_warnings": warnings_json,
         });
         println!("{}", serde_json::to_string_pretty(&output)?);
     } else {
@@ -15093,6 +15182,27 @@ fn cmd_variant_manifest(
                 }
             }
         }
+    }
+
+    // Surface missing-source warnings loudly on stderr regardless of format,
+    // so the manifest can no longer report globs whose base directory is
+    // absent without saying so (REQ-265c).
+    for m in &missing {
+        eprintln!(
+            "warning: source glob `{}` (feature `{}`): base directory `{}` does not exist under {}",
+            m.glob,
+            m.feature,
+            m.base.display(),
+            project_root.display()
+        );
+    }
+
+    if strict && !missing.is_empty() {
+        eprintln!(
+            "error: {} source glob(s) reference a missing base directory (--strict)",
+            missing.len()
+        );
+        return Ok(false);
     }
 
     Ok(true)
