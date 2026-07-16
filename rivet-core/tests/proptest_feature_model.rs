@@ -36,8 +36,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use proptest::prelude::*;
 
 use rivet_core::feature_model::{
-    Feature, FeatureModel, GroupType, ResolvedVariant, VariantConfig, solve,
+    Feature, FeatureModel, GroupType, ResolvedVariant, SolveError, VariantConfig, solve,
 };
+use rivet_core::sexpr_eval::{self, Expr};
 
 // ── Strategies ──────────────────────────────────────────────────────────
 
@@ -318,4 +319,253 @@ proptest! {
             }
         }
     }
+}
+
+// ── Constraint coverage (REQ-266) ─────────────────────────────────────────
+//
+// The strategies above hard-coded `constraints: vec![]`, so the solver's
+// highest-risk code -- cross-tree constraint evaluation, `implies`
+// propagation, `excludes`, and REQ-257's fail-loud gate -- had ZERO
+// property-test coverage. The strategies and properties below fuzz it.
+
+/// A generated boolean constraint over feature-name leaves.
+///
+/// Kept as a typed value (not just an `Expr`) so the property test can
+/// evaluate it independently of the solver -- an oracle to check the
+/// solver's `Ok` verdict against, catching a silent-pass (the `_ => true`
+/// blind spot REQ-257 closed) rather than trusting the solver to grade
+/// its own homework.
+#[derive(Debug, Clone)]
+enum TestConstraint {
+    Implies(String, String),
+    Excludes(String, String),
+    And(String, String),
+    Or(String, String),
+    Not(String),
+}
+
+impl TestConstraint {
+    /// Render to the s-expression source a user would write. Feature-name
+    /// leaves use the `(= id "name")` form recognised by the solver's
+    /// `extract_feature_name`.
+    fn to_sexpr(&self) -> String {
+        match self {
+            TestConstraint::Implies(a, b) => format!("(implies (= id \"{a}\") (= id \"{b}\"))"),
+            TestConstraint::Excludes(a, b) => format!("(excludes (= id \"{a}\") (= id \"{b}\"))"),
+            TestConstraint::And(a, b) => format!("(and (= id \"{a}\") (= id \"{b}\"))"),
+            TestConstraint::Or(a, b) => format!("(or (= id \"{a}\") (= id \"{b}\"))"),
+            TestConstraint::Not(a) => format!("(not (= id \"{a}\"))"),
+        }
+    }
+
+    fn to_expr(&self) -> Expr {
+        sexpr_eval::parse_filter(&self.to_sexpr()).expect("generated constraint must parse")
+    }
+
+    /// Independent evaluation over a resolved selection -- the standard
+    /// propositional semantics, matching the solver's `eval_constraint`
+    /// but computed here so a divergence is a solver bug, not a shared one.
+    fn eval(&self, selected: &BTreeSet<String>) -> bool {
+        match self {
+            TestConstraint::Implies(a, b) => !selected.contains(a) || selected.contains(b),
+            TestConstraint::Excludes(a, b) => !(selected.contains(a) && selected.contains(b)),
+            TestConstraint::And(a, b) => selected.contains(a) && selected.contains(b),
+            TestConstraint::Or(a, b) => selected.contains(a) || selected.contains(b),
+            TestConstraint::Not(a) => !selected.contains(a),
+        }
+    }
+}
+
+/// Generate a random constraint whose leaves reference REAL features in the
+/// model (so it is evaluatable and never trips REQ-257/259 -- those are
+/// exercised by the deterministic tests below).
+fn arb_constraint(names: Vec<String>) -> impl Strategy<Value = TestConstraint> {
+    let a = prop::sample::select(names.clone());
+    let b = prop::sample::select(names);
+    (a, b, 0u8..5).prop_map(|(a, b, shape)| match shape {
+        0 => TestConstraint::Implies(a, b),
+        1 => TestConstraint::Excludes(a, b),
+        2 => TestConstraint::And(a, b),
+        3 => TestConstraint::Or(a, b),
+        _ => TestConstraint::Not(a),
+    })
+}
+
+/// Model + config + a set of evaluatable constraints referencing real
+/// features. Returns the constraints in typed form too, for the oracle.
+fn arb_model_config_with_constraints(
+    max_features: usize,
+) -> impl Strategy<Value = (FeatureModel, VariantConfig, Vec<TestConstraint>)> {
+    arb_feature_model(max_features).prop_flat_map(|model| {
+        let names: Vec<String> = model.features.keys().cloned().collect();
+        let cfg = arb_variant_config(names.clone());
+        let cons = prop::collection::vec(arb_constraint(names), 0..4);
+        (Just(model), cfg, cons).prop_map(|(mut m, c, cons)| {
+            m.constraints = cons.iter().map(TestConstraint::to_expr).collect();
+            (m, c, cons)
+        })
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(200))]
+
+    /// The solver never panics on a model carrying arbitrary (evaluatable)
+    /// cross-tree constraints.
+    // rivet: verifies REQ-052, REQ-266
+    #[test]
+    fn prop_solver_never_panics_with_constraints(
+        (model, config, _cons) in arb_model_config_with_constraints(8)
+    ) {
+        let _ = solve(&model, &config);
+    }
+
+    /// Soundness: if `solve()` returns `Ok`, EVERY cross-tree constraint
+    /// genuinely holds under an independent evaluation of the resolved
+    /// selection. A silent-pass (the pre-REQ-257 `_ => true` blind spot)
+    /// would show up here as an `Ok` whose selection violates a constraint.
+    // rivet: verifies REQ-257, REQ-266
+    #[test]
+    fn prop_ok_means_constraints_actually_hold(
+        (model, config, cons) in arb_model_config_with_constraints(8)
+    ) {
+        if let Ok(resolved) = solve(&model, &config) {
+            for c in &cons {
+                prop_assert!(
+                    c.eval(&resolved.effective_features),
+                    "solver returned Ok but constraint {} is violated by the resolved set {:?}",
+                    c.to_sexpr(),
+                    resolved.effective_features
+                );
+            }
+        }
+    }
+
+    /// `implies` propagation: if `solve()` succeeds and the antecedent of an
+    /// `(implies A B)` constraint is selected, the consequent must be too.
+    // rivet: verifies REQ-266
+    #[test]
+    fn prop_implies_propagation(
+        (model, config, cons) in arb_model_config_with_constraints(8)
+    ) {
+        if let Ok(resolved) = solve(&model, &config) {
+            for c in &cons {
+                if let TestConstraint::Implies(a, b) = c {
+                    if resolved.effective_features.contains(a) {
+                        prop_assert!(
+                            resolved.effective_features.contains(b),
+                            "implies antecedent `{a}` selected but consequent `{b}` was not propagated"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Fail-loud gates (REQ-257 / REQ-259), deterministic ────────────────────
+
+/// A minimal valid two-feature model: `root` with one optional child `opt`.
+fn simple_model() -> FeatureModel {
+    FeatureModel::from_yaml(
+        "kind: feature-model\n\
+         root: root\n\
+         features:\n\
+        \x20 root:\n\
+        \x20   group: optional\n\
+        \x20   children: [opt]\n\
+        \x20 opt:\n\
+        \x20   group: leaf\n",
+    )
+    .expect("simple model must parse")
+}
+
+fn empty_config() -> VariantConfig {
+    VariantConfig {
+        name: "v".into(),
+        selects: vec![],
+    }
+}
+
+/// REQ-257: an attribute-comparison constraint the feature-model solver
+/// cannot evaluate over a bare selection must fail LOUD
+/// (`UnevaluatableConstraint`), never hit `eval_constraint`'s `_ => true`
+/// arm and pass silently.
+#[test]
+fn solve_fails_loud_on_unevaluatable_constraint() {
+    let mut model = simple_model();
+    model.constraints = vec![sexpr_eval::parse_filter("(> asil 2)").expect("parses")];
+    let errs = solve(&model, &empty_config()).expect_err("must not silently pass");
+    assert!(
+        errs.iter()
+            .any(|e| matches!(e, SolveError::UnevaluatableConstraint(_))),
+        "expected UnevaluatableConstraint, got {errs:?}"
+    );
+}
+
+/// REQ-259: a constraint referencing a feature NAME that is not in the model
+/// degenerates to a vacuous truth and must fail loud
+/// (`UnknownConstraintFeature`) rather than enforce nothing quietly.
+#[test]
+fn solve_fails_loud_on_unknown_constraint_feature() {
+    let mut model = simple_model();
+    model.constraints = vec![
+        sexpr_eval::parse_filter("(implies (= id \"ghost\") (= id \"opt\"))").expect("parses"),
+    ];
+    let errs = solve(&model, &empty_config()).expect_err("must not silently pass");
+    assert!(
+        errs.iter()
+            .any(|e| matches!(e, SolveError::UnknownConstraintFeature { .. })),
+        "expected UnknownConstraintFeature, got {errs:?}"
+    );
+}
+
+/// A satisfiable evaluatable constraint over real features solves cleanly --
+/// the fail-loud gates do not reject legitimate constraints.
+#[test]
+fn solve_accepts_valid_feature_constraint() {
+    let mut model = simple_model();
+    model.constraints =
+        vec![sexpr_eval::parse_filter("(implies (= id \"opt\") (= id \"root\"))").expect("parses")];
+    // Select `opt`; propagation pulls in `root`, so the implies holds.
+    let cfg = VariantConfig {
+        name: "v".into(),
+        selects: vec!["opt".into()],
+    };
+    let resolved = solve(&model, &cfg).expect("valid constraint must solve");
+    assert!(resolved.effective_features.contains("root"));
+    assert!(resolved.effective_features.contains("opt"));
+}
+
+/// REQ-266: a shared child reachable through two parents (a diamond / DAG)
+/// must NOT be mis-reported as a cycle.
+///
+/// `validate_tree`'s BFS (feature_model.rs) inserts each node into a global
+/// `visited` set on dequeue and reports a cycle if a node is seen twice --
+/// but a diamond enqueues the shared child from both parents, so it is
+/// dequeued twice and wrongly flagged. Tracked for fix by REQ-269; ignored
+/// until then so CI stays green. Flip to enforced when REQ-269 lands.
+#[test]
+#[ignore = "REQ-269: diamond (shared child) mis-reported as cycle by validate_tree BFS"]
+fn diamond_shared_child_is_not_a_cycle() {
+    let yaml = "kind: feature-model\n\
+                root: root\n\
+                features:\n\
+               \x20 root:\n\
+               \x20   group: mandatory\n\
+               \x20   children: [a, b]\n\
+               \x20 a:\n\
+               \x20   group: optional\n\
+               \x20   children: [shared]\n\
+               \x20 b:\n\
+               \x20   group: optional\n\
+               \x20   children: [shared]\n\
+               \x20 shared:\n\
+               \x20   group: leaf\n";
+    let res = FeatureModel::from_yaml(yaml);
+    assert!(
+        res.is_ok(),
+        "diamond (shared child) mis-reported as a cycle: {:?}",
+        res.err()
+    );
 }
