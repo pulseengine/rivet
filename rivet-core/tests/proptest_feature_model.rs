@@ -537,16 +537,15 @@ fn solve_accepts_valid_feature_constraint() {
     assert!(resolved.effective_features.contains("opt"));
 }
 
-/// REQ-266: a shared child reachable through two parents (a diamond / DAG)
+/// REQ-269: a shared child reachable through two parents (a diamond / DAG)
 /// must NOT be mis-reported as a cycle.
 ///
-/// `validate_tree`'s BFS (feature_model.rs) inserts each node into a global
-/// `visited` set on dequeue and reports a cycle if a node is seen twice --
-/// but a diamond enqueues the shared child from both parents, so it is
-/// dequeued twice and wrongly flagged. Tracked for fix by REQ-269; ignored
-/// until then so CI stays green. Flip to enforced when REQ-269 lands.
+/// `validate_tree` now uses a DFS that tracks the current path (recursion
+/// stack) rather than a single global `visited` set, so a shared child
+/// reached by two disjoint paths is a legal DAG edge, not a cycle. A genuine
+/// cycle (a feature that is its own ancestor) is still rejected -- see
+/// `genuine_cycle_is_rejected`.
 #[test]
-#[ignore = "REQ-269: diamond (shared child) mis-reported as cycle by validate_tree BFS"]
 fn diamond_shared_child_is_not_a_cycle() {
     let yaml = "kind: feature-model\n\
                 root: root\n\
@@ -567,5 +566,27 @@ fn diamond_shared_child_is_not_a_cycle() {
         res.is_ok(),
         "diamond (shared child) mis-reported as a cycle: {:?}",
         res.err()
+    );
+}
+
+/// REQ-269 guard: a genuine cycle (a feature that is its own ancestor) must
+/// STILL be rejected -- the diamond fix must not make cycle detection
+/// permissive. `root -> mid -> root` is a real back edge.
+#[test]
+fn genuine_cycle_is_rejected() {
+    let yaml = "kind: feature-model\n\
+                root: root\n\
+                features:\n\
+               \x20 root:\n\
+               \x20   group: mandatory\n\
+               \x20   children: [mid]\n\
+               \x20 mid:\n\
+               \x20   group: mandatory\n\
+               \x20   children: [root]\n";
+    let res = FeatureModel::from_yaml(yaml);
+    let err = res.expect_err("a self-ancestor cycle must be rejected");
+    assert!(
+        err.to_string().contains("cycle"),
+        "expected a cycle error, got: {err}"
     );
 }
