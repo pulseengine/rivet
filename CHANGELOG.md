@@ -5,6 +5,34 @@
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-07-16
+
+### Fixed (variant hardening P1 — DD-076: broken config must fail loud, not present as absent)
+- **`serve` variant discovery surfaces parse errors** (REQ-260) — a malformed,
+  cyclic, or attribute-invalid feature model (or binding) used to be `.ok()`-
+  swallowed into `model: None`, so `resolve()` reported "no feature model
+  configured for this project" — actively misleading, since the model exists but
+  is broken. The dashboard now renders a red "Feature model failed to load" banner
+  with the parse diagnostic instead of presenting a broken config as an absent one.
+- **Unknown feature-attribute keys reach `validate`** (REQ-261) —
+  `FeatureModel.attribute_warnings` (a misspelled `attributes:` key that bypasses
+  type/range checking) was populated but no CLI/MCP caller read it. `rivet validate
+  --model --binding` now emits these on stderr, and `--strict-variants` escalates
+  them to a nonzero exit — bad input no longer produces a green load.
+- **`serve` accepts the wrapped variant shape** (REQ-262) — variant discovery
+  parsed only the flat `VariantConfig` shape, so an init-scaffolded `variant:`-
+  wrapped file (the shape `rivet variant init` writes, #514) was silently invisible
+  in the dashboard. Discovery now uses `VariantConfig::from_yaml_str` + `load`, so
+  wrapped variants and composed feature-model-binding files are both honored.
+
+### Added
+- **CI variant + binding gate** (REQ-263) — the Traceability job now runs
+  `rivet variant check` over every `artifacts/variants/*.yaml` and
+  `rivet validate --model --binding --strict-variants` on the project's bindings,
+  failing the PR on a nonsensical variant or a binding that maps a feature to a
+  nonexistent artifact ID. No broken variant can ship again (the repo's own
+  `full-desktop.yaml` was committed broken precisely because nothing ran it).
+
 ## [0.27.0] - 2026-07-15
 
 ### Added
