@@ -1728,3 +1728,75 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-15T00:00:00Z
+
+  - id: DD-077
+    type: design-decision
+    title: "Variant source-linkage completeness (REQ-265) — slice into 4 boundary fixes, reuse existing scoping"
+    status: proposed
+    description: >
+      REQ-265 found that variant source-linkage is correct within one repo but
+      degrades at every boundary beyond it. Rather than one cross-cutting change,
+      slice it into four independently-shippable fixes, each grounded in an
+      existing mechanism (no new subsystem, no new directive) — consistent with
+      the reuse-existing-patterns doctrine. Governing decision: an external
+      artifact has NO binding to this project's feature model, so it cannot be
+      variant-scoped; under an active variant it is excluded, not leaked in
+      unscoped. Source links must be honest (never a dead link), and a variant's
+      resolved source manifest must be populated on the paths that claim it.
+      Slices:
+      (a) external source links honest — `resolve_source_file` (serve/api.rs)
+      falls back to the raw absolute path for an external artifact (source_file
+      outside the project root), which the `/source` guard (serve/render/source.rs)
+      then rejects: a dead link. Fix: return None for out-of-project paths so the
+      UI shows no link rather than a broken one. Serving external source from a
+      configured external root is a larger, security-sensitive follow-on
+      (relaxing the path-traversal guard) and is intentionally deferred.
+      (b) variant scope leak — the `/artifacts` external loop (serve/api.rs) adds
+      externals without consulting `variant_scope`, so a variant-scoped view
+      still shows unscoped externals. Fix: skip externals when a variant is
+      active, mirroring the existing stats/diagnostics exclusion.
+      (c) binding source globs reach serve — serve variant discovery and
+      `variant check` call plain `solve()`, leaving `ResolvedVariant.source_manifest`
+      empty; only `variant solve` uses `solve_with_bindings`. Fix: call
+      `solve_with_bindings` on the discovery path when a binding exists, and
+      verify the globbed paths against disk (loud on missing dirs, per the
+      DD-076 fail-loud doctrine).
+      (d) `export --variant` — reuse the `resolve_variant_arg` + `fields_for_variant`
+      overlay that `list --variant` / `query --variant` already use, so a
+      variant-scoped compliance export needs no hand-translation of IDs into an
+      s-expr `--filter`.
+      Slices (a) and (b) ship first (small, serve-side, unambiguous); (c) and (d)
+      follow. All under release v0.29.0.
+    links:
+      - type: satisfies
+        target: REQ-265
+    fields:
+      baseline: v0.29.0-track
+      source-ref: >
+        resolve_source_file serve/api.rs (absolute-path fallback for externals);
+        /source guard serve/render/source.rs (rejects out-of-project paths);
+        /artifacts external loop serve/api.rs:538-563 (no variant_scope consult);
+        ResolvedVariant.source_manifest + solve/solve_with_bindings
+        feature_model.rs; serve discovery + variant check use plain solve();
+        export command main.rs has --filter but no --variant; resolve_variant_arg
+        main.rs:6453 + fields_for_variant model.rs:445 (list/query reuse pattern).
+      rationale: >
+        Each boundary failure is a place where the variant view is dishonest — a
+        dead source link, an unscoped external leaking into a scoped view, an
+        empty source manifest on a path that claims one. Slicing keeps every fix
+        shippable and verifiable on its own, and grounding each in an existing
+        helper (variant_scope exclusion, solve_with_bindings, resolve_variant_arg
+        overlay) avoids a new subsystem for a completeness fix.
+      alternatives: >
+        (1) One cross-cutting change — rejected: harder to verify, bigger blast
+        radius on the composition/serve seam. (2) For (a), serve external source
+        by relaxing the /source path guard — deferred: security-sensitive
+        (path traversal), and honest-no-link is the correct minimal fix now.
+        (3) For (d), filter the artifact SET by variant instead of overlaying
+        fields — rejected for the first slice: `list`/`query --variant` overlay
+        fields (filtering is composed via `--filter`), and export should match
+        that established semantics.
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-16T00:00:00Z

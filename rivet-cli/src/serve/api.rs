@@ -385,10 +385,16 @@ fn resolve_source_file(
     artifact: &rivet_core::model::Artifact,
     project_path: &Path,
 ) -> Option<String> {
+    // Only emit a source_file the `/source` route can actually serve — a path
+    // INSIDE the project root. An external artifact's `source_file` is an
+    // absolute path outside the project; the old `.or(Some(p.as_path()))`
+    // fallback emitted that raw path, producing a link the `/source`
+    // path-traversal guard then rejects (a dead link). Return None for
+    // out-of-project paths so the UI renders no link rather than a broken one
+    // (REQ-265a).
     artifact.source_file.as_ref().and_then(|p| {
         p.strip_prefix(project_path)
             .ok()
-            .or(Some(p.as_path()))
             .map(|rel| rel.display().to_string())
     })
 }
@@ -534,8 +540,12 @@ pub(crate) async fn artifacts(
         }
     }
 
-    // External artifacts (only when explicitly requested)
-    if include_externals {
+    // External artifacts (only when explicitly requested). An external
+    // artifact has no binding to this project's feature model, so it cannot be
+    // variant-scoped; under an active variant, exclude externals rather than
+    // leak them into a scoped view unscoped (REQ-265b) — mirrors the
+    // stats/diagnostics external exclusion under scope.
+    if include_externals && variant_scope.is_none() {
         for ext in &guard.externals {
             let ext_origin = format!("external:{}", ext.prefix);
             let origin_matches = params
@@ -865,5 +875,51 @@ pub(crate) async fn sql(
             Json(serde_json::json!({ "error": e })),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn artifact_with_source(source: Option<PathBuf>) -> rivet_core::model::Artifact {
+        rivet_core::model::Artifact {
+            id: "REQ-001".into(),
+            artifact_type: "requirement".into(),
+            source_file: source,
+            ..Default::default()
+        }
+    }
+
+    /// REQ-265a: an in-project source path resolves to a project-relative
+    /// string the `/source` route can serve.
+    #[test]
+    fn resolve_source_file_in_project_is_relative() {
+        let proj = PathBuf::from("/home/x/proj");
+        let art = artifact_with_source(Some(proj.join("artifacts").join("reqs.yaml")));
+        let expected = PathBuf::from("artifacts").join("reqs.yaml");
+        assert_eq!(
+            resolve_source_file(&art, &proj),
+            Some(expected.display().to_string())
+        );
+    }
+
+    /// REQ-265a: an external artifact's source path (outside the project root)
+    /// resolves to None — no dead link the `/source` guard would reject —
+    /// rather than the raw absolute path the old fallback emitted.
+    #[test]
+    fn resolve_source_file_external_is_none() {
+        let proj = PathBuf::from("/home/x/proj");
+        let art = artifact_with_source(Some(PathBuf::from("/other/repo/components.yaml")));
+        assert_eq!(resolve_source_file(&art, &proj), None);
+    }
+
+    /// An artifact with no source_file resolves to None.
+    #[test]
+    fn resolve_source_file_absent_is_none() {
+        let proj = PathBuf::from("/home/x/proj");
+        let art = artifact_with_source(None);
+        assert_eq!(resolve_source_file(&art, &proj), None);
     }
 }
