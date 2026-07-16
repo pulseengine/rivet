@@ -541,6 +541,63 @@ fn api_stats_response_shape() {
     child.wait().ok();
 }
 
+/// REQ-265b: external artifacts have no binding to this project's feature
+/// model, so under an active `--variant` scope they must be excluded, not
+/// leaked in unscoped. Baseline: `origin=all` (no variant) DOES include the
+/// `spar:` externals; adding `variant=minimal-ci` must drop every
+/// `external:`-origin row.
+///
+/// rivet: verifies REQ-265
+#[test]
+fn api_artifacts_external_excluded_under_variant_scope() {
+    let (mut child, port) = start_server();
+
+    // Baseline — externals present when a variant is NOT active.
+    let (status, body, _h) = fetch(port, "/api/v1/artifacts?limit=1000&origin=all", false);
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let externals_unscoped = json["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| {
+            a["origin"]
+                .as_str()
+                .is_some_and(|o| o.starts_with("external:"))
+        })
+        .count();
+    assert!(
+        externals_unscoped > 0,
+        "premise: origin=all must include external artifacts (spar fixture). body: {body}"
+    );
+
+    // Scoped — the same request under an active variant must exclude externals.
+    let (status_v, body_v, _h) = fetch(
+        port,
+        "/api/v1/artifacts?limit=1000&origin=all&variant=minimal-ci",
+        false,
+    );
+    assert_eq!(status_v, 200);
+    let json_v: serde_json::Value = serde_json::from_str(&body_v).unwrap();
+    let externals_scoped = json_v["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| {
+            a["origin"]
+                .as_str()
+                .is_some_and(|o| o.starts_with("external:"))
+        })
+        .count();
+    assert_eq!(
+        externals_scoped, 0,
+        "externals must be excluded under an active variant scope (REQ-265b). body: {body_v}"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 #[test]
 fn api_artifacts_unfiltered() {
     let (mut child, port) = start_server();
