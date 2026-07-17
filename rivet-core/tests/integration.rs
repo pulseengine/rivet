@@ -1359,7 +1359,9 @@ fn test_schema_metadata_loading() {
     let dev = Schema::load_file(&dev_path).expect("load dev schema");
     assert_eq!(dev.schema.name, "dev");
     // 0.2.0: added the requirement-verification rule (#555 / REQ-222).
-    assert_eq!(dev.schema.version, "0.2.0");
+    // 0.3.0: added the `verification` type (verifies -> requirement) so a
+    // requirement can mechanically reach verified (#721 / REQ-270).
+    assert_eq!(dev.schema.version, "0.3.0");
     assert!(
         dev.schema.description.is_some(),
         "dev schema should have a description"

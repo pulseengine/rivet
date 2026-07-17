@@ -7883,3 +7883,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-16T00:00:00Z
+
+  - id: REQ-270
+    type: requirement
+    title: "dev schema ships a native verification type so a requirement can mechanically reach verified (#721)"
+    status: implemented
+    description: "Maintainer-reported (#721, kiln). The dev schema declares rule `requirement-verification` (SR-46: every requirement should have an incoming `verifies` backlink) but shipped NO artifact type that can SOURCE a `verifies` link to a `requirement` — link emission is target-type authorized (validate.rs:911-918: a link is only allowed if the source type's link-field lists the target's type), and no type in common/dev declared `verifies -> requirement`. So `type: requirement` (dev) was structurally unable to reach `verified` on any project; the ASPICE bridge only reaches `sw-req`, and retyping requirement->sw-req cascades into `swe1-derives-from-sys` (needs a system layer). Fix (chosen over the aspice-bridge options as the root-cause fix): add a dev-native `verification` type with a required `verifies -> [requirement]` link-field, so a lightweight dev-only project can close its own V. Bumps dev@0.2.0 -> 0.3.0. Schema-only change; wasm seam untouched."
+    release: v0.29.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-17T00:00:00Z
