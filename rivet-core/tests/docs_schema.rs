@@ -54,6 +54,32 @@ fn embedded_schema_dev_loads() {
     );
 }
 
+/// #721 / REQ-270: the dev schema ships a `verification` type that can source
+/// a `verifies` link to a `requirement`, so a lightweight dev-only project can
+/// mechanically satisfy the `requirement-verification` rule (SR-46) — closing
+/// the right side of the V — without adopting a heavier process schema.
+// rivet: verifies REQ-270
+#[test]
+fn dev_verification_type_can_verify_requirement() {
+    let schema_file =
+        rivet_core::embedded::load_embedded_schema("dev").expect("dev schema must load");
+    let verification = schema_file
+        .artifact_types
+        .iter()
+        .find(|t| t.name == "verification")
+        .expect("dev schema must define a `verification` type (#721)");
+    let verifies = verification
+        .link_fields
+        .iter()
+        .find(|lf| lf.link_type == "verifies")
+        .expect("`verification` must declare a `verifies` link-field");
+    assert!(
+        verifies.target_types.iter().any(|t| t == "requirement"),
+        "`verification.verifies` must target `requirement` (got {:?})",
+        verifies.target_types
+    );
+}
+
 /// All known embedded schemas load successfully.
 // rivet: verifies REQ-010
 #[test]

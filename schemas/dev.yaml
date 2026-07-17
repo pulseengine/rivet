@@ -5,7 +5,7 @@
 
 schema:
   name: dev
-  version: "0.2.0"
+  version: "0.3.0"
   extends: [common]
   description: >
     Software development tracking types. Used to manage requirements,
@@ -146,6 +146,58 @@ artifact-types:
       - name: implements
         link-type: implements
         cardinality: zero-or-many
+
+  - name: verification
+    description: >
+      A test or verification activity that checks a requirement — the right
+      side of the dev V-model. A `verification` with a `verifies` link to a
+      requirement is what satisfies the `requirement-verification` rule
+      (SR-46), so a lightweight dev-only project can mechanically close its V
+      and reach `verified` WITHOUT adopting a heavier process schema (ASPICE,
+      etc.). Before this type, `dev` declared the rule but shipped no type
+      that could source a `verifies` link to a `requirement`, making the rule
+      structurally unsatisfiable (issue #721).
+    fields:
+      - name: method
+        type: string
+        required: false
+        allowed-values:
+          - test
+          - automated-test
+          - manual-test
+          - review
+          - analysis
+          - inspection
+          - demonstration
+        description: How the verification is performed.
+      - name: baseline
+        type: string
+        required: false
+        description: Version baseline this verification belongs to
+      - name: cited-source
+        type: cited-source
+        required: false
+        description: >
+          Typed cited-source reference to the verification evidence (e.g. the
+          test file that runs it). See `rivet docs schema-cited-sources`.
+    link-fields:
+      - name: verifies
+        link-type: verifies
+        target-types: [requirement]
+        required: true
+        cardinality: one-or-many
+    common-mistakes:
+      - problem: "Verification not linked to any requirement — it verifies nothing"
+        fix-command: "rivet link VER-XXX verifies REQ-XXX"
+    example: |
+      - id: VER-001
+        type: verification
+        title: Schema validation integration test
+        status: verified
+        method: automated-test
+        links:
+          - type: verifies
+            target: REQ-001
 
 link-types:
   - name: depends-on
