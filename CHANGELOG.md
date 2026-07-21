@@ -5,6 +5,46 @@
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-07-21
+
+### Added
+- **Dev-native `verification` type** (REQ-270, #721) — the `dev` schema declared
+  the `requirement-verification` rule but shipped no type that could
+  source a `verifies` link to a `requirement`, so `type: requirement` could never
+  mechanically reach `verified` on any dev-only project. Adds a `verification`
+  type with a required `verifies → [requirement]` link-field, so a lightweight
+  project closes the right side of its own V without adopting ASPICE. Bumps
+  `dev@0.2.0 → 0.3.0`.
+- **`export --variant <NAME>`** (REQ-265d) — a variant-scoped compliance export.
+  The variant's per-variant field overlay is baked into each artifact's top-level
+  fields before export, across all formats (reqif, generic-yaml, gherkin, zola,
+  and the html/single-page audit bundle) — no hand-translation of IDs into an
+  s-expr `--filter`. Mirrors `list --variant` / `query --variant`.
+- **`variant manifest` disk-verifies source globs** (REQ-265c) — every binding
+  `source:` glob's base directory is checked against disk; a missing base warns
+  loudly (stderr + JSON `source_warnings`), and `--strict` escalates it to a
+  nonzero exit.
+
+### Fixed (variant hardening, continued)
+- **Shared child no longer mis-reported as a cycle** (REQ-269) — a feature
+  reachable through two parents (a diamond / DAG) was rejected as a cycle;
+  `validate_tree` now tracks the current DFS path (recursion stack) instead of a
+  global visited set, so a diamond loads while a genuine back-edge cycle is still
+  rejected. Surfaced by REQ-266's coverage.
+- **`serve` variant scope no longer leaks externals** (REQ-265b) — external
+  artifacts (which have no binding to the project's feature model) are excluded
+  from `/artifacts` under an active variant instead of appearing unscoped.
+- **External source links are honest** (REQ-265a) — `resolve_source_file` returns
+  no link for an out-of-project path rather than emitting a dead link the
+  `/source` guard rejects.
+
+### Testing
+- **Constraint-solver property tests** (REQ-266) — the proptest strategies now
+  generate cross-tree constraints, fuzzing the solver's highest-risk paths
+  (`implies` propagation, `excludes`, REQ-257's fail-loud gate) with an
+  independent oracle that a green `solve()` never silently passes a violated
+  constraint. Previously zero constraint coverage.
+
 ## [0.28.0] - 2026-07-16
 
 ### Fixed (variant hardening P1 — DD-076: broken config must fail loud, not present as absent)
