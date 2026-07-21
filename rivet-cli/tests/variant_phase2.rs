@@ -402,3 +402,72 @@ fn coverage_stamps_variant_name_in_json() {
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
     assert_eq!(v["variant"], "industrial");
 }
+
+/// REQ-265 slice (d): `rivet export --variant <NAME>` applies the per-variant
+/// field overlay before export, so a variant-scoped compliance export needs no
+/// hand-translation of IDs into an s-expr `--filter`. Mirrors
+/// `query --variant`: the default `max-temp-c` is "80"; only under the
+/// `industrial` variant does it resolve to "100".
+#[test]
+fn export_variant_applies_field_overlay() {
+    let (_keep, dir) = setup_phase2_project();
+    let out_file = dir.join("export-industrial.yaml");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "--schemas",
+            dir.join("schemas").to_str().unwrap(),
+            "export",
+            "--format",
+            "generic-yaml",
+            "--output",
+            out_file.to_str().unwrap(),
+            "--variant",
+            "industrial",
+        ])
+        .output()
+        .expect("rivet export --variant");
+    assert!(
+        out.status.success(),
+        "export --variant must succeed. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let exported = std::fs::read_to_string(&out_file).expect("read export");
+    // The industrial overlay replaces the top-level max-temp-c "80" with
+    // "100", so the default value "80" no longer appears anywhere (no variant
+    // in the fixture uses 80). The generic-yaml export also round-trips the
+    // `fields-per-variant` block, so "100" alone is not a discriminator.
+    assert!(
+        exported.contains("100"),
+        "industrial overlay must put max-temp-c=100 in the export. got:\n{exported}"
+    );
+    assert!(
+        !exported.contains("'80'") && !exported.contains(": 80"),
+        "the default value 80 must be overwritten by the industrial overlay. got:\n{exported}"
+    );
+
+    // Without --variant, the top-level field keeps its default value "80".
+    let out_default = dir.join("export-default.yaml");
+    let out2 = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "--schemas",
+            dir.join("schemas").to_str().unwrap(),
+            "export",
+            "--format",
+            "generic-yaml",
+            "--output",
+            out_default.to_str().unwrap(),
+        ])
+        .output()
+        .expect("rivet export (no variant)");
+    assert!(out2.status.success());
+    let exported_default = std::fs::read_to_string(&out_default).expect("read default export");
+    assert!(
+        exported_default.contains("'80'") || exported_default.contains(": 80"),
+        "without --variant the default max-temp-c=80 must be exported at top level. got:\n{exported_default}"
+    );
+}

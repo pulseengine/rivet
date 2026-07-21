@@ -7839,7 +7839,7 @@ artifacts:
   - id: REQ-265
     type: requirement
     title: "variant source-linkage completeness (externals, binding source globs, export --variant)"
-    status: proposed
+    status: implemented
     description: "P3 (DD-076). Local variant scoping preserves source_file correctly (confirmed). It degrades at every boundary beyond one repo: (a) external artifact source links are dead — resolve_source_file (api.rs:388) can't strip_prefix an out-of-project absolute path and /source rejects it (render/source.rs:281,294); (b) externals bypass variant scoping entirely (api.rs:538-563 never consults variant_scope) — a scope leak; (c) binding `source:` globs (ResolvedVariant.source_manifest via solve_with_bindings, feature_model.rs:1413) never reach serve or `variant solve` (which call plain solve()), and are emitted unverified against disk (missing dirs, exit 0); (d) no `export --variant` — a variant-scoped compliance export is impossible without hand-translating IDs to an s-expr --filter. Address as slices."
     release: v0.29.0
     provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}

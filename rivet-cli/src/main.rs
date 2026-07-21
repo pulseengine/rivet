@@ -741,6 +741,13 @@ enum Command {
         #[arg(long)]
         filter: Option<String>,
 
+        /// Variant name (or path to a variant YAML) whose per-variant field
+        /// overlay is applied before export, so a variant-scoped compliance
+        /// export needs no hand-translation of IDs into an s-expr --filter.
+        /// Mirrors `list --variant` / `query --variant` (REQ-265).
+        #[arg(long)]
+        variant: Option<String>,
+
         /// Install rivet_* shortcode templates into templates/shortcodes/ (Zola only)
         #[arg(long)]
         shortcodes: bool,
@@ -2513,6 +2520,7 @@ fn run(cli: Cli) -> Result<bool> {
             baseline,
             prefix,
             filter,
+            variant,
             shortcodes,
             clean,
         } => cmd_export(
@@ -2528,6 +2536,7 @@ fn run(cli: Cli) -> Result<bool> {
             baseline.as_deref(),
             prefix,
             filter.as_deref(),
+            variant.as_deref(),
             *shortcodes,
             *clean,
         ),
@@ -9763,6 +9772,7 @@ fn cmd_export(
     baseline_name: Option<&str>,
     prefix: &str,
     sexpr_filter: Option<&str>,
+    variant_arg: Option<&str>,
     shortcodes: bool,
     clean: bool,
 ) -> Result<bool> {
@@ -9777,6 +9787,13 @@ fn cmd_export(
             "zola",
         ],
     )?;
+    // Resolve `--variant` (name or path) to a variant name ONCE, so every
+    // export format applies the same per-variant field overlay (REQ-265).
+    let variant_name: Option<String> = match variant_arg {
+        Some(arg) => Some(resolve_variant_arg(&cli.project, arg)?.1),
+        None => None,
+    };
+    let variant = variant_name.as_deref();
     if format == "zola" {
         return cmd_export_zola(
             cli,
@@ -9786,6 +9803,7 @@ fn cmd_export(
             shortcodes,
             clean,
             baseline_name,
+            variant,
         );
     }
     if format == "html" {
@@ -9807,17 +9825,19 @@ fn cmd_export(
             version_label,
             versions_json,
             sexpr_filter,
+            variant,
         );
     }
 
     if format == "gherkin" {
-        return cmd_export_gherkin(cli, output, baseline_name);
+        return cmd_export_gherkin(cli, output, baseline_name, variant);
     }
 
     use rivet_core::adapter::{Adapter, AdapterConfig};
 
     let ctx = ProjectContext::load(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let store = apply_variant_overlay(store, variant);
     // Sorted by id so the exported artifact (ReqIF/etc.) is byte-reproducible
     // across runs (REQ-159 / #415; the store is HashMap-ordered).
     let artifacts: Vec<_> = store.iter_sorted().cloned().collect();
@@ -9877,6 +9897,7 @@ fn cmd_export(
 /// Writes content/<prefix>/artifacts/*.md with TOML frontmatter and
 /// data/<prefix>/*.json with aggregate data. Additive-only: never
 /// modifies existing files outside the prefix namespace.
+#[allow(clippy::too_many_arguments)]
 fn cmd_export_zola(
     cli: &Cli,
     output: Option<&std::path::Path>,
@@ -9885,9 +9906,11 @@ fn cmd_export_zola(
     shortcodes: bool,
     clean: bool,
     baseline_name: Option<&str>,
+    variant: Option<&str>,
 ) -> Result<bool> {
     let ctx = ProjectContext::load_with_docs(cli)?;
     let store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    let store = apply_variant_overlay(store, variant);
     let doc_store = ctx.doc_store.unwrap_or_default();
     let graph = rivet_core::links::LinkGraph::build(&store, &ctx.schema);
 
@@ -10365,6 +10388,7 @@ fn cmd_export_gherkin(
     cli: &Cli,
     output: Option<&std::path::Path>,
     baseline_name: Option<&str>,
+    variant: Option<&str>,
 ) -> Result<bool> {
     let ctx = ProjectContext::load(cli)?;
     let baselines = ctx.config.baselines.as_deref().unwrap_or(&[]);
@@ -10373,6 +10397,7 @@ fn cmd_export_gherkin(
     } else {
         ctx.store.clone()
     };
+    let store = apply_variant_overlay(store, variant);
 
     let out_dir = output.unwrap_or(std::path::Path::new("features"));
     std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
@@ -10618,6 +10643,7 @@ fn cmd_export_html(
     _version_label: Option<&str>,
     _versions_json: Option<&str>,
     sexpr_filter: Option<&str>,
+    variant: Option<&str>,
 ) -> Result<bool> {
     use crate::render::styles;
     use crate::serve::components::ViewParams;
@@ -10629,8 +10655,16 @@ fn cmd_export_html(
         .unwrap_or_else(|_| cli.project.clone());
 
     // Load project state using the same pipeline as `rivet serve`.
-    let state = serve::reload_state(&project_path, &schemas_dir, 0)
+    let mut state = serve::reload_state(&project_path, &schemas_dir, 0)
         .context("loading project for export")?;
+
+    // Apply the variant's per-variant field overlay to the store so the
+    // compliance bundle reflects variant-scoped field values (REQ-265). The
+    // link graph is rebuilt so any downstream trace view stays consistent.
+    if variant.is_some() {
+        state.store = apply_variant_overlay(state.store, variant);
+        state.graph = rivet_core::links::LinkGraph::build(&state.store, &state.schema);
+    }
 
     // ── Single-page mode (audit-bundle shape) ────────────────────────
     //
@@ -15532,6 +15566,29 @@ fn apply_baseline_scope(
         eprintln!("warning: --baseline specified but no baselines defined in rivet.yaml");
         store
     }
+}
+
+/// Apply a variant's per-variant field overlay to every artifact in the store
+/// (REQ-265). For each artifact that declares a `fields_per_variant` entry for
+/// `variant_name`, its `fields` map is replaced with the merged view
+/// (`fields_for_variant`), so the export sees variant-scoped field values.
+/// Mirrors the in-place rewrite `query --variant` performs before the
+/// s-expression filter runs. A `None` variant is a no-op.
+fn apply_variant_overlay(mut store: Store, variant_name: Option<&str>) -> Store {
+    let Some(name) = variant_name else {
+        return store;
+    };
+    let ids: Vec<String> = store.iter().map(|a| a.id.clone()).collect();
+    for id in ids {
+        if let Some(art) = store.get(&id) {
+            if art.fields_per_variant.contains_key(name) {
+                let mut updated = art.clone();
+                updated.fields = updated.fields_for_variant(Some(name)).into_owned();
+                store.upsert(updated);
+            }
+        }
+    }
+    store
 }
 
 // ── Oracle subcommands: `rivet check …` ─────────────────────────────────
