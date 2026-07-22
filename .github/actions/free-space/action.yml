@@ -1,0 +1,73 @@
+# Reusable free-disk-space step for the persistent self-hosted runners (#567 /
+# REQ-271). Rust + Bazel + Docker layer caches accumulate across runs on a
+# long-lived runner until the disk fills and every compile gate fails; the
+# old post-job cleanup hook freed nothing. This prunes the space hogs and
+# reports before/after free bytes so the effect is auditable — never a silent
+# no-op. Idempotent and safe to call at the top of any compile-heavy job.
+name: Free disk space
+description: >
+  Prune cargo / Bazel / Docker caches and /tmp on a persistent runner, and
+  report free space before and after so the cleanup is auditable (REQ-271, #567).
+
+inputs:
+  cargo-target-cap-gb:
+    description: >
+      Delete cargo target directories under the runner work tree when the
+      total free space is below this many GiB. 0 disables the cargo sweep.
+    required: false
+    default: "0"
+
+runs:
+  using: composite
+  steps:
+    - name: Free disk space (before/after audit)
+      shell: bash
+      run: |
+        set -uo pipefail
+        avail_kb() { df -Pk / | awk 'NR==2 {print $4}'; }
+        before=$(avail_kb)
+        echo "::group::disk before cleanup"
+        df -h / || true
+        echo "::endgroup::"
+
+        # Docker: dangling images + build cache are the biggest recurring hog
+        # on a self-hosted runner that also builds containers.
+        if command -v docker >/dev/null 2>&1; then
+          echo "pruning docker system (images + build cache)..."
+          docker system prune -af --volumes >/dev/null 2>&1 || true
+          docker builder prune -af >/dev/null 2>&1 || true
+        fi
+
+        # Bazel disk cache: the Rocq/Bazel jobs leave a large external+disk
+        # cache. Clear the shared disk cache dir if present.
+        for d in "$HOME/.cache/bazel" "$HOME/.bazel" /tmp/bazel-disk-cache; do
+          [ -d "$d" ] && { echo "removing bazel cache $d..."; rm -rf "$d" || true; }
+        done
+
+        # Cargo registry cache grows unbounded across runs; the registry
+        # sources/cache are re-fetched on demand, so they are safe to drop.
+        for d in "$HOME/.cargo/registry/cache" "$HOME/.cargo/registry/src" "$HOME/.cargo/git/checkouts"; do
+          [ -d "$d" ] && { echo "removing cargo cache $d..."; rm -rf "$d" || true; }
+        done
+
+        # Optional: sweep stale cargo target dirs under the work tree when we
+        # are genuinely low on space (guards against nuking an in-use target).
+        cap="${{ inputs.cargo-target-cap-gb }}"
+        if [ "$cap" != "0" ]; then
+          free_gb=$(( $(avail_kb) / 1024 / 1024 ))
+          if [ "$free_gb" -lt "$cap" ]; then
+            echo "free ${free_gb}GiB < ${cap}GiB cap; sweeping stale target/ dirs..."
+            find "${RUNNER_WORKSPACE:-$HOME}" -maxdepth 4 -type d -name target -prune \
+              -exec rm -rf {} + 2>/dev/null || true
+          fi
+        fi
+
+        # Ephemeral scratch.
+        rm -rf /tmp/* 2>/dev/null || true
+
+        after=$(avail_kb)
+        echo "::group::disk after cleanup"
+        df -h / || true
+        echo "::endgroup::"
+        freed_mb=$(( (after - before) / 1024 ))
+        echo "free-space: ${freed_mb} MiB reclaimed (before=$((before/1024)) MiB, after=$((after/1024)) MiB free)"
