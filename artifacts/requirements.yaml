@@ -7894,3 +7894,36 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-17T00:00:00Z
+
+  - id: REQ-271
+    type: requirement
+    title: "self-hosted CI runner disk cleanup that actually frees space (#567)"
+    status: proposed
+    description: "v0.30 (CI resilience). #567: the self-hosted runner pool exhausts disk and every compile gate fails; the existing post-job cleanup hook frees nothing. Rust + Bazel + Docker layer caches accumulate across runs on a persistent runner. Add a reliable free-space step (a reusable composite action or a leading ci.yml step) that prunes the space hogs — `cargo` target/registry caches beyond a cap, Bazel disk cache, docker/buildx dangling images+build cache, and /tmp — and reports before/after free bytes so the effect is auditable (not a silent no-op like the current hook). Runs early enough to unblock the compile, and idempotent."
+    release: v0.30.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-22T00:00:00Z
+
+  - id: REQ-272
+    type: requirement
+    title: "CI single-point-of-failure mitigation: hosted fallback + surfaced alert (#509 slice 2)"
+    status: proposed
+    description: "v0.30 (CI resilience). #509: every gating job is `runs-on: [self-hosted, ...]`, so when the pool goes offline all gates queue forever with no fallback (slice 1 shipped the liveness-alert workflow; this is slice 2). Reduce the SPOF: make at least the light, portable gates (e.g. Traceability `rivet validate` + docs check, YAML lint) able to run on GitHub-hosted `ubuntu-latest` as a fallback so a self-hosted outage does not zero out ALL verification on main — via a runner-label group or a hosted mirror job gated to run only when self-hosted is starved. Keep compile-heavy gates self-hosted. Document the SPOF + the liveness signal in AGENTS.md/ci so an outage is diagnosable, not a mystery."
+    release: v0.30.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-22T00:00:00Z
+
+  - id: REQ-273
+    type: requirement
+    title: "static compliance export: honest AADL fallback (no forever-spinner) + inline SVG when component present (#468)"
+    status: proposed
+    description: "v0.30. #468: AADL diagrams in the STATIC compliance report are stuck on `Loading AADL diagram...` forever — the placeholder (document.rs:682, render/artifacts.rs:756) is filled client-side only by `rivet serve` (spar-WASM + /source-raw + /wasm endpoints that a static bundle lacks). The real inline-SVG render depends on a published spar-wasm asset (cross-repo, spar#259 — build.rs ships a stub today). Unblocked v0.30 slice: in static export, replace the misleading forever-`Loading...` placeholder with an HONEST fallback — show the raw AADL source (or a clear `view interactively in rivet serve` note) so the compliance report stops looking broken — AND wire the export-time host-side render path (wasm_runtime render_aadl_via_wasm) so real inline SVG activates automatically once a non-stub spar_wasm component is embedded, with no further code change. Does not fake the cross-repo dependency."
+    release: v0.30.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-22T00:00:00Z
