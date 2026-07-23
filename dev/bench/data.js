@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784714598881,
+  "lastUpdate": 1784806830756,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "dd6281bb0278ea73fe2870c0ed9c78c8dc715966",
-          "message": "docs(release): record crates.io publishing decision + blocker (REQ-250, REQ-252, DD-074) (#681)\n\nInvestigating REQ-250 surfaced two independent walls, so no packaging code\nlands yet — this commit records the findings as traceable artifacts:\n\n- DD-074: publish under rivet-sdlc-core / rivet-sdlc-cli / rivet-etch because\n  the natural names are squatted upstream, keeping lib/bin names via Cargo\n  target renames. The rename itself is DEFERRED to the publish PR: it ripples\n  through ~40 `-p rivet-cli` / `-p rivet-core` specifiers across ci.yml,\n  release.yml, rivet-delta.yml, the compliance action, and scripts, so it must\n  land atomically with the publish rather than ahead of an indefinitely-blocked\n  one.\n- REQ-252: the dependency closure pulls git-only crates (pulseengine/spar's 9\n  spar-* crates via the aadl feature + a rowan fork via rowan-yaml); crates.io\n  rejects git deps transitively, so they must be published first. Cross-repo,\n  larger than one rivet release.\n- REQ-250 description updated: no release assignment until REQ-252 clears and a\n  CARGO_REGISTRY_TOKEN secret exists.\n\nConfirmed with `rivet validate` (Result: PASS) and `rivet docs check`\n(0 violations).\n\nRefs: REQ-250, REQ-252, DD-074, FEAT-001",
-          "timestamp": "2026-07-10T13:49:54+02:00",
-          "tree_id": "87713baf60befa2f5f8bf26e4a43c9c30482cbe8",
-          "url": "https://github.com/pulseengine/rivet/commit/dd6281bb0278ea73fe2870c0ed9c78c8dc715966"
-        },
-        "date": 1783684977856,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 67942,
-            "range": "± 1111",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 728790,
-            "range": "± 22308",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 18285996,
-            "range": "± 1446719",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1499,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18200,
-            "range": "± 334",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 269145,
-            "range": "± 7338",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 74,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 74,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 74,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1178132,
-            "range": "± 10061",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 127592,
-            "range": "± 1854",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1484741,
-            "range": "± 15648",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28419197,
-            "range": "± 4248182",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 343628,
-            "range": "± 7041",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 11373774,
-            "range": "± 276710",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 827628915,
-            "range": "± 8851306",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3254,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 41626,
-            "range": "± 434",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 565518,
-            "range": "± 2955",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 48505,
-            "range": "± 865",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 535735,
-            "range": "± 3669",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8431129,
-            "range": "± 796295",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 903,
-            "range": "± 11",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 11057,
-            "range": "± 208",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 167651,
-            "range": "± 4836",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 16785,
-            "range": "± 55",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 116551,
-            "range": "± 644",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1094141,
-            "range": "± 12593",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1481621,
             "range": "± 11382",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ae8925fab829bf6bb4441db1feb13ae4be079c3c",
+          "message": "ci(resilience): wasm-seam gate + disk cleanup + hosted traceability fallback (#732)\n\nThree v0.30 CI-resilience slices in one coherent workflow change:\n\nREQ-268 — per-PR wasm SEAM build gate. The composition core is exposed as a\nWasm component (compose-witness + WIT) plus the host `wasm` feature, consumed\ndownstream (melded → loomed → synth'd). Built only in release.yml today, so a\nchange can rot the seam undetected until release. Adds a narrow `wasm`\npaths-filter to the `changes` job and a `wasm-seam` job that runs\n`cargo build -p rivet-cli --features wasm` — the host-side wasmtime path\n(cheap, reliable, no wasi-sdk), which exercises wasm_runtime.rs + the wasmtime\nintegration + the composition core the component wraps. The full\nwasm32-wasip2 component build (cargo-component, which generates\ncompose-witness's gitignored bindings.rs) stays in release.yml.\n\nREQ-271 (#567) — self-hosted runner disk cleanup that actually frees space. A\nreusable .github/actions/free-space composite action prunes docker / bazel /\ncargo caches + /tmp and reports before/after free bytes so the effect is\nauditable — not a silent no-op like the old post-job hook. Wired into the\nwasm-seam job; reusable by any compile-heavy job.\n\nREQ-272 (#509 slice 2) — single-point-of-failure mitigation. Every gate runs\nself-hosted, so an outage zeroes out all of main's verification (slice 1\nshipped the liveness alert). Adds a traceability-hosted-fallback job that\nmirrors `rivet validate` on GitHub-hosted ubuntu-latest, push-to-main only, so\na self-hosted outage cannot leave a main commit with zero traceability\nverification. Compile-heavy gates stay self-hosted; this is a floor.\n\nConfirmed: cargo build -p rivet-cli --features wasm builds (exit 0);\nactionlint + yamllint clean on the new jobs/action; rivet validate PASS.\n\nImplements: REQ-268, REQ-271, REQ-272\nRefs: REQ-051",
+          "timestamp": "2026-07-23T13:13:21+02:00",
+          "tree_id": "21c774e763a5bd52dc06a104104d79e7751ab696",
+          "url": "https://github.com/pulseengine/rivet/commit/ae8925fab829bf6bb4441db1feb13ae4be079c3c"
+        },
+        "date": 1784806829788,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85233,
+            "range": "± 3444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 931889,
+            "range": "± 17359",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 18189065,
+            "range": "± 1055720",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1988,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24880,
+            "range": "± 105",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 358549,
+            "range": "± 7922",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1530225,
+            "range": "± 29653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167792,
+            "range": "± 2100",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1980751,
+            "range": "± 22226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 36409049,
+            "range": "± 3000924",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 454487,
+            "range": "± 7923",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15945353,
+            "range": "± 720350",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1141193270,
+            "range": "± 19952386",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4204,
+            "range": "± 97",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 46014,
+            "range": "± 304",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 794289,
+            "range": "± 9105",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 65112,
+            "range": "± 1828",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 732004,
+            "range": "± 2749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9113875,
+            "range": "± 691440",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1118,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14431,
+            "range": "± 81",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 227595,
+            "range": "± 13987",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22531,
+            "range": "± 1905",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 157242,
+            "range": "± 1183",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1451743,
+            "range": "± 30449",
             "unit": "ns/iter"
           }
         ]
