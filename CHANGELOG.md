@@ -5,6 +5,40 @@
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-07-23
+
+CI resilience + compliance-export robustness.
+
+### Added
+- **Per-PR WASM-seam CI gate** (REQ-268) — the composition core is exposed as a
+  Wasm component (`compose-witness/` + the host `wasm` feature via wasmtime), but
+  per-PR CI only ever built the default features; a break in the host-side wasm
+  seam was invisible until `release.yml` ran on a tag. Adds a `wasm-seam` job
+  (gated by a paths-filter on `compose-witness/`, `wasm_runtime.rs`,
+  `feature_model.rs`, `*.wit`, the wasm build script, and `assets/wasm/`) that runs
+  `cargo build -p rivet-cli --features wasm` on every PR touching the seam.
+- **Self-hosted runner disk cleanup** (REQ-271, #567) — a reusable
+  `.github/actions/free-space` composite action prunes docker/bazel/cargo caches
+  and `/tmp`, reporting before/after free space, so long-lived self-hosted runners
+  stop failing compile-heavy jobs on a full disk. (Currently wired into the
+  `wasm-seam` job; broadening to all compile-heavy jobs is queued for v0.31.)
+- **Hosted traceability fallback** (REQ-272, #509) — a `push`-only
+  `traceability-hosted-fallback` job on `ubuntu-latest` runs `rivet validate`, so a
+  self-hosted-pool outage can no longer silently zero out main's traceability
+  enforcement. Skipped on PRs (self-hosted carries the per-PR gate). Complements the
+  runner-liveness alert workflow shipped earlier.
+
+### Fixed
+- **AADL diagrams no longer stuck on "Loading…" forever in static export**
+  (REQ-273, #468) — the static compliance report embedded an AADL placeholder that
+  only `rivet serve` could fill client-side (spar-WASM + `/source-raw` + `/wasm`
+  endpoints a static bundle lacks), so the report looked broken. Static export now
+  emits an honest fallback — a "rendered interactively in `rivet serve`" note plus
+  the AADL source in a `<details>` block — and the fix lands at the render source,
+  so the prior post-hoc text replacements become harmless no-ops. Real inline SVG
+  still activates automatically once a non-stub spar-wasm component is embedded
+  (cross-repo, spar#259), with no further code change.
+
 ## [0.29.0] - 2026-07-21
 
 ### Added
