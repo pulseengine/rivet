@@ -7920,10 +7920,43 @@ artifacts:
   - id: REQ-273
     type: requirement
     title: "static compliance export: honest AADL fallback (no forever-spinner) + inline SVG when component present (#468)"
-    status: proposed
+    status: implemented
     description: "v0.30. #468: AADL diagrams in the STATIC compliance report are stuck on `Loading AADL diagram...` forever — the placeholder (document.rs:682, render/artifacts.rs:756) is filled client-side only by `rivet serve` (spar-WASM + /source-raw + /wasm endpoints that a static bundle lacks). The real inline-SVG render depends on a published spar-wasm asset (cross-repo, spar#259 — build.rs ships a stub today). Unblocked v0.30 slice: in static export, replace the misleading forever-`Loading...` placeholder with an HONEST fallback — show the raw AADL source (or a clear `view interactively in rivet serve` note) so the compliance report stops looking broken — AND wire the export-time host-side render path (wasm_runtime render_aadl_via_wasm) so real inline SVG activates automatically once a non-stub spar_wasm component is embedded, with no further code change. Does not fake the cross-repo dependency."
     release: v0.30.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-22T00:00:00Z
+
+  - id: REQ-274
+    type: requirement
+    title: "test-result trace: collapsible tree view (fold/expand) in serve + export (customer request)"
+    status: proposed
+    description: "Customer-reported. The req->test-result forward trace (REQ-238) renders its hops flat; deep artifacts (e.g. the ASPICE chain sw-req<-sw-detail-design<-unit-verification) produce a lot of hops that become hard to read. The trace data is already a tree — rivet-core/src/result_trace.rs ResultTraceNode carries `parent` (id one hop toward the requirement) + `distance` (depth) — and rivet already ships a fold/expand primitive: rivet-cli/src/serve/components.rs collapsible_tree() (nested native <details> + Expand All/Collapse All, used for the STPA hierarchy). Render the ResultTraceNode tree through collapsible_tree() (deep branches collapsed by default, per-branch expand, verdict badge per hop). Native <details> works with zero JS, so it renders in BOTH `rivet serve` AND static export. Rendering change over an existing tree model + existing component; no new infra."
+    release: v0.31.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-23T00:00:00Z
+
+  - id: REQ-275
+    type: requirement
+    title: "serve: human-friendly tag filter — select all / unselect all + filter box (customer request)"
+    status: proposed
+    description: "Customer-reported. Tag filtering today is a comma-separated `tags` param (serve/components.rs:50, matched client-side via data-tags in js.rs:1197) — efficient for machines, cumbersome for humans. Add a proper multi-select tag-filter UI: a checkbox list of the project's tags with Select All / Unselect All controls and a small filter/search box to narrow a long tag list, driving the existing tag-match filter. Reuse the existing filter plumbing (params.tags) so it's a UI layer over the current mechanism, not a new filter engine. serve-only surface."
+    release: v0.31.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-23T00:00:00Z
+
+  - id: REQ-276
+    type: requirement
+    title: "serve/export color-contrast audit — fix low-contrast (white on light grey) to WCAG AA (customer request)"
+    status: proposed
+    description: "Customer-reported: white text on the light-grey background reads poorly. Audit the render/styles.rs palette (--bg #f5f5f7 grey, --surface #fff, --text-secondary #6e6e73) and every fixed color pair for WCAG AA (>=4.5:1 body text, >=3:1 large/UI) — white (#fff) on #f5f5f7 is ~1.05:1 and fails. Raise the failing pairs (darken text / adjust surface) without a full redesign, keeping the PulseEngine look. Applies to both serve and the static/compliance export (shared styles.rs). Add a small contrast check or documented palette rationale so it doesn't regress."
+    release: v0.31.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-23T00:00:00Z

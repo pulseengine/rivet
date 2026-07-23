@@ -678,8 +678,23 @@ pub fn render_to_html(
                         .find_map(|l| l.strip_prefix("root:").or_else(|| l.strip_prefix("root: ")))
                         .unwrap_or("")
                         .trim();
+                    // The interactive SVG is rendered client-side by the
+                    // `rivet serve` bundle (spar-WASM). In a STATIC export the
+                    // renderer JS never runs, so the old bare "Loading AADL
+                    // diagram..." placeholder hung forever and read as a broken
+                    // report (#468). Emit an HONEST fallback: text true in both
+                    // modes (serve replaces this container with the SVG on
+                    // success) plus the raw AADL source in a collapsible
+                    // <details>, so a static compliance report still shows the
+                    // architecture textually instead of a dead spinner.
+                    // `code_block_lines` are already html-escaped (see the
+                    // in-code-block accumulation below), so join directly.
+                    let aadl_src = code_block_lines.join("\n");
                     html.push_str(&format!(
-                        "<div class=\"aadl-diagram\" data-root=\"{root}\"><p class=\"aadl-loading\">Loading AADL diagram...</p></div>\n"
+                        "<div class=\"aadl-diagram\" data-root=\"{root}\">\
+                         <p class=\"aadl-loading\">AADL diagram — rendered interactively in <code>rivet serve</code>; source below.</p>\
+                         <details class=\"aadl-source\"><summary>AADL source</summary><pre>{aadl_src}</pre></details>\
+                         </div>\n"
                     ));
                 } else if code_block_lang.as_deref() == Some("mermaid") {
                     // Mermaid diagrams: emit a <pre class="mermaid"> block
@@ -2080,6 +2095,17 @@ See frontmatter.
         assert!(html.contains("aadl-diagram"));
         assert!(html.contains("data-root=\"FlightControl::Controller.Basic\""));
         assert!(!html.contains("<pre><code>root: FlightControl"));
+        // #468: the placeholder must NOT be a perpetual "Loading..." spinner in
+        // a static render, and it must embed the raw AADL source so a static
+        // compliance report shows the architecture textually.
+        assert!(
+            !html.contains("Loading AADL diagram..."),
+            "must not emit a perpetual Loading placeholder"
+        );
+        assert!(
+            html.contains("<details class=\"aadl-source\"") && html.contains("root: FlightControl"),
+            "static fallback must embed the AADL source"
+        );
     }
 
     fn make_info(id: &str, title: &str, art_type: &str) -> ArtifactInfo {

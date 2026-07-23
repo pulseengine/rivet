@@ -750,11 +750,17 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         );
         let trimmed = diagram.trim();
         if trimmed.starts_with("root:") {
-            // AADL diagram
+            // AADL diagram — honest static fallback (#468): the interactive SVG
+            // is rendered client-side by `rivet serve`; a static export shows
+            // honest text + the raw AADL source instead of a forever-spinner.
             let root = trimmed.strip_prefix("root:").unwrap_or("").trim();
             html.push_str(&format!(
-                "<div class=\"aadl-diagram\" data-root=\"{}\"><p class=\"aadl-loading\">Loading AADL diagram...</p></div>",
-                html_escape(root)
+                "<div class=\"aadl-diagram\" data-root=\"{}\">\
+                 <p class=\"aadl-loading\">AADL diagram — rendered interactively in <code>rivet serve</code>; source below.</p>\
+                 <details class=\"aadl-source\"><summary>AADL source</summary><pre>{}</pre></details>\
+                 </div>",
+                html_escape(root),
+                html_escape(trimmed)
             ));
         } else {
             // Treat as mermaid
