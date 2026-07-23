@@ -7865,7 +7865,7 @@ artifacts:
   - id: REQ-268
     type: requirement
     title: "per-PR CI gate builds the wasm seam (compose-witness component + wasm feature)"
-    status: proposed
+    status: implemented
     description: "v0.30 (CI resilience). rivet's composition core is exposed as a Wasm component — compose-witness/ (cdylib + WIT in compose-witness/wit/, built via `cargo component build` or Bazel) — plus the host `wasm` feature (rivet-core/src/wasm_runtime.rs, wasmtime) and the spar-wasm browser assets. That component is the SEAM consumed downstream (melded → loomed → synth'd), so a broken/buggy wasm build is a downstream breakage. Today the wasm seam is built ONLY in release.yml, not per-PR ci.yml, so a change can rot the seam and nothing catches it until release. Add a per-PR CI job that at minimum runs `cargo build -p rivet-cli --features wasm` (cheap, host-side) and ideally `cargo component build` on compose-witness (needs cargo-component + wasi-sdk on the runner, mirror the release.yml wasm setup). Gate it behind the existing changes/paths-filter so it only runs when the composition core / wasm_runtime / compose-witness / WIT / wasm feature / spar-wasm assets change."
     release: v0.30.0
     provenance:
@@ -7898,7 +7898,7 @@ artifacts:
   - id: REQ-271
     type: requirement
     title: "self-hosted CI runner disk cleanup that actually frees space (#567)"
-    status: proposed
+    status: implemented
     description: "v0.30 (CI resilience). #567: the self-hosted runner pool exhausts disk and every compile gate fails; the existing post-job cleanup hook frees nothing. Rust + Bazel + Docker layer caches accumulate across runs on a persistent runner. Add a reliable free-space step (a reusable composite action or a leading ci.yml step) that prunes the space hogs — `cargo` target/registry caches beyond a cap, Bazel disk cache, docker/buildx dangling images+build cache, and /tmp — and reports before/after free bytes so the effect is auditable (not a silent no-op like the current hook). Runs early enough to unblock the compile, and idempotent."
     release: v0.30.0
     provenance:
@@ -7909,7 +7909,7 @@ artifacts:
   - id: REQ-272
     type: requirement
     title: "CI single-point-of-failure mitigation: hosted fallback + surfaced alert (#509 slice 2)"
-    status: proposed
+    status: implemented
     description: "v0.30 (CI resilience). #509: every gating job is `runs-on: [self-hosted, ...]`, so when the pool goes offline all gates queue forever with no fallback (slice 1 shipped the liveness-alert workflow; this is slice 2). Reduce the SPOF: make at least the light, portable gates (e.g. Traceability `rivet validate` + docs check, YAML lint) able to run on GitHub-hosted `ubuntu-latest` as a fallback so a self-hosted outage does not zero out ALL verification on main — via a runner-label group or a hosted mirror job gated to run only when self-hosted is starved. Keep compile-heavy gates self-hosted. Document the SPOF + the liveness signal in AGENTS.md/ci so an outage is diagnosable, not a mystery."
     release: v0.30.0
     provenance:
