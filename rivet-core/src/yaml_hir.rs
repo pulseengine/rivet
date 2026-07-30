@@ -1420,11 +1420,21 @@ fn node_to_yaml_value(value_node: &SyntaxNode) -> serde_yaml::Value {
         if let rowan::NodeOrToken::Token(t) = token {
             let k = t.kind();
             match k {
-                SyntaxKind::PlainScalar
-                | SyntaxKind::SingleQuotedScalar
-                | SyntaxKind::DoubleQuotedScalar => {
+                SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar => {
                     let raw = t.text().to_string();
                     return scalar_to_yaml_value(k, &raw);
+                }
+                SyntaxKind::PlainScalar => {
+                    // The lexer breaks plain scalars at `,`, `]`, `}` (see
+                    // `lex_plain_scalar` in yaml_cst.rs). Reading only this
+                    // token would truncate a scalar like
+                    // `foo, bar` to `foo` and silently drop evidence — the
+                    // bug behind issue #747, where `test-name` values with
+                    // commas were losing every element after the first.
+                    // Reassemble via `scalar_text`, which walks sibling
+                    // tokens up to the next Newline / Comment.
+                    let raw = scalar_text(value_node).unwrap_or_else(|| t.text().to_string());
+                    return plain_scalar_to_value(&raw);
                 }
                 _ => {}
             }
@@ -2499,5 +2509,56 @@ artifacts:
         assert_eq!(indu.get("max-temp-c").and_then(|v| v.as_u64()), Some(100));
         // priority inherits from default
         assert_eq!(indu.get("priority").and_then(|v| v.as_str()), Some("must"));
+    }
+
+    /// Issue #747: the schema-driven parser must preserve plain-scalar
+    /// field values that contain commas. The CST lexer breaks plain
+    /// scalars at `,`, `]`, `}` (see `lex_plain_scalar` in yaml_cst.rs),
+    /// and `node_to_yaml_value` previously read only the first token —
+    /// so `test-name: a, b` truncated to `a` and evidence was silently
+    /// lost. The fix reassembles the sibling tokens the lexer split.
+    #[test]
+    fn schema_driven_preserves_field_value_with_commas() {
+        let source = "\
+artifacts:
+  - id: VAL-010
+    type: requirement
+    title: Validation with two tests
+    fields:
+      method: unit-test
+      test-location: crates/x/src/y.rs
+      test-name: tests::first, tests::second
+";
+        let schema = crate::schema::Schema::merge(&[]);
+        let parsed = extract_schema_driven(source, &schema, None);
+        assert_eq!(parsed.artifacts.len(), 1);
+        let f = &parsed.artifacts[0].artifact.fields;
+        assert_eq!(
+            f.get("test-name").and_then(|v| v.as_str()),
+            Some("tests::first, tests::second"),
+            "comma-containing plain scalar must round-trip, not truncate at first comma"
+        );
+    }
+
+    /// Issue #747 (nested case): the truncation also hit unknown
+    /// top-level keys, which fall through to `node_to_yaml_value` the
+    /// same way. Anchor that path so it can't regress independently.
+    #[test]
+    fn schema_driven_preserves_unknown_key_value_with_commas() {
+        let source = "\
+artifacts:
+  - id: VAL-011
+    type: requirement
+    title: Unknown top-level with commas
+    covers: tests::a, tests::b, tests::c
+";
+        let schema = crate::schema::Schema::merge(&[]);
+        let parsed = extract_schema_driven(source, &schema, None);
+        assert_eq!(parsed.artifacts.len(), 1);
+        let f = &parsed.artifacts[0].artifact.fields;
+        assert_eq!(
+            f.get("covers").and_then(|v| v.as_str()),
+            Some("tests::a, tests::b, tests::c"),
+        );
     }
 }
