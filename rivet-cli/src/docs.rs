@@ -310,6 +310,12 @@ const TOPICS: &[DocTopic] = &[
         content: SUPPLY_CHAIN_DOC,
     },
     DocTopic {
+        slug: "artifact-types/ordeal-certificate",
+        title: "Ordeal certificate schema (machine-re-checkable proof evidence)",
+        category: "Schemas",
+        content: ORDEAL_CERTIFICATE_DOC,
+    },
+    DocTopic {
         slug: "schema-migrate",
         title: "rivet schema migrate — preset migration with snapshot/abort",
         category: "Reference",
@@ -3308,6 +3314,118 @@ With the `supply-chain-dev` bridge:
   https://slsa.dev/
 - in-toto attestation framework:
   https://in-toto.io/
+"#
+);
+
+const ORDEAL_CERTIFICATE_DOC: &str = concat!(
+    include_str!("../../schemas/ordeal-certificate.yaml"),
+    r#"
+
+# Ordeal Certificate Schema
+
+## What it covers
+
+The `ordeal-certificate` schema ingests machine-re-checkable proof
+certificates produced by [`ordeal`](https://github.com/pulseengine/ordeal)
+— the propositional-SAT / proof back-end — as first-class rivet evidence.
+Each certificate binds a transform (variant configuration, loom rule,
+synth codegen, sigil overflow, spar layout, gale bitvector, …) to a
+proof that can be re-verified at any time. `rivet validate` treats a
+certificate whose `recheck-command` has actually been run (observed
+`recheck-exit-code` == expected `recheck-expect-exit`) as a
+**verification LINK**, not a claimed status — never-re-checked
+certificates surface as unverified evidence rather than counting toward
+`verifies`-coverage.
+
+## Serialization contract
+
+The upstream envelope is `ordeal-cert/v1` — a JSON envelope over a
+`{cnf, lrat}` payload, with both content hashes verified inside
+`Certificate::from_cert_v1` before the checker runs (tampered proof and
+tampered problem are each rejected). Shipped in
+[ordeal PR #107](https://github.com/pulseengine/ordeal/pull/107)
+(ordeal v0.17.0, behind the `cert-bundle` cargo feature).
+
+## SAT-witness honesty boundary
+
+- **UNSAT** (`attests-claim: variant-inconsistent`) — carries a full
+  LRAT certificate that `ordeal-lrat check` can validate byte-for-byte
+  without trusting the producer. This is audit-grade re-derivation.
+- **SAT** (`attests-claim: variant-consistent`) — carries the
+  self-checked model. Ordeal does not yet ship an independently
+  re-checkable SAT witness, so SAT verdicts are a claim + an
+  executable model, not an independently re-derivable proof. The
+  schema documents this in comments; downstream audits should treat
+  SAT and UNSAT differently.
+
+## v1 reader boundary (`Unsupported`)
+
+`ordeal-cert/v1` is INLINE-PAYLOAD ONLY. Envelopes carrying `cnf_ref`
+or `proof_ref` indirection (for MB-scale certificates) fail with
+`BundleError::Unsupported` inside ordeal's `from_cert_v1` before the
+checker runs. The `V-ordeal-cert-v1-inline-only` validation rule
+mirrors that boundary at the rivet ingest layer so a v2 envelope
+appearing in a v1 world surfaces as a legible schema violation instead
+of a mystery deserialize error. When a future ordeal envelope declares
+a supported ref path, retire this rule.
+
+## Enabling the schema
+
+Add `ordeal-certificate` to the `schemas` list in `rivet.yaml`:
+
+```yaml
+project:
+  name: my-project
+  schemas:
+    - common
+    - dev
+    - ordeal-certificate   # adds ordeal-certificate + attests-transform link
+```
+
+## Recheck contract
+
+Each certificate declares a `recheck-command` (e.g.
+`ordeal-lrat check cnf.dimacs proof.lrat` for UNSAT, or a SAT
+model-eval invocation) and the exit code the recheck must produce
+(`recheck-expect-exit`, pinned to `"0"` today). When the recheck is
+actually run, stamp the observed `recheck-exit-code`, `recheck-ran-at`
+(ISO 8601), and `recheck-checked-by` (runner identifier) onto the
+artifact. `rivet validate` uses these three fields to distinguish a
+claimed certificate from a re-verified one.
+
+## Example — SAT variant-consistent certificate
+
+```yaml
+artifacts:
+  - id: CERT-variant-vehicle-control-001
+    type: ordeal-certificate
+    title: "variant vehicle-control-baseline is consistent (SAT)"
+    status: verified
+    produced-by-tool: ordeal
+    produced-by-version: "0.17.0"
+    checked-by-verifier: ordeal-lrat
+    checked-by-version: "0.17.0"
+    attests-claim: variant-consistent
+    attests-standards: ["EU-AI-Act-Art-12", "ISO-26262"]
+    attests-transform-kind: variant
+    cnf-sha256: "b7f3d8..."
+    proof-sha256: "9a0c1e..."       # SAT: self-checked model
+    recheck-command: "ordeal-lrat check cnf.dimacs proof.model"
+    recheck-expect-exit: "0"
+    recheck-exit-code: "0"
+    recheck-ran-at: "2026-07-30T05:11:22Z"
+    recheck-checked-by: "github-actions/rivet-ordeal-recheck"
+    links:
+      - type: attests-transform
+        target: VARIANT-vehicle-control-baseline
+```
+
+## References
+
+- rivet#693 (Part 2: the ingestion type — this schema)
+- ordeal#67 (SAT front-end + certificate serialization tracker)
+- ordeal#107 (`ordeal-cert/v1` envelope, ordeal v0.17.0)
+- REQ-255 (rivet-side requirement)
 "#
 );
 

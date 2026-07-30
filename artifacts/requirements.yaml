@@ -7753,11 +7753,12 @@ artifacts:
   - id: REQ-255
     type: requirement
     title: "ingest ordeal certificates as re-checkable evidence artifacts (certified variant consistency)"
-    status: proposed
-    description: "rivet#693 / ordeal#67 (FEAT-011, the certificate-as-evidence spine). rivet's variant/release consistency check (REQ-254, `rivet release check --variant`) decides consistency but emits no certificate, while EU AI Act Art. 12 / DO-178C / ISO 26262 audits demand per-configuration re-checkable trace evidence. Two parts: (1) define an `ordeal-certificate` evidence artifact type — carries the certificate blob (or content-addressed pointer + hash), the transform it attests, the standard(s) satisfied, and a `recheck` command/hash so `rivet validate` treats a re-checked certificate as a verification link, not a claimed status; generalizes across the toolchain (loom/synth/sigil/spar/gale). (2) a `--certify` hook on `rivet release check --variant` / `rivet variant solve` that shells the resolved feature model + config to ordeal's propositional-SAT front-end and emits the cert.recheck()-able artifact. BLOCKED-BY ordeal#67: the SAT front-end + a stable certificate serialization must exist first. Part (1) schema design can be co-designed now against ordeal's proposed serialization; part (2) waits on ordeal#67 shipping (ordeal v0.13.0). Needs a design decision before implementation."
+    status: implemented
+    description: "rivet#693 / ordeal#67 (FEAT-011, the certificate-as-evidence spine). rivet's variant/release consistency check (REQ-254, `rivet release check --variant`) decides consistency but emits no certificate, while EU AI Act Art. 12 / DO-178C / ISO 26262 audits demand per-configuration re-checkable trace evidence. Two parts: (1) define an `ordeal-certificate` evidence artifact type — carries the certificate blob (or content-addressed pointer + hash), the transform it attests, the standard(s) satisfied, and a `recheck` command/hash so `rivet validate` treats a re-checked certificate as a verification link, not a claimed status; generalizes across the toolchain (loom/synth/sigil/spar/gale). (2) a `--certify` hook on `rivet release check --variant` / `rivet variant solve` that shells the resolved feature model + config to ordeal's propositional-SAT front-end and emits the cert.recheck()-able artifact. Part (1) shipped in v0.31.0 (schemas/ordeal-certificate.yaml + validation rules `V-ordeal-cert-v1-inline-only` and `V-ordeal-cert-needs-recheck`, tests in rivet-core/tests/ordeal_certificate_schema.rs, docs at `rivet docs artifact-types/ordeal-certificate`) — unblocked by ordeal PR #107 (v0.17.0 `cert-bundle` feature, ordeal-cert/v1 envelope with both content hashes verified before parse returns). Part (2) — the `--certify` hook wiring rivet's variant solver into ordeal's propositional-SAT front-end — still pending; will be filed as a separate REQ when picked up."
+    release: v0.31.0
     provenance:
       created-by: ai-assisted
-      model: claude-opus-4-8
+      model: claude-opus-4-7
       timestamp: 2026-07-11T00:00:00Z
 
   - id: REQ-256

@@ -1,0 +1,321 @@
+# Ordeal certificate schema — machine-re-checkable proof evidence.
+#
+# rivet#693 / ordeal#67, ordeal PR #107 (v0.17.0 `cert-bundle` feature).
+#
+# Ingests certificates emitted by `ordeal` — the propositional-SAT /
+# proof back-end — as first-class rivet evidence. A certificate names the
+# transform it attests, the standard(s) it satisfies (DO-178C /
+# ISO 26262 / EU AI Act Art. 12), the CNF that was decided, the proof
+# that was produced, and the `recheck` command needed to independently
+# re-verify it. `rivet validate` treats a certificate that has been
+# re-checked (exit code == expected) as a verification LINK, not a
+# claimed status: never-re-checked certificates are surfaced as
+# "unverified evidence" rather than counted toward coverage.
+#
+# ── Serialization contract ──────────────────────────────────────────────
+# The upstream envelope is `ordeal-cert/v1` — a JSON envelope over a
+# `{cnf, lrat}` payload, with both content hashes verified before
+# `Certificate::from_cert_v1` returns (tampered proof and tampered
+# problem are each rejected before the checker runs). See
+# https://github.com/pulseengine/ordeal/pull/107 for the shipped shape.
+#
+# ── SAT-witness honesty boundary (baked into the schema) ────────────────
+# UNSAT (`attests-claim: variant-inconsistent`) verdicts carry a full
+# re-checkable LRAT certificate that ordeal's independent checker can
+# validate byte-for-byte. SAT (`attests-claim: variant-consistent`)
+# verdicts today carry the SELF-CHECKED MODEL — ordeal ships no
+# independently re-checkable SAT witness yet, so SAT is a claim +
+# executable-model, not an audit-grade re-derivation. The docs topic
+# (`docs/artifact-types/ordeal-certificate.md`) documents this boundary
+# alongside the recheck contract.
+#
+# ── v1 reader boundary ─────────────────────────────────────────────────
+# `ordeal-cert/v1` is INLINE-PAYLOAD ONLY: bundles that carry `cnf_ref`
+# or `proof_ref` indirection (MB-class certificates) fail with an
+# `Unsupported`-class error out of `from_cert_v1`. The
+# `V-ordeal-cert-v1-inline-only` validation rule below mirrors that
+# boundary on the rivet ingest side so the failure mode is a legible
+# schema violation instead of a mystery deserialize error.
+#
+# References:
+#   - rivet#693  (Part 2: the ingestion type — this file)
+#   - ordeal#67  (SAT front-end + certificate serialization)
+#   - ordeal#107 (ordeal-cert/v1 envelope, ordeal v0.17.0, cert-bundle feature)
+#   - REQ-255    (rivet-side requirement)
+
+schema:
+  name: ordeal-certificate
+  version: "0.1.0"
+  extends: [common]
+  description: >
+    Ingests `ordeal-cert/v1` certificates as rivet evidence artifacts.
+    A certificate binds a transform (variant config, loom rule, synth
+    codegen, sigil overflow, spar layout, gale bitvector) to a proof
+    that can be re-checked at any time — `rivet validate` treats a
+    re-checked certificate as a verification link.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  - name: ordeal-certificate
+    description: >
+      A machine-re-checkable proof certificate emitted by `ordeal`.
+      Carries the CNF that was decided, the proof (LRAT for UNSAT /
+      self-checked model for SAT), the tool + verifier that produced /
+      checked it, and the `recheck` command needed to independently
+      re-verify it. Fields are FLAT (not nested mappings) so the
+      s-expression validation-rule engine can read them directly — the
+      envelope stays 1:1 with `ordeal-cert/v1`, just projected.
+    fields:
+      # ── Provenance: who produced the certificate and who checked it ─
+      - name: produced-by-tool
+        type: string
+        required: true
+        description: >
+          Tool that produced the certificate (e.g. `ordeal`). Mirrors
+          `ordeal-cert/v1` `produced_by.tool`.
+      - name: produced-by-version
+        type: string
+        required: true
+        description: Version of the producing tool (semver).
+      - name: checked-by-verifier
+        type: string
+        required: true
+        description: >
+          Verifier that (would) re-check the proof (e.g. `ordeal-lrat`).
+          Mirrors `ordeal-cert/v1` `checked_by.verifier`.
+      - name: checked-by-version
+        type: string
+        required: true
+        description: Version of the verifier binary.
+
+      # ── Attestation: what the certificate says, under which standard ─
+      - name: attests-claim
+        type: string
+        required: true
+        allowed-values:
+          - variant-consistent
+          - variant-inconsistent
+          - verified-transform
+        description: >
+          The claim the certificate makes. `variant-consistent` (SAT) /
+          `variant-inconsistent` (UNSAT) for feature-model / variant
+          decisions; `verified-transform` for other proved transforms
+          (loom rule, synth codegen, sigil overflow, spar layout, gale
+          bitvector).
+      - name: attests-standards
+        type: list<string>
+        required: true
+        description: >
+          Standards this certificate is evidence toward. Expected
+          identifiers: `DO-178C`, `ISO-26262`, `EU-AI-Act-Art-12`,
+          `EN-50128`, `IEC-61508`, `IEC-62304`. Free-form so future
+          standards land without a schema bump.
+      - name: attests-transform-kind
+        type: string
+        required: false
+        description: >
+          Descriptive tag naming the transform kind this certificate
+          attests (e.g. `variant`, `loom-rule`, `synth-codegen`,
+          `sigil-overflow`, `spar-layout`, `gale-bitvector`). The typed
+          link `attests-transform` (below) is the machine-checked
+          binding to the transform artifact itself; this field is the
+          human-readable label.
+
+      # ── Payload hashes (content-addressed) ─────────────────────────
+      - name: cnf-sha256
+        type: string
+        required: true
+        description: >
+          sha256 over the DIMACS CNF bytes that were decided. Verified
+          before `Certificate::from_cert_v1` returns on the ordeal side;
+          duplicated here so the rivet artifact is auditable without
+          re-invoking the checker.
+      - name: proof-sha256
+        type: string
+        required: true
+        description: >
+          sha256 over the proof bytes (LRAT for UNSAT / self-checked
+          model bytes for SAT — see the SAT-witness honesty boundary in
+          the schema header).
+      - name: cnf-ref
+        type: string
+        required: false
+        description: >
+          MB-scale-cert INDIRECTION pointer (e.g. filesystem path or
+          content-store URI). ORDEAL-CERT/V1 REJECTS this field —
+          bundles using it fail as `BundleError::Unsupported` before
+          the checker runs. Kept here so a future v2 envelope can
+          declare a supported ref path without a schema bump; the
+          `V-ordeal-cert-v1-inline-only` rule enforces the v1 boundary.
+      - name: proof-ref
+        type: string
+        required: false
+        description: >
+          MB-scale-cert INDIRECTION pointer for the proof bytes. Same
+          v1 rejection semantics as `cnf-ref` — see rule
+          `V-ordeal-cert-v1-inline-only`.
+
+      # ── Recheck contract ───────────────────────────────────────────
+      - name: recheck-command
+        type: string
+        required: true
+        description: >
+          Shell command that independently re-verifies the certificate.
+          For UNSAT bundles this shells out to `ordeal-lrat check
+          <problem> <proof>` (the `UnsatBundle::recheck()` operation);
+          for SAT bundles this evaluates the model against the CNF (the
+          self-checked path — no independent SAT witness yet).
+      - name: recheck-expect-exit
+        type: string
+        required: true
+        allowed-values: ["0"]
+        description: >
+          Exit code the recheck must produce for the certificate to
+          count as re-verified. Pinned to `"0"` today (represented as a
+          string so the s-expression evaluator's stringly-typed field
+          resolver can compare it directly; the numeric value is the
+          contract).
+
+      # ── Recheck result (populated when the recheck was actually run) ─
+      - name: recheck-exit-code
+        type: string
+        required: false
+        description: >
+          Exit code observed when the recheck was last run. Presence +
+          equality with `recheck-expect-exit` is what flips this
+          certificate from "claimed evidence" to "verified evidence".
+          Missing when the certificate was ingested but never
+          re-checked — surfaced by rule `V-ordeal-cert-needs-recheck`.
+      - name: recheck-ran-at
+        type: string
+        required: false
+        description: ISO 8601 timestamp of the most recent recheck run.
+      - name: recheck-checked-by
+        type: string
+        required: false
+        description: >
+          Free-form identifier of the runner / CI job that ran the
+          recheck (e.g. `github-actions/rivet-ordeal-recheck`).
+
+    link-fields:
+      - name: attests-transform
+        link-type: attests-transform
+        # Empty target-types = permissive so this schema can be adopted
+        # before the cross-toolchain transform artifact types (variant,
+        # loom-rule, synth-codegen, sigil-overflow, spar-layout,
+        # gale-bitvector) exist as first-class rivet types. When those
+        # types are declared, add them to the `link-types` target-types
+        # list below; `rivet validate`'s `link-target-type` check will
+        # then enforce automatically.
+        required: true
+        cardinality: exactly-one
+        description: >
+          The transform this certificate attests to. Intended targets:
+          a variant/feature-model configuration, a loom rule, a synth
+          codegen, a sigil overflow, a spar layout, a gale bitvector,
+          or any other artifact whose transform ordeal can prove.
+
+    common-mistakes:
+      - problem: >
+          Certificate ingested but never re-checked. The claim is
+          recorded but `rivet validate` treats it as unverified
+          evidence, not a verification link.
+        fix-command: >
+          Run the certificate's `recheck-command`, then stamp
+          `recheck-exit-code`, `recheck-ran-at`, `recheck-checked-by`
+          onto the artifact.
+
+    example: |
+      - id: CERT-variant-vehicle-control-001
+        type: ordeal-certificate
+        title: "variant vehicle-control-baseline is consistent (SAT)"
+        status: verified
+        produced-by-tool: ordeal
+        produced-by-version: "0.17.0"
+        checked-by-verifier: ordeal-lrat
+        checked-by-version: "0.17.0"
+        attests-claim: variant-consistent
+        attests-standards: ["EU-AI-Act-Art-12", "ISO-26262"]
+        attests-transform-kind: variant
+        cnf-sha256: "b7f3…"
+        proof-sha256: "9a0c…"    # SAT: self-checked model
+        recheck-command: "ordeal-lrat check cnf.dimacs proof.model"
+        recheck-expect-exit: "0"
+        recheck-exit-code: "0"
+        recheck-ran-at: "2026-07-30T05:11:22Z"
+        recheck-checked-by: "github-actions/rivet-ordeal-recheck"
+        links:
+          - type: attests-transform
+            target: VARIANT-vehicle-control-baseline
+
+# ──────────────────────────────────────────────────────────────────────────
+# Link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: attests-transform
+    inverse: attested-by-certificate
+    description: >
+      A certificate attests to the correctness of a specific transform
+      (variant, loom rule, synth codegen, sigil overflow, spar layout,
+      gale bitvector, …). The inverse `attested-by-certificate` lets a
+      transform artifact enumerate every certificate produced for it.
+    source-types: [ordeal-certificate]
+    # Target types intentionally OPEN today — see the note on the
+    # `attests-transform` link-field above. When the cross-toolchain
+    # transform artifact types are declared as first-class rivet types,
+    # add them here to have `rivet validate` enforce the binding.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Validation rules — the ingest-side boundary for `ordeal-cert/v1`
+# ──────────────────────────────────────────────────────────────────────────
+validation-rules:
+
+  - id: V-ordeal-cert-v1-inline-only
+    description: >
+      `ordeal-cert/v1` envelopes are INLINE-PAYLOAD ONLY. Bundles that
+      carry `cnf-ref` or `proof-ref` indirection are rejected by
+      ordeal's `from_cert_v1` as `BundleError::Unsupported` before the
+      checker runs — this rule mirrors that boundary at the rivet
+      ingest layer so the failure surfaces as a legible schema
+      violation rather than a mystery deserialize error. When a future
+      ordeal envelope (v2+) declares a supported ref path, retire this
+      rule and update `cnf-ref` / `proof-ref` semantics.
+    rule: |
+      (implies
+        (= type "ordeal-certificate")
+        (and (not (has-field "cnf-ref"))
+             (not (has-field "proof-ref"))))
+    on-unresolved: skip
+    severity: error
+    message: |
+      {id} carries `cnf-ref` or `proof-ref` indirection. `ordeal-cert/v1`
+      is inline-payload only (Unsupported in ordeal v0.17.0 —
+      `from_cert_v1` rejects the bundle before the checker runs). Inline
+      the payloads and populate `cnf-sha256` / `proof-sha256` instead.
+
+  - id: V-ordeal-cert-needs-recheck
+    description: >
+      An `ordeal-certificate` counts as VERIFIED evidence only once its
+      `recheck-command` has actually been run and the observed
+      `recheck-exit-code` equals the expected `recheck-expect-exit`
+      (pinned to "0" today). A certificate whose `recheck-exit-code` is
+      absent has been ingested but not independently re-verified —
+      `rivet validate` reports it as a warning so `verifies` coverage
+      accounting can distinguish "claimed" from "re-checked".
+    rule: |
+      (implies
+        (= type "ordeal-certificate")
+        (and (has-field "recheck-exit-code")
+             (= recheck-exit-code "0")))
+    on-unresolved: skip
+    severity: warning
+    message: |
+      {id} has not been re-checked (missing `recheck-exit-code` or it
+      does not equal "0"). Run the certificate's `recheck-command`,
+      stamp the observed exit code + timestamp, and re-validate. Until
+      then this certificate is a claim, not a verification link.
+      (`recheck-expect-exit` is pinned to "0" today — see the schema's
+      allowed-values on that field.)
