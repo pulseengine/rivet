@@ -61,6 +61,10 @@ docs-check:
     # schemas/score.yaml's `external-clause` artifact description.
     # Stable standard-clause identifier, not a version.
     - "7.4.3"
+    # ordeal v0.17.0 — the upstream ordeal-cert/v1 contract release
+    # referenced by the ordeal-certificate schema + docs topic (#693).
+    # An ordeal version, not rivet's own.
+    - "0.17.0"
 
 results: results
 

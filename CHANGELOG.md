@@ -5,6 +5,24 @@
 
 ## [Unreleased]
 
+### Added
+- **`ordeal-certificate` evidence artifact type** (REQ-277, #693 Part 2,
+  ordeal#67) — new embedded schema `schemas/ordeal-certificate.yaml` describing an
+  ordeal-cert/v1 bundle (ordeal v0.17.0, `cert-bundle` feature): `produced-by` /
+  `checked-by` tool blocks, `attests-kind`/`attests-claim`/`attests-standards`,
+  `cnf-sha256`/`proof-sha256` content addressing, and a structured `recheck`
+  block (`command`, `expect-exit`). A typed `attests-transform` link-field
+  (inverse `transform-attested-by`) enforces allowed targets via the existing
+  `link-target-type` check. Coverage semantics: a RE-CHECKED certificate
+  (`verification-result: pass`) is a verification link whose `verifies`
+  backlinks count toward `requirement-verification`; a never-re-checked
+  certificate that claims `verifies` is a validation error
+  (`V-ordeal-cert-recheck-gates-verifies`). The honest SAT boundary
+  (self-checked model, warning as a `verifies` source) and the v1 inline-only
+  reader boundary (`cnf-ref`/`proof-ref` → legible Unsupported-class error
+  mirroring ordeal's `BundleError::Unsupported`) are baked into the schema.
+  Docs: `rivet docs schema/ordeal-certificate`.
+
 ## [0.30.0] - 2026-07-23
 
 CI resilience + compliance-export robustness.

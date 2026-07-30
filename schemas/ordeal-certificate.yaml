@@ -1,0 +1,353 @@
+# ordeal-certificate schema (rivet#693 Part 2 / ordeal#67).
+#
+# Declares the `ordeal-certificate` evidence artifact type: rivet's
+# description of an `ordeal-cert/v1` bundle — the machine-re-checkable
+# certificate ordeal emits for a verified transform (a variant/feature-model
+# consistency query, a loom rule proof, a synth codegen equivalence, a sigil
+# overflow check, a spar layout, a gale bitvector query).
+#
+# The upstream serialization contract is ordeal-cert/v1 as shipped in ordeal
+# v0.17.0 (`cert-bundle` feature: `Certificate::to_cert_v1` /
+# `from_cert_v1`, `UnsatBundle::recheck()` — ordeal PR #107). Field names
+# here correspond recognizably to that envelope:
+#
+#   envelope                     this artifact type
+#   ────────────────────────     ─────────────────────────────
+#   format                       format
+#   verdict                      verdict
+#   produced_by {name,version}   produced-by
+#   checked_by {name,version}    checked-by
+#   attests.kind                 attests-kind
+#   attests.claim                attests-claim
+#   attests.standards            attests-standards
+#   recheck.problem_sha256       cnf-sha256
+#   recheck.proof_sha256         proof-sha256
+#   recheck.cmd                  recheck.command
+#   (exit contract)              recheck.expect-exit
+#
+# Two boundaries are baked in, not papered over:
+#
+# 1. The honest SAT boundary. UNSAT is the certificate-carrying verdict:
+#    the bundle carries a DIMACS CNF + LRAT proof that an independent
+#    trusted checker re-validates. For SAT verdicts (e.g. `attests-claim:
+#    variant-consistent`) the proof-* fields describe the SELF-CHECKED
+#    model — ordeal ships no independently re-checkable SAT witness yet.
+#    A SAT certificate used as a `verifies` source draws a warning
+#    (rule `V-ordeal-cert-sat-is-self-checked`).
+#
+# 2. The v1 inline-only reader boundary. `cnf-ref` / `proof-ref`
+#    external-blob indirection is part of the contract for MB-class
+#    proofs but DEFERRED: ordeal's v1 reader rejects it as
+#    `BundleError::Unsupported`, and `rivet validate` mirrors that with a
+#    legible error (rule `V-ordeal-cert-v1-inline-only`) instead of a
+#    mystery failure downstream.
+#
+# Coverage semantics: `rivet validate` treats a RE-CHECKED certificate as
+# a verification link, not a claimed status. A certificate whose
+# `recheck.command` was actually run and exited per `recheck.expect-exit`
+# records `verification-result: pass`; only then may it source `verifies`
+# links (rule `V-ordeal-cert-recheck-gates-verifies`, severity error). A
+# never-re-checked certificate that claims `verifies` fails validation —
+# it cannot silently count toward requirement-verification coverage.
+
+schema:
+  name: ordeal-certificate
+  version: "0.1.0"
+  extends: [common]
+  description: >
+    Evidence artifact type for ordeal-cert/v1 certificate bundles: a
+    machine-re-checkable proof artifact (DIMACS CNF + LRAT for UNSAT;
+    self-checked model for SAT) attesting a verified transform, ingested
+    as DO-178C / ISO 26262 / EU-AI-Act-Art-12 evidence. Re-checked
+    certificates count as verification links; never-re-checked ones do
+    not.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  - name: ordeal-certificate
+    description: >
+      An ordeal-cert/v1 certificate bundle ingested as evidence. Records
+      who produced and who checked the certificate, what it attests
+      (claim + standard clauses served), the sha256 content addresses of
+      the CNF problem and the proof, and the recheck contract (the exact
+      command an auditor runs, and the exit code that means "the
+      mathematics re-checked"). The certificate becomes a verification
+      link only after the recheck command was actually executed and the
+      outcome recorded in `verification-result`. Use the base
+      `cited-source` field to pin the bundle JSON file itself
+      (sha256-stamped) when it is stored in-repo.
+    fields:
+      - name: format
+        type: string
+        required: true
+        allowed-values: ["ordeal-cert/v1"]
+        description: >
+          Upstream envelope format identifier. Only ordeal-cert/v1 is
+          supported; the allowed-values pin makes a future v2 an explicit
+          schema change, not a silent reinterpretation.
+      - name: verdict
+        type: string
+        required: true
+        allowed-values: [sat, unsat]
+        description: >
+          The solver verdict the bundle carries. `unsat` is the
+          certificate-carrying verdict (CNF + LRAT, independently
+          re-checkable); `sat` carries a self-checked model only — see
+          the honest SAT boundary in the schema header.
+      - name: produced-by
+        type: mapping
+        required: true
+        description: >
+          Tool identification of the producer, mirroring the envelope's
+          `produced_by` block. Keys: `name` (e.g. `ordeal`), `version`
+          (e.g. `0.17.0`).
+      - name: checked-by
+        type: mapping
+        required: false
+        description: >
+          Tool identification of the trusted checker that validated the
+          certificate at emission time, mirroring `checked_by`. Keys:
+          `name` (e.g. `ordeal-lrat`), `version`. Required for `unsat`
+          verdicts (conditional rule `unsat-cert-carries-recheckable-pair`);
+          SAT bundles have no independent checker — that is the boundary.
+      - name: attests-kind
+        type: string
+        required: false
+        description: >
+          The envelope's `attests.kind` — the query class this
+          certificate belongs to. Upstream conventions:
+          `propositional_consistency`, `qf_bv_validity`, `equivalence`.
+      - name: attests-claim
+        type: string
+        required: true
+        description: >
+          The envelope's `attests.claim` — what this certificate proves.
+          Conventions: `variant-consistent` (SAT), `variant-inconsistent`
+          (UNSAT), or a free-form structured claim for other transform
+          classes (loom rule proofs, synth codegen equivalence, sigil
+          overflow, spar layout, gale bitvector).
+      - name: attests-standards
+        type: list<string>
+        required: false
+        description: >
+          Standard clauses this evidence serves, mirroring
+          `attests.standards` (e.g. `DO-178C:6.4`, `ISO-26262:6-9`,
+          `EU-AI-Act:Art12`).
+      - name: cnf-sha256
+        type: string
+        required: false
+        description: >
+          sha256 (hex) of the canonical DIMACS clause text of the CNF
+          problem — the envelope's `recheck.problem_sha256`. Upstream
+          verifies this hash BEFORE parsing returns; a mismatch means the
+          bundle was altered and must not be trusted. Required for
+          `unsat` verdicts.
+      - name: cnf-ref
+        type: string
+        required: false
+        description: >
+          External-blob reference for the CNF problem. Declared because
+          it is part of the contract for MB-class proofs, but NOT
+          SUPPORTED by the v1 inline-only reader — using it is a
+          validation error (`V-ordeal-cert-v1-inline-only`), mirroring
+          ordeal's BundleError::Unsupported.
+      - name: proof-sha256
+        type: string
+        required: false
+        description: >
+          sha256 (hex) of the proof payload — the envelope's
+          `recheck.proof_sha256`. For `unsat` this is the LRAT proof body
+          (required); for `sat` the proof payload is the self-checked
+          model per the honest boundary.
+      - name: proof-ref
+        type: string
+        required: false
+        description: >
+          External-blob reference for the proof. Same v1 inline-only
+          boundary as `cnf-ref`: declared, not supported, legible error.
+      - name: recheck
+        type: mapping
+        required: true
+        description: >
+          The recheck contract, mirroring the envelope's `recheck` block.
+          Keys: `command` (the exact invocation of the trusted checker,
+          e.g. `ordeal-lrat check <problem> <proof>` — upstream `recheck.cmd`)
+          and `expect-exit` (the exit code that means the certificate
+          re-checked, normally 0). For `sat` bundles upstream ships a
+          note instead of a command — record the note in `description`
+          and leave `command` empty.
+      - name: verification-result
+        type: string
+        required: false
+        allowed-values: [pass, fail]
+        description: >
+          Recorded outcome of actually RUNNING `recheck.command`: `pass`
+          when it exited with `recheck.expect-exit`, `fail` otherwise.
+          ABSENT means the recheck was never run — the certificate is
+          then a claim, not verification evidence, and must not source
+          `verifies` links (rule `V-ordeal-cert-recheck-gates-verifies`).
+      - name: rechecked-at
+        type: string
+        required: false
+        description: >
+          UTC timestamp of the recorded recheck run (RFC 3339). Optional
+          provenance for the `verification-result` value.
+    link-fields:
+      - name: attests-transform
+        link-type: attests-transform
+        target-types: [requirement, feature, design-decision, aadl-component]
+        cardinality: zero-or-one
+        description: >
+          The artifact whose transform this certificate attests — a
+          variant/feature-model configuration decision, a loom rule, a
+          synth codegen step, a sigil overflow check, a spar layout, a
+          gale bitvector query — as modelled in the consuming project
+          (typically a requirement, feature, design-decision, or
+          aadl-component). Allowed targets are enforced by the
+          `link-target-type` rule.
+      - name: verifies
+        link-type: verifies
+        cardinality: zero-or-many
+        description: >
+          Verification links this certificate provides once re-checked.
+          Gated by `V-ordeal-cert-recheck-gates-verifies`: only a
+          certificate with `verification-result: pass` may source these.
+    common-mistakes:
+      - problem: >-
+          Certificate sources a `verifies` link but the recheck was never
+          run — a claimed status is not a verification link
+        fix-command: >-
+          Run the recorded recheck.command, then
+          rivet modify OC-XXX --set-field verification-result=pass
+      - problem: >-
+          Using `cnf-ref` / `proof-ref` external blobs — the v1 reader is
+          inline-only and rejects them (BundleError::Unsupported upstream)
+        fix-command: >-
+          Inline the payloads in the bundle and record cnf-sha256 /
+          proof-sha256 instead
+      - problem: >-
+          Treating a SAT certificate as independently re-checkable — SAT
+          carries a self-checked model; UNSAT is the certificate-carrying
+          verdict
+        fix-command: "See the honest SAT boundary: rivet docs schema/ordeal-certificate"
+    example: |
+      - id: OC-001
+        type: ordeal-certificate
+        title: variant tls+nomalloc inconsistent with feature model
+        status: verified
+        fields:
+          format: ordeal-cert/v1
+          verdict: unsat
+          produced-by: {name: ordeal, version: 0.17.0}
+          checked-by: {name: ordeal-lrat, version: 0.17.0}
+          attests-kind: propositional_consistency
+          attests-claim: variant-inconsistent
+          attests-standards: [EU-AI-Act:Art12]
+          cnf-sha256: 6c8b2f…64-hex…
+          proof-sha256: 9a01d4…64-hex…
+          recheck:
+            command: ordeal-lrat check problem.cnf proof.lrat
+            expect-exit: 0
+          verification-result: pass
+          rechecked-at: 2026-07-30T00:00:00Z
+        links:
+          - type: attests-transform
+            target: FEAT-042
+          - type: verifies
+            target: REQ-001
+
+# ──────────────────────────────────────────────────────────────────────────
+# Link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: attests-transform
+    inverse: transform-attested-by
+    description: >
+      A certificate attests the transform performed/decided by the target
+      artifact. The typed counterpart of the envelope's `attests` block:
+      it points the evidence at the thing it is evidence OF.
+    source-types: [ordeal-certificate]
+    target-types: [requirement, feature, design-decision, aadl-component]
+
+# ──────────────────────────────────────────────────────────────────────────
+# Conditional rules
+# ──────────────────────────────────────────────────────────────────────────
+conditional-rules:
+  - name: unsat-cert-carries-recheckable-pair
+    description: >
+      UNSAT is the certificate-carrying verdict: the bundle must name the
+      trusted checker and carry both content hashes so the pair is
+      independently re-checkable.
+    when:
+      field: verdict
+      equals: unsat
+    then:
+      required-fields: [checked-by, cnf-sha256, proof-sha256]
+    severity: error
+
+# ──────────────────────────────────────────────────────────────────────────
+# Validation rules (s-expression status gates)
+# ──────────────────────────────────────────────────────────────────────────
+validation-rules:
+  - id: V-ordeal-cert-recheck-gates-verifies
+    description: >
+      A re-checked certificate is a verification link; a never-re-checked
+      one is a claimed status. Only a certificate whose recheck command
+      was actually executed with the expected exit code (recorded as
+      verification-result: pass) may source `verifies` links — so a
+      certificate that was never re-checked cannot count toward
+      requirement-verification coverage.
+    rule: |
+      (implies
+        (and (= type "ordeal-certificate")
+             (links-count "verifies" > 0))
+        (= verification-result "pass"))
+    severity: error
+    message: |
+      {id} (ordeal-certificate) sources `verifies` links but its recheck
+      was never recorded as executed with the expected exit code
+      (verification-result is absent or not `pass`). A never-re-checked
+      certificate is a claim, not verification evidence: run the
+      recheck command and record the outcome.
+
+  - id: V-ordeal-cert-v1-inline-only
+    description: >
+      The v1 reader boundary: ordeal-cert/v1 bundles are
+      inline-payload-only. `cnf-ref` / `proof-ref` external-blob
+      indirection is in the contract for MB-class proofs but deferred —
+      upstream rejects it as BundleError::Unsupported, and rivet surfaces
+      the same boundary as a legible validation error.
+    rule: |
+      (implies
+        (= type "ordeal-certificate")
+        (and (not (has-field "cnf-ref"))
+             (not (has-field "proof-ref"))))
+    severity: error
+    message: |
+      {id}: unsupported by the ordeal-cert/v1 reader — `cnf-ref` /
+      `proof-ref` external-blob indirection is not supported (v1 bundles
+      are inline-payload-only; upstream ordeal rejects such bundles as
+      BundleError::Unsupported). Inline the payload and record
+      cnf-sha256 / proof-sha256 instead.
+
+  - id: V-ordeal-cert-sat-is-self-checked
+    description: >
+      The honest SAT boundary: a `sat` verdict carries a model that was
+      self-checked at solve time — ordeal ships no independently
+      re-checkable SAT witness yet, so a SAT certificate used as a
+      `verifies` source is flagged (warning) rather than silently
+      treated as checker-validated evidence.
+    rule: |
+      (implies
+        (and (= type "ordeal-certificate")
+             (= verdict "sat"))
+        (not (links-count "verifies" > 0)))
+    severity: warning
+    message: |
+      {id} is a SAT certificate used as a `verifies` source: the model
+      was self-checked at solve time, not independently re-checked
+      (UNSAT is the certificate-carrying verdict). Keep the link only if
+      self-checked evidence is acceptable for this claim.
