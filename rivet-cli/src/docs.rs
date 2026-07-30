@@ -340,12 +340,29 @@ const TOPICS: &[DocTopic] = &[
         content: embedded::SCHEMA_VV_COVERAGE,
     },
     DocTopic {
+        slug: "schema/ordeal-certificate",
+        title: "ordeal-certificate schema — machine-re-checkable proof evidence",
+        category: "Schemas",
+        content: ORDEAL_CERTIFICATE_DOC,
+    },
+    DocTopic {
         slug: "tool-qualification",
         title: "Tool qualification dossier — rivet (ISO 26262-8 §11.4.7)",
         category: "Reference",
         content: TOOL_QUALIFICATION_DOC,
     },
 ];
+
+const ORDEAL_CERTIFICATE_DOC: &str = concat!(
+    include_str!("../../docs/artifact-types/ordeal-certificate.md"),
+    r#"
+---
+
+## Schema source (`schemas/ordeal-certificate.yaml`)
+
+"#,
+    include_str!("../../schemas/ordeal-certificate.yaml"),
+);
 
 const TOOL_QUALIFICATION_DOC: &str =
     include_str!("../../docs/design/tool-qualification-dossier.md");

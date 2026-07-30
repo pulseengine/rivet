@@ -1,0 +1,53 @@
+# Golden fixture for the `ordeal-certificate` artifact type (rivet#693
+# Part 2 / ordeal#67). One fully-populated UNSAT certificate — the
+# certificate-carrying verdict — wired to the transform it attests and
+# the requirement it verifies. This file is the round-trip golden: the
+# CST parse must reproduce it byte-identically.
+artifacts:
+  - id: REQ-900
+    type: requirement
+    title: Variant tls+nomalloc must be rejected as inconsistent
+    status: implemented
+    description: >
+      The feature model forbids combining tls with nomalloc; the solve
+      must fail closed with a certificate.
+
+  - id: FEAT-900
+    type: feature
+    title: Feature-model consistency decision for variant tls+nomalloc
+    status: implemented
+    links:
+      - type: satisfies
+        target: REQ-900
+
+  - id: OC-900
+    type: ordeal-certificate
+    title: variant tls+nomalloc inconsistent with feature model
+    status: verified
+    description: >
+      ordeal-cert/v1 UNSAT bundle for the tls+nomalloc consistency query.
+      Re-checked with the trusted LRAT checker on 2026-07-30; exit 0.
+    fields:
+      format: ordeal-cert/v1
+      verdict: unsat
+      produced-by:
+        name: ordeal
+        version: 0.17.0
+      checked-by:
+        name: ordeal-lrat
+        version: 0.17.0
+      attests-kind: propositional_consistency
+      attests-claim: variant-inconsistent
+      attests-standards: [EU-AI-Act:Art12, ISO-26262:6-9]
+      cnf-sha256: 3f786850e387550fdab836ed7e6dc881de23001b8e6f5f9db38f3ba4a4f4a1a5
+      proof-sha256: 89e6c98d92887913cadf06b2adb97f26cde4849b4b1a3b7ec1cbb06cd261f4d9
+      recheck:
+        command: ordeal-lrat check problem.cnf proof.lrat
+        expect-exit: 0
+      verification-result: pass
+      rechecked-at: 2026-07-30T00:00:00Z
+    links:
+      - type: attests-transform
+        target: FEAT-900
+      - type: verifies
+        target: REQ-900

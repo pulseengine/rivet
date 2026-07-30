@@ -36,6 +36,7 @@ pub const SCHEMA_DO_178C: &str = include_str!("../../schemas/do-178c.yaml");
 pub const SCHEMA_EN_50128: &str = include_str!("../../schemas/en-50128.yaml");
 pub const SCHEMA_IEC_61508: &str = include_str!("../../schemas/iec-61508.yaml");
 pub const SCHEMA_IEC_62304: &str = include_str!("../../schemas/iec-62304.yaml");
+pub const SCHEMA_ORDEAL_CERTIFICATE: &str = include_str!("../../schemas/ordeal-certificate.yaml");
 
 // ── Embedded migration recipes ──────────────────────────────────────────
 
@@ -89,6 +90,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "en-50128",
     "iec-61508",
     "iec-62304",
+    "ordeal-certificate",
 ];
 
 /// Metadata for a built-in bridge schema.
@@ -217,6 +219,7 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "en-50128" => Some(SCHEMA_EN_50128),
         "iec-61508" => Some(SCHEMA_IEC_61508),
         "iec-62304" => Some(SCHEMA_IEC_62304),
+        "ordeal-certificate" => Some(SCHEMA_ORDEAL_CERTIFICATE),
         _ => None,
     }
 }

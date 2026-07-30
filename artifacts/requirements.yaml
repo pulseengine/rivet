@@ -7960,3 +7960,17 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-23T00:00:00Z
+
+  - id: REQ-277
+    type: requirement
+    title: "ordeal-certificate evidence artifact type — ingest ordeal-cert/v1 bundles as re-checkable verification links (#693 Part 2, ordeal#67)"
+    status: implemented
+    description: "rivet#693 Part 2 (unblocked by ordeal v0.17.0 / ordeal PR #107). Declare an `ordeal-certificate` embedded schema describing an ordeal-cert/v1 bundle: produced-by / checked-by tool blocks, attests (kind + claim + standards), cnf-sha256/cnf-ref + proof-sha256/proof-ref content addressing, and a structured recheck block (command, expect-exit). Typed `attests-transform` link-field with allowed-target enforcement via the existing link-target-type machinery. Coverage semantics: rivet validate treats a RE-CHECKED certificate (recheck run, exit per expect-exit, recorded as verification-result: pass) as a verification link whose `verifies` backlinks count toward requirement-verification coverage; a never-re-checked certificate that claims `verifies` is a validation ERROR (a claimed status, not evidence). Honest SAT boundary baked in: sat verdicts carry a self-checked model (warning when used as a verifies source; UNSAT is the certificate-carrying verdict). v1 inline-only reader boundary: cnf-ref/proof-ref indirection surfaces as a legible Unsupported-class validation error mirroring ordeal's BundleError::Unsupported. Ships golden round-trip + link-target-type + coverage-split fixtures and the `rivet docs schema/ordeal-certificate` topic. Part 1 (--certify shell-out to ordeal) is explicitly out of scope here."
+    category: functional
+    priority: should
+    release: v0.31.0
+    upstream-ref: "https://github.com/pulseengine/rivet/issues/693"
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-07-30T04:11:24Z

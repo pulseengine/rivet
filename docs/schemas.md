@@ -52,6 +52,7 @@ As of this writing the directory ships 21 domain schemas and 8 bridge schemas.
 | `score`          | Eclipse SCORE metamodel (ASIL-rated open-source software)         |
 | `supply-chain`   | Software supply chain: SBOM, build provenance, CVE tracking       |
 | `vv-coverage`    | Repo-level V&V technique coverage matrix                          |
+| `ordeal-certificate` | ordeal-cert/v1 machine-re-checkable proof evidence            |
 | `research`       | Market research, competitive analysis, patent landscape           |
 
 ### Bridge schemas
