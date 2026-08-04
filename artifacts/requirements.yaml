@@ -7974,3 +7974,36 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-30T04:11:24Z
+
+  - id: REQ-280
+    type: requirement
+    title: "rivet check verification-evidence: nextest -E filtersets false-error as missing tests (downstream Ford/linc-mesh)"
+    status: implemented
+    description: "Downstream bug report (Ford linc-mesh, v0.30.0): `rivet check verification-evidence` emitted 22 false `no test matching` findings for verification steps whose `run` uses a nextest filterset, e.g. `cargo nextest run -p x --lib -E 'test(/message::/)'`. Root cause in rivet-core verification_evidence.rs: `-E`/`--filter-expr` was not in VALUE_FLAGS, so the parser (split_whitespace) grabbed the filterset expression — literal quotes included — as a bogus positional substring filter, then substring-matched it against bare `fn` names (which can never contain a `test(/re/)` string or a `mod::path` segment) → false negative → false `verified`-blocking error. Fix: (1) quote-aware tokenizer strips shell quotes and keeps a quoted filterset as one token; (2) `-E`/`--filter-expr` are value-taking, so the expression is consumed and never surfaces as a filter; (3) a nextest filterset step is detected and reported as SKIPPED (not verified) rather than errored — a skipped safety check must never read as passed. Reproduced + regression-tested (rivet-core unit + rivet-cli integration). Ships as v0.30.1. Does not evaluate filtersets (see REQ-281)."
+    release: v0.30.1
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-04T00:00:00Z
+
+  - id: REQ-281
+    type: requirement
+    title: "rivet check verification-evidence: actually evaluate nextest filterset expressions (not just skip)"
+    status: proposed
+    description: "Follow-up to REQ-280. The named-test-exists checker scans a universe of leaf `fn` names, which cannot satisfy nextest filterset predicates that address full test PATHS/regexes (`test(/message::/)`, `test(=mod::name)`, `package()/binary()/kind()` + set operators). v0.30.1 conservatively SKIPS such steps (never false-errors) but therefore does not verify them. Give the check real filterset evaluation. Decision to record (DD): either (a) build qualified test paths by tracking `mod` nesting during the source scan and evaluate the filterset grammar ourselves — a maintenance commitment to track nextest's grammar; or (b) shell out to `cargo nextest list -E <expr>` and assert a non-zero match count, making nextest itself the oracle (correct for all forms, but requires a compiled project + nextest installed, changing the check from a pure static scan to a build-dependent one). Prefer (b) behind an opt-in flag so the default stays fast + build-free. Restores coverage of the steps REQ-280 skips."
+    release: v0.31.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-04T00:00:00Z
+
+  - id: REQ-282
+    type: requirement
+    title: "rivet sql: self-describing schema (SHOW TABLES / --schema) + discoverability from --help"
+    status: proposed
+    description: "Downstream question (Ford linc-mesh): 'there is nowhere documentation about the sql tables and formats and what can be queried.' The schema IS documented (docs/getting-started.md 'SQL over the artifact store': tables artifacts/links/fields/provenance + columns, output table|json|csv, read/write rules) but is unreachable from where a user looks — `rivet sql --help` doesn't point to it and the engine can't describe itself. Make `rivet sql` self-describing: support `rivet sql --schema` (and/or `.tables` / `SHOW TABLES` / `.schema`) to print the projected tables + columns, and reference the schema doc from `rivet sql --help`. A query engine that can't enumerate its own tables is a real discoverability gap. Small, docs+CLI-help slice; no engine change beyond a schema dump."
+    release: v0.31.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-04T00:00:00Z

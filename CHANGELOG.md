@@ -24,6 +24,22 @@
   Docs: `rivet docs schema/ordeal-certificate`.
 
 ## [0.30.0] - 2026-07-23
+## [0.30.1] - 2026-08-04
+
+### Fixed
+- **`rivet check verification-evidence` no longer false-errors on nextest
+  filtersets** (REQ-280) — a verification step whose `run` selects tests via a
+  `cargo nextest run -E`/`--filter-expr` filterset (e.g. `test(/message::/)` or a
+  set expression) was reported as a *missing test*. The parser did not treat
+  `-E`/`--filter-expr` as value-taking, so it grabbed the filterset expression —
+  literal shell quotes included — as if it were a plain positional substring
+  filter, then substring-matched it against bare `fn` names (which can never
+  contain a `test(/re/)` string or a `mod::path` segment) → a false negative that
+  wrongly blocked a `verified` requirement. Reported downstream against v0.30.0.
+  The parser now uses a quote-aware tokenizer and consumes the filterset value, so
+  it can never surface as a bogus filter; a filterset step is reported as
+  **skipped (not verified)** — a skipped safety check must never read as a passed
+  one — rather than errored. Actually evaluating filtersets is tracked as REQ-281.
 
 CI resilience + compliance-export robustness.
 

@@ -8099,6 +8099,24 @@ fn collect_rust_fn_names(dir: &std::path::Path, out: &mut std::collections::BTre
     }
 }
 
+/// REQ-280: true when `run` is a `cargo nextest run` invocation that selects
+/// tests via a filterset expression (`-E` / `--filter-expr`), e.g.
+/// `test(/message::/)` or `test(a) & package(b)`. Such expressions address full
+/// test PATHS / regexes, which the leaf-`fn`-name scanner in
+/// `verification_evidence` cannot satisfy — the CLI reports these steps as
+/// *skipped (not verified)* rather than false-erroring them (REQ-281 tracks real
+/// filterset evaluation). Detection only, so a plain whitespace split suffices.
+fn is_nextest_filterset(run: &str) -> bool {
+    let tokens: Vec<&str> = run.split_whitespace().collect();
+    let has_nextest_run = tokens
+        .windows(2)
+        .any(|w| w[0] == "nextest" && w[1] == "run");
+    has_nextest_run
+        && tokens
+            .iter()
+            .any(|t| *t == "-E" || t.starts_with("--filter-expr"))
+}
+
 /// #556 (REQ-236 pt2): assert that a verification artifact's named-test steps
 /// (`fields.steps[].run: "cargo test … <filter>"`) reference tests that
 /// actually exist in the scanned Rust sources — catching the silent-drift case
@@ -8139,7 +8157,14 @@ fn cmd_check_verification_evidence(
         filter: String,
         command: String,
     }
+    #[derive(serde::Serialize)]
+    struct Skipped {
+        artifact: String,
+        command: String,
+        reason: String,
+    }
     let mut missing: Vec<Missing> = Vec::new();
+    let mut skipped: Vec<Skipped> = Vec::new();
     let mut checked = 0usize;
     let mut sorted: Vec<&rivet_core::model::Artifact> = ctx.store.iter().collect();
     sorted.sort_by(|a, b| a.id.cmp(&b.id));
@@ -8151,16 +8176,31 @@ fn cmd_check_verification_evidence(
             let Some(run) = step.get("run").and_then(|v| v.as_str()) else {
                 continue;
             };
-            let Some(filter) = ve::parse_cargo_test_filter(run) else {
-                continue;
-            };
-            checked += 1;
-            if !ve::filter_matches_any(&filter, &fn_names) {
-                missing.push(Missing {
-                    artifact: a.id.clone(),
-                    filter,
-                    command: run.to_string(),
-                });
+            match ve::parse_cargo_test_filter(run) {
+                Some(filter) => {
+                    checked += 1;
+                    if !ve::filter_matches_any(&filter, &fn_names) {
+                        missing.push(Missing {
+                            artifact: a.id.clone(),
+                            filter,
+                            command: run.to_string(),
+                        });
+                    }
+                }
+                None => {
+                    // A nextest filterset (`-E 'test(/re/)'`) addresses full test
+                    // PATHS/regexes, which this leaf-fn-name scanner cannot satisfy.
+                    // Report it as SKIPPED (not verified) — never a false error.
+                    if is_nextest_filterset(run) {
+                        skipped.push(Skipped {
+                            artifact: a.id.clone(),
+                            command: run.to_string(),
+                            reason: "nextest filterset expression (-E/--filter-expr) \
+                                     not evaluable by the fn-name scanner"
+                                .to_string(),
+                        });
+                    }
+                }
             }
         }
     }
@@ -8170,28 +8210,42 @@ fn cmd_check_verification_evidence(
             "command": "check verification-evidence",
             "named_test_steps_checked": checked,
             "missing": missing,
+            "skipped": skipped,
             "ok": missing.is_empty(),
         });
         println!("{}", serde_json::to_string_pretty(&obj)?);
-    } else if missing.is_empty() {
-        println!(
-            "\u{2713} verification-evidence: {checked} named-test step(s) all reference an existing test."
-        );
     } else {
-        println!(
-            "\u{2717} verification-evidence: {} named-test step(s) reference a test that does not exist:",
-            missing.len()
-        );
-        for m in &missing {
+        if missing.is_empty() {
             println!(
-                "  {} — no test matching `{}` found (from `{}`)",
-                m.artifact, m.filter, m.command
+                "\u{2713} verification-evidence: {checked} named-test step(s) all reference an existing test."
+            );
+        } else {
+            println!(
+                "\u{2717} verification-evidence: {} named-test step(s) reference a test that does not exist:",
+                missing.len()
+            );
+            for m in &missing {
+                println!(
+                    "  {} — no test matching `{}` found (from `{}`)",
+                    m.artifact, m.filter, m.command
+                );
+            }
+            println!(
+                "\n  A `cargo test <filter>` that matches nothing exits 0 with \"0 passed\", so this\n  \
+                 would otherwise keep the requirement silently `verified`. Fix the filter or the test name."
             );
         }
-        println!(
-            "\n  A `cargo test <filter>` that matches nothing exits 0 with \"0 passed\", so this\n  \
-             would otherwise keep the requirement silently `verified`. Fix the filter or the test name."
-        );
+        if !skipped.is_empty() {
+            println!(
+                "\n\u{26a0} {} step(s) SKIPPED — a nextest filterset (`-E`/`--filter-expr`) selects \
+                 tests by\n  full path/regex, which the fn-name scanner cannot evaluate. These are \
+                 NOT verified:",
+                skipped.len()
+            );
+            for s in &skipped {
+                println!("  {} — (from `{}`)", s.artifact, s.command);
+            }
+        }
     }
     Ok(missing.is_empty())
 }
