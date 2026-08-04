@@ -404,7 +404,10 @@ pub fn validate_with_externals_and_variant(
     for rule in &schema.conditional_rules {
         let compiled_re = rule.when.compile_regex();
         let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
-        for artifact in store.iter() {
+        // #746: iterate in deterministic id-order so pushed diagnostics
+        // land in a stable sequence — required for byte-identical
+        // `rivet validate` output across runs.
+        for artifact in store.iter_sorted() {
             // If a precondition is set, it must also match
             if let Some(cond) = &rule.condition {
                 if !cond.matches_artifact_for_variant_with(artifact, condition_re.as_ref(), variant)
@@ -488,7 +491,9 @@ pub(crate) fn evaluate_validation_rules(
             }
         };
         let policy: sexpr_eval::MissingTargetPolicy = rule.on_unresolved.into();
-        for artifact in store.iter() {
+        // #746: iterate in deterministic id-order so pushed diagnostics
+        // land in a stable sequence.
+        for artifact in store.iter_sorted() {
             let holds =
                 sexpr_eval::matches_filter_with_policy(&expr, artifact, graph, store, policy);
             if holds {
@@ -629,8 +634,11 @@ pub fn validate_structural_with_externals_and_variant(
 ) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
 
-    // 1. Check that every artifact has a known type
-    for artifact in store.iter() {
+    // 1. Check that every artifact has a known type.
+    // #746: iterate in deterministic id-order across all validation
+    // passes so pushed diagnostics land in a stable sequence — required
+    // for byte-identical `rivet validate` output across runs.
+    for artifact in store.iter_sorted() {
         // REQ-082: external (prefixed) artifacts are present only for
         // cross-link resolution — do not validate the supplier's project.
         if is_external_artifact(artifact) {
@@ -1086,7 +1094,8 @@ pub fn validate_structural_with_externals_and_variant(
     // (issue #245).
     use std::collections::BTreeSet;
     let known_link_types: BTreeSet<&str> = schema.link_types.keys().map(String::as_str).collect();
-    for artifact in store.iter() {
+    // #746: iterate in deterministic id-order.
+    for artifact in store.iter_sorted() {
         // REQ-082: skip external (prefixed) artifacts — supplier's gate.
         if is_external_artifact(artifact) {
             continue;
@@ -1149,7 +1158,8 @@ pub fn validate_structural_with_externals_and_variant(
     }
 
     // 9. Check unknown fields (not defined in schema for this artifact type)
-    for artifact in store.iter() {
+    // #746: iterate in deterministic id-order.
+    for artifact in store.iter_sorted() {
         // REQ-082: skip external (prefixed) artifacts — supplier's gate.
         if is_external_artifact(artifact) {
             continue;
@@ -1205,7 +1215,8 @@ pub fn validate_structural_with_externals_and_variant(
     // REQ-028 three times yields one warning, matching the
     // unknown-link-type pass's per-(artifact, link-type) policy.
     // (BTreeSet is already imported at the top of pass 8 above.)
-    for artifact in store.iter() {
+    // #746: iterate in deterministic id-order.
+    for artifact in store.iter_sorted() {
         // REQ-082: skip external (prefixed) artifacts — supplier's gate.
         if is_external_artifact(artifact) {
             continue;
@@ -1503,7 +1514,8 @@ pub fn validate_variants(
     let mut diagnostics = Vec::new();
     let known_sorted: Vec<&str> = known_variants.iter().map(String::as_str).collect();
 
-    for artifact in store.iter() {
+    // #746: iterate in deterministic id-order.
+    for artifact in store.iter_sorted() {
         // REQ-082: skip external (prefixed) artifacts — supplier's gate.
         if is_external_artifact(artifact) {
             continue;

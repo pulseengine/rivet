@@ -451,8 +451,127 @@ fn scan_source_skips(source: &model::SourceConfig, base_dir: &Path) -> Vec<Skipp
 /// [`load_artifacts_with_report`] calls would each miss. Detection happens
 /// here, before the artifacts are `upsert`ed into a `Store`, because
 /// `upsert` is keyed by ID and last-write-wins (REQ-075).
+///
+/// Every collision fires — including two artifacts in the same file
+/// (a real bug the loader can't rule out) and two artifacts across two
+/// files (the classic ID clash). To silence the *self*-collisions that
+/// arise when a `rivet.yaml` `sources` overlap loads one file twice
+/// (#746), use [`detect_duplicate_ids_excluding_overlaps`] with the set
+/// of overlapped files from [`detect_source_overlaps`].
 pub fn detect_duplicate_ids_for_validate(artifacts: &[model::Artifact]) -> Vec<DuplicateId> {
     detect_duplicate_ids(artifacts)
+}
+
+/// Like [`detect_duplicate_ids_for_validate`] but silences self-collisions
+/// (two artifacts with identical `id` AND identical resolved
+/// `source_file`) for files listed in `overlapped_files`. Used by
+/// `rivet validate` after [`detect_source_overlaps`] identifies which
+/// files were double-loaded by overlapping `rivet.yaml` `sources`
+/// entries — those collisions are symptoms of the config, not of the
+/// artifacts, and are reported once as an `overlapping-source` warning
+/// pointing at `rivet.yaml` instead of N per-id errors pointing at the
+/// same file (#746).
+///
+/// Genuine within-file duplicates in a NON-overlapped file still fire —
+/// that's a real bug (`Store::upsert` would silently pick a survivor).
+pub fn detect_duplicate_ids_excluding_overlaps(
+    artifacts: &[model::Artifact],
+    overlapped_files: &std::collections::HashSet<PathBuf>,
+) -> Vec<DuplicateId> {
+    detect_duplicate_ids_inner(artifacts, overlapped_files)
+}
+
+/// One pair of `rivet.yaml` `sources` entries that resolve to overlapping
+/// on-disk paths — the outer one contains (or equals) the inner one.
+///
+/// A rivet.yaml that lists a directory AND individual files inside it
+/// (typically to mix formats per-file, since directory sources apply one
+/// format to every file) loads each covered file twice, once via each
+/// entry, producing self-collisions in the duplicate-id scan and doubling
+/// the work. Diagnostics point at rivet.yaml rather than the artifacts
+/// they surface as (#746).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceOverlap {
+    /// The `sources[]` index (0-based) of the entry whose path *contains*
+    /// (or equals) the other. When two entries resolve to the same file,
+    /// this is the earlier index.
+    pub outer_index: usize,
+    /// The `path` string as written in `rivet.yaml` for the outer entry.
+    pub outer_path: String,
+    /// The `format` of the outer entry — reported so the user can see
+    /// which of the two formats will apply if the overlap is left in.
+    pub outer_format: String,
+    /// The `sources[]` index (0-based) of the entry whose path is
+    /// *contained by* (or equal to) the outer entry.
+    pub inner_index: usize,
+    /// The `path` string as written in `rivet.yaml` for the inner entry.
+    pub inner_path: String,
+    /// The `format` of the inner entry.
+    pub inner_format: String,
+}
+
+/// Detect `sources[]` entries in `rivet.yaml` whose on-disk paths overlap.
+///
+/// An overlap is either (a) the same resolved path appearing in two
+/// entries, or (b) one entry's resolved path being a directory that
+/// contains another entry's resolved path. Both cases cause the same
+/// file to be loaded twice — once per source — which then produces
+/// self-collisions in `detect_duplicate_ids` and (silently) makes
+/// which-format-wins depend on source order.
+///
+/// Overlaps are reported at most once per pair and always in deterministic
+/// order (sorted by `(outer_index, inner_index)`) so the resulting
+/// diagnostics are byte-stable across runs (also #746).
+///
+/// A missing / unresolvable path is not itself an overlap — the caller
+/// (a directory source's on-disk existence, format-specific loading)
+/// reports those. This scan is purely about pairwise overlap and skips
+/// entries that fail to `canonicalize`.
+pub fn detect_source_overlaps(config: &ProjectConfig, base_dir: &Path) -> Vec<SourceOverlap> {
+    // Canonicalize each source's path exactly once. `None` means the path
+    // failed to canonicalize (missing on disk, permission error) — we
+    // simply don't compare it, since we can't reason about its containment
+    // relationships without a real resolved path.
+    let resolved: Vec<Option<PathBuf>> = config
+        .sources
+        .iter()
+        .map(|s| base_dir.join(&s.path).canonicalize().ok())
+        .collect();
+
+    let mut overlaps = Vec::new();
+    for (i, ri) in resolved.iter().enumerate() {
+        let Some(pi) = ri else { continue };
+        for (j, rj) in resolved.iter().enumerate().skip(i + 1) {
+            let Some(pj) = rj else { continue };
+            // Which side is the outer (containing) source? When the two
+            // paths are equal, the earlier `sources[]` index wins the
+            // outer slot — arbitrary but stable, so diagnostics don't
+            // flip between runs.
+            let (outer_index, inner_index) = if pi == pj || path_contains(pi, pj) {
+                (i, j)
+            } else if path_contains(pj, pi) {
+                (j, i)
+            } else {
+                continue;
+            };
+            overlaps.push(SourceOverlap {
+                outer_index,
+                outer_path: config.sources[outer_index].path.clone(),
+                outer_format: config.sources[outer_index].format.clone(),
+                inner_index,
+                inner_path: config.sources[inner_index].path.clone(),
+                inner_format: config.sources[inner_index].format.clone(),
+            });
+        }
+    }
+    overlaps.sort_by_key(|o| (o.outer_index, o.inner_index));
+    overlaps
+}
+
+/// True if `outer` is a strict ancestor directory of `inner` (i.e. `inner`
+/// lives somewhere under `outer`). Both must be canonicalized paths.
+fn path_contains(outer: &Path, inner: &Path) -> bool {
+    outer != inner && inner.starts_with(outer)
 }
 
 /// Scan a loaded artifact list for IDs claimed by more than one artifact.
@@ -460,13 +579,46 @@ pub fn detect_duplicate_ids_for_validate(artifacts: &[model::Artifact]) -> Vec<D
 /// The first artifact to claim an ID is remembered; every later artifact
 /// with the same ID yields one [`DuplicateId`] pairing the first file with
 /// the colliding file. Two collisions on the same ID produce two entries.
+///
+/// Every collision fires unconditionally. To exclude the specific
+/// self-collision case where two overlapping `rivet.yaml` sources load
+/// the same file twice (#746), use [`detect_duplicate_ids_excluding_overlaps`].
 fn detect_duplicate_ids(artifacts: &[model::Artifact]) -> Vec<DuplicateId> {
+    detect_duplicate_ids_inner(artifacts, &std::collections::HashSet::new())
+}
+
+/// Shared implementation. When `overlapped_files` is non-empty, a
+/// same-id collision whose "first" and "second" source paths are both
+/// `Some(p)`, canonicalize to the same on-disk path, and `p` is a member
+/// of `overlapped_files`, is silently dropped. Otherwise every collision
+/// fires — including two artifacts in the same file (a real bug the
+/// loader can't rule out for every format) and two artifacts across two
+/// files (the classic ID clash).
+fn detect_duplicate_ids_inner(
+    artifacts: &[model::Artifact],
+    overlapped_files: &std::collections::HashSet<PathBuf>,
+) -> Vec<DuplicateId> {
     let mut seen: std::collections::HashMap<&str, Option<PathBuf>> =
         std::collections::HashMap::new();
     let mut duplicates = Vec::new();
     for a in artifacts {
         match seen.get(a.id.as_str()) {
             Some(first_file) => {
+                // #746: suppress ONLY when both artifacts have the same
+                // resolved on-disk source AND that source is one of the
+                // files known to be loaded twice via overlapping
+                // rivet.yaml `sources`. A within-file duplicate in a
+                // file that isn't part of an overlap is still a real
+                // bug and continues to fire.
+                if !overlapped_files.is_empty()
+                    && is_same_overlapped_file(
+                        first_file.as_deref(),
+                        a.source_file.as_deref(),
+                        overlapped_files,
+                    )
+                {
+                    continue;
+                }
                 duplicates.push(DuplicateId {
                     id: a.id.clone(),
                     first_file: first_file.clone(),
@@ -479,6 +631,24 @@ fn detect_duplicate_ids(artifacts: &[model::Artifact]) -> Vec<DuplicateId> {
         }
     }
     duplicates
+}
+
+/// True when both paths are `Some`, resolve to the same on-disk file
+/// (via `canonicalize`), and that resolved path is listed in
+/// `overlapped_files`. Missing-file fallback compares paths literally.
+fn is_same_overlapped_file(
+    a: Option<&Path>,
+    b: Option<&Path>,
+    overlapped_files: &std::collections::HashSet<PathBuf>,
+) -> bool {
+    let (Some(x), Some(y)) = (a, b) else {
+        return false;
+    };
+    let (cx, cy) = match (x.canonicalize(), y.canonicalize()) {
+        (Ok(cx), Ok(cy)) => (cx, cy),
+        _ => (x.to_path_buf(), y.to_path_buf()),
+    };
+    cx == cy && overlapped_files.contains(&cx)
 }
 
 /// Import artifacts from a source using schema-driven rowan extraction.
@@ -539,3 +709,239 @@ pub use formats::generic::{SkipKind, SkippedFile};
 // `DuplicateId` and `LoadReport` are declared in this module directly;
 // they are part of the same load-report channel as `SkippedFile` and are
 // already public (no re-export needed).
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_artifact(id: &str, source_file: Option<PathBuf>) -> model::Artifact {
+        let mut a = model::Artifact {
+            id: id.into(),
+            artifact_type: "requirement".into(),
+            title: id.into(),
+            ..model::Artifact::default()
+        };
+        a.source_file = source_file;
+        a
+    }
+
+    // rivet: verifies REQ-004
+    // #746 regression: same-file self-collisions from an overlapping
+    // `rivet.yaml` sources config must NOT surface as
+    // `duplicate-artifact-id` errors, but ONLY when the caller supplies
+    // the overlapped-file set. Without that context (the default
+    // `detect_duplicate_ids_for_validate` path) every collision still
+    // fires so genuine within-file duplicates aren't silently masked.
+    #[test]
+    fn excluding_overlaps_suppresses_self_collision_from_overlapping_sources() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("validation.yaml");
+        std::fs::write(&path, "- id: REQ-1\n").unwrap();
+        let canon = path.canonicalize().unwrap();
+
+        // Two artifacts with the same id both stamped with the same
+        // resolved source file — the shape produced when `rivet.yaml`
+        // lists both a directory source AND an individual file source
+        // inside it.
+        let artifacts = vec![
+            make_artifact("REQ-1", Some(path.clone())),
+            make_artifact("REQ-1", Some(path.clone())),
+        ];
+
+        // Default (no overlap context) — the collision still fires.
+        // Preserves the genuine within-file duplicate signal for callers
+        // that can't distinguish it from an overlap.
+        assert_eq!(
+            detect_duplicate_ids_for_validate(&artifacts).len(),
+            1,
+            "without overlap context, self-collisions must still fire"
+        );
+
+        // With the file marked as overlapped — collision is suppressed
+        // because it's now known to be an overlapping-source symptom.
+        let mut overlapped = std::collections::HashSet::new();
+        overlapped.insert(canon);
+        assert!(
+            detect_duplicate_ids_excluding_overlaps(&artifacts, &overlapped).is_empty(),
+            "with overlap context, self-collisions on an overlapped file must be silent"
+        );
+    }
+
+    // rivet: verifies REQ-004
+    // #746 aftershock: even with an overlap context, collisions where the
+    // colliding file is NOT the overlapped one must still fire. This
+    // guards against overzealous suppression from a broadly-scoped
+    // overlap set.
+    #[test]
+    fn excluding_overlaps_still_fires_on_non_overlapped_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let overlap_path = tmp.path().join("in-overlap.yaml");
+        let other_path = tmp.path().join("elsewhere.yaml");
+        std::fs::write(&overlap_path, "- id: X\n").unwrap();
+        std::fs::write(&other_path, "- id: X\n").unwrap();
+        let overlap_canon = overlap_path.canonicalize().unwrap();
+
+        // Two same-id artifacts BOTH stamped with a file that is not in
+        // the overlap set — a real within-file duplicate that must still
+        // surface.
+        let artifacts = vec![
+            make_artifact("REQ-1", Some(other_path.clone())),
+            make_artifact("REQ-1", Some(other_path.clone())),
+        ];
+        let mut overlapped = std::collections::HashSet::new();
+        overlapped.insert(overlap_canon);
+        assert_eq!(
+            detect_duplicate_ids_excluding_overlaps(&artifacts, &overlapped).len(),
+            1,
+            "a within-file duplicate in a file NOT part of the overlap must still fire"
+        );
+    }
+
+    // rivet: verifies REQ-004
+    // #746: genuine cross-file collisions must still fire — the same id
+    // in two DIFFERENT files is a real bug (the second silently
+    // overwrites the first) and continues to surface as
+    // `duplicate-artifact-id`.
+    #[test]
+    fn detect_duplicate_ids_still_fires_on_cross_file_collision() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a_path = tmp.path().join("a.yaml");
+        let b_path = tmp.path().join("b.yaml");
+        std::fs::write(&a_path, "- id: REQ-1\n").unwrap();
+        std::fs::write(&b_path, "- id: REQ-1\n").unwrap();
+
+        let artifacts = vec![
+            make_artifact("REQ-1", Some(a_path)),
+            make_artifact("REQ-1", Some(b_path)),
+        ];
+        let dups = detect_duplicate_ids(&artifacts);
+        assert_eq!(
+            dups.len(),
+            1,
+            "genuine cross-file collision must still fire; got {dups:?}"
+        );
+    }
+
+    // rivet: verifies REQ-081
+    // Importers that don't stamp `source_file` (e.g. `import_needs_json`
+    // called without a path) rely on this scan to catch their own
+    // uniqueness violations. Two `None` source files with colliding ids
+    // must always fire, regardless of overlap context.
+    #[test]
+    fn detect_duplicate_ids_still_fires_when_both_source_files_are_none() {
+        let artifacts = vec![make_artifact("REQ-1", None), make_artifact("REQ-1", None)];
+        assert_eq!(
+            detect_duplicate_ids_for_validate(&artifacts).len(),
+            1,
+            "None-source collision must still fire (no overlap ctx)"
+        );
+        // Even with a non-empty overlap set — the None sources aren't
+        // members of any overlapped-file set.
+        let mut overlapped = std::collections::HashSet::new();
+        overlapped.insert(PathBuf::from("/nonexistent/overlap.yaml"));
+        assert_eq!(
+            detect_duplicate_ids_excluding_overlaps(&artifacts, &overlapped).len(),
+            1,
+            "None-source collision must still fire (with overlap ctx)"
+        );
+    }
+
+    // rivet: verifies REQ-004
+    // #746: two `sources` entries that resolve to the same file are
+    // reported as an overlap with `outer_path == inner_path`.
+    #[test]
+    fn detect_source_overlaps_flags_same_resolved_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let file = tmp.path().join("shared.yaml");
+        std::fs::write(&file, "- id: X\n").unwrap();
+
+        let config = project_config_with_sources(vec![
+            make_source("shared.yaml", "generic-yaml"),
+            make_source("./shared.yaml", "stpa-yaml"),
+        ]);
+
+        let overlaps = detect_source_overlaps(&config, tmp.path());
+        assert_eq!(overlaps.len(), 1, "got {overlaps:?}");
+        assert_eq!(overlaps[0].outer_index, 0);
+        assert_eq!(overlaps[0].inner_index, 1);
+        assert_eq!(overlaps[0].outer_path, "shared.yaml");
+        assert_eq!(overlaps[0].inner_path, "./shared.yaml");
+        // Both formats surfaced so the user can see which will apply
+        // last-write-wins.
+        assert_eq!(overlaps[0].outer_format, "generic-yaml");
+        assert_eq!(overlaps[0].inner_format, "stpa-yaml");
+    }
+
+    // rivet: verifies REQ-004
+    // #746: a directory source that contains an individually-listed file
+    // source is reported as an overlap. This is the shape from the
+    // issue's spar reproducer.
+    #[test]
+    fn detect_source_overlaps_flags_directory_containing_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("stpa");
+        std::fs::create_dir(&dir).unwrap();
+        let file = dir.join("validation.yaml");
+        std::fs::write(&file, "- id: X\n").unwrap();
+
+        let config = project_config_with_sources(vec![
+            make_source("stpa", "stpa-yaml"),
+            make_source("stpa/validation.yaml", "generic-yaml"),
+        ]);
+
+        let overlaps = detect_source_overlaps(&config, tmp.path());
+        assert_eq!(overlaps.len(), 1, "got {overlaps:?}");
+        assert_eq!(overlaps[0].outer_index, 0);
+        assert_eq!(overlaps[0].outer_path, "stpa");
+        assert_eq!(overlaps[0].inner_index, 1);
+        assert_eq!(overlaps[0].inner_path, "stpa/validation.yaml");
+    }
+
+    // rivet: verifies REQ-004
+    // #746: disjoint `sources` are NOT reported. Two unrelated directories
+    // (or a directory and a sibling file) must produce no overlap.
+    #[test]
+    fn detect_source_overlaps_ignores_disjoint_sources() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("a")).unwrap();
+        std::fs::create_dir(tmp.path().join("b")).unwrap();
+        std::fs::write(tmp.path().join("a/x.yaml"), "- id: X\n").unwrap();
+        std::fs::write(tmp.path().join("b/y.yaml"), "- id: Y\n").unwrap();
+
+        let config = project_config_with_sources(vec![
+            make_source("a", "generic-yaml"),
+            make_source("b", "generic-yaml"),
+        ]);
+
+        assert!(detect_source_overlaps(&config, tmp.path()).is_empty());
+    }
+
+    fn make_source(path: &str, format: &str) -> model::SourceConfig {
+        model::SourceConfig {
+            path: path.into(),
+            format: format.into(),
+            adapter: None,
+            layout: model::SourceLayout::default(),
+            config: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn project_config_with_sources(sources: Vec<model::SourceConfig>) -> ProjectConfig {
+        ProjectConfig {
+            project: model::ProjectMetadata {
+                name: "test".into(),
+                version: None,
+                schemas: Vec::new(),
+                schema_pins: std::collections::BTreeMap::new(),
+            },
+            sources,
+            docs: Vec::new(),
+            results: None,
+            commits: None,
+            release: None,
+            externals: None,
+            baselines: None,
+            docs_check: None,
+        }
+    }
+}

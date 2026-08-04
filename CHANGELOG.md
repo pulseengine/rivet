@@ -154,6 +154,34 @@ deliberate audit of rivet's own "green that proves less than it appears."
   of `rust_decimal` that rivet does not enable (never compiled into any binary).
 
 ## [0.31.0] - 2026-08-05
+### Fixed
+- **Overlapping `rivet.yaml` `sources` no longer bury real duplicate-id
+  errors** (#746) — a config that listed both a directory source AND
+  individual file sources inside it (typically to override per-file
+  format, since directory sources apply one format to every file) used
+  to load each covered file twice, then surface N `duplicate-artifact-id`
+  errors — one per id in the overlapped file, all with the SAME resolved
+  path on both sides of the "declared more than once: A and B" message.
+  In the reproducer (spar) 184 phantom errors buried 6 genuine cross-file
+  collisions, and the whole error class had been written off in CI as
+  "phantom." `rivet validate` now emits ONE `overlapping-source` warning
+  per pair pointing at `rivet.yaml`, suppresses only the self-collisions
+  that provably come from the overlap (a within-file duplicate in a
+  non-overlapped file is still a real bug and still fires), and leaves
+  cross-file collisions and REQ-081's needs.json guard fully intact.
+
+- **`rivet validate` output is byte-stable across runs** (#746) — the
+  same repo state used to emit `missing: design-decision, feature` on
+  one run and `missing: feature, design-decision` on the next, because
+  the `LifecycleGap.missing` list came from a `HashSet` and the
+  diagnostic vec picked up ids in `HashMap` iteration order via
+  `store.iter()` at eight sites in `validate.rs`. Both surfaces are now
+  deterministic — `missing` is sorted at construction, and every one of
+  those `iter()` calls is now `iter_sorted()` (the pattern established
+  by REQ-159/#415 for export/matrix/coverage). `--format text` and
+  `--format json` now diff cleanly between two runs of `rivet validate`,
+  which is what turned the reproducer's `grep -c` into a wrong number
+  in the issue body.
 
 ### Added
 - **`rivet validate --strict` — compliance-gate mode** (REQ-283) — `validate`

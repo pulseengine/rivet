@@ -5559,10 +5559,57 @@ fn cmd_validate(
             }
         }
     }
+    // #746: detect `rivet.yaml` sources that resolve to overlapping paths
+    // (typically a directory source plus individual file sources inside
+    // it, used to override the per-file format). The pair loads every
+    // covered file twice, which used to surface as N per-artifact
+    // `duplicate-artifact-id` errors pointing at the same file on both
+    // sides. Report it once at the config level instead so the user knows
+    // to fix `rivet.yaml`, not to hunt through the artifacts.
+    let source_overlaps = rivet_core::detect_source_overlaps(&config, &cli.project);
+
+    // Enumerate every file covered by BOTH sides of any overlap, so the
+    // duplicate-id scan below can distinguish an overlap-induced
+    // self-collision (silence) from an in-file duplicate (surface).
+    // Walk the outer path if it's a directory; add the inner path
+    // directly. Canonicalize so the set is keyed by resolved path,
+    // matching what `Artifact.source_file` carries.
+    let overlapped_files: std::collections::HashSet<std::path::PathBuf> = {
+        use std::collections::HashSet;
+        let mut set: HashSet<std::path::PathBuf> = HashSet::new();
+        for overlap in &source_overlaps {
+            for path_str in [overlap.outer_path.as_str(), overlap.inner_path.as_str()] {
+                let resolved = cli.project.join(path_str);
+                let canon = resolved.canonicalize().unwrap_or(resolved);
+                if canon.is_dir() {
+                    // Walk every YAML file under the directory. Reuses
+                    // rivet-core's recursive YAML collector so the file
+                    // filter matches what the loaders actually consume.
+                    let mut files = Vec::new();
+                    if rivet_core::collect_yaml_files(&canon, &mut files).is_ok() {
+                        for (p, _content) in files {
+                            let pb = std::path::PathBuf::from(&p);
+                            let cp = pb.canonicalize().unwrap_or(pb);
+                            set.insert(cp);
+                        }
+                    }
+                } else {
+                    set.insert(canon);
+                }
+            }
+        }
+        set
+    };
+
     // Detect duplicate IDs across the union of all sources. The per-source
     // reports above only see one source each; a project-wide pass catches
-    // an ID claimed in source A and again in source B.
-    let duplicate_ids = rivet_core::detect_duplicate_ids_for_validate(&loaded_for_dup_check);
+    // an ID claimed in source A and again in source B. Overlap-induced
+    // self-collisions (#746) are excluded — they're surfaced as a
+    // separate `overlapping-source` diagnostic below.
+    let duplicate_ids = rivet_core::detect_duplicate_ids_excluding_overlaps(
+        &loaded_for_dup_check,
+        &overlapped_files,
+    );
 
     // Apply baseline scoping if requested
     let (store, graph) = if let Some(bl) = baseline_name {
@@ -5878,6 +5925,41 @@ fn cmd_validate(
             ),
         );
         diag.source_file = Some(skip.path.clone());
+        diagnostics.push(diag);
+    }
+
+    // #746: config-level warning for overlapping `sources` entries in
+    // `rivet.yaml`. One Warning per pair, pointing at the config, so the
+    // user sees "your rivet.yaml has an overlap" rather than N per-file
+    // duplicate-id errors that all point at the same overlapped file.
+    for overlap in &source_overlaps {
+        let msg = if overlap.outer_path == overlap.inner_path {
+            format!(
+                "rivet.yaml `sources` entries {} and {} both resolve to the same path '{}' \
+                 (formats: '{}' and '{}'); the file loads twice and later declarations \
+                 silently overwrite earlier ones",
+                overlap.outer_index,
+                overlap.inner_index,
+                overlap.outer_path,
+                overlap.outer_format,
+                overlap.inner_format,
+            )
+        } else {
+            format!(
+                "rivet.yaml `sources` entry {} ('{}', format '{}') overlaps entry {} \
+                 ('{}', format '{}'); files under the outer directory that are also named \
+                 by the inner entry load twice, once per format",
+                overlap.outer_index,
+                overlap.outer_path,
+                overlap.outer_format,
+                overlap.inner_index,
+                overlap.inner_path,
+                overlap.inner_format,
+            )
+        };
+        let mut diag =
+            validate::Diagnostic::new(Severity::Warning, None, "overlapping-source", msg);
+        diag.source_file = Some(cli.project.join("rivet.yaml"));
         diagnostics.push(diag);
     }
 
