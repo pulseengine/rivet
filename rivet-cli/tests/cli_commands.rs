@@ -792,6 +792,80 @@ fn check_verification_evidence_flags_missing_named_test() {
     assert_eq!(missing, vec!["renamed_or_typod_test"]);
 }
 
+/// REQ-283: `rivet validate --strict` is compliance-gate mode — it promotes the
+/// field-correctness lint rules (`allowed-values`: a value outside the schema
+/// enum; `unknown-field`: a typo'd/undeclared field name) from Warning/Info to
+/// ERROR, so the gate FAILS on them. The default run stays lenient (PASS), since
+/// a project may carry pre-existing violations. Without this, `validate` PASS
+/// proved link integrity + required-fields but said nothing about field values.
+///
+/// rivet: verifies REQ-283
+#[test]
+fn validate_strict_escalates_allowed_values_and_unknown_field_to_errors() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    // `category` is an allowed-values enum field on the base `requirement` type.
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: t\n    status: draft\n    \
+             fields:\n      category: banana\n      bogus_field: x\n",
+    )
+    .unwrap();
+
+    // Default: lenient — the enum violation is a Warning, the unknown field Info.
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    assert!(
+        out.status.success(),
+        "default validate must PASS over an out-of-enum value + unknown field"
+    );
+
+    // --strict: both are promoted to Error → the gate FAILS.
+    let strict = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "validate",
+            "--strict",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("validate --strict");
+    assert!(
+        !strict.status.success(),
+        "validate --strict must FAIL when a field value is out-of-enum or a field is unknown"
+    );
+    let v: serde_json::Value = serde_json::from_slice(&strict.stdout).expect("json");
+    let empty = vec![];
+    let rules: Vec<&str> = v["diagnostics"]
+        .as_array()
+        .unwrap_or(&empty)
+        .iter()
+        .filter(|d| d["severity"] == "error")
+        .filter_map(|d| d["rule"].as_str())
+        .collect();
+    assert!(
+        rules.contains(&"allowed-values"),
+        "allowed-values must be an ERROR under --strict, got errors: {rules:?}"
+    );
+    assert!(
+        rules.contains(&"unknown-field"),
+        "unknown-field must be an ERROR under --strict, got errors: {rules:?}"
+    );
+}
+
 /// REQ-280: a verification step that selects tests via a `cargo nextest run -E`
 /// FILTERSET (`test(/regex/)`, set operators) must NOT be reported as a missing
 /// test — the earlier parser leaked the filterset (quotes and all) as a bogus
