@@ -8007,3 +8007,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-04T00:00:00Z
+
+  - id: REQ-283
+    type: requirement
+    title: "rivet validate --strict: compliance-gate mode escalates field-value/name lint rules to errors (downstream Ford/linc-mesh)"
+    status: implemented
+    description: "Downstream report (Ford linc-mesh): `rivet validate` PASS is used as a compliance gate, but it proves only link integrity + required-field presence — it says nothing about field VALUES or NAMES. A field value outside a schema `allowed-values` enum (`category: banana`) is only a Warning, and an undeclared field NAME (`bogus_field`) is only Info — so `validate` exits 0 over both. The `status` field's enum was uniquely an Error (`status-allowed-values`), an asymmetry with every other field. User chose (AskUserQuestion) an OPT-IN strict mode over flipping defaults, because a project may carry pre-existing violations (this repo has 5 `allowed-values` + 53 `unknown-field`) and a hard-error default would break dogfood `validate` — the same lesson as `--strict-orphans`. Slice 1 (implemented, this): a `rivet validate --strict` flag that promotes `allowed-values` + `unknown-field` diagnostics to Error before the PASS/FAIL + counts, so CI can enforce field-value/name correctness while the default stays lenient. Reproduced + regression-tested (default PASS, --strict FAIL with both rules as errors). Slice 2 (follow-on): a `rivet.yaml` `validate.strict` switch so the policy is persistent per-project, mirroring `release.ready-when`. Ships v0.31."
+    release: v0.31.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-04T00:00:00Z

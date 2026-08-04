@@ -6,6 +6,18 @@
 ## [Unreleased]
 
 ### Added
+- **`rivet validate --strict` — compliance-gate mode** (REQ-283) — `validate`
+  PASS proves link integrity and required-field presence, but by default says
+  nothing about field *values* or *names*: a value outside a schema
+  `allowed-values` enum is only a Warning, and an undeclared field name only Info,
+  so the gate exits 0 over both (the `status` field's enum was uniquely an Error —
+  an asymmetry). `--strict` promotes `allowed-values` and `unknown-field`
+  diagnostics to errors so CI can enforce field-value/name correctness. Opt-in by
+  design — a project may carry pre-existing violations, so the default stays
+  lenient (same rationale as `--strict-orphans`). A persistent `rivet.yaml`
+  `validate.strict` switch is a planned follow-on. Reported downstream.
+
+### Added
 - **`ordeal-certificate` evidence artifact type** (REQ-277, #693 Part 2,
   ordeal#67) — new embedded schema `schemas/ordeal-certificate.yaml` describing an
   ordeal-cert/v1 bundle (ordeal v0.17.0, `cert-bundle` feature): `produced-by` /

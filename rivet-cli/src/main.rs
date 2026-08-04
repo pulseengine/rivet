@@ -411,6 +411,17 @@ enum Command {
         #[arg(long = "strict-orphans")]
         strict_orphans: bool,
 
+        /// REQ-283: compliance-gate mode. Promote the field-correctness lint
+        /// rules — `allowed-values` (a field's value is outside the schema's
+        /// declared enum) and `unknown-field` (a field name not declared in the
+        /// schema, i.e. a typo or drift) — from Warning/Info to ERROR, so
+        /// `validate` FAILS on them. Default keeps them non-fatal: a project may
+        /// carry pre-existing violations, so a hard-error default would break its
+        /// own dogfood run. Turn this on in CI when `validate` is your compliance
+        /// gate and field values/names must be enforced, not just link integrity.
+        #[arg(long)]
+        strict: bool,
+
         /// Also run `rivet validate` inside every linked external
         /// project and surface its diagnostics under a
         /// `cross_repo_diagnostics` array (JSON) / a "Cross-repo
@@ -2381,6 +2392,7 @@ fn run(cli: Cli) -> Result<bool> {
             strict_cited_source_stale,
             check_remote_sources,
             strict_orphans,
+            strict,
             with_externals_validate,
             structural,
         } => {
@@ -2409,6 +2421,7 @@ fn run(cli: Cli) -> Result<bool> {
                     *strict_cited_source_stale,
                     *check_remote_sources,
                     *strict_orphans,
+                    *strict,
                     *with_externals_validate,
                     *structural,
                 )
@@ -5458,6 +5471,7 @@ fn cmd_validate(
     strict_cited_source_stale: bool,
     check_remote_sources: bool,
     strict_orphans: bool,
+    strict: bool,
     with_externals_validate: bool,
     structural_only: bool,
 ) -> Result<bool> {
@@ -6081,6 +6095,25 @@ fn cmd_validate(
     // ID and is correctly kept; `artifact-parse-error` diagnostics carry
     // no artifact_id and are kept.
     diagnostics.retain(|d| !d.artifact_id.as_deref().is_some_and(|id| id.contains(':')));
+
+    // REQ-283: `--strict` is compliance-gate mode. Promote the field-correctness
+    // lint rules to Error BEFORE counting + PASS/FAIL, so the gate fails on them:
+    //   - `allowed-values`  — a field's value is outside the schema's enum
+    //     (declared but only a Warning by default; `status` alone was Error, an
+    //     asymmetry this removes under strict);
+    //   - `unknown-field`   — a field name not declared in the schema (a typo /
+    //     drift, only Info by default).
+    // Default leaves them non-fatal: a project may carry pre-existing violations,
+    // so a hard-error default would break its own dogfood `validate` (same lesson
+    // as `--strict-orphans`). `validate` PASS otherwise proves link integrity +
+    // required-fields, but says nothing about field values/names.
+    if strict {
+        for d in &mut diagnostics {
+            if d.rule == "allowed-values" || d.rule == "unknown-field" {
+                d.severity = Severity::Error;
+            }
+        }
+    }
 
     // REQ-161 / #408: `--structural` gates on graph/parse/type integrity only.
     // Retain just the structural diagnostics BEFORE counting/display, so the
@@ -11193,6 +11226,7 @@ fn cmd_diff(
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
                     strict_orphans: false,
+                    strict: false,
                     with_externals_validate: false,
                     structural: false,
                 },
@@ -11221,6 +11255,7 @@ fn cmd_diff(
                     strict_cited_source_stale: false,
                     check_remote_sources: false,
                     strict_orphans: false,
+                    strict: false,
                     with_externals_validate: false,
                     structural: false,
                 },
