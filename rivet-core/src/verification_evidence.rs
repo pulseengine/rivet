@@ -42,19 +42,19 @@ use std::collections::BTreeSet;
 /// own args (everything after is passed to the test binary), so a filter after
 /// `--` (`cargo test -- --exact name`) is handled too.
 pub fn parse_cargo_test_filter(command: &str) -> Option<String> {
-    let tokens: Vec<&str> = command.split_whitespace().collect();
+    let tokens = shell_tokens(command);
     // Must be a cargo test / cargo nextest run invocation.
-    let mut i = tokens.iter().position(|t| *t == "cargo")?;
+    let mut i = tokens.iter().position(|t| t == "cargo")?;
     i += 1;
     // Optional `+toolchain`.
     if tokens.get(i).is_some_and(|t| t.starts_with('+')) {
         i += 1;
     }
-    match tokens.get(i).copied() {
+    match tokens.get(i).map(String::as_str) {
         Some("test") => i += 1,
         Some("nextest") => {
             i += 1;
-            if tokens.get(i).copied() != Some("run") {
+            if tokens.get(i).map(String::as_str) != Some("run") {
                 return None;
             }
             i += 1;
@@ -62,29 +62,9 @@ pub fn parse_cargo_test_filter(command: &str) -> Option<String> {
         _ => return None,
     }
 
-    // Value-taking cargo flags whose following token is a VALUE, not the filter.
-    const VALUE_FLAGS: &[&str] = &[
-        "-p",
-        "--package",
-        "--exclude",
-        "--test",
-        "--bin",
-        "--example",
-        "--bench",
-        "--features",
-        "--manifest-path",
-        "--target",
-        "--target-dir",
-        "--profile",
-        "-j",
-        "--jobs",
-        "--color",
-        "-F",
-    ];
-
     let mut past_dashdash = false;
     while i < tokens.len() {
-        let tok = tokens[i];
+        let tok = tokens[i].as_str();
         if !past_dashdash && tok == "--" {
             past_dashdash = true;
             i += 1;
@@ -93,7 +73,10 @@ pub fn parse_cargo_test_filter(command: &str) -> Option<String> {
         if tok.starts_with('-') {
             // A `--flag=value` carries its own value; a bare value-flag consumes
             // the next token. Test-binary flags after `--` (e.g. `--exact`,
-            // `--nocapture`) are not filters and are skipped.
+            // `--nocapture`) are not filters and are skipped. `-E` /
+            // `--filter-expr` carry a nextest FILTERSET (a test-path/regex
+            // expression) — consumed here so it can never surface as a bogus
+            // positional substring filter (see `uses_unsupported_nextest_filterset`).
             if !past_dashdash && VALUE_FLAGS.contains(&tok) && !tok.contains('=') {
                 i += 1; // skip the value
             }
@@ -104,6 +87,70 @@ pub fn parse_cargo_test_filter(command: &str) -> Option<String> {
         return Some(tok.to_string());
     }
     None
+}
+
+/// Value-taking cargo/nextest flags whose following token is a VALUE, not the
+/// positional filter. `-E` / `--filter-expr` are nextest filterset flags.
+const VALUE_FLAGS: &[&str] = &[
+    "-p",
+    "--package",
+    "--exclude",
+    "--test",
+    "--bin",
+    "--example",
+    "--bench",
+    "--features",
+    "--manifest-path",
+    "--target",
+    "--target-dir",
+    "--profile",
+    "-j",
+    "--jobs",
+    "--color",
+    "-F",
+    "-E",
+    "--filter-expr",
+];
+
+/// Split a stored command string into tokens, treating single/double quoted spans
+/// as one token with the surrounding quotes removed. Not a full shell parser — it
+/// only groups quoted runs so a quoted filterset (`-E 'test(a) | test(b)'`) stays
+/// one argument and a positional filter copied verbatim from a shell (`'my_case'`)
+/// loses its quotes instead of substring-matching against them.
+fn shell_tokens(command: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut cur = String::new();
+    let mut in_tok = false;
+    let mut quote: Option<char> = None;
+    for c in command.chars() {
+        match quote {
+            Some(q) => {
+                if c == q {
+                    quote = None; // closing quote; the token continues
+                } else {
+                    cur.push(c);
+                }
+            }
+            None => {
+                if c == '\'' || c == '"' {
+                    quote = Some(c);
+                    in_tok = true;
+                } else if c.is_whitespace() {
+                    if in_tok {
+                        tokens.push(std::mem::take(&mut cur));
+                        in_tok = false;
+                    }
+                } else {
+                    cur.push(c);
+                    in_tok = true;
+                }
+            }
+        }
+    }
+    if in_tok {
+        tokens.push(cur);
+    }
+    tokens
 }
 
 /// Extract candidate test names from Rust source: every `fn <name>`. This
@@ -173,6 +220,38 @@ mod tests {
         assert_eq!(
             parse_cargo_test_filter("cargo test -p x -- --exact modx::named"),
             Some("modx::named".into())
+        );
+    }
+
+    #[test]
+    fn nextest_filterset_is_not_mistaken_for_a_positional_filter() {
+        // #REQ-280 regression: a nextest `-E` filterset expression addresses full
+        // test PATHS / regexes, not the leaf-`fn`-name universe this checker knows.
+        // It must NOT leak through as a bogus positional substring filter (which
+        // then substring-matches nothing and false-errors "test does not exist").
+        assert_eq!(
+            parse_cargo_test_filter("cargo nextest run -p linc-nm --lib -E 'test(/message::/)'"),
+            None
+        );
+        assert_eq!(
+            parse_cargo_test_filter("cargo nextest run -p x --filter-expr 'test(a) | test(b)'"),
+            None
+        );
+        // A plain positional filter on nextest is still extracted normally
+        // (only the `-E`/`--filter-expr` value is consumed, never leaked).
+        assert_eq!(
+            parse_cargo_test_filter("cargo nextest run -p x foo"),
+            Some("foo".into())
+        );
+    }
+
+    #[test]
+    fn surrounding_quotes_are_stripped_from_a_positional_filter() {
+        // #REQ-280: a stored command copied from a shell keeps literal quotes;
+        // they must not become part of the substring filter.
+        assert_eq!(
+            parse_cargo_test_filter("cargo test -p x 'my_case'"),
+            Some("my_case".into())
         );
     }
 

@@ -792,6 +792,71 @@ fn check_verification_evidence_flags_missing_named_test() {
     assert_eq!(missing, vec!["renamed_or_typod_test"]);
 }
 
+/// REQ-280: a verification step that selects tests via a `cargo nextest run -E`
+/// FILTERSET (`test(/regex/)`, set operators) must NOT be reported as a missing
+/// test — the earlier parser leaked the filterset (quotes and all) as a bogus
+/// positional substring filter, false-erroring against Ford's linc-mesh. Such a
+/// step is reported as SKIPPED (not verified) and the check still exits 0.
+///
+/// rivet: verifies REQ-280
+#[test]
+fn check_verification_evidence_skips_nextest_filterset_not_errors() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "#[test]\nfn decode_message() { assert!(true); }\n",
+    )
+    .unwrap();
+    // A filterset step (must be skipped, not errored) + a real positional step.
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: FV-001\n    type: requirement\n    title: v\n    status: implemented\n    \
+             fields:\n      steps:\n        \
+             - run: \"cargo nextest run -p p --lib -E 'test(/message::/)'\"\n        \
+             - run: \"cargo test -p p decode_message\"\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "check",
+            "verification-evidence",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("check");
+    assert!(
+        out.status.success(),
+        "a nextest filterset must be skipped, not false-errored"
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(v["ok"], true);
+    // The filterset step is not counted as a checked positional filter.
+    assert_eq!(v["named_test_steps_checked"], 1);
+    assert!(v["missing"].as_array().unwrap().is_empty());
+    let skipped = v["skipped"].as_array().unwrap();
+    assert_eq!(
+        skipped.len(),
+        1,
+        "the filterset step is reported as skipped"
+    );
+    assert_eq!(skipped[0]["artifact"], "FV-001");
+}
+
 /// #547 (REQ-238): `rivet trace-results <req>` walks FORWARD from a requirement
 /// to the test results that cover it (the reverse of the authored `verifies`
 /// direction) and rolls up a pass/fail verdict — the data behind the graphical
