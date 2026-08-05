@@ -761,15 +761,27 @@ jobs:
           ulimit -v 50331648
           cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 2 --output mutants-out -- --lib || true
       - name: Check surviving mutants
+        # REQ-288: cargo-mutants writes to <--output>/mutants.out/, not
+        # <--output>/. This read `mutants-out/missed.txt` — a path that has never
+        # existed — so MISSED was always 0 and every shard reported a clean run.
+        # Evidence: artifact mutants-report-rivet-core-13-of-16's real missed.txt
+        # lists 5 survivors while the job printed 0. This job is nightly and
+        # `continue-on-error: true`, so honest numbers surface without blocking.
         run: |
+          REPORT=mutants-out/mutants.out
+          if [ ! -f "$REPORT/outcomes.json" ]; then
+            echo "::error::no $REPORT/outcomes.json — cargo-mutants crashed or its layout changed; not reporting a pass over missing evidence"
+            ls -R mutants-out 2>/dev/null || echo "(no mutants-out/ at all)"
+            exit 1
+          fi
           MISSED=0
-          if [ -f "mutants-out/missed.txt" ]; then
-            MISSED=$(wc -l < "mutants-out/missed.txt" | tr -d ' ')
+          if [ -f "$REPORT/missed.txt" ]; then
+            MISSED=$(wc -l < "$REPORT/missed.txt" | tr -d ' ')
           fi
           echo "Surviving mutants in ${{ matrix.crate }}: $MISSED"
           if [ "$MISSED" -gt 0 ]; then
             echo "::error::$MISSED mutant(s) survived in ${{ matrix.crate }} — add tests to kill them"
-            head -30 mutants-out/missed.txt
+            head -30 "$REPORT/missed.txt"
             exit 1
           fi
       - name: Upload mutants report
@@ -779,10 +791,11 @@ jobs:
           name: mutants-report-${{ matrix.crate }}-${{ matrix.shard_id }}
           # Only human-readable reports; skip per-mutant target dirs that
           # bloat the artifact to GB-scale and trigger ENOSPC on upload.
+          # REQ-288: these globs previously read `mutants-out/*` — cargo-mutants
+          # writes to `mutants-out/mutants.out/`, so they matched nothing.
           path: |
-            mutants-out/*.txt
-            mutants-out/*.json
-            mutants-out/outcomes.json
+            mutants-out/mutants.out/*.txt
+            mutants-out/mutants.out/*.json
           if-no-files-found: warn
 
   # rivet-cli mutation — HARD GATE (0 surviving mutants), single shard, every
@@ -816,24 +829,57 @@ jobs:
         run: |
           rm -rf mutants-out
           find target -maxdepth 2 -name 'mutants.out*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+      # REQ-288: scope the per-PR gate to the DIFF. rivet-cli has 4311 mutants;
+      # re-running the integration suite for each is orders of magnitude over
+      # this job's 45-minute budget, which is how the gate came to be pointed at
+      # an empty test selector (`-- --lib`, see below) — fast because vacuous.
+      # `--in-diff` asks the question that actually matters per PR: is the code
+      # THIS PR changed covered by a test? Full-scope stays on the nightly
+      # mutants-core path.
+      - name: Compute diff for in-diff scoping
+        run: |
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha || 'main' }}" 2>/dev/null || true
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ]; then BASE="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"; fi
+          git diff "$BASE"...HEAD -- '*.rs' > pr.diff || true
+          echo "diff lines: $(wc -l < pr.diff | tr -d ' ')"
       - name: Run cargo-mutants
         # #590 memory guard (see mutants-core above): cap address space at
         # 48 GiB so a memory-runaway mutant aborts ENOMEM process-local instead
         # of OOM-killing the shared host. `|| true` keeps a clipped mutant as
-        # error, not a gate failure.
+        # error, not a gate failure — the explicit check step below is the gate.
+        #
+        # REQ-288: `-- --lib` was removed. rivet-cli is a pure binary crate with
+        # no lib target, so `cargo test -p rivet-cli --lib` errors with "no
+        # library targets found" — no test ever exercised any mutant, and the
+        # crate's 29 integration test files were excluded by construction.
         run: |
           ulimit -v 50331648
-          cargo mutants -p rivet-cli --shard 0/1 --timeout 30 --jobs 2 --output mutants-out -- --lib || true
-      - name: Check surviving mutants
-        run: |
-          MISSED=0
-          if [ -f "mutants-out/missed.txt" ]; then
-            MISSED=$(wc -l < "mutants-out/missed.txt" | tr -d ' ')
+          if [ ! -s pr.diff ]; then
+            echo "no Rust changes in this diff — nothing to mutate"
           fi
-          echo "Surviving mutants in rivet-cli: $MISSED"
+          cargo mutants -p rivet-cli --timeout 60 --jobs 2 --output mutants-out --in-diff pr.diff || true
+      - name: Check surviving mutants
+        # REQ-288: cargo-mutants writes its report to <--output>/mutants.out/,
+        # NOT to <--output>/ — the old gate read `mutants-out/missed.txt`, a path
+        # that never existed, so MISSED defaulted to 0 and the gate could not
+        # fail. Missing evidence must now be RED, never a clean zero (this also
+        # covers a crashed run being scored as a good one).
+        run: |
+          REPORT=mutants-out/mutants.out
+          if [ ! -f "$REPORT/outcomes.json" ]; then
+            echo "::error::no $REPORT/outcomes.json — cargo-mutants crashed or its output layout changed; refusing to report a pass over missing evidence"
+            ls -R mutants-out 2>/dev/null || echo "(no mutants-out/ at all)"
+            exit 1
+          fi
+          MISSED=0
+          if [ -f "$REPORT/missed.txt" ]; then
+            MISSED=$(wc -l < "$REPORT/missed.txt" | tr -d ' ')
+          fi
+          echo "Surviving mutants in rivet-cli (diff-scoped): $MISSED"
           if [ "$MISSED" -gt 0 ]; then
-            echo "::error::$MISSED mutant(s) survived in rivet-cli — add tests to kill them"
-            head -30 mutants-out/missed.txt
+            echo "::error::$MISSED mutant(s) survived in code this PR changed — add tests to kill them"
+            head -30 "$REPORT/missed.txt"
             exit 1
           fi
       - name: Upload mutants report
@@ -841,10 +887,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mutants-report-rivet-cli-0-of-1
-          path: |
-            mutants-out/*.txt
-            mutants-out/*.json
-            mutants-out/outcomes.json
+          # REQ-288: was `mutants-out/*.txt|*.json`, which matched nothing — no
+          # rivet-cli mutants report has ever been uploaded, in any run.
+          path: mutants-out/mutants.out/
           if-no-files-found: warn
 
   # ── Fuzz testing (main only — too slow for PRs) ───────────────────
