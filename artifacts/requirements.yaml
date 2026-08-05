@@ -8051,3 +8051,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-05T00:00:00Z
+
+  - id: REQ-287
+    type: requirement
+    title: "P0 data loss: modify --add-tag/--remove-tag drops the whole file when a tag needs quoting"
+    status: implemented
+    description: "Mutation-path stress test (user-reported: 'we very often get into failures' modifying artifacts) found a P0. rivet-core/src/yaml_edit.rs:828 re-emitted the tag flow list via `current_tags.join(\", \")` WITHOUT quoting individual tags — unlike the hardened sibling setters (set_title/status/field via yaml_quote_inline_scalar, #687) and the `add` path (mutate.rs). Any tag carrying a YAML flow indicator (`: `, `,`, `[`, `]`, `#`) breaks: a legitimately-quoted `\"release: v1.0\"` read back from the store is re-emitted bare (`release: v1.0`), turning the flow list into a map so the WHOLE FILE fails to parse — silently dropping EVERY artifact in it — while `modify` exits 0 reporting 'modified'. Reproduced: 2 artifacts -> benign `--add-tag simpletag` -> 0 artifacts. Same tag-mutation fragility class as #625, on the quoting axis. Fix: quote each tag via yaml_quote_inline_scalar before joining, mirroring the add path. Regression test (rivet-cli integration) asserts both artifacts survive + the quoted tag stays quoted. Also a silent-split variant (`--add-tag \"a,b\"` stored two tags) is closed by the same quoting."
+    release: v0.32.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-05T00:00:00Z

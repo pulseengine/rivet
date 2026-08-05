@@ -7921,6 +7921,74 @@ fn modify_help_has_no_duplicated_summary() {
     );
 }
 
+/// REQ-287 (P0 DATA LOSS regression): `rivet modify --add-tag` must not corrupt
+/// the file when the artifact already carries a tag that needs quoting (e.g.
+/// `"release: v1.0"`). The buggy path re-emitted the tag list unquoted
+/// (`[alpha, release: v1.0, …]`), turning the flow list into a map so the WHOLE
+/// FILE failed to parse — silently dropping EVERY artifact in it — while
+/// `modify` still exited 0 reporting success.
+///
+/// rivet: verifies REQ-287
+#[test]
+fn modify_add_tag_preserves_quoted_tags_and_does_not_drop_the_file() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    // REQ-100 carries a legitimately-quoted tag with a `: ` flow indicator.
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-100\n    type: requirement\n    title: T\n    status: draft\n    \
+             tags: [alpha, \"release: v1.0\", needs-review]\n  \
+         - id: REQ-101\n    type: requirement\n    title: U\n    status: draft\n",
+    )
+    .unwrap();
+
+    // A benign, unrelated add-tag — must not touch the pre-existing quoted tag.
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "modify",
+            "REQ-100",
+            "--add-tag",
+            "simpletag",
+        ])
+        .output()
+        .expect("modify --add-tag");
+    assert!(out.status.success(), "modify --add-tag should succeed");
+
+    // The whole file must still parse: BOTH artifacts survive (0 = data loss).
+    let list = Command::new(rivet_bin())
+        .args(["--project", dirs, "list", "--format", "json"])
+        .output()
+        .expect("list");
+    let v: serde_json::Value = serde_json::from_slice(&list.stdout).expect("json");
+    let ids: Vec<&str> = v["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a["id"].as_str())
+        .collect();
+    assert!(
+        ids.contains(&"REQ-100") && ids.contains(&"REQ-101"),
+        "both artifacts must survive an --add-tag; got {ids:?} (0/partial = whole-file data loss)"
+    );
+    // The quoted tag must remain quoted on disk so the file stays parseable.
+    let on_disk = std::fs::read_to_string(dir.join("artifacts/a.yaml")).unwrap();
+    assert!(
+        on_disk.contains("\"release: v1.0\""),
+        "the pre-existing quoted tag must stay quoted; file now:\n{on_disk}"
+    );
+}
+
 /// `rivet query --format json` must carry the same `command` envelope field as
 /// list/stats/coverage/validate, and expose the keys query-output.schema.json
 /// documents. REQ-189 (envelope consistency).
