@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-08-05
+
 ### Added
 - **`rivet validate --strict` — compliance-gate mode** (REQ-283) — `validate`
   PASS proves link integrity and required-field presence, but by default says
@@ -16,8 +18,6 @@
   design — a project may carry pre-existing violations, so the default stays
   lenient (same rationale as `--strict-orphans`). A persistent `rivet.yaml`
   `validate.strict` switch is a planned follow-on. Reported downstream.
-
-### Added
 - **`ordeal-certificate` evidence artifact type** (REQ-277, #693 Part 2,
   ordeal#67) — new embedded schema `schemas/ordeal-certificate.yaml` describing an
   ordeal-cert/v1 bundle (ordeal v0.17.0, `cert-bundle` feature): `produced-by` /
@@ -35,9 +35,6 @@
   mirroring ordeal's `BundleError::Unsupported`) are baked into the schema.
   Docs: `rivet docs schema/ordeal-certificate`.
 
-## [0.30.0] - 2026-07-23
-## [0.30.1] - 2026-08-04
-
 ### Fixed
 - **`rivet check verification-evidence` no longer false-errors on nextest
   filtersets** (REQ-280) — a verification step whose `run` selects tests via a
@@ -52,6 +49,8 @@
   it can never surface as a bogus filter; a filterset step is reported as
   **skipped (not verified)** — a skipped safety check must never read as a passed
   one — rather than errored. Actually evaluating filtersets is tracked as REQ-281.
+
+## [0.30.0] - 2026-07-23
 
 CI resilience + compliance-export robustness.
 

@@ -7980,7 +7980,7 @@ artifacts:
     title: "rivet check verification-evidence: nextest -E filtersets false-error as missing tests (downstream Ford/linc-mesh)"
     status: implemented
     description: "Downstream bug report (Ford linc-mesh, v0.30.0): `rivet check verification-evidence` emitted 22 false `no test matching` findings for verification steps whose `run` uses a nextest filterset, e.g. `cargo nextest run -p x --lib -E 'test(/message::/)'`. Root cause in rivet-core verification_evidence.rs: `-E`/`--filter-expr` was not in VALUE_FLAGS, so the parser (split_whitespace) grabbed the filterset expression — literal quotes included — as a bogus positional substring filter, then substring-matched it against bare `fn` names (which can never contain a `test(/re/)` string or a `mod::path` segment) → false negative → false `verified`-blocking error. Fix: (1) quote-aware tokenizer strips shell quotes and keeps a quoted filterset as one token; (2) `-E`/`--filter-expr` are value-taking, so the expression is consumed and never surfaces as a filter; (3) a nextest filterset step is detected and reported as SKIPPED (not verified) rather than errored — a skipped safety check must never read as passed. Reproduced + regression-tested (rivet-core unit + rivet-cli integration). Ships as v0.30.1. Does not evaluate filtersets (see REQ-281)."
-    release: v0.30.1
+    release: v0.31.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
