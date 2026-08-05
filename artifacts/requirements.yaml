@@ -8018,3 +8018,36 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-04T00:00:00Z
+
+  - id: REQ-284
+    type: requirement
+    title: "embedded docs truth-drift: diagnostics 'how to fix' snippets + json-output envelope contradict the binary"
+    status: proposed
+    description: "Weak-green audit (embedded-docs countercheck, v0.31.0) found 8 divergences across 5 topics in rivet-cli/src/docs.rs where the doc claims behavior the binary does not have — invisible to `rivet docs check` (token/format hygiene only). WRONG: (1) json-output doc (docs.rs:712-717) claims a `{command, data:{...}}` envelope, but NO command emits `data` — payload keys are top-level siblings of `command` (misleads integrators most); (2/3/4) diagnostics/required-field, allowed-values, unknown-field snippets use `rivet modify … --field K=V` — the flag is `--set-field` (`--field` errors); (5) diagnostics/known-type uses `rivet modify --type` which does not exist (no CLI type-change at all — YAML edit only); (6) diagnostics/broken-link uses `rivet add requirement REQ-099 --title` — wrong signature (`add --type requirement --title`) and ids are auto-generated (no custom-id flag); (7) unknown-link-type points to `rivet docs links` — topic does not exist (it's `rivet schema links`). STALE: (8) json-output coverage recipe uses `.entries[]` — key is `.rules[]`. All diagnostic severities + message strings are truthful (strong). Fix each snippet to match the binary; part of the weak-green audit ledger."
+    release: v0.32.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-05T00:00:00Z
+
+  - id: REQ-285
+    type: requirement
+    title: "rivet docs check: parse embedded doc snippets + resolve doc-topic references (catch truth-drift mechanically)"
+    status: proposed
+    description: "Meta-fix for the weak-green docs class (REQ-284): `rivet docs check` today validates token/format hygiene, so a doc snippet whose flags don't parse or that references a non-existent `rivet docs <topic>` passes clean. Add two invariants: (a) shell every fenced ```bash rivet …``` snippet in the embedded docs through the clap parser (arg-validation / --help level, no execution) and fail on unknown args/subcommands; (b) assert every `rivet docs <topic>` / `rivet schema <name>` reference in doc prose resolves to a real topic. The countercheck showed this would have caught 6 of 8 REQ-284 divergences mechanically — turning an expensive human audit into a gate. This is the 'weak green' fix at the meta level: make the green prove the snippets are true, not just well-formed."
+    release: v0.32.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-05T00:00:00Z
+
+  - id: REQ-286
+    type: requirement
+    title: "rivet release status: be LOUD about which artifacts block a cut (and whether they are in-scope vs backlog)"
+    status: proposed
+    description: "User-reported: when a release's scope contains artifacts not in a ready status (draft/proposed, or implemented-not-verified), `rivet release status <v>` reports not-cuttable — which may be correct, but the block should be LOUD and actionable, not a terse 'NOT cuttable'. Surface, per blocking artifact: its id, current status, the target status it needs, and (critically) whether it is genuinely IN THIS RELEASE'S SCOPE vs backlog that merely carries the release: field or none — so the user can act (promote it, or move it out of the release) instead of being stuck. Ties to release.ready-when (REQ-240) and the ship-at-implemented gap (the release-status gate is stricter than actual practice). Part of the weak-green/unclear-signal family: a RED that doesn't clearly say why or what to do about it."
+    release: v0.32.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-05T00:00:00Z
