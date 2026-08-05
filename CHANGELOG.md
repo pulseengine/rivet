@@ -5,6 +5,37 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-08-05
+
+Weak-green hardening + mutation reliability + security. This release began as a
+deliberate audit of rivet's own "green that proves less than it appears."
+
+### Fixed
+- **P0 data loss: `rivet modify --add-tag`/`--remove-tag` could drop the whole
+  file** (REQ-287) — the tag flow list was re-emitted without quoting individual
+  tags (unlike the hardened `set-field`/`add` paths). A tag carrying a YAML flow
+  indicator — e.g. a legitimately-quoted `"release: v1.0"` read back from the
+  store — was re-emitted bare, turning the flow list into a map so the WHOLE file
+  failed to parse and **every artifact in it silently vanished**, while `modify`
+  exited 0 reporting success. A benign, unrelated `--add-tag` was enough to
+  trigger it. Each tag is now quoted via `yaml_quote_inline_scalar`; a regression
+  test guards it. (Found by a mutation-path stress audit that otherwise cleared
+  `set-field`/`link`/`unlink`/`sql UPDATE`/`add` as faithful.)
+- **Embedded docs no longer contradict the binary** (REQ-284) — a docs
+  countercheck found 8 truth-drifts that `rivet docs check` (token hygiene only)
+  passed clean: the `json-output` doc claimed a `{command, data:{…}}` envelope no
+  command emits (payload keys are top-level); three diagnostics docs used
+  `modify --field` (the flag is `--set-field`); `known-type` used a non-existent
+  `modify --type`; `broken-link` used a wrong `add` signature; `unknown-link-type`
+  pointed at a non-existent `rivet docs links` topic (it is `rivet schema links`);
+  and a coverage jq recipe used a stale `.entries[]` key (`.rules[]`).
+
+### Security
+- **wasmtime + wasmtime-wasi 45 → 47** — clears **RUSTSEC-2026-0222** (stores can
+  mix up type indices between engines) in the host wasm seam. `rkyv`'s
+  RUSTSEC-2026-0235 is a justified `cargo-audit` ignore: it is an optional feature
+  of `rust_decimal` that rivet does not enable (never compiled into any binary).
+
 ## [0.31.0] - 2026-08-05
 
 ### Added
