@@ -709,12 +709,17 @@ rivet docs --grep PATTERN --format json
 
 const JSON_DOC: &str = r#"# JSON Output Format & jq Examples
 
-All `--format json` output follows a consistent envelope:
+Each `--format json` payload is a flat object: a `"command"` key naming the
+command, alongside the payload keys at the TOP level (there is no `data`
+wrapper). The payload keys vary by command — e.g. `diagnostics`/`errors` for
+`validate`, `artifacts` for `list`, `artifact_types` for `schema list`,
+`matches` for `docs --grep`:
 
 ```json
 {
-  "command": "command-name",
-  "data": { ... }
+  "command": "validate",
+  "diagnostics": [ ... ],
+  "errors": 0
 }
 ```
 
@@ -757,7 +762,7 @@ rivet list -t requirement --format json | jq -r '.artifacts[].id'
 
 ### Get uncovered artifacts from coverage
 ```bash
-rivet coverage --format json | jq '[.entries[] | select(.uncovered_ids | length > 0)]'
+rivet coverage --format json | jq '[.rules[] | select(.uncovered_ids | length > 0)]'
 ```
 
 ### Search docs and get matching lines
@@ -2235,8 +2240,8 @@ found at all — a typo, a deleted artifact, or an unresolved cross-repo id.
 rivet unlink REQ-007 --type satisfies --target REQ-999
 rivet link   REQ-007 --type satisfies --target REQ-099
 
-# genuinely missing: create it
-rivet add requirement REQ-099 --title "..."
+# genuinely missing: create it (the id is auto-generated)
+rivet add --type requirement --title "..."
 
 # obsolete: drop the link
 rivet unlink REQ-007 --type satisfies --target REQ-999
@@ -2293,7 +2298,7 @@ rivet link   DD-002 --type derives-from --target REQ-001
 rivet unlink DD-002 --type satisfies --target REQ-001
 ```
 
-`rivet docs links` (or the validate error itself) lists the declared link
+`rivet schema links` (or the validate error itself) lists the declared link
 types for your schema.
 
 ### B. Declare the link type in the schema
@@ -2336,7 +2341,7 @@ present.)
 ### A. Add the field to the artifact (usual)
 
 ```bash
-rivet modify DD-001 --field rationale="We chose X because ..."
+rivet modify DD-001 --set-field rationale="We chose X because ..."
 # or edit the YAML directly
 ```
 
@@ -2371,7 +2376,7 @@ project.
 ### A. Use an allowed value (usual)
 
 ```bash
-rivet modify REQ-001 --field priority=must
+rivet modify REQ-001 --set-field priority=must
 ```
 
 ### B. Extend the vocabulary (if the value is legitimate)
@@ -2445,7 +2450,7 @@ dropped — but they are invisible to schema-aware queries and rendering.
 
 ```bash
 # rename to the intended field, or drop it
-rivet modify REQ-001 --field priority=must
+rivet modify REQ-001 --set-field priority=must
 # then remove the stray one by editing the YAML
 ```
 
@@ -2477,9 +2482,12 @@ loaded.
 
 ### A. Fix the type on the artifact (typo / wrong type)
 
-```bash
-rivet modify REQ-001 --type requirement
-# or edit `type:` in the YAML
+Edit the artifact's `type:` in its YAML directly — `modify` changes fields,
+not the artifact type, so there is no CLI flag for this:
+
+```yaml
+- id: REQ-001
+  type: requirement   # was: requirment
 ```
 
 ### B. Load or extend the schema
