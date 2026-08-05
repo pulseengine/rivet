@@ -825,7 +825,21 @@ pub fn modify_artifact_yaml(
                 editor.lines.remove(tags_line);
             }
         } else {
-            let tags_value = format!("[{}]", current_tags.join(", "));
+            // Quote each tag before re-emitting the flow list. Without this, a
+            // tag carrying a YAML flow indicator (`: `, `,`, `[`, `]`, `#`, …) —
+            // e.g. a legitimately-quoted `"release: v1.0"` read back from the
+            // store — is re-emitted bare (`release: v1.0`), which turns the flow
+            // list into a map and makes the WHOLE FILE unparseable, silently
+            // dropping every artifact in it. Mirrors the hardened `add` path
+            // (mutate.rs) which quotes each tag via `yaml_quote_inline_scalar`.
+            let tags_value = format!(
+                "[{}]",
+                current_tags
+                    .iter()
+                    .map(|t| yaml_quote_inline_scalar(t))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
             editor
                 .set_field(id, "tags", &tags_value)
                 .map_err(Error::Validation)?;
