@@ -8077,7 +8077,7 @@ artifacts:
   - id: REQ-289
     type: requirement
     title: "Format gate is green on unformatted tracked code: cargo fmt --all misses the fuzz/ workspace (#769, cf. spar#383)"
-    status: proposed
+    status: implemented
     description: "v0.33 gate-potency slice. The required `Format` check runs `cargo fmt --all -- --check`; `--all` means all members of THIS workspace, not all crates in the repo. rivet has two `[workspace]` manifests (root + `fuzz/`), and `compose-witness/` carries its own Cargo.lock as well. Live on HEAD: root `cargo fmt --all -- --check` exits 0 while `cargo fmt --manifest-path fuzz/Cargo.toml -- --check` exits 1 with real drift in tracked files (fuzz/examples/oracle_smoke.rs:44,258; fuzz/fuzz_targets/artifact_ids.rs:38,66; fuzz/fuzz_targets/cli_argv.rs:188). Fix: derive the workspace list (`grep -rl '^\\[workspace\\]' --include=Cargo.toml`) and check each, so a newly added nested workspace cannot silently escape the gate. Ported from spar#383."
     release: v0.33.0
     provenance:

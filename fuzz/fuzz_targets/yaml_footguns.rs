@@ -169,9 +169,12 @@ fn probe(yaml: &str) {
     // serde_yaml happily materializes `target: null`, `target: ~`, and
     // `target: ""` as a link with a string-ish target that is not a real
     // artifact id.  This is the `yaml_hir.rs:530-549` bug class.
-    for list in [
-        serde_result.as_ref().ok().map(|v| v.as_slice()).unwrap_or(&[]),
-    ] {
+    for list in [serde_result
+        .as_ref()
+        .ok()
+        .map(|v| v.as_slice())
+        .unwrap_or(&[])]
+    {
         for a in list {
             for l in &a.links {
                 let t = l.target.trim();
@@ -237,7 +240,10 @@ fn probe(yaml: &str) {
 
 fn apply_footgun(yaml: &str, f: &Footgun) -> String {
     match f {
-        Footgun::Norway { which_field, variant } => {
+        Footgun::Norway {
+            which_field,
+            variant,
+        } => {
             let payload = norway_variant(*variant);
             // Replace the first scalar value at column 4+ that matches the
             // chosen field.  Keep it simple: pick one of id/title/status/
@@ -271,7 +277,9 @@ fn apply_footgun(yaml: &str, f: &Footgun) -> String {
             lines.join("\n") + "\n"
         }
         Footgun::MultiDocument => {
-            format!("{yaml}\n---\nartifacts:\n  - id: REQ-999\n    type: requirement\n    title: Second doc\n")
+            format!(
+                "{yaml}\n---\nartifacts:\n  - id: REQ-999\n    type: requirement\n    title: Second doc\n"
+            )
         }
         Footgun::NullShorthandLink { variant } => {
             let value = match variant % 3 {
@@ -286,9 +294,9 @@ fn apply_footgun(yaml: &str, f: &Footgun) -> String {
         }
         Footgun::UnknownTopLevelKey { variant } => {
             let key = match variant % 3 {
-                0 => "artifact:",    // singular typo
-                1 => "Artifacts:",   // case
-                _ => "artifcats:",   // misspelling
+                0 => "artifact:",  // singular typo
+                1 => "Artifacts:", // case
+                _ => "artifcats:", // misspelling
             };
             yaml.replacen("artifacts:", key, 1)
         }

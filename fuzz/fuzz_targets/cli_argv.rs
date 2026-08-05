@@ -188,11 +188,13 @@ fuzz_target!(|input: ArgvInput| {
                 let output = child
                     .wait_with_output()
                     .ok()
-                    .or_else(|| Some(std::process::Output {
-                        status,
-                        stdout: Vec::new(),
-                        stderr: Vec::new(),
-                    }))
+                    .or_else(|| {
+                        Some(std::process::Output {
+                            status,
+                            stdout: Vec::new(),
+                            stderr: Vec::new(),
+                        })
+                    })
                     .unwrap();
                 if json_mode && status.success() && !output.stdout.is_empty() {
                     let stdout = std::str::from_utf8(&output.stdout).unwrap_or("");

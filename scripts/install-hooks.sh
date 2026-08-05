@@ -40,8 +40,24 @@ cat > "$HOOKS_DIR/pre-commit" << 'HOOK'
 # This hook is convenience only; CI is the real gate (see REQ-051).
 if command -v cargo &>/dev/null \
     && git diff --cached --name-only --diff-filter=ACM | grep -q '\.rs$'; then
-    if ! cargo fmt --all -- --check; then
-        echo "cargo fmt: formatting issues. Run 'cargo fmt --all', then re-stage."
+    # `cargo fmt --all` only formats the invoking workspace. rivet has two
+    # workspaces (root + fuzz/) and one standalone package (compose-witness/);
+    # a single `--all` at the root leaves fuzz/ unchecked (#769).
+    fmt_failed=0
+    for m in $(grep -rl --include=Cargo.toml --exclude-dir=target '^\[workspace\]' .); do
+        if ! cargo fmt --manifest-path "$m" --all -- --check; then
+            fmt_failed=1
+        fi
+    done
+    if [ -f compose-witness/src/lib.rs ]; then
+        if ! rustfmt --check --edition 2024 --config skip_children=true \
+                compose-witness/src/lib.rs; then
+            fmt_failed=1
+        fi
+    fi
+    if [ "$fmt_failed" -ne 0 ]; then
+        echo "cargo fmt: formatting issues. Run 'cargo fmt --all' in each"
+        echo "workspace (root + fuzz/) and rustfmt on compose-witness, then re-stage."
         exit 1
     fi
 fi
