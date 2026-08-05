@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785872774258,
+  "lastUpdate": 1785913415228,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "7ae35445c295fb24fb4d6ede9860d9cb9f431b9f",
-          "message": "feat(release): `rivet release check --variant` — release ∩ variant consistency + scoped cuttability (REQ-254, DD-075, #673) (#689)\n\nrivet had releases (the `release:` field) and variants (feature-model\ncomposition) but no way to check how they intersect. Adds\n`rivet release check <version> --variant <name>` reporting both facets in one\nview (DD-075):\n\n- Consistency: partitions release-tagged artifacts against the variant's\n  resolved artifact-id set — in-scope (release ∩ variant), out-of-scope\n  (tagged for the release but excluded by the variant — the primary\n  inconsistency), and variant-only (bound by the variant, not yet tagged).\n- Cuttability: runs the existing release-readiness predicate scoped to the\n  in-scope intersection; an empty intersection is not cuttable (#628 rule).\n  Exit non-zero when not cuttable, or (under --strict) when any artifact is\n  out-of-scope. text + json output.\n\nThe readiness predicate (verified/accepted + release.ready-when + coverage\nV-closure) is refactored out of cmd_release_status into a shared ReadinessCtx\nthat both commands call, so the two can't drift; cmd_release_status behavior is\nunchanged. Variant→artifact-id resolution reuses the existing CLI feature-model\nsolve + bound-ids path (not the serve-only build_variant_scope).\n\nConfirmed with a new cli_commands test\n(release_check_partitions_release_against_variant), the existing 8 release\ntests still passing (no refactor regression), a full build, `cargo clippy\n--all-targets` on the CI toolchain (Rust 1.97) clean, and `rivet validate` PASS.\n\nImplements: REQ-254\nRefs: DD-075, FEAT-001",
-          "timestamp": "2026-07-11T18:12:08+02:00",
-          "tree_id": "c5699f8029c5193cc68744a7ac9c2c2e6f0090e7",
-          "url": "https://github.com/pulseengine/rivet/commit/7ae35445c295fb24fb4d6ede9860d9cb9f431b9f"
-        },
-        "date": 1783788352173,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 86425,
-            "range": "± 893",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 897535,
-            "range": "± 18365",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13027937,
-            "range": "± 228221",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2178,
-            "range": "± 15",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27469,
-            "range": "± 177",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 352198,
-            "range": "± 1982",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1508842,
-            "range": "± 46348",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161496,
-            "range": "± 632",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1900626,
-            "range": "± 18338",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24348960,
-            "range": "± 783924",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 474388,
-            "range": "± 1948",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15560458,
-            "range": "± 77872",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1281359957,
-            "range": "± 11685992",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4342,
-            "range": "± 158",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 58911,
-            "range": "± 159",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 753428,
-            "range": "± 2000",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61475,
-            "range": "± 225",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 700472,
-            "range": "± 3680",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7901690,
-            "range": "± 110530",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1287,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14887,
-            "range": "± 112",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 328192,
-            "range": "± 2313",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23721,
-            "range": "± 228",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 167420,
-            "range": "± 671",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1495686,
-            "range": "± 19745",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1492777,
             "range": "± 29398",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2129652bbae69f431bfaeeb67077b6c0f4e69e6d",
+          "message": "chore(release): v0.31.0 — nextest-filterset fix + validate --strict + ordeal-certificate type (#760)\n\nConsolidates everything on main since v0.30.0 into a single minor release.\nTwo v0.31-targeted features (ordeal-certificate schema type #743, and\n`validate --strict` #758) had landed alongside the nextest-filterset fix that\nwas slated v0.30.1; a features-in-a-patch release would be a semver smell, so\nthe filterset fix is folded into v0.31.0 (REQ-280 release retargeted).\n\nAlso repairs the CHANGELOG: a prior rebase auto-merge had nested v0.30.0's\ncontent under a misplaced [0.30.1] header — the version sections are now\ncorrectly ordered.\n\nScope (all implemented + merged):\n- REQ-280 nextest -E filterset false-positive fix (#757, #756)\n- REQ-283 validate --strict compliance-gate mode (#758)\n- REQ-277 ordeal-certificate evidence artifact type (#743, #693)\n\nBumps workspace 0.30.1 -> 0.31.0 (rivet-core, rivet-cli, etch) + vscode-rivet.\n\nTrace: skip",
+          "timestamp": "2026-08-05T08:49:24+02:00",
+          "tree_id": "070dffb8625dd42ab2ec1a7cc8ee8ac4f9cf6ed5",
+          "url": "https://github.com/pulseengine/rivet/commit/2129652bbae69f431bfaeeb67077b6c0f4e69e6d"
+        },
+        "date": 1785913413808,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 83652,
+            "range": "± 346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 912492,
+            "range": "± 7763",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 17430583,
+            "range": "± 1243415",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2198,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27975,
+            "range": "± 374",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 381353,
+            "range": "± 3216",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1520198,
+            "range": "± 21685",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 162757,
+            "range": "± 835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1996899,
+            "range": "± 12997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 39778823,
+            "range": "± 4081512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 481108,
+            "range": "± 2087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15839730,
+            "range": "± 498676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1265481257,
+            "range": "± 13600115",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4673,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59695,
+            "range": "± 262",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 815371,
+            "range": "± 13158",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59869,
+            "range": "± 172",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 698494,
+            "range": "± 4477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9889713,
+            "range": "± 814921",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1112,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14739,
+            "range": "± 126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 318314,
+            "range": "± 1678",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22727,
+            "range": "± 208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 161135,
+            "range": "± 906",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1511942,
+            "range": "± 21601",
             "unit": "ns/iter"
           }
         ]
