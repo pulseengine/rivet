@@ -454,6 +454,13 @@ jobs:
         # (not built by default). RUSTSEC-2026-0149 (wasmtime-wasi 43,
         # high) has no fix in the 43.x line; clearing it needs a wasmtime
         # 43->45 major bump, tracked separately.
+        # RUSTSEC-2026-0222 (wasmtime store type-index mixup) is CLEARED by
+        # the wasmtime/wasmtime-wasi 45->47 bump — not ignored, fixed.
+        # RUSTSEC-2026-0235 (rkyv 0.7 OOB reads) is ignored: rkyv is an
+        # OPTIONAL feature of rust_decimal (via gluesql-core) that rivet does
+        # not enable, so it is a Cargo.lock entry only — never compiled into
+        # any rivet binary. rust_decimal pins rkyv ^0.7, so it cannot move to
+        # the fixed 0.8 line without an upstream (gluesql/rust_decimal) bump.
         run: >-
           cargo audit
           --ignore RUSTSEC-2026-0085
@@ -470,6 +477,7 @@ jobs:
           --ignore RUSTSEC-2026-0103
           --ignore RUSTSEC-2026-0104
           --ignore RUSTSEC-2026-0149
+          --ignore RUSTSEC-2026-0235
 
   deny:
     # Renamed: skipping advisories until smithy ships an upgraded
