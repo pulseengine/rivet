@@ -267,6 +267,16 @@ jobs:
             cargo run --release -q -p rivet-cli -- validate --model "$model" --binding artifacts/bindings.yaml --strict-variants
             echo "::endgroup::"
           fi
+      # Gate 1c (REQ-290 / #770): the named-test-exists anti-rot check. rivet
+      # BUILT this checker (REQ-236, hardened again in REQ-280 for nextest
+      # filtersets) precisely to catch the silent-drift class from spar#388 —
+      # `cargo test <renamed_or_typod_filter>` exits 0 with "0 passed", so a
+      # `fields.steps[].run` naming a stale test kept the requirement falsely
+      # `verified`. Until this step landed, no workflow ran the check, so the
+      # protection was opt-in-by-memory. Reuses the release binary the two
+      # steps above already built, so no extra compile cost.
+      - name: rivet check verification-evidence (REQ-290)
+        run: cargo run --release -p rivet-cli -- check verification-evidence
       # Gate 2: no ORPHAN commits and no BROKEN trailer refs introduced by
       # THIS PR. Scoped to the PR's own commits (base..HEAD). NOT `--strict`,
       # which promotes whole-store "artifact has no commit coverage" findings
@@ -311,6 +321,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: rivet validate (fail on errors) — hosted floor
         run: cargo run --release -p rivet-cli -- validate
+      # REQ-290 / #770 mirror on the hosted floor: if the self-hosted pool is
+      # offline, main still gets the named-test-exists anti-rot check.
+      - name: rivet check verification-evidence — hosted floor (REQ-290)
+        run: cargo run --release -p rivet-cli -- check verification-evidence
 
   # ── Tests ─────────────────────────────────────────────────────────────
   test:

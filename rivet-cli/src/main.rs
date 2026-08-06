@@ -8238,17 +8238,33 @@ fn cmd_check_verification_evidence(
         }
     }
 
+    // #770: an empty scan is not a pass. The old text was
+    //   `✓ verification-evidence: 0 named-test step(s) all reference an existing test.`
+    // — a checkmark over nothing checked, the same weak-green shape this check
+    // exists to kill. Report it as a distinct outcome instead.
+    let empty_scan = checked == 0 && skipped.is_empty();
+
     if format == "json" {
         let obj = serde_json::json!({
             "command": "check verification-evidence",
             "named_test_steps_checked": checked,
             "missing": missing,
             "skipped": skipped,
+            "empty_scan": empty_scan,
             "ok": missing.is_empty(),
         });
         println!("{}", serde_json::to_string_pretty(&obj)?);
     } else {
-        if missing.is_empty() {
+        if empty_scan {
+            println!(
+                "\u{26a0} verification-evidence: no named-test step(s) found to check — \
+                 nothing was verified.\n  \
+                 A verification artifact ties a requirement to a specific test via \
+                 `fields.steps[].run: \"cargo test … <filter>\"`.\n  \
+                 If this project uses that shape, none of its steps parsed as a \
+                 cargo/nextest filter; if it doesn't, this check is a no-op here."
+            );
+        } else if missing.is_empty() {
             println!(
                 "\u{2713} verification-evidence: {checked} named-test step(s) all reference an existing test."
             );
