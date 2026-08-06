@@ -8088,7 +8088,7 @@ artifacts:
   - id: REQ-290
     type: requirement
     title: "check verification-evidence runs in no workflow — the anti-rot check nothing enforces (#770, cf. spar#388)"
-    status: proposed
+    status: implemented
     description: "v0.33 gate-potency slice. spar#388 found 7 verification artifacts citing tests that never existed (`cargo test -- <no match>` exits 0, so the gate scored them passing). rivet BUILT the checker for exactly that class — `rivet check verification-evidence` (REQ-236, hardened again in REQ-280 for nextest filtersets) — and `grep verification-evidence .github/workflows/*.yml` returns nothing: no workflow runs it, so the protection is opt-in-by-memory. Second, smaller defect: on an empty scan it prints `✓ verification-evidence: 0 named-test step(s) all reference an existing test` — a checkmark over nothing checked, the same weak-green shape the check exists to kill. Fix: (1) run it in the Traceability job (the binary is already built there); (2) reword the zero-steps case so an empty scan does not render as a pass."
     release: v0.33.0
     provenance:

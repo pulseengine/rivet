@@ -931,6 +931,150 @@ fn check_verification_evidence_skips_nextest_filterset_not_errors() {
     assert_eq!(skipped[0]["artifact"], "FV-001");
 }
 
+/// #770 (REQ-290): the empty-scan case must not render as a pass. The pre-fix
+/// text was `✓ verification-evidence: 0 named-test step(s) all reference an
+/// existing test.` — a checkmark over nothing checked, the same weak-green
+/// shape the check exists to kill. On a project whose verification steps carry
+/// no `cargo test <filter>` invocations (or has no verification steps at all),
+/// stdout must NOT read as a ✓ / "all reference an existing test", and JSON
+/// must expose `empty_scan: true` so a machine can tell the vacuous case from
+/// a genuine pass. Exit code stays 0 (nothing was violated), matching the
+/// pre-fix contract used by callers.
+///
+/// rivet: verifies REQ-290
+#[test]
+fn check_verification_evidence_empty_scan_reads_as_vacuous_not_pass() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    // An artifact with a `steps` block that carries only non-cargo-test runs
+    // (make, python, etc.). The scanner parses none as a cargo/nextest filter,
+    // so `named_test_steps_checked` is 0 with no skipped-filterset entries —
+    // the vacuous-scan case #770 flagged.
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: FV-001\n    type: requirement\n    title: v\n    status: implemented\n    \
+             fields:\n      steps:\n        \
+             - run: \"make lint\"\n        \
+             - run: \"pytest -k something\"\n",
+    )
+    .unwrap();
+
+    // ── text output ───────────────────────────────────────────────────────
+    let text_out = Command::new(rivet_bin())
+        .args(["--project", dirs, "check", "verification-evidence"])
+        .output()
+        .expect("check");
+    assert!(
+        text_out.status.success(),
+        "empty-scan case must exit 0 — the check found nothing to violate"
+    );
+    let text = String::from_utf8_lossy(&text_out.stdout);
+    assert!(
+        !text.contains("\u{2713}") && !text.contains("all reference an existing test"),
+        "empty scan must NOT render as ✓ / 'all reference an existing test'; \
+         stdout was:\n{text}"
+    );
+    assert!(
+        text.contains("no named-test step(s) found") && text.contains("nothing was verified"),
+        "empty scan must state plainly that nothing was verified; stdout was:\n{text}"
+    );
+
+    // ── JSON output ───────────────────────────────────────────────────────
+    let json_out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "check",
+            "verification-evidence",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("check --format json");
+    assert!(json_out.status.success(), "empty-scan case must exit 0");
+    let v: serde_json::Value = serde_json::from_slice(&json_out.stdout).expect("json");
+    assert_eq!(v["named_test_steps_checked"], 0);
+    assert!(v["missing"].as_array().unwrap().is_empty());
+    assert!(v["skipped"].as_array().unwrap().is_empty());
+    assert_eq!(
+        v["empty_scan"], true,
+        "empty_scan must be true so a machine can distinguish the vacuous case \
+         from a genuine pass; JSON was:\n{v}"
+    );
+}
+
+/// #770 (REQ-290): a non-empty scan (real cargo-test steps, all pointing at
+/// existing tests) keeps the pre-fix ✓ / "all reference an existing test"
+/// wording and `empty_scan: false`. Guards against the new empty-scan branch
+/// accidentally shadowing the genuine-pass shape.
+///
+/// rivet: verifies REQ-290
+#[test]
+fn check_verification_evidence_non_empty_scan_still_reads_as_pass() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "#[test]\nfn a_real_test() { assert!(true); }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: FV-001\n    type: requirement\n    title: v\n    status: implemented\n    \
+             fields:\n      steps:\n        \
+             - run: \"cargo test -p p a_real_test\"\n",
+    )
+    .unwrap();
+
+    let text_out = Command::new(rivet_bin())
+        .args(["--project", dirs, "check", "verification-evidence"])
+        .output()
+        .expect("check");
+    assert!(text_out.status.success());
+    let text = String::from_utf8_lossy(&text_out.stdout);
+    assert!(
+        text.contains("\u{2713}") && text.contains("all reference an existing test"),
+        "a real pass must still render as ✓ / 'all reference an existing test'; \
+         stdout was:\n{text}"
+    );
+
+    let json_out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "check",
+            "verification-evidence",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("check --format json");
+    let v: serde_json::Value = serde_json::from_slice(&json_out.stdout).expect("json");
+    assert_eq!(v["named_test_steps_checked"], 1);
+    assert_eq!(v["empty_scan"], false);
+    assert_eq!(v["ok"], true);
+}
+
 /// #547 (REQ-238): `rivet trace-results <req>` walks FORWARD from a requirement
 /// to the test results that cover it (the reverse of the authored `verifies`
 /// direction) and rolls up a pass/fail verdict — the data behind the graphical

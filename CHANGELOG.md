@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+### Fixed
+- **`rivet check verification-evidence` is now wired into CI + no longer scores
+  an empty scan as a pass** (REQ-290, #770) — the anti-rot check for stale
+  `cargo test <filter>` names (REQ-236, hardened again in REQ-280 for nextest
+  filtersets) BUILT the tool that catches spar#388's failure shape, but no
+  workflow ran it, so the protection was opt-in-by-memory. Two fixes: (1) the
+  Traceability job (both self-hosted and the hosted fallback) now runs `rivet
+  check verification-evidence`, reusing the release binary the neighboring
+  `validate` step already built; (2) an empty scan (`0 named-test step(s)`)
+  previously rendered as `✓ … all reference an existing test` — a checkmark
+  over nothing checked, the same weak-green shape the check exists to kill —
+  and now renders as an explicit `⚠ … no named-test step(s) found to check —
+  nothing was verified` with `empty_scan: true` in JSON output so a machine
+  can tell the vacuous case from a genuine pass.
+
 ## [0.32.0] - 2026-08-05
 
 Weak-green hardening + mutation reliability + security. This release began as a
