@@ -572,6 +572,15 @@ pub(crate) async fn artifacts(
         }
     }
 
+    // #778: externals are appended AFTER every local artifact, so before this
+    // sort they occupied the last rows of `results` — with the default limit of
+    // 100 and ~1000 local artifacts they fell off page 1 entirely and were
+    // unreachable until the final page. `total` still counted them, so the
+    // response looked right while every visible row read origin=local. Nothing
+    // broke this: the project simply grew past the page size. Sort by id so
+    // externals interleave with locals and paging is deterministic.
+    results.sort_by(|a, b| a.id.cmp(&b.id));
+
     let total = results.len();
     let page: Vec<ApiArtifact> = results.into_iter().skip(offset).take(limit).collect();
 
