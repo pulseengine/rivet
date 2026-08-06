@@ -8066,7 +8066,7 @@ artifacts:
   - id: REQ-288
     type: requirement
     title: "CI mutation gate is vacuously green: reads a path cargo-mutants never writes (#768, cf. spar#381)"
-    status: proposed
+    status: implemented
     description: "v0.33 gate-potency slice. Both `mutants-core` and the `mutants-cli` HARD gate run `cargo mutants --output mutants-out` (which writes the report to `mutants-out/mutants.out/`) then read `mutants-out/missed.txt` — a path that never exists. The `-f` test is always false, MISSED stays 0, `0 -gt 0` is false, exit 0 regardless of survivors. Evidence from rivet's own artifact `mutants-report-rivet-core-13-of-16` (id 7023721130, uploaded with `path: mutants-out/`): the artifact root contains exactly one entry, `mutants.out/`, whose `missed.txt` lists 5 real surviving mutants (yaml_cst.rs parser mutations) while CI printed `Surviving mutants: 0`. The artifact-upload globs (`mutants-out/*.json`, `mutants-out/outcomes.json`) are wrong for the same reason. Fix: read `mutants-out/mutants.out/missed.txt`, FAIL LOUDLY when the results file is absent (a missing report must never read as a clean one), then re-baseline real survivor counts. Ported from spar#381 after that repo found the identical bug."
     release: v0.33.0
     provenance:
