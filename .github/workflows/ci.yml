@@ -88,7 +88,33 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - run: cargo fmt --all -- --check
+      # `cargo fmt --all` formats every member of THE workspace it is
+      # invoked in, not every crate in the repo. rivet has two workspaces
+      # (root + `fuzz/`) plus the standalone `compose-witness/` package
+      # (its own Cargo.lock, excluded from root). A single
+      # `cargo fmt --all` at the repo root leaves the fuzz workspace
+      # unchecked — see #769 for the drift that snuck through.
+      # Enumerate `[workspace]` manifests so a new nested workspace can't
+      # silently escape the gate.
+      - name: cargo fmt --check (every workspace)
+        run: |
+          set -euo pipefail
+          mapfile -t manifests < <(grep -rl --include=Cargo.toml --exclude-dir=target '^\[workspace\]' .)
+          if [ "${#manifests[@]}" -eq 0 ]; then
+            echo "no [workspace] Cargo.toml found — refusing to run a vacuous check"
+            exit 1
+          fi
+          for m in "${manifests[@]}"; do
+            echo "→ cargo fmt --manifest-path $m --all -- --check"
+            cargo fmt --manifest-path "$m" --all -- --check
+          done
+          # compose-witness is a standalone Wasm-component package (not a
+          # workspace, excluded from root). `cargo fmt` fails on it
+          # because its `bindings` module is generated at build time by
+          # cargo-component; rustfmt with skip_children formats the
+          # source without needing a build.
+          echo "→ rustfmt --check compose-witness/src/lib.rs (skip_children)"
+          rustfmt --check --edition 2024 --config skip_children=true compose-witness/src/lib.rs
 
   clippy:
     name: Clippy

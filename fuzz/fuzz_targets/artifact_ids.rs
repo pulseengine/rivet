@@ -38,9 +38,7 @@ fuzz_target!(|data: &[u8]| {
     // escape those.
     let quoted = yaml_double_quote(&id_raw);
 
-    let yaml = format!(
-        "artifacts:\n  - id: {quoted}\n    type: requirement\n    title: Fuzz\n"
-    );
+    let yaml = format!("artifacts:\n  - id: {quoted}\n    type: requirement\n    title: Fuzz\n");
 
     let Ok(artifacts) = parse_generic_yaml(&yaml, None) else {
         return;
@@ -66,9 +64,7 @@ fuzz_target!(|data: &[u8]| {
 
     // Lookup by the id returned from the parser.
     let fetched = store.get(&parsed_id).unwrap_or_else(|| {
-        panic!(
-            "id-roundtrip: Store::insert succeeded but Store::get({parsed_id:?}) returned None"
-        )
+        panic!("id-roundtrip: Store::insert succeeded but Store::get({parsed_id:?}) returned None")
     });
 
     assert_eq!(

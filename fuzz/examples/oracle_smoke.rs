@@ -44,7 +44,10 @@ fn main() {
                     if !a.links.is_empty() {
                         eprintln!(
                             "    a[{i}].links = {:?}",
-                            a.links.iter().map(|l| (&l.link_type, &l.target)).collect::<Vec<_>>()
+                            a.links
+                                .iter()
+                                .map(|l| (&l.link_type, &l.target))
+                                .collect::<Vec<_>>()
                         );
                     }
                 }
@@ -258,9 +261,7 @@ fn probe(yaml: &str) -> Option<String> {
             }
             for l in &a.links {
                 if l.target.is_empty() {
-                    return Some(format!(
-                        "serde: phantom link (empty target)\nYAML:\n{yaml}"
-                    ));
+                    return Some(format!("serde: phantom link (empty target)\nYAML:\n{yaml}"));
                 }
                 if !yaml.contains(&l.target) {
                     return Some(format!(

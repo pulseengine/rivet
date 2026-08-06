@@ -5,9 +5,22 @@
 set -e
 
 echo "pre-commit: checking formatting..."
-cargo fmt --all -- --check 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "ERROR: cargo fmt check failed. Run 'cargo fmt --all' to fix."
+# `cargo fmt --all` only formats the invoking workspace. rivet has two
+# workspaces (root + fuzz/) and one standalone package (compose-witness/);
+# check them all so a drift in fuzz/ can't ship (#769).
+fmt_failed=0
+for m in $(grep -rl --include=Cargo.toml --exclude-dir=target '^\[workspace\]' .); do
+    if ! cargo fmt --manifest-path "$m" --all -- --check 2>/dev/null; then
+        fmt_failed=1
+    fi
+done
+if ! rustfmt --check --edition 2024 --config skip_children=true \
+        compose-witness/src/lib.rs 2>/dev/null; then
+    fmt_failed=1
+fi
+if [ "$fmt_failed" -ne 0 ]; then
+    echo "ERROR: cargo fmt check failed. Run 'cargo fmt --all' in each"
+    echo "workspace (root + fuzz/) and rustfmt on compose-witness/src/lib.rs."
     exit 1
 fi
 
