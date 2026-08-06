@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786000457109,
+  "lastUpdate": 1786000519053,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "bfb1efef4644f50f6fb87ce0d7eda103b10c57ba",
-          "message": "ci(toolchain): pin nightly to 2026-07-11 while upstream nightly ICEs (REQ-267) (#707)\n\n* ci(toolchain): pin nightly to 2026-07-11 while upstream nightly ICEs (REQ-267)\n\nNightlies from 2026-07-14 on ICE the compiler while building rivet-core (rustc\npanic in rustc_ast/src/attr/mod.rs, exit 104), reddening every nightly job\nrepo-wide — both Miri jobs, Code Coverage, and Fuzz — and masking the Miri\nUB/safety signal. Core gates (Test/Clippy/Format) stayed green so main was\nhealthy, but CI read red and merges had to --admin past the cluster.\n\nPin all four `dtolnay/rust-toolchain@nightly` uses to `@nightly-2026-07-11`\n(the last main run where the Miri job passed) so they keep ENFORCING on a\nworking compiler rather than being disabled. Unpin to @nightly once a newer\nnightly stops ICEing. Kani's exit-143 failures are a separate runner-shutdown\nflake, unaffected by this.\n\nCI-config only — the shipped binary is unchanged, so no version bump.\nConfirmed ci.yml parses and `rivet validate` PASS.\n\nRefs: REQ-267\n\n* ci(toolchain): fix pin syntax — @master + toolchain input, not action git-ref\n\nThe previous commit pinned via `dtolnay/rust-toolchain@nightly-2026-07-11`,\nbut `@X` is the ACTION's git ref (branch/tag of dtolnay/rust-toolchain), so it\nfailed to resolve (\"unable to find version nightly-2026-07-11\"). Correct form\nis `@master` with the dated toolchain as the `toolchain:` input; the two Miri\njobs keep their `components: miri`. Still REQ-267 (pin to last-good nightly\nwhile upstream ICEs).\n\nTrace: skip\n\n* ci(security): SHA-pin the dtolnay/rust-toolchain action for the nightly jobs (REQ-267)\n\nAutomated security review flagged `@master` as an unpinned third-party action.\nPin the 4 nightly jobs' action ref to a full commit SHA\n(fa04a1451ff1842e2626ccb99004d0195b455a88, dtolnay/rust-toolchain 2026-06-30)\nso the action code is deterministic; the dated toolchain (nightly-2026-07-11)\nstays in the `with: toolchain:` input. `@master` was required (not `@stable`/\n`@nightly`) because only the master branch honours an arbitrary `toolchain:`\noverride — SHA-pinning it removes the mutable-ref risk. (The rest of the file's\n@stable/@nightly dtolnay refs are a pre-existing repo convention; a repo-wide\nSHA-pin sweep is a separate hardening task.)\n\nTrace: skip",
-          "timestamp": "2026-07-15T23:46:53+02:00",
-          "tree_id": "f80f7995994c391069052961ff0ed2e67808abde",
-          "url": "https://github.com/pulseengine/rivet/commit/bfb1efef4644f50f6fb87ce0d7eda103b10c57ba"
-        },
-        "date": 1784152792893,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 87265,
-            "range": "± 352",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 955129,
-            "range": "± 17178",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 23509988,
-            "range": "± 1477157",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1934,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24983,
-            "range": "± 203",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 362776,
-            "range": "± 2342",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1531698,
-            "range": "± 25379",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 169146,
-            "range": "± 2677",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1985076,
-            "range": "± 107200",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 58682970,
-            "range": "± 6171765",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 456187,
-            "range": "± 7522",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16017557,
-            "range": "± 340128",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1108502506,
-            "range": "± 16409790",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4223,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44609,
-            "range": "± 278",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 733529,
-            "range": "± 3871",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63529,
-            "range": "± 183",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 730439,
-            "range": "± 3211",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 10986165,
-            "range": "± 810426",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1146,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14510,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 229707,
-            "range": "± 1882",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21863,
-            "range": "± 256",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 152651,
-            "range": "± 738",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1401719,
-            "range": "± 21812",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1580745,
             "range": "± 19631",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0d42ce1cf8024c63b83ca4e95045a661123ce6fd",
+          "message": "ci(traceability): wire rivet check verification-evidence + kill weak-green empty scan (#770) (#776)\n\nCloses #770. Second implementation slice of v0.33 \"gate potency\" (after #773\nmutation-gate). Two fixes for a single defect: the anti-rot check for stale\n`cargo test <filter>` names existed but was unenforced.\n\n## The unenforced anti-rot check\n\n`rivet check verification-evidence` (REQ-236, hardened again in REQ-280 for\nnextest filtersets) catches the class spar#388 found — verification steps whose\n`fields.steps[].run: \"cargo test … <filter>\"` names a test that no longer\nexists. `cargo test <renamed_or_typod>` exits 0 with \"0 passed\", so the\nrequirement keeps its `verified` status. rivet BUILT the checker for exactly\nthat shape, and `grep verification-evidence .github/workflows/*.yml` returned\nnothing — no workflow ran it. Protection was opt-in-by-memory.\n\n## The weak-green empty-scan case\n\nOn a project whose steps carry no `cargo test <filter>` runs (or has no steps\nat all), the pre-fix text was:\n\n    ✓ verification-evidence: 0 named-test step(s) all reference an existing test.\n\nA checkmark over nothing checked — the same weak-green shape the check exists\nto kill.\n\n## Fixes\n\n- `.github/workflows/ci.yml`: add `rivet check verification-evidence` to the\n  Traceability job (REQ-051 dogfooding gate) and to `traceability-hosted-fallback`\n  (REQ-272 / #509 SPOF mitigation), so a self-hosted-pool outage still leaves\n  main gated on the anti-rot check. Reuses the release binary the neighboring\n  `validate` step already built — no extra compile cost.\n- `rivet-cli/src/main.rs cmd_check_verification_evidence`: an `empty_scan`\n  branch renders as `⚠ verification-evidence: no named-test step(s) found to\n  check — nothing was verified.` (with a plain sentence explaining what the\n  check would look for), instead of the ✓ / \"all reference an existing test\"\n  shape. JSON output gains `empty_scan: true` in that branch so a machine can\n  distinguish the vacuous case from a genuine pass. Exit code stays 0 (nothing\n  was violated) — this preserves the pre-fix contract used by callers and by\n  the new CI step.\n\nTwo regression tests in `rivet-cli/tests/cli_commands.rs` pin both directions:\n\n- `check_verification_evidence_empty_scan_reads_as_vacuous_not_pass` — a\n  project whose only steps are `make lint` / `pytest -k` (parsed by neither\n  the cargo nor the nextest branch) produces stdout that does NOT contain the\n  ✓ / \"all reference an existing test\" shape and JSON with `empty_scan: true`.\n- `check_verification_evidence_non_empty_scan_still_reads_as_pass` — a real\n  `cargo test -p p a_real_test` step still renders as ✓ /\n  \"all reference an existing test\" and JSON `empty_scan: false`. Guards the\n  new branch against shadowing the genuine-pass shape.\n\n## Acceptance criteria (from the issue body → how satisfied)\n\n- [x] **Add `rivet check verification-evidence` to the Traceability job in\n  `ci.yml` (it is fast and needs no compile beyond the binary already built\n  there).** Added as `Gate 1c` in the `traceability` job, after `validate`\n  and `variant + binding validation`, before `commits`. Mirrored on\n  `traceability-hosted-fallback` so the SPOF mitigation (REQ-272 / #509)\n  covers it too.\n- [x] **Reword the zero-steps case so an empty scan does not render as a\n  pass.** New `empty_scan` branch in `cmd_check_verification_evidence`:\n  distinct `⚠` prefix, explicit \"nothing was verified\" wording, `empty_scan:\n  true` in JSON. Pinned by regression tests in both directions.\n\nREQ-290 flipped `proposed → implemented`. CHANGELOG entry added under\n`[Unreleased]`. No behavior change to callers depending on missing-test\ndetection (exit code / JSON shape preserved except for the added\n`empty_scan` field).\n\n## Test plan\n\n- [x] `cargo test -p rivet-cli --test cli_commands check_verification_evidence`\n      — 4/4 pass (2 pre-existing + 2 new)\n- [x] `cargo test -p rivet-cli --test cli_commands` — 162/162 pass\n- [x] `cargo fmt --all -- --check` clean\n- [x] `cargo clippy -p rivet-cli --tests -- -D warnings` clean (only the\n      pre-existing MSRV note from `clippy.toml`)\n- [x] `./target/release/rivet check verification-evidence` on this repo —\n      renders as `⚠ … no named-test step(s) found to check` (this repo has no\n      such steps today), exits 0 → the new CI step is green on HEAD\n- [x] `./target/release/rivet validate` on this repo — PASS (635 warnings,\n      unchanged; REQ-290 now shows in the \"no downstream artifacts\" set,\n      same shape as its neighbors)\n\n## What this PR is NOT\n\n- Not a change to the `missing` detection path — the same fn-name scanner runs\n  over the same artifact walk. Only the empty-scan render + the CI wiring\n  changed.\n- Not a change to the exit-code contract. An empty scan still exits 0. If a\n  future policy decision wants an empty scan to be RED (e.g. \"a project\n  claiming verification coverage MUST have at least one named-test step\"),\n  that is a separate REQ.\n- Not a fix for #771 (`changes` filter under-scoped) or #557 (crates.io\n  publishing). Same v0.33 slice, separate PRs.\n\nImplements: REQ-290\nFixes: REQ-290\nRefs: #770, REQ-236, REQ-280, REQ-272, REQ-051\n\n\nClaude-Session: https://claude.ai/code/session_01UD5As6pYghNkKHHZkiLyCG\n\nCo-authored-by: Claude <noreply@anthropic.com>",
+          "timestamp": "2026-08-06T08:59:20+02:00",
+          "tree_id": "5e054ed60e823d3b9da0e0b26fbb7984de1b979d",
+          "url": "https://github.com/pulseengine/rivet/commit/0d42ce1cf8024c63b83ca4e95045a661123ce6fd"
+        },
+        "date": 1786000517627,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85695,
+            "range": "± 3340",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 912524,
+            "range": "± 4411",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14716071,
+            "range": "± 994388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2183,
+            "range": "± 37",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27237,
+            "range": "± 395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 378903,
+            "range": "± 5588",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1527604,
+            "range": "± 30494",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 164069,
+            "range": "± 4893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1965903,
+            "range": "± 12147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30628120,
+            "range": "± 2279443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 469848,
+            "range": "± 4967",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15456198,
+            "range": "± 201540",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1240216114,
+            "range": "± 13116767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4678,
+            "range": "± 57",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 64077,
+            "range": "± 397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 804162,
+            "range": "± 13721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60625,
+            "range": "± 325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 686899,
+            "range": "± 21852",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8058852,
+            "range": "± 740843",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1147,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14139,
+            "range": "± 136",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 326351,
+            "range": "± 9521",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23784,
+            "range": "± 95",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 172541,
+            "range": "± 3997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1592859,
+            "range": "± 19960",
             "unit": "ns/iter"
           }
         ]
