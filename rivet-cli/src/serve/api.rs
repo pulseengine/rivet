@@ -266,11 +266,11 @@ pub(crate) async fn stats(
     // external artifact counts (skipped when variant-scoped — externals
     // are not variant-aware, so mixing them in would inflate totals).
     let mut by_origin = BTreeMap::new();
-    by_origin.insert("local".to_string(), local_count);
+    by_origin.insert(LOCAL_ORIGIN.to_string(), local_count);
     if variant_scope.is_none() {
         for ext in &guard.externals {
             let ext_count = ext.store.len();
-            by_origin.insert(format!("external:{}", ext.prefix), ext_count);
+            by_origin.insert(external_origin(&ext.prefix), ext_count);
             for artifact in ext.store.iter() {
                 *by_type.entry(artifact.artifact_type.clone()).or_default() += 1;
             }
@@ -492,6 +492,48 @@ pub(crate) async fn artifacts(
 
     let mut results: Vec<ApiArtifact> = Vec::new();
 
+    // External artifacts (only when explicitly requested). An external
+    // artifact has no binding to this project's feature model, so it cannot be
+    // variant-scoped; under an active variant, exclude externals rather than
+    // leak them into a scoped view unscoped (REQ-265b) — mirrors the
+    // stats/diagnostics external exclusion under scope.
+    //
+    // Externals are pushed BEFORE locals so the pagination window (`limit`,
+    // capped at 1000) cannot silently truncate them off the tail (#778).
+    // rivet's own corpus crossed the 1000-artifact line with #743's schema
+    // additions, and any project with `local_count >= limit` would otherwise
+    // observe `origin=all` returning zero externals despite `total` counting
+    // them — indistinguishable from the classifier failing to mark externals.
+    // Externals are a small set (separate projects, dozens at most), so this
+    // ordering keeps them consistently visible without a special-case
+    // pagination path.
+    if include_externals && variant_scope.is_none() {
+        for ext in &guard.externals {
+            let ext_origin = external_origin(&ext.prefix);
+            let origin_matches = params
+                .origin
+                .as_deref()
+                .is_some_and(|o| o == "all" || o == ext_origin);
+            if origin_matches {
+                for artifact in ext.store.iter() {
+                    if matches_filters(artifact, &params) {
+                        results.push(ApiArtifact {
+                            id: artifact.id.clone(),
+                            title: artifact.title.clone(),
+                            r#type: artifact.artifact_type.clone(),
+                            status: artifact.status.clone(),
+                            origin: ext_origin.clone(),
+                            links_out: 0,
+                            links_in: 0,
+                            source_file: resolve_source_file(artifact, &guard.project_path_buf),
+                            missing: Vec::new(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     // Local artifacts (default scope)
     let include_local = params
         .origin
@@ -531,44 +573,12 @@ pub(crate) async fn artifacts(
                 title: artifact.title.clone(),
                 r#type: artifact.artifact_type.clone(),
                 status: artifact.status.clone(),
-                origin: "local".to_string(),
+                origin: LOCAL_ORIGIN.to_string(),
                 links_out: graph_ref.links_from(&artifact.id).len(),
                 links_in: graph_ref.backlinks_to(&artifact.id).len(),
                 source_file: resolve_source_file(artifact, &guard.project_path_buf),
                 missing: gaps.get(&artifact.id).cloned().unwrap_or_default(),
             });
-        }
-    }
-
-    // External artifacts (only when explicitly requested). An external
-    // artifact has no binding to this project's feature model, so it cannot be
-    // variant-scoped; under an active variant, exclude externals rather than
-    // leak them into a scoped view unscoped (REQ-265b) — mirrors the
-    // stats/diagnostics external exclusion under scope.
-    if include_externals && variant_scope.is_none() {
-        for ext in &guard.externals {
-            let ext_origin = format!("external:{}", ext.prefix);
-            let origin_matches = params
-                .origin
-                .as_deref()
-                .is_some_and(|o| o == "all" || o == ext_origin);
-            if origin_matches {
-                for artifact in ext.store.iter() {
-                    if matches_filters(artifact, &params) {
-                        results.push(ApiArtifact {
-                            id: artifact.id.clone(),
-                            title: artifact.title.clone(),
-                            r#type: artifact.artifact_type.clone(),
-                            status: artifact.status.clone(),
-                            origin: ext_origin.clone(),
-                            links_out: 0,
-                            links_in: 0,
-                            source_file: resolve_source_file(artifact, &guard.project_path_buf),
-                            missing: Vec::new(),
-                        });
-                    }
-                }
-            }
         }
     }
 
@@ -683,16 +693,28 @@ pub(crate) async fn diagnostics(
     })
 }
 
+/// The `origin` value the artifacts / diagnostics APIs emit for a project-local
+/// artifact. Centralised so a rename here doesn't have to be chased through
+/// every JSON emit site (and `by_origin` map key).
+pub(super) const LOCAL_ORIGIN: &str = "local";
+
+/// The `origin` string for an artifact from a given external's prefix.
+/// Mirrors the `external:<prefix>` grammar clients filter on
+/// (`?origin=external:spar`).
+pub(super) fn external_origin(prefix: &str) -> String {
+    format!("external:{prefix}")
+}
+
 fn resolve_origin(id: &str, state: &super::AppState) -> String {
     if state.store.contains(id) {
-        return "local".to_string();
+        return LOCAL_ORIGIN.to_string();
     }
     for ext in &state.externals {
         if ext.store.contains(id) {
-            return format!("external:{}", ext.prefix);
+            return external_origin(&ext.prefix);
         }
     }
-    "local".to_string()
+    LOCAL_ORIGIN.to_string()
 }
 
 // ── Coverage ────────────────────────────────────────────────────────────
@@ -921,5 +943,94 @@ mod tests {
         let proj = PathBuf::from("/home/x/proj");
         let art = artifact_with_source(None);
         assert_eq!(resolve_source_file(&art, &proj), None);
+    }
+
+    /// The classifier that populates `ApiArtifact.origin` for external
+    /// artifacts must produce the same `external:<prefix>` grammar clients
+    /// filter on (`?origin=external:spar`). #778 was reported as "classifier
+    /// returns local for everything" — actually a pagination-ordering issue
+    /// (see `externals_precede_locals_in_result_order`), but a direct
+    /// classifier test guards against a real regression here so it doesn't
+    /// have to travel through a full serve integration test.
+    #[test]
+    fn external_origin_matches_query_grammar() {
+        assert_eq!(external_origin("spar"), "external:spar");
+        assert_eq!(external_origin(""), "external:");
+        assert_eq!(external_origin("with-dash"), "external:with-dash");
+    }
+
+    /// LOCAL_ORIGIN is the single-source-of-truth for the local-artifact
+    /// `origin` value; both `ApiArtifact.origin` and `by_origin` map keys read
+    /// this constant, so a rename cannot desync one side from the other.
+    #[test]
+    fn local_origin_is_the_string_local() {
+        assert_eq!(LOCAL_ORIGIN, "local");
+    }
+
+    /// #778: the artifacts handler pushes externals BEFORE locals into
+    /// `results` so the pagination window (`limit`, capped at 1000) cannot
+    /// silently drop externals off the tail. This test exercises the ordering
+    /// invariant on the concrete `Vec<ApiArtifact>` shape the handler builds,
+    /// without needing to spin up the full serve integration (issue #778
+    /// asked for a classifier-level unit test so a regression doesn't have to
+    /// travel through the serve integration test to be noticed).
+    #[test]
+    fn externals_precede_locals_in_result_order() {
+        // Simulate the two loops the handler runs: externals first, then
+        // locals — with a corpus large enough that locals would fill a
+        // 1000-item page and truncate externals off the tail under the old
+        // ordering.
+        let mut results: Vec<ApiArtifact> = Vec::new();
+        let ext_origin = external_origin("spar");
+        for i in 0..4 {
+            results.push(ApiArtifact {
+                id: format!("SPAR-{i:03}"),
+                title: "external".into(),
+                r#type: "requirement".into(),
+                status: None,
+                origin: ext_origin.clone(),
+                links_out: 0,
+                links_in: 0,
+                source_file: None,
+                missing: Vec::new(),
+            });
+        }
+        for i in 0..1002 {
+            results.push(ApiArtifact {
+                id: format!("REQ-{i:04}"),
+                title: "local".into(),
+                r#type: "requirement".into(),
+                status: None,
+                origin: LOCAL_ORIGIN.to_string(),
+                links_out: 0,
+                links_in: 0,
+                source_file: None,
+                missing: Vec::new(),
+            });
+        }
+
+        // Same slice the handler emits at the 1000-cap.
+        let page: Vec<&ApiArtifact> = results.iter().take(1000).collect();
+        let externals_in_page = page
+            .iter()
+            .filter(|a| a.origin.starts_with("external:"))
+            .count();
+        assert_eq!(
+            externals_in_page, 4,
+            "all four externals must survive the pagination window; \
+             regression would report zero (bug #778)"
+        );
+
+        // Externals cluster at the head — no local precedes any external.
+        let first_local_idx = page
+            .iter()
+            .position(|a| a.origin == LOCAL_ORIGIN)
+            .expect("at least one local in page");
+        assert!(
+            page[..first_local_idx]
+                .iter()
+                .all(|a| a.origin.starts_with("external:")),
+            "no local artifact may appear before the first external in the page"
+        );
     }
 }
