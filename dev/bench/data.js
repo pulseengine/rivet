@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786000576021,
+  "lastUpdate": 1786080640143,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "961f3a367a1baa27fa853398b7048b149333823a",
-          "message": "fix(variant): surface feature-model attribute_warnings on the CLI (REQ-261, DD-076) (#711)\n\nFeatureModel.attribute_warnings (unknown feature-attribute keys) was collected\nat load but never surfaced by any CLI path — a typo'd attribute key (e.g.\n`asil-numric: 3`) silently bypassed type/range checking AND its warning was\ndropped (DD-076 silent-drop).\n\nEmit the warnings from the single shared loader load_feature_model_via_project,\nso every consumer (validate --model --binding, release check --variant, variant\nsolve/check/check-all/features) prints each as `warning: feature-model\nattribute: <msg>` on stderr (stdout --format json stays clean). Under\n`rivet validate --strict-variants` the warnings escalate to Severity::Error\ndiagnostics and fail the run (non-zero exit), matching the existing\nstrict-variant mechanism.\n\nConfirmed with 3 new cli_commands tests (surfaces-on-stderr, --strict-variants\nescalation, known-keys-no-warning regression) + the full validate/variant sweep\n(30 pass), build, clippy --all-targets on Rust 1.97 clean, fresh-binary\nrivet validate PASS.\n\nImplements: REQ-261\nRefs: DD-076, FEAT-001",
-          "timestamp": "2026-07-16T06:34:04+02:00",
-          "tree_id": "d87920c063c50c37ccdcca11c0285f29a2d8ae05",
-          "url": "https://github.com/pulseengine/rivet/commit/961f3a367a1baa27fa853398b7048b149333823a"
-        },
-        "date": 1784176967700,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 80728,
-            "range": "± 4253",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 942437,
-            "range": "± 5141",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16157612,
-            "range": "± 1430630",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1540,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18884,
-            "range": "± 207",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 288063,
-            "range": "± 3947",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 77,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 77,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1401807,
-            "range": "± 22859",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164674,
-            "range": "± 1336",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1890877,
-            "range": "± 22493",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 40389503,
-            "range": "± 1649390",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 422879,
-            "range": "± 4092",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 14831450,
-            "range": "± 263584",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 993112886,
-            "range": "± 7101749",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3838,
-            "range": "± 26",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 40830,
-            "range": "± 1804",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 825641,
-            "range": "± 9310",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 55585,
-            "range": "± 958",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 572672,
-            "range": "± 5133",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7492817,
-            "range": "± 558856",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 969,
-            "range": "± 10",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 12084,
-            "range": "± 149",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 284930,
-            "range": "± 3800",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 20582,
-            "range": "± 289",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 149694,
-            "range": "± 1890",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1328358,
-            "range": "± 16289",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1482496,
             "range": "± 18755",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7ceddefef107c4cf4bbd7ea59402cb5302bbabba",
+          "message": "fix(ci): mutation gate must not fail on an empty diff or a shallow base (REQ-288 follow-up) (#784)\n\nMy REQ-288 change (#773) made the rivet-cli mutation gate able to fail — and it\npromptly failed on #779 for the wrong reason, blocking the queue. Three defects,\nall mine:\n\n1. SHALLOW CHECKOUT. `--in-diff` needs the PR base commit present locally, but\n   the job checks out without `fetch-depth: 0`, so `git diff <base>...HEAD`\n   could not resolve the base.\n\n2. THE FAILURE WAS SWALLOWED. That diff ran as `... > pr.diff || true`, so the\n   error became an empty pr.diff instead of a stop — the exact silent-swallow\n   anti-pattern this whole v0.33 line of work exists to remove, committed by me\n   while removing it elsewhere.\n\n3. EMPTY DIFF READ AS MISSING EVIDENCE. cargo-mutants writes no report when\n   there is nothing to mutate, so the \"absent outcomes.json is RED\" guard fired\n   on the legitimate no-Rust-changes case.\n\nFixes:\n- `fetch-depth: 0` on the mutants-cli checkout\n- the diff step now fails loudly (`::error::` + exit 1) when the base cannot be\n  resolved, rather than proceeding over an unknown diff\n- an empty diff short-circuits to PASS in both the run and the check steps\n\nConfirmed with a negative control over the check logic:\n  empty diff              -> PASS (nothing to mutate)\n  diff + report, 2 missed -> FAIL (gate bites)\n  diff + no report        -> FAIL (missing evidence)\nyamllint clean.\n\nRefs: REQ-288",
+          "timestamp": "2026-08-07T06:54:30+02:00",
+          "tree_id": "1494bb37e236beb674faecd958b92350e2697255",
+          "url": "https://github.com/pulseengine/rivet/commit/7ceddefef107c4cf4bbd7ea59402cb5302bbabba"
+        },
+        "date": 1786080639343,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85196,
+            "range": "± 965",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 915633,
+            "range": "± 10315",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 16784577,
+            "range": "± 1079233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1967,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24563,
+            "range": "± 81",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 362237,
+            "range": "± 5530",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1528477,
+            "range": "± 23345",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166862,
+            "range": "± 558",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2003276,
+            "range": "± 32033",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 36831033,
+            "range": "± 3552170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 447427,
+            "range": "± 3365",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15418593,
+            "range": "± 195796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1086538058,
+            "range": "± 22802567",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4212,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 46393,
+            "range": "± 285",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 814132,
+            "range": "± 41268",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62227,
+            "range": "± 216",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 724401,
+            "range": "± 4488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9194817,
+            "range": "± 394252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1233,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 13946,
+            "range": "± 80",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 228814,
+            "range": "± 1741",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22384,
+            "range": "± 856",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 156883,
+            "range": "± 1349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1466209,
+            "range": "± 25242",
             "unit": "ns/iter"
           }
         ]
