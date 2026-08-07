@@ -809,6 +809,10 @@ jobs:
         # `continue-on-error: true`, so honest numbers surface without blocking.
         run: |
           REPORT=mutants-out/mutants.out
+          if [ ! -s pr.diff ]; then
+            echo "no Rust changes in this diff — nothing to mutate, nothing to check"
+            exit 0
+          fi
           if [ ! -f "$REPORT/outcomes.json" ]; then
             echo "::error::no $REPORT/outcomes.json — cargo-mutants crashed or its layout changed; not reporting a pass over missing evidence"
             ls -R mutants-out 2>/dev/null || echo "(no mutants-out/ at all)"
@@ -857,6 +861,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+        with:
+          # REQ-288: --in-diff needs the PR base commit present locally; a
+          # shallow clone makes `git diff <base>...HEAD` fail and (previously,
+          # silently) yield an empty diff.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -881,7 +890,10 @@ jobs:
           git fetch --no-tags origin "${{ github.event.pull_request.base.sha || 'main' }}" 2>/dev/null || true
           BASE="${{ github.event.pull_request.base.sha }}"
           if [ -z "$BASE" ]; then BASE="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"; fi
-          git diff "$BASE"...HEAD -- '*.rs' > pr.diff || true
+          if ! git diff "$BASE"...HEAD -- '*.rs' > pr.diff; then
+            echo "::error::could not diff $BASE...HEAD — the base commit is not present (shallow clone?); refusing to run a mutation gate over an unknown diff"
+            exit 1
+          fi
           echo "diff lines: $(wc -l < pr.diff | tr -d ' ')"
       - name: Run cargo-mutants
         # #590 memory guard (see mutants-core above): cap address space at
@@ -897,6 +909,7 @@ jobs:
           ulimit -v 50331648
           if [ ! -s pr.diff ]; then
             echo "no Rust changes in this diff — nothing to mutate"
+            exit 0
           fi
           cargo mutants -p rivet-cli --timeout 60 --jobs 2 --output mutants-out --in-diff pr.diff || true
       - name: Check surviving mutants
@@ -907,6 +920,10 @@ jobs:
         # covers a crashed run being scored as a good one).
         run: |
           REPORT=mutants-out/mutants.out
+          if [ ! -s pr.diff ]; then
+            echo "no Rust changes in this diff — nothing to mutate, nothing to check"
+            exit 0
+          fi
           if [ ! -f "$REPORT/outcomes.json" ]; then
             echo "::error::no $REPORT/outcomes.json — cargo-mutants crashed or its output layout changed; refusing to report a pass over missing evidence"
             ls -R mutants-out 2>/dev/null || echo "(no mutants-out/ at all)"
