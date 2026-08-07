@@ -417,13 +417,41 @@ fn load_externals(config: &ProjectConfig, project_path: &std::path::Path) -> Vec
             let synced = ext_dir.join("rivet.yaml").exists();
             let mut ext_store = Store::new();
             if synced {
-                if let Ok((artifacts, _schema)) =
-                    rivet_core::externals::load_external_project(&ext_dir)
-                {
-                    for a in artifacts {
-                        ext_store.upsert(a);
+                // #778: this used to be `if let Ok(..)` with no else — a failed
+                // external load left an EMPTY store while `synced` stayed true,
+                // so the dashboard silently showed zero external artifacts and
+                // reported every row as origin=local. Missing evidence must be
+                // loud: surface the error instead of degrading to "no externals".
+                match rivet_core::externals::load_external_project(&ext_dir) {
+                    Ok((artifacts, _schema)) => {
+                        for a in artifacts {
+                            ext_store.upsert(a);
+                        }
+                        if ext_store.iter().count() == 0 {
+                            log::warn!(
+                                "external '{}' at {} loaded 0 artifacts — its rivet.yaml \
+                                 declares no sources, or they matched no files",
+                                ext.prefix,
+                                ext_dir.display()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "external '{}' at {} failed to load: {e} — the dashboard will \
+                             show no artifacts for this prefix",
+                            ext.prefix,
+                            ext_dir.display()
+                        );
                     }
                 }
+            } else {
+                log::warn!(
+                    "external '{}' is declared but not synced (no rivet.yaml at {}) — \
+                     run `rivet sync`",
+                    ext.prefix,
+                    ext_dir.display()
+                );
             }
             externals.push(ExternalInfo {
                 prefix: ext.prefix.clone(),
