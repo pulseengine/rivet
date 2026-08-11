@@ -8099,7 +8099,7 @@ artifacts:
   - id: REQ-291
     type: requirement
     title: "Detect-changed-areas filter is under-scoped and fails open: embedded schemas skip the compile matrix (#771, cf. spar#384)"
-    status: proposed
+    status: implemented
     description: "v0.33 gate-potency slice. A `rust=false` verdict from the `changes` job skips Clippy, Test, MSRV, Semver, Miri, Proptest, Coverage and wasm-seam — and on GitHub a SKIPPED required context is indistinguishable from a passed one. The classifier only matches `(\\.rs$)|(Cargo\\.(toml|lock)$)|(^\\.github/workflows/)`, which misses real build inputs: `schemas/*.yaml` are compiled INTO the binary via `include_str!` (rivet-core/src/embedded.rs), so a schema-only edit — which changes binary content and can break the suite — skips the entire compile matrix; `.github/actions/**` composite actions used BY those jobs likewise skip. Third, the error path is the permissive path: if `git diff` fails (bad/absent base sha, shallow fetch) `changed` is empty, nothing matches, and the step exits 0 with rust=false. Fix: add the real build inputs (derive include_str!/include_dir! sources rather than retyping them) and fail CLOSED — an errored or empty diff must set rust=true. Ported from spar#384."
     release: v0.33.0
     provenance:

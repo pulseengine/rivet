@@ -47,6 +47,7 @@ jobs:
           fetch-depth: 0
       - id: filter
         run: |
+          set -o pipefail
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
             echo "wasm=true" >> "$GITHUB_OUTPUT"
@@ -54,22 +55,69 @@ jobs:
             exit 0
           fi
           base="${{ github.event.pull_request.base.sha }}"
-          changed="$(git diff --name-only "$base"...HEAD)"
-          echo "changed files:"; echo "$changed"
-          if echo "$changed" | grep -qE '(\.rs$)|((^|/)Cargo\.(toml|lock)$)|(^\.github/workflows/)'; then
+          # REQ-291 / #771: fail CLOSED. Previously an errored `git diff`
+          # (bad/absent base sha, shallow fetch) or an empty `changed` left
+          # both filters false — the error path was the "skip everything"
+          # path, and on GitHub a skipped required context is
+          # indistinguishable from a passed one. Any doubt about the diff
+          # now runs the full matrix.
+          if ! changed="$(git diff --name-only "$base"...HEAD)"; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "→ Rust/Cargo/workflow changes present; running full matrix"
+            echo "wasm=true" >> "$GITHUB_OUTPUT"
+            echo "→ git diff failed against base=$base; failing closed to full matrix"
+            exit 0
+          fi
+          if [ -z "$changed" ]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "wasm=true" >> "$GITHUB_OUTPUT"
+            echo "→ git diff returned no paths; failing closed to full matrix"
+            exit 0
+          fi
+          echo "changed files:"; echo "$changed"
+          # REQ-291 / #771: derive the "rust build inputs" file set from
+          # the source rather than retyping it. Anything a Rust file
+          # embeds via `include_str!`/`include_bytes!`/`include_dir!` is
+          # compiled INTO the binary — a change to it can silently break
+          # the test suite, so it MUST trigger the compile matrix even
+          # when the diff carries no .rs / Cargo / workflow file. Extract
+          # the path arg of every include_*!("<path>") in the Rust source,
+          # resolve it relative to the containing file, and dedupe to a
+          # sorted set of repo-root-relative paths.
+          embedded=$(
+            grep -rEHn --include='*.rs' 'include_(str|bytes|dir)!\("[^"]+"\)' \
+              rivet-core rivet-cli etch 2>/dev/null \
+              | while IFS= read -r match; do
+                  file="${match%%:*}"
+                  arg=$(printf '%s' "${match#*:}" \
+                    | sed -nE 's/.*include_(str|bytes|dir)!\("([^"]+)"\).*/\2/p')
+                  [ -z "$arg" ] && continue
+                  resolved=$(realpath -m --relative-to=. "$(dirname "$file")/$arg" 2>/dev/null) || continue
+                  echo "$resolved"
+                done | sort -u
+          )
+          echo "derived embedded assets:"; printf '  %s\n' $embedded
+          # Base filter: Rust source, workspace manifests, workflow files,
+          # AND composite actions. Composite actions ARE build inputs — a
+          # change to `.github/actions/free-space/action.yml` used by a
+          # compile job can break that job, so it must trigger the matrix.
+          rust_re='(\.rs$)|((^|/)Cargo\.(toml|lock)$)|(^\.github/workflows/)|(^\.github/actions/)'
+          if echo "$changed" | grep -qE "$rust_re" \
+             || { [ -n "$embedded" ] && echo "$changed" | grep -Fxq -f <(echo "$embedded"); }; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "→ Rust/Cargo/workflow/action/embedded-asset changes present; running full matrix"
           else
             echo "rust=false" >> "$GITHUB_OUTPUT"
-            echo "→ no Rust/Cargo/workflow changes; skipping compile-heavy jobs"
+            echo "→ no Rust/Cargo/workflow/action/embedded-asset changes; skipping compile-heavy jobs"
           fi
           # REQ-268: the wasm SEAM (compose-witness component + WIT, the host
           # `wasm` feature / wasm_runtime, the composition core it wraps, and
           # the spar-wasm build assets) is consumed downstream (melded →
           # loomed → synth'd), so a change that rots it is a downstream break.
           # It is built only in release.yml today, so gate a cheap per-PR
-          # host-side build on these paths.
-          if echo "$changed" | grep -qE '(^compose-witness/)|(wasm_runtime\.rs$)|(feature_model\.rs$)|(\.wit$)|(scripts/build-wasm\.sh$)|(serve/js\.rs$)|(assets/wasm/)|(^\.github/workflows/)'; then
+          # host-side build on these paths. `.github/actions/` included on
+          # the same fail-closed logic as the rust filter — a composite
+          # action a wasm job depends on can break that job the same way.
+          if echo "$changed" | grep -qE '(^compose-witness/)|(wasm_runtime\.rs$)|(feature_model\.rs$)|(\.wit$)|(scripts/build-wasm\.sh$)|(serve/js\.rs$)|(assets/wasm/)|(^\.github/workflows/)|(^\.github/actions/)'; then
             echo "wasm=true" >> "$GITHUB_OUTPUT"
             echo "→ wasm-seam paths changed; running the wasm-seam build gate"
           else
