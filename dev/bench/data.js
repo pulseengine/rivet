@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786478158993,
+  "lastUpdate": 1786478198899,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "ab9b24cad5fdd6114b19d75a097c814e1ff457a4",
-          "message": "test(feature-model): fuzz the constraint solver (REQ-266) (#715)\n\nThe proptest strategies hard-coded `constraints: vec![]`, so the solver's\nhighest-risk code — cross-tree constraint evaluation, `implies`\npropagation, `excludes`, and REQ-257's fail-loud gate — had ZERO\nproperty-test coverage. Add:\n\n- A constraint-generating strategy (implies/excludes/and/or/not over real\n  feature-name leaves) kept as a typed value so the property can evaluate\n  each constraint independently — an oracle to grade the solver against.\n- prop_ok_means_constraints_actually_hold: if solve() returns Ok, every\n  constraint genuinely holds under the resolved selection. This is the\n  anti-silent-pass property — a return to the pre-REQ-257 `_ => true`\n  blind spot would surface here as an Ok whose selection violates a\n  constraint.\n- prop_implies_propagation + prop_solver_never_panics_with_constraints.\n- Deterministic fail-loud tests: an unevaluatable attribute comparison\n  yields UnevaluatableConstraint (REQ-257); a constraint naming a\n  nonexistent feature yields UnknownConstraintFeature (REQ-259).\n\nAlso surfaces a real latent bug: a shared child reachable through two\nparents (a diamond / DAG) is mis-reported as a cycle by validate_tree's\nBFS (global-visited-as-cycle). Filed as REQ-269 with a regression test\n(diamond_shared_child_is_not_a_cycle, #[ignore]d until the fix); confirmed\nfailing with \"cycle detected involving feature `shared`\".\n\nConfirmed with `cargo test -p rivet-core --test proptest_feature_model`\n(12 passed, 1 ignored) and clippy --all-targets clean. Test-only + artifact\nchange; the wasm seam is untouched.\n\nImplements: REQ-266\nVerifies: REQ-257, REQ-259\nRefs: REQ-269, DD-076",
-          "timestamp": "2026-07-16T13:14:22+02:00",
-          "tree_id": "6e7cf7b780b6b4f02134fb0d13848672adcbe953",
-          "url": "https://github.com/pulseengine/rivet/commit/ab9b24cad5fdd6114b19d75a097c814e1ff457a4"
-        },
-        "date": 1784201295334,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 86734,
-            "range": "± 874",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 926130,
-            "range": "± 15973",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14888303,
-            "range": "± 269521",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1921,
-            "range": "± 9",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24756,
-            "range": "± 44",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 370986,
-            "range": "± 1827",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1528479,
-            "range": "± 12076",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 167973,
-            "range": "± 1381",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1954981,
-            "range": "± 14794",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27468467,
-            "range": "± 313851",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 451218,
-            "range": "± 13303",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15075675,
-            "range": "± 116844",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1106346029,
-            "range": "± 13290622",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4354,
-            "range": "± 44",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 43980,
-            "range": "± 781",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 765916,
-            "range": "± 15112",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63177,
-            "range": "± 203",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 722107,
-            "range": "± 7460",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8101319,
-            "range": "± 96439",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1115,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14974,
-            "range": "± 276",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 223850,
-            "range": "± 972",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21695,
-            "range": "± 71",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 152321,
-            "range": "± 1793",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1410144,
-            "range": "± 51551",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1610773,
             "range": "± 12212",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c0eb34f266ef55d39d4cf9b2cf52e1f92c914ef1",
+          "message": "fix(serve): don't silently swallow a failed external load (#778 follow-up) (#783)\n\n`load_externals` used `if let Ok(..)` with no `else`: when\n`load_external_project` failed, the external kept `synced: true` but got an\nEMPTY store. The dashboard then showed zero artifacts for that prefix with no\ndiagnostic anywhere — indistinguishable from an external that legitimately has\nnone.\n\nNow a load error is logged with the prefix and path, a successful-but-empty\nload warns (its rivet.yaml declares no sources, or they matched no files), and\na declared-but-unsynced external says so and points at `rivet sync`.\n\nScope note: this is hardening, NOT the #778 fix. #778 is pagination truncation\nand is fixed by #779 (externals precede locals). The external load has been\nsucceeding all along — the point here is that if it ever stops, it will say so\ninstead of degrading silently to \"no externals\". Salvaged from the closed #780.\n\nRefs: REQ-265",
+          "timestamp": "2026-08-11T21:37:52+02:00",
+          "tree_id": "ef1745b4d4035fbaac32a98ff063afc318d2c301",
+          "url": "https://github.com/pulseengine/rivet/commit/c0eb34f266ef55d39d4cf9b2cf52e1f92c914ef1"
+        },
+        "date": 1786478197861,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84188,
+            "range": "± 1753",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 893849,
+            "range": "± 18568",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15500367,
+            "range": "± 243819",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2185,
+            "range": "± 20",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25926,
+            "range": "± 149",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 364472,
+            "range": "± 1345",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1517663,
+            "range": "± 15219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 160170,
+            "range": "± 1369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1939856,
+            "range": "± 18461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30220264,
+            "range": "± 377002",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 477348,
+            "range": "± 1413",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15546933,
+            "range": "± 104870",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1237019194,
+            "range": "± 11542275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4428,
+            "range": "± 159",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59874,
+            "range": "± 265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 820670,
+            "range": "± 3507",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60557,
+            "range": "± 242",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 704993,
+            "range": "± 6576",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7559221,
+            "range": "± 365772",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1176,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14291,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 333126,
+            "range": "± 12224",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24102,
+            "range": "± 495",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 178494,
+            "range": "± 2286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1612275,
+            "range": "± 23527",
             "unit": "ns/iter"
           }
         ]
