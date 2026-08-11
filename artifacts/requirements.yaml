@@ -8035,7 +8035,7 @@ artifacts:
     title: "rivet docs check: parse embedded doc snippets + resolve doc-topic references (catch truth-drift mechanically)"
     status: proposed
     description: "Meta-fix for the weak-green docs class (REQ-284): `rivet docs check` today validates token/format hygiene, so a doc snippet whose flags don't parse or that references a non-existent `rivet docs <topic>` passes clean. Add two invariants: (a) shell every fenced ```bash rivet …``` snippet in the embedded docs through the clap parser (arg-validation / --help level, no execution) and fail on unknown args/subcommands; (b) assert every `rivet docs <topic>` / `rivet schema <name>` reference in doc prose resolves to a real topic. The countercheck showed this would have caught 6 of 8 REQ-284 divergences mechanically — turning an expensive human audit into a gate. This is the 'weak green' fix at the meta level: make the green prove the snippets are true, not just well-formed."
-    release: v0.33.0
+    release: v0.34.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8046,7 +8046,7 @@ artifacts:
     title: "rivet release status: be LOUD about which artifacts block a cut (and whether they are in-scope vs backlog)"
     status: proposed
     description: "User-reported: when a release's scope contains artifacts not in a ready status (draft/proposed, or implemented-not-verified), `rivet release status <v>` reports not-cuttable — which may be correct, but the block should be LOUD and actionable, not a terse 'NOT cuttable'. Surface, per blocking artifact: its id, current status, the target status it needs, and (critically) whether it is genuinely IN THIS RELEASE'S SCOPE vs backlog that merely carries the release: field or none — so the user can act (promote it, or move it out of the release) instead of being stuck. Ties to release.ready-when (REQ-240) and the ship-at-implemented gap (the release-status gate is stricter than actual practice). Part of the weak-green/unclear-signal family: a RED that doesn't clearly say why or what to do about it."
-    release: v0.33.0
+    release: v0.34.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8

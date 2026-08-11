@@ -5,6 +5,48 @@
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-08-11
+
+Gate potency — *a gate that cannot fail is not a gate*. Four required CI checks
+ran, reported green, and could not go red. Ported from spar's gate audit
+(spar#381/#383/#384/#388) and each reproduced here with direct evidence.
+
+### Fixed
+- **Mutation gate could never fail** (REQ-288, #768) — the rivet-cli *hard* gate
+  read `mutants-out/missed.txt`, a path cargo-mutants has never written (it
+  writes `<output>/mutants.out/`), so `MISSED` stayed `0` and the gate passed
+  regardless of survivors. Evidence: an uploaded artifact's real `missed.txt`
+  lists 5 survivors while the job printed `Surviving mutants: 0`. Two further
+  rivet-only defects compounded it: the gate ran `-- --lib` against a crate with
+  **no lib target** (`cargo test -p rivet-cli --lib` errors), so no test ever
+  exercised any mutant and all 29 integration test files were excluded; and the
+  artifact-upload globs never matched, so no rivet-cli mutants report had ever
+  been produced. Now reads the real path, **fails loudly when the report is
+  absent** (a missing report must never read as a clean one), drops `--lib`, and
+  scopes the per-PR run with `--in-diff` so a correct gate fits the time budget.
+- **Format gate was blind to a whole workspace** (REQ-289, #769) —
+  `cargo fmt --all` covers *this* workspace, not the repo. rivet has two
+  (`/` and `fuzz/`); the root check passed while `fuzz/` carried real drift in 5
+  tracked files. The gate now derives the workspace list so a new nested
+  workspace cannot silently escape it.
+- **The anti-rot check ran in no workflow** (REQ-290, #770) —
+  `rivet check verification-evidence` exists precisely to catch artifacts citing
+  tests that no longer exist, and nothing invoked it. Now wired into the
+  Traceability job, and its zero-steps case no longer prints a checkmark over an
+  empty scan.
+- **Changed-areas filter was under-scoped and failed open** (REQ-291, #771) — a
+  `rust=false` verdict skips Clippy/Test/MSRV/Semver/Miri/Proptest, and on GitHub
+  a *skipped* required context is indistinguishable from a passed one. Embedded
+  schemas (`include_str!`) and composite actions did not match the filter, and an
+  errored `git diff` yielded the permissive verdict. Now derives the real build
+  inputs and fails **closed**.
+- **Externals fell off the end of `/artifacts`** (#778) — external artifacts were
+  appended after every local one and then paginated, so once a project's local
+  count exceeded the page window they became unreachable while `total` still
+  counted them, and every visible row read `origin: local`. Growth-triggered: no
+  commit broke it. Externals are now emitted before locals. A failed external
+  load also no longer degrades silently to "no externals".
+
 ### Fixed
 - **`rivet check verification-evidence` is now wired into CI + no longer scores
   an empty scan as a pass** (REQ-290, #770) — the anti-rot check for stale
