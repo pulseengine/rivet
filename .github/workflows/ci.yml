@@ -857,10 +857,6 @@ jobs:
         # `continue-on-error: true`, so honest numbers surface without blocking.
         run: |
           REPORT=mutants-out/mutants.out
-          if [ ! -s pr.diff ]; then
-            echo "no Rust changes in this diff — nothing to mutate, nothing to check"
-            exit 0
-          fi
           if [ ! -f "$REPORT/outcomes.json" ]; then
             echo "::error::no $REPORT/outcomes.json — cargo-mutants crashed or its layout changed; not reporting a pass over missing evidence"
             ls -R mutants-out 2>/dev/null || echo "(no mutants-out/ at all)"

@@ -29,11 +29,6 @@ ran, reported green, and could not go red. Ported from spar's gate audit
   (`/` and `fuzz/`); the root check passed while `fuzz/` carried real drift in 5
   tracked files. The gate now derives the workspace list so a new nested
   workspace cannot silently escape it.
-- **The anti-rot check ran in no workflow** (REQ-290, #770) —
-  `rivet check verification-evidence` exists precisely to catch artifacts citing
-  tests that no longer exist, and nothing invoked it. Now wired into the
-  Traceability job, and its zero-steps case no longer prints a checkmark over an
-  empty scan.
 - **Changed-areas filter was under-scoped and failed open** (REQ-291, #771) — a
   `rust=false` verdict skips Clippy/Test/MSRV/Semver/Miri/Proptest, and on GitHub
   a *skipped* required context is indistinguishable from a passed one. Embedded
@@ -47,7 +42,6 @@ ran, reported green, and could not go red. Ported from spar's gate audit
   commit broke it. Externals are now emitted before locals. A failed external
   load also no longer degrades silently to "no externals".
 
-### Fixed
 - **`rivet check verification-evidence` is now wired into CI + no longer scores
   an empty scan as a pass** (REQ-290, #770) — the anti-rot check for stale
   `cargo test <filter>` names (REQ-236, hardened again in REQ-280 for nextest
