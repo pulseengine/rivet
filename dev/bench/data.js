@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786478198899,
+  "lastUpdate": 1786492945096,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "2ff1c0997c385f123bbfc6332d453c18b046dc12",
-          "message": "fix(feature-model): don't mis-report a shared child as a cycle (REQ-269) (#716)\n\n`validate_tree`'s cycle detection used a single global `visited` set with a\nBFS and reported EVERY second encounter of a node as a cycle. A feature\nreachable through two parents — a diamond / DAG, e.g. `root -> {a, b}` with\n`a -> shared` and `b -> shared` — was enqueued from both parents, dequeued\ntwice, and wrongly rejected with \"cycle detected involving feature `shared`\".\nReal feature models legitimately share a sub-feature under two branches.\n\nReplace the BFS with an iterative DFS that tracks the current path (the\nrecursion stack) separately from fully-explored nodes:\n- A node re-encountered while still ON the current path is a genuine cycle\n  (a back edge — a feature that is its own ancestor). Still rejected.\n- A node reached again by a disjoint path (a shared child) is fully\n  explored, so it is skipped, not flagged.\n\nThe parent link remains last-writer-wins (unchanged, acceptable); only the\ntraversal's cycle criterion changes.\n\nTests: un-ignored `diamond_shared_child_is_not_a_cycle` (now passing) and\nadded `genuine_cycle_is_rejected` as a guard that real cycles still error.\n\nConfirmed with the full feature_model + variant suites (proptest 14, lib\nfeature_model 62, variant_gap_check 2, variant_phase2 8 — all green),\nclippy --all-targets clean, and the wasm seam builds\n(`cargo build -p rivet-cli --features wasm` OK — composition core touched,\nWIT/component unchanged so no cargo-component rebuild needed).\n\nFixes: REQ-269\nVerifies: REQ-269\nRefs: REQ-266",
-          "timestamp": "2026-07-16T17:20:08+02:00",
-          "tree_id": "4e53cff94a25d32c0affb1a3c45d0f901ba752a7",
-          "url": "https://github.com/pulseengine/rivet/commit/2ff1c0997c385f123bbfc6332d453c18b046dc12"
-        },
-        "date": 1784215945234,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85241,
-            "range": "± 909",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 933824,
-            "range": "± 3918",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13728534,
-            "range": "± 209676",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1954,
-            "range": "± 51",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24839,
-            "range": "± 72",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 363391,
-            "range": "± 1564",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1508567,
-            "range": "± 14738",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 168760,
-            "range": "± 907",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1962139,
-            "range": "± 7803",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27739820,
-            "range": "± 208735",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 449286,
-            "range": "± 2792",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15353423,
-            "range": "± 127795",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1128699732,
-            "range": "± 21181441",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4202,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 44662,
-            "range": "± 165",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 759556,
-            "range": "± 2943",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 63176,
-            "range": "± 291",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 730528,
-            "range": "± 3079",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8161043,
-            "range": "± 62517",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1187,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 13589,
-            "range": "± 39",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 229887,
-            "range": "± 3997",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22642,
-            "range": "± 178",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 154158,
-            "range": "± 489",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1444347,
-            "range": "± 18501",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1612275,
             "range": "± 23527",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "54578059b66af4db548b53db35305052cf75ddf1",
+          "message": "chore(release): v0.33.0 — gate potency (#793)\n\nBumps workspace 0.32.0 -> 0.33.0 (rivet-core, rivet-cli, etch) + vscode-rivet.\n\nTheme: a gate that cannot fail is not a gate. Four required CI checks ran,\nreported green, and could not go red. Ported from spar's gate audit and each\nreproduced here with direct evidence.\n\nScope (all implemented + merged):\n- REQ-288 mutation gate could never fail — wrong results path, empty test\n  selector against a crate with no lib target, unmatched upload globs (#768)\n- REQ-289 Format gate blind to the fuzz/ workspace (#769)\n- REQ-290 check verification-evidence ran in no workflow (#770)\n- REQ-291 changed-areas filter under-scoped and failing open (#771)\n\nAlso carries the #778 externals-pagination fix (#779), which downstream sigil\nis waiting on: with 1242 local artifacts it is ~12x the default page window, so\nits synth/kiln external rows are currently dropped while `total` counts them.\nThat is the reason this cut is not waiting.\n\nScope moved DELIBERATELY (release-planning: deferral is a decision, logged):\nREQ-285 (docs check parses snippets) and REQ-286 (release status loudness)\nv0.33.0 -> v0.34.0. Both are still proposed; the release's own theme — the four\nvacuous gates — is complete without them.\n\nTrace: skip",
+          "timestamp": "2026-08-12T00:26:54+02:00",
+          "tree_id": "71fe4b81399e14f51cd2b3c8cdbdccc3d29d13aa",
+          "url": "https://github.com/pulseengine/rivet/commit/54578059b66af4db548b53db35305052cf75ddf1"
+        },
+        "date": 1786492944141,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85771,
+            "range": "± 3061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 898300,
+            "range": "± 4944",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12954236,
+            "range": "± 573294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2232,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26866,
+            "range": "± 68",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 384702,
+            "range": "± 1968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1510764,
+            "range": "± 30167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167547,
+            "range": "± 3910",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1972239,
+            "range": "± 10334",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27089956,
+            "range": "± 1192633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 475381,
+            "range": "± 4597",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15383296,
+            "range": "± 138745",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1241139166,
+            "range": "± 13206655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4479,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60420,
+            "range": "± 1301",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 778724,
+            "range": "± 3359",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59117,
+            "range": "± 1447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 693244,
+            "range": "± 27913",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7644481,
+            "range": "± 182261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1093,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14852,
+            "range": "± 49",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 322713,
+            "range": "± 2600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25272,
+            "range": "± 92",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 179191,
+            "range": "± 739",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1659512,
+            "range": "± 20393",
             "unit": "ns/iter"
           }
         ]
