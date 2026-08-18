@@ -8106,3 +8106,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-05T00:00:00Z
+
+  - id: REQ-293
+    type: requirement
+    title: "modify --set-field must replace a sub-key's full on-disk extent, not just its first line (#806)"
+    status: implemented
+    description: "P0 data loss, reported externally and reproduced on main. The custom-fields write path in `mutate::modify_artifact_yaml` replaced the target sub-key with a single assignment (`editor.lines[i] = ...`), so any continuation lines belonging to that key — a block scalar body (`|`/`>`/`|-`), a nested block mapping, or a block list — were left ORPHANED. Two failure modes, both exiting 0 after printing `modified <ID>`: (1) the orphaned body folds into the new value as a multi-line plain scalar, silently corrupting it (intended `short` became `short first body line second body line`); (2) if a body line contains `: ` — ordinary prose — the file becomes unparseable, and since the loader drops a file it cannot parse, every artifact in that file vanishes. A 10-shape scouting matrix found 6 corrupting shapes; all 6 are green after the fix. The sibling `YamlEditor::set_field` has upheld this invariant since #613/#618/#625 via `field_block_end` + `splice`; the hardening was never propagated to this path 700 lines below, and the custom-fields path had no multi-line-value test at all. Fix mirrors the sibling, using `sub_indent` as the indent basis since custom fields sit one level deeper under `fields:`. Systemic follow-up in #809 (mutation-safety property harness) — this is the fourth data-loss bug in the same hand-rolled line-oriented writer after #573, #618/#625 and REQ-287."
+    release: v0.33.1
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-18T00:00:00Z

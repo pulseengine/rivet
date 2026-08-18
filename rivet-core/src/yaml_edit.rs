@@ -916,7 +916,25 @@ pub fn modify_artifact_yaml(
                     break;
                 }
                 if this_indent == sub_indent && trimmed.starts_with(&sub_prefix) {
-                    editor.lines[i] = format!("{}{key}: {quoted_value}", " ".repeat(sub_indent));
+                    // #806: replace the sub-key's FULL on-disk extent, not just
+                    // its first line. A block scalar (`|`/`>`/`|-`), a nested
+                    // block mapping, or a block list under this key occupies
+                    // continuation lines below it; assigning to `lines[i]` alone
+                    // left them ORPHANED. That either folded them into the new
+                    // value as a multi-line plain scalar (silent corruption —
+                    // exit 0) or, when a body line contained `: `, produced an
+                    // unparseable file, which drops every artifact in it.
+                    //
+                    // This is the same invariant `set_field` upholds via
+                    // `field_block_end` (see #613/#618/#625) — the hardening was
+                    // never propagated to this sibling path. The indent basis
+                    // here is `sub_indent`, since custom fields live one level
+                    // deeper, under `fields:`.
+                    let extent_end = editor.field_block_end(i, block_end, sub_indent);
+                    editor.lines.splice(
+                        i..extent_end,
+                        [format!("{}{key}: {quoted_value}", " ".repeat(sub_indent))],
+                    );
                     found = true;
                     break;
                 }
@@ -1998,5 +2016,211 @@ artifacts:
             Some(hostile),
             "hostile replacement value must round-trip verbatim"
         );
+    }
+
+    /// #806: `--set-field` used to overwrite only the FIRST line of the target
+    /// sub-key, orphaning a block scalar's body. The orphaned lines then either
+    /// folded into the new value (silent corruption) or broke the parse.
+    ///
+    /// Every case below asserts EXACT equality of the new value — not merely
+    /// that the output parses. Mode 1 of #806 produced a perfectly parseable
+    /// file whose value had silently become `"short first body line …"`, so a
+    /// parse-only assertion would have greened on the data loss.
+    ///
+    /// The custom-`fields:` path had no multi-line-value test at all before
+    /// this, which is why #613/#618/#625 hardened only the sibling `set_field`.
+    fn set_rationale(content: &str) -> String {
+        let params = crate::mutate::ModifyParams {
+            set_fields: vec![("rationale".to_string(), "short".to_string())],
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed")
+    }
+
+    fn assert_rationale_replaced(out: &str, case: &str) {
+        let parsed: serde_yaml::Value = serde_yaml::from_str(out)
+            .unwrap_or_else(|e| panic!("{case}: output must parse as YAML: {e}\n---\n{out}"));
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["rationale"].as_str(),
+            Some("short"),
+            "{case}: value must be exactly the new scalar, with no orphaned body folded in"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["priority"].as_str(),
+            Some("must"),
+            "{case}: sibling field must survive"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["title"].as_str(),
+            Some("T"),
+            "{case}: base fields must survive"
+        );
+    }
+
+    #[test]
+    fn set_field_replaces_block_literal_without_orphaning_body() {
+        let out = set_rationale(
+            "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      rationale: |
+        first body line
+        second body line
+      priority: must",
+        );
+        assert_rationale_replaced(&out, "literal |");
+    }
+
+    #[test]
+    fn set_field_replaces_folded_scalar_without_orphaning_body() {
+        let out = set_rationale(
+            "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      rationale: >
+        first body line
+        second body line
+      priority: must",
+        );
+        assert_rationale_replaced(&out, "folded >");
+    }
+
+    #[test]
+    fn set_field_replaces_strip_chomped_literal() {
+        let out = set_rationale(
+            "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      rationale: |-
+        only body line
+      priority: must",
+        );
+        assert_rationale_replaced(&out, "literal |-");
+    }
+
+    /// The mode that reaches the user loudest: an orphaned body line containing
+    /// `: ` makes the whole file unparseable, so every artifact in it vanishes.
+    #[test]
+    fn set_field_replaces_block_literal_whose_body_contains_a_colon() {
+        let out = set_rationale(
+            "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      rationale: |
+        note: prose often has colons
+        second body line
+      priority: must",
+        );
+        assert_rationale_replaced(&out, "body with colon");
+    }
+
+    /// A body line that looks like a block-list item is the same orphan hazard
+    /// `set_field` hit in #618.
+    #[test]
+    fn set_field_replaces_block_literal_whose_body_looks_like_a_list() {
+        let out = set_rationale(
+            "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      rationale: |
+        - bullet one
+        - bullet two
+      priority: must",
+        );
+        assert_rationale_replaced(&out, "body looks like a list");
+    }
+
+    /// Trailing position: the block scalar is the last sub-key of the last
+    /// artifact, so its extent runs to the end of the block.
+    #[test]
+    fn set_field_replaces_block_literal_as_last_field() {
+        let out = set_rationale(
+            "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      priority: must
+      rationale: |
+        first body line
+        second body line",
+        );
+        assert_rationale_replaced(&out, "literal as last field");
+    }
+
+    /// A following artifact must not be swallowed by the extent computation.
+    #[test]
+    fn set_field_replacing_block_literal_leaves_the_next_artifact_intact() {
+        let out = set_rationale(
+            "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      rationale: |
+        first body line
+      priority: must
+
+  - id: REQ-002
+    type: requirement
+    title: Second
+    status: draft
+    fields:
+      priority: should",
+        );
+        assert_rationale_replaced(&out, "with following artifact");
+        let parsed: serde_yaml::Value = serde_yaml::from_str(&out).expect("must parse");
+        assert_eq!(
+            parsed["artifacts"][1]["id"].as_str(),
+            Some("REQ-002"),
+            "the following artifact must survive untouched"
+        );
+        assert_eq!(
+            parsed["artifacts"][1]["fields"]["priority"].as_str(),
+            Some("should"),
+            "the following artifact's fields must survive untouched"
+        );
+    }
+
+    /// Control: the single-line case that always worked must keep working.
+    #[test]
+    fn set_field_replaces_plain_scalar_value() {
+        let out = set_rationale(
+            "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      rationale: oneline
+      priority: must",
+        );
+        assert_rationale_replaced(&out, "plain scalar control");
     }
 }
