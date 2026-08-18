@@ -9188,3 +9188,229 @@ fn context_brief_is_smaller_and_drops_the_reference() {
         full.len()
     );
 }
+
+// #808: silent empty load. A config typo or a wrong root key must not
+// yield a green `validate` PASS with `coverage` at 100% — the exact
+// "loudest-green over a zero read" trap this defense removes. Four
+// regression tests, one per fix site.
+
+/// Helper: fresh project with an `artifacts/` source and the two
+/// canonical schemas.
+fn empty_load_project(root_yaml: &str, artifact_yaml: &str) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(dir.join("rivet.yaml"), root_yaml).unwrap();
+    if !artifact_yaml.is_empty() {
+        std::fs::write(dir.join("artifacts/a.yaml"), artifact_yaml).unwrap();
+    }
+    tmp
+}
+
+/// #808 fix #3 — `rivet.yaml` unknown top-level keys hard-fail. A
+/// mis-keyed `typo_sources:` (instead of `sources:`) is exactly the
+/// silent-empty-load config trigger from the issue reproducer; it must
+/// now surface as a parse error at load time, not a green `validate`.
+///
+/// rivet: verifies #808
+#[test]
+fn rivet_yaml_unknown_top_level_key_hard_fails() {
+    let tmp = empty_load_project(
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         typo_sources:\n  - path: artifacts\n    format: generic-yaml\n",
+        "",
+    );
+    let dir = tmp.path();
+    let out = Command::new(rivet_bin())
+        .args(["--project", dir.to_str().unwrap(), "validate"])
+        .output()
+        .expect("validate");
+    assert!(
+        !out.status.success(),
+        "an unknown top-level key in rivet.yaml must fail — otherwise a config typo silently disables every input"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unknown field `typo_sources`"),
+        "the error must name the offending key so the user knows what to fix; stderr:\n{stderr}"
+    );
+}
+
+/// #808 fix #2 — near-miss root key. A generic-yaml file whose only
+/// top-level key is `requirements:` (a plausible typo for
+/// `artifacts:`) must surface as an `artifact-root-key-near-miss`
+/// Warning at validate time, escalating to Error under `--strict`.
+///
+/// rivet: verifies #808
+#[test]
+fn validate_flags_generic_yaml_near_miss_root_key() {
+    let tmp = empty_load_project(
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+        "requirements:\n  - id: REQ-001\n    type: requirement\n    title: X\n    status: draft\n",
+    );
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let default = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let default_stderr_stdout = format!(
+        "{}{}",
+        String::from_utf8_lossy(&default.stderr),
+        String::from_utf8_lossy(&default.stdout),
+    );
+    assert!(
+        default.status.success(),
+        "default validate must PASS (warning-severity, non-fatal); combined:\n{default_stderr_stdout}"
+    );
+    assert!(
+        default_stderr_stdout.contains("artifact-root-key-near-miss")
+            || default_stderr_stdout.contains("top-level `requirements:`"),
+        "default validate must surface the near-miss diagnostic so the user sees it; combined:\n{default_stderr_stdout}"
+    );
+
+    let strict = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate", "--strict"])
+        .output()
+        .expect("validate --strict");
+    assert!(
+        !strict.status.success(),
+        "--strict must fail on the near-miss (compliance-gate mode); combined:\n{}{}",
+        String::from_utf8_lossy(&strict.stderr),
+        String::from_utf8_lossy(&strict.stdout)
+    );
+}
+
+/// #808 fix #1 — empty source (path exists, no artifacts produced) is
+/// a warning by default and an error under `--strict`.
+///
+/// rivet: verifies #808
+#[test]
+fn validate_flags_empty_source() {
+    // Source path exists but produces nothing (no files at all).
+    let tmp = empty_load_project(
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+        "",
+    );
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let default = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&default.stderr),
+        String::from_utf8_lossy(&default.stdout),
+    );
+    assert!(
+        combined.contains("empty-source") || combined.contains("loaded 0 artifacts"),
+        "default validate must surface the empty-source diagnostic; combined:\n{combined}"
+    );
+
+    let strict = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate", "--strict"])
+        .output()
+        .expect("validate --strict");
+    assert!(
+        !strict.status.success(),
+        "--strict must fail on empty-source so a CI gate catches the silent-empty-load; combined:\n{}{}",
+        String::from_utf8_lossy(&strict.stderr),
+        String::from_utf8_lossy(&strict.stdout)
+    );
+}
+
+/// #808 fix #4 — coverage must render `n/a` for empty-scope rules
+/// (never `100.0%`) and exit non-zero under `--strict-empty` and under
+/// `--fail-under` when the load was empty.
+///
+/// rivet: verifies #808
+#[test]
+fn coverage_prints_n_a_and_exits_nonzero_on_empty_load() {
+    let tmp = empty_load_project(
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+        "",
+    );
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    // Text mode: `n/a` (never `100.0%`) for each rule, and a lead-in
+    // banner naming the empty-load state.
+    let text = Command::new(rivet_bin())
+        .args(["--project", dirs, "coverage"])
+        .output()
+        .expect("coverage");
+    let stdout = String::from_utf8_lossy(&text.stdout);
+    assert!(
+        stdout.contains("No artifacts loaded"),
+        "the coverage banner must name the empty-load state; stdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("n/a%"),
+        "empty-scope rules must render as n/a, not 100.0%; stdout:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("100.0%"),
+        "coverage must NOT print 100% for a zero-denominator load — #808 regression; stdout:\n{stdout}"
+    );
+
+    // JSON mode: percentages are null, empty_scope is true.
+    let json = Command::new(rivet_bin())
+        .args(["--project", dirs, "coverage", "--format", "json"])
+        .output()
+        .expect("coverage --format json");
+    let json_stdout = String::from_utf8_lossy(&json.stdout);
+    let v: serde_json::Value = serde_json::from_str(&json_stdout).expect("coverage JSON parseable");
+    assert_eq!(
+        v["overall"]["empty_scope"],
+        serde_json::Value::Bool(true),
+        "overall.empty_scope must be true; got {v:#?}"
+    );
+    assert_eq!(
+        v["overall"]["percentage"],
+        serde_json::Value::Null,
+        "overall.percentage must be null for empty scope; got {v:#?}"
+    );
+    for rule in v["rules"].as_array().expect("rules array") {
+        assert_eq!(
+            rule["empty_scope"],
+            serde_json::Value::Bool(true),
+            "each rule.empty_scope must be true when empty; got {rule:#?}"
+        );
+        assert_eq!(
+            rule["percentage"],
+            serde_json::Value::Null,
+            "each rule.percentage must be null when empty; got {rule:#?}"
+        );
+    }
+
+    // --strict-empty: exit non-zero.
+    let strict = Command::new(rivet_bin())
+        .args(["--project", dirs, "coverage", "--strict-empty"])
+        .output()
+        .expect("coverage --strict-empty");
+    assert!(
+        !strict.status.success(),
+        "--strict-empty must exit non-zero on empty load; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&strict.stdout),
+        String::from_utf8_lossy(&strict.stderr)
+    );
+
+    // --fail-under: also exit non-zero (the historical "100% overall"
+    // would have trivially satisfied any threshold; that's the trap).
+    let threshold = Command::new(rivet_bin())
+        .args(["--project", dirs, "coverage", "--fail-under", "50"])
+        .output()
+        .expect("coverage --fail-under");
+    assert!(
+        !threshold.status.success(),
+        "--fail-under on empty load must exit non-zero — refusing to declare a passing gate over zero data; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&threshold.stdout),
+        String::from_utf8_lossy(&threshold.stderr)
+    );
+}

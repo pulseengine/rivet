@@ -655,6 +655,16 @@ enum Command {
         /// is not read. Repeat the flag or pass several paths.
         #[arg(long = "aggregate", value_name = "FILE", num_args = 1.., conflicts_with = "tests")]
         aggregate: Vec<PathBuf>,
+
+        /// Exit non-zero when the project loaded zero scoring artifacts —
+        /// the "silent empty load" failure mode where `coverage` would
+        /// otherwise print `n/a` for every rule and (historically) 100%
+        /// overall. Turn this on in CI so a config typo that yields an
+        /// empty load fails the gate instead of quietly passing it. Text
+        /// output always renders empty rules as `n/a` regardless; this
+        /// flag only controls the exit code.
+        #[arg(long = "strict-empty")]
+        strict_empty: bool,
     },
 
     /// Generate a traceability matrix
@@ -2502,6 +2512,7 @@ fn run(cli: Cli) -> Result<bool> {
             variant,
             matrix,
             aggregate,
+            strict_empty,
         } => {
             if !aggregate.is_empty() {
                 cmd_coverage_matrix_aggregate(format, aggregate)
@@ -2517,6 +2528,7 @@ fn run(cli: Cli) -> Result<bool> {
                     fail_under.as_ref(),
                     baseline.as_deref(),
                     variant.as_deref(),
+                    *strict_empty,
                 )
             }
         }
@@ -5556,6 +5568,8 @@ fn cmd_validate(
     // across every source — a collision can straddle two source paths —
     // and emitted as `duplicate-artifact-id` Error diagnostics below.
     let mut parse_error_skips: Vec<rivet_core::SkippedFile> = Vec::new();
+    let mut near_miss_skips: Vec<rivet_core::SkippedFile> = Vec::new();
+    let mut empty_sources: Vec<String> = Vec::new();
     let mut loaded_for_dup_check: Vec<rivet_core::model::Artifact> = Vec::new();
     for source in &config.sources {
         // REQ-157 / #406: use the *quiet* report loader — `ProjectContext::load`
@@ -5565,12 +5579,26 @@ fn cmd_validate(
         // are unchanged.
         match rivet_core::load_artifacts_with_report_quiet(source, &cli.project, &schema) {
             Ok(report) => {
+                let source_yielded = report.artifacts.len();
                 for skip in report.skipped {
-                    if skip.kind == rivet_core::SkipKind::ParseError {
-                        parse_error_skips.push(skip);
+                    match skip.kind {
+                        rivet_core::SkipKind::ParseError => parse_error_skips.push(skip),
+                        // #808: near-miss root keys (e.g. `requirements:`
+                        // instead of `artifacts:`) become their own
+                        // structured diagnostic below rather than silent
+                        // NotArtifactFile skips.
+                        rivet_core::SkipKind::NearMissKey(_) => near_miss_skips.push(skip),
+                        rivet_core::SkipKind::NotArtifactFile => {}
                     }
                 }
                 loaded_for_dup_check.extend(report.artifacts);
+                // #808: a source that loads zero artifacts is the exact
+                // "silent-green over an empty read" failure mode.
+                // Capture it — the diagnostic is emitted below alongside
+                // parse-error and near-miss cases.
+                if source_yielded == 0 {
+                    empty_sources.push(source.path.clone());
+                }
             }
             Err(e) => {
                 // A hard load error here is already surfaced by
@@ -5983,6 +6011,59 @@ fn cmd_validate(
         diagnostics.push(diag);
     }
 
+    // #808: near-miss root keys (e.g. `requirements:` where the
+    // generic-yaml adapter expected `artifacts:`) are the exact
+    // silent-empty-load reproducer. Warning-by-default (not Error) —
+    // the YAML is well-formed and might legitimately be a non-artifact
+    // file placed in a source path. `--strict` (compliance-gate mode)
+    // promotes it to Error via the escalation block below.
+    for skip in &near_miss_skips {
+        if let rivet_core::SkipKind::NearMissKey(ref key) = skip.kind {
+            let mut diag = validate::Diagnostic::new(
+                Severity::Warning,
+                None,
+                "artifact-root-key-near-miss",
+                format!(
+                    "artifact file {} has top-level `{key}:` — did you mean `artifacts:`? \
+                     the generic-yaml adapter only reads `artifacts:` as the root list, \
+                     so this file contributes 0 artifacts",
+                    skip.path.display(),
+                ),
+            );
+            diag.source_file = Some(skip.path.clone());
+            diagnostics.push(diag);
+        }
+    }
+
+    // #808: a configured source that yielded zero artifacts is the
+    // config-typo failure mode (`typo_sources:` in `rivet.yaml`, or a
+    // `sources[].path` that resolves nowhere useful). Warning-by-default,
+    // Error under `--strict`. Skipped when the source produced parse or
+    // near-miss diagnostics above, since those already name the cause.
+    let skips_covered_source = |src: &str| -> bool {
+        let src_prefix = std::path::PathBuf::from(src);
+        parse_error_skips
+            .iter()
+            .chain(near_miss_skips.iter())
+            .any(|s| s.path.starts_with(&src_prefix))
+    };
+    for src in &empty_sources {
+        if skips_covered_source(src) {
+            continue;
+        }
+        let mut diag = validate::Diagnostic::new(
+            Severity::Warning,
+            None,
+            "empty-source",
+            format!(
+                "source '{src}' loaded 0 artifacts — check the path resolves and files \
+                 declare the expected root key (typically `artifacts:`)"
+            ),
+        );
+        diag.source_file = Some(std::path::PathBuf::from(src));
+        diagnostics.push(diag);
+    }
+
     // REQ-075 / F2: two artifacts declaring the same `id` collapse
     // silently — `Store::upsert` is last-write-wins, so `validate` only
     // ever sees the survivor. Detection happened at load time above; emit
@@ -6207,7 +6288,16 @@ fn cmd_validate(
     // required-fields, but says nothing about field values/names.
     if strict {
         for d in &mut diagnostics {
-            if d.rule == "allowed-values" || d.rule == "unknown-field" {
+            if d.rule == "allowed-values"
+                || d.rule == "unknown-field"
+                // #808: silent-empty-load defenses. Warning by default so
+                // pre-existing projects don't break their own `validate`;
+                // Error under `--strict` so CI treats an empty-source
+                // config typo or a `requirements:` near-miss as the
+                // silent-green failure it actually is.
+                || d.rule == "artifact-root-key-near-miss"
+                || d.rule == "empty-source"
+            {
                 d.severity = Severity::Error;
             }
         }
@@ -8584,6 +8674,7 @@ fn cmd_coverage(
     fail_under: Option<&f64>,
     baseline_name: Option<&str>,
     variant_arg: Option<&str>,
+    strict_empty: bool,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
@@ -8623,11 +8714,24 @@ fn cmd_coverage(
 
     let report = coverage::compute_coverage(&store, &schema, &graph);
 
+    // #808: distinguish "no artifacts to score" (n/a) from "100%
+    // coverage." A rule with total=0 emits `null` for both percentages;
+    // a machine consumer can then tell a satisfied gate from an empty
+    // one without inspecting `total`.
+    let pct_or_null = |empty: bool, pct: f64| -> serde_json::Value {
+        if empty {
+            serde_json::Value::Null
+        } else {
+            serde_json::json!((pct * 10.0).round() / 10.0)
+        }
+    };
+
     if format == "json" {
         let rules_json: Vec<serde_json::Value> = report
             .entries
             .iter()
             .map(|e| {
+                let empty = e.is_empty_scope();
                 serde_json::json!({
                     "name": e.rule_name,
                     "description": e.description,
@@ -8638,8 +8742,9 @@ fn cmd_coverage(
                     "external_boundary": e.external_boundary,
                     "external_boundary_ids": e.external_boundary_ids,
                     "total": e.total,
-                    "percentage": (e.percentage() * 10.0).round() / 10.0,
-                    "accounted_percentage": (e.accounted_percentage() * 10.0).round() / 10.0,
+                    "empty_scope": empty,
+                    "percentage": pct_or_null(empty, e.percentage()),
+                    "accounted_percentage": pct_or_null(empty, e.accounted_percentage()),
                     "uncovered_ids": e.uncovered_ids,
                 })
             })
@@ -8651,7 +8756,8 @@ fn cmd_coverage(
         let checks_total: usize = report.entries.iter().map(|e| e.total).sum();
         let checks_covered: usize = report.entries.iter().map(|e| e.covered).sum();
         let external_boundary: usize = report.entries.iter().map(|e| e.external_boundary).sum();
-        let overall_pct = (report.overall_coverage() * 10.0).round() / 10.0;
+        let report_empty = report.is_empty_scope();
+        let overall_pct = pct_or_null(report_empty, report.overall_coverage());
         // V-closure: intersection of all rules per source type (both sides of
         // the V). Each entry rounds its percentage to one decimal to match the
         // text view and the `overall` block.
@@ -8659,13 +8765,15 @@ fn cmd_coverage(
             .v_closure()
             .into_iter()
             .map(|c| {
+                let empty = c.is_empty_scope();
                 serde_json::json!({
                     "source_type": c.source_type,
                     "rule_names": c.rule_names,
                     "closed": c.closed,
                     "total": c.total,
+                    "empty_scope": empty,
                     "open_ids": c.open_ids,
-                    "percentage": (c.percentage() * 10.0).round() / 10.0,
+                    "percentage": pct_or_null(empty, c.percentage()),
                 })
             })
             .collect();
@@ -8676,6 +8784,7 @@ fn cmd_coverage(
                 "checks_covered": checks_covered,
                 "external_boundary": external_boundary,
                 "checks_total": checks_total,
+                "empty_scope": report_empty,
                 "percentage": overall_pct,
             },
             "closure": closure_json,
@@ -8700,6 +8809,16 @@ fn cmd_coverage(
         if let Some(ref name) = variant_name {
             println!("Variant: {name}\n");
         }
+        // #808: if the whole report is empty-scope (project loaded zero
+        // scoring artifacts), lead with a big red note so the reader
+        // never mistakes an empty gate for a passing one.
+        if report.is_empty_scope() {
+            println!("  \u{26A0}  No artifacts loaded — every rule scores n/a (0/0).");
+            println!(
+                "      Check `sources:` in rivet.yaml resolve to files that parse as artifacts,"
+            );
+            println!("      or pass `--strict-empty` to fail the run on this state.\n");
+        }
         if any_boundary {
             println!(
                 "  {:<30} {:<20} {:>8} {:>9} {:>8} {:>8}",
@@ -8713,32 +8832,47 @@ fn cmd_coverage(
         }
         println!("  {}", "-".repeat(80));
 
+        // Format helper: "n/a" for empty scope, "N.N%" otherwise. Keeps
+        // the width stable so column alignment survives either state.
+        let fmt_pct = |empty: bool, pct: f64| -> String {
+            if empty {
+                format!("{:>7}%", "n/a")
+            } else {
+                format!("{:>7.1}%", pct)
+            }
+        };
+
         for entry in &report.entries {
+            let empty = entry.is_empty_scope();
             if any_boundary {
                 println!(
-                    "  {:<30} {:<20} {:>8} {:>9} {:>8} {:>7.1}%",
+                    "  {:<30} {:<20} {:>8} {:>9} {:>8} {}",
                     entry.rule_name,
                     entry.source_type,
                     entry.covered,
                     entry.external_boundary,
                     entry.total,
-                    entry.percentage()
+                    fmt_pct(empty, entry.percentage())
                 );
             } else {
                 println!(
-                    "  {:<30} {:<20} {:>8} {:>8} {:>7.1}%",
+                    "  {:<30} {:<20} {:>8} {:>8} {}",
                     entry.rule_name,
                     entry.source_type,
                     entry.covered,
                     entry.total,
-                    entry.percentage()
+                    fmt_pct(empty, entry.percentage())
                 );
             }
         }
 
         let overall = report.overall_coverage();
         println!("  {}", "-".repeat(80));
-        println!("  {:<52} {:>7.1}%", "Overall (weighted)", overall);
+        println!(
+            "  {:<52} {}",
+            "Overall (weighted)",
+            fmt_pct(report.is_empty_scope(), overall)
+        );
 
         // V-closure: for any source type governed by >1 rule, the share that
         // satisfies EVERY rule (e.g. requirements that are both satisfied AND
@@ -8752,9 +8886,9 @@ fn cmd_coverage(
                 c.rule_names.len()
             );
             println!(
-                "  {:<52} {:>7.1}%  [{}/{}]",
+                "  {:<52} {}  [{}/{}]",
                 label,
-                c.percentage(),
+                fmt_pct(c.is_empty_scope(), c.percentage()),
                 c.closed,
                 c.total
             );
@@ -8807,7 +8941,30 @@ fn cmd_coverage(
         }
     }
 
+    // #808: `--strict-empty` fails the run when the project loaded
+    // zero scoring artifacts — the state where the legacy overall_coverage
+    // would report 100% and slip the gate. Runs BEFORE --fail-under so
+    // the specific "no artifacts loaded" diagnostic isn't overridden by
+    // the generic "coverage below threshold" one.
+    if strict_empty && report.is_empty_scope() {
+        eprintln!(
+            "\nerror: coverage has no scoring artifacts — every rule scored n/a (0/0) (--strict-empty)"
+        );
+        return Ok(false);
+    }
+
     if let Some(&threshold) = fail_under {
+        // Empty scope trivially "passes" the threshold check with legacy
+        // math (overall = 100.0) but the user set a threshold to gate on
+        // real coverage — refuse to declare a passing gate when there
+        // was nothing to score.
+        if report.is_empty_scope() {
+            eprintln!(
+                "\nerror: coverage has no scoring artifacts — --fail-under {:.1}% cannot be evaluated against an empty load",
+                threshold
+            );
+            return Ok(false);
+        }
         let overall = report.overall_coverage();
         if overall < threshold {
             eprintln!(

@@ -1002,7 +1002,16 @@ pub struct ReleaseConfig {
 }
 
 /// Project configuration loaded from `rivet.yaml`.
+///
+/// `deny_unknown_fields` is deliberate (#808): a mis-keyed top-level
+/// section — e.g. `typo_sources:` instead of `sources:` — would
+/// otherwise silently disable inputs, letting `validate` PASS and
+/// `coverage` report 100% on zero artifacts. Loud parse failure is the
+/// correct behavior for a compliance tool; a project that legitimately
+/// needs to carry additional YAML keys should nest them under a known
+/// field rather than at the top level.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectConfig {
     pub project: ProjectMetadata,
     #[serde(default)]

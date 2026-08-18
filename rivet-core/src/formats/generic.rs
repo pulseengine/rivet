@@ -255,10 +255,19 @@ fn import_generic_directory(dir: &Path, warn_skips: bool) -> Result<Vec<Artifact
                     // REQ-157 / #406: `warn_skips` is false when this is the
                     // validate duplicate-id re-scan (the source was already
                     // loaded+warned once), so the WARN isn't printed twice.
-                    let is_parse_error = std::fs::read_to_string(&path)
-                        .map(|c| classify_skip(&c) == SkipKind::ParseError)
+                    // #808: NearMissKey ALSO surfaces here — a
+                    // top-level `requirements:` file that yields zero
+                    // artifacts is exactly the silent-empty-load
+                    // reproducer. `validate` re-scans and emits a
+                    // structured diagnostic, but a live WARN keeps the
+                    // enumeration-command view honest too.
+                    let surface = std::fs::read_to_string(&path)
+                        .map(|c| {
+                            let kind = classify_skip(&c);
+                            matches!(kind, SkipKind::ParseError | SkipKind::NearMissKey(_))
+                        })
                         .unwrap_or(true); // unreadable -> surface it
-                    if warn_skips && is_parse_error {
+                    if warn_skips && surface {
                         log::warn!("skipping {}: {}", path.display(), e);
                     }
                 }
@@ -273,7 +282,7 @@ fn import_generic_directory(dir: &Path, warn_skips: bool) -> Result<Vec<Artifact
 
 /// Why a YAML file under a `generic`/`generic-yaml` source path was not
 /// loaded as an artifact list.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkipKind {
     /// The file looks like it was *meant* to be an artifact file but is
     /// malformed (not valid YAML, a broken `artifacts:` list, or an
@@ -285,6 +294,13 @@ pub enum SkipKind {
     /// `feature-model.yaml`, `variants/*.yaml`). It is skipped silently
     /// with no diagnostic (F2b).
     NotArtifactFile,
+    /// #808: a file whose only top-level key is a plausible near-miss
+    /// for `artifacts:` (e.g. `requirements:`, `features:`). Not a parse
+    /// error — the YAML is well-formed and it may be a legitimate
+    /// non-artifact file — but loud enough that a config typo cannot
+    /// silently yield an empty load. Carries the offending key name so
+    /// the diagnostic can name it.
+    NearMissKey(String),
 }
 
 /// A YAML file that `import_generic_file` declined to load, together with
@@ -330,6 +346,33 @@ fn classify_skip(content: &str) -> SkipKind {
         // without the required `artifacts:` wrapper.
         if has_key("id") && has_key("type") {
             return SkipKind::ParseError;
+        }
+        // Case 3b (#808): a single top-level key that reads like a
+        // plural artifact-type name is a strong "did you mean
+        // `artifacts:`?" signal. Names covered are the ones a user
+        // would most plausibly type when authoring an artifact file —
+        // matches the wording in the issue reproducer (`requirements:`)
+        // plus the other common plural nouns for artifact families.
+        if map.len() == 1 {
+            for k in [
+                "requirements",
+                "requirement",
+                "features",
+                "feature",
+                "designs",
+                "design",
+                "decisions",
+                "design_decisions",
+                "design-decisions",
+                "tests",
+                "test",
+                "verifications",
+                "verification",
+            ] {
+                if has_key(k) {
+                    return SkipKind::NearMissKey(k.to_string());
+                }
+            }
         }
     }
     // Case 4: legitimate non-artifact YAML (mapping without the artifact
