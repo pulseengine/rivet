@@ -5,7 +5,7 @@
 
 ## [Unreleased]
 
-## [0.33.0] - 2026-08-11
+## [0.33.0] - 2026-08-18
 
 Gate potency — *a gate that cannot fail is not a gate*. Four required CI checks
 ran, reported green, and could not go red. Ported from spar's gate audit
