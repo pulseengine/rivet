@@ -29,11 +29,6 @@ ran, reported green, and could not go red. Ported from spar's gate audit
   (`/` and `fuzz/`); the root check passed while `fuzz/` carried real drift in 5
   tracked files. The gate now derives the workspace list so a new nested
   workspace cannot silently escape it.
-- **The anti-rot check ran in no workflow** (REQ-290, #770) —
-  `rivet check verification-evidence` exists precisely to catch artifacts citing
-  tests that no longer exist, and nothing invoked it. Now wired into the
-  Traceability job, and its zero-steps case no longer prints a checkmark over an
-  empty scan.
 - **Changed-areas filter was under-scoped and failed open** (REQ-291, #771) — a
   `rust=false` verdict skips Clippy/Test/MSRV/Semver/Miri/Proptest, and on GitHub
   a *skipped* required context is indistinguishable from a passed one. Embedded
@@ -47,9 +42,8 @@ ran, reported green, and could not go red. Ported from spar's gate audit
   commit broke it. Externals are now emitted before locals. A failed external
   load also no longer degrades silently to "no externals".
 
-### Fixed
-- **`rivet check verification-evidence` is now wired into CI + no longer scores
-  an empty scan as a pass** (REQ-290, #770) — the anti-rot check for stale
+- **`rivet check verification-evidence` is now wired into CI + reports an empty
+  scan honestly** (REQ-290, #770) — the anti-rot check for stale
   `cargo test <filter>` names (REQ-236, hardened again in REQ-280 for nextest
   filtersets) BUILT the tool that catches spar#388's failure shape, but no
   workflow ran it, so the protection was opt-in-by-memory. Two fixes: (1) the
@@ -61,6 +55,28 @@ ran, reported green, and could not go red. Ported from spar's gate audit
   and now renders as an explicit `⚠ … no named-test step(s) found to check —
   nothing was verified` with `empty_scan: true` in JSON output so a machine
   can tell the vacuous case from a genuine pass.
+
+  **Known limitations — stated plainly, because this release is about gates that
+  prove less than they appear.** (a) An empty scan still **exits 0**, so CI
+  scores it a pass; what changed is the rendering and the JSON, not the verdict.
+  On rivet's own repo the check currently examines **0 steps**, so this gate
+  protects downstream projects, not this one. (b) Post-release, two further
+  defects were reported and confirmed (#807): the check is blind to tests in
+  nested independent workspaces because a step's `--manifest-path` value is
+  parsed and then discarded rather than widening the scan root (false failures),
+  and it verifies only that a *name* exists somewhere scanned — so an empty stub
+  `#[test] fn the_name() {}` satisfies it (false pass). Both are tracked in
+  #807 for the next release, and must be fixed in that order.
+
+### Security
+
+- **`h2` 0.4.13 → 0.4.16** (RUSTSEC-2026-0258, *unbounded empty DATA frames*).
+  The advisory was published 2026-08-17, after this release branch was cut, and
+  turned the Security Audit gate red during the pre-tag check. `h2` reaches
+  rivet through `axum` → `hyper`, so it is in the live request path of `rivet
+  serve` — not a dev-only dependency. Lockfile-only change: the `h2` entry moves
+  and nothing else does, `cargo build --locked` is clean, and `cargo audit` with
+  CI's ignore set exits 0.
 
 ## [0.32.0] - 2026-08-05
 
