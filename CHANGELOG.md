@@ -68,6 +68,16 @@ ran, reported green, and could not go red. Ported from spar's gate audit
   `#[test] fn the_name() {}` satisfies it (false pass). Both are tracked in
   #807 for the next release, and must be fixed in that order.
 
+### Security
+
+- **`h2` 0.4.13 → 0.4.16** (RUSTSEC-2026-0258, *unbounded empty DATA frames*).
+  The advisory was published 2026-08-17, after this release branch was cut, and
+  turned the Security Audit gate red during the pre-tag check. `h2` reaches
+  rivet through `axum` → `hyper`, so it is in the live request path of `rivet
+  serve` — not a dev-only dependency. Lockfile-only change: the `h2` entry moves
+  and nothing else does, `cargo build --locked` is clean, and `cargo audit` with
+  CI's ignore set exits 0.
+
 ## [0.32.0] - 2026-08-05
 
 Weak-green hardening + mutation reliability + security. This release began as a
