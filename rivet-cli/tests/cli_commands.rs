@@ -9207,32 +9207,109 @@ fn empty_load_project(root_yaml: &str, artifact_yaml: &str) -> tempfile::TempDir
     tmp
 }
 
-/// #808 fix #3 — `rivet.yaml` unknown top-level keys hard-fail. A
-/// mis-keyed `typo_sources:` (instead of `sources:`) is exactly the
-/// silent-empty-load config trigger from the issue reproducer; it must
-/// now surface as a parse error at load time, not a green `validate`.
+/// #808 fix #3 (revised) — `rivet.yaml` unknown top-level keys are a
+/// Warning by default and an Error under `--strict`. Hard-failing
+/// broke downstream projects (sigil ships a legitimate top-level
+/// `schemas-path:`), so this is a warn-with-diagnostic rather than
+/// a load-time refusal.
+///
+/// The trap this leaves — a mis-keyed `typo_sources:` also leaves
+/// `sources:` unset, so nothing loads — is caught by the sibling
+/// `no-sources` diagnostic (see the next test).
 ///
 /// rivet: verifies #808
 #[test]
-fn rivet_yaml_unknown_top_level_key_hard_fails() {
+fn rivet_yaml_unknown_top_level_key_warns_and_escalates_under_strict() {
+    // Downstream-style config: a legitimate extra top-level key
+    // (`schemas-path:` is the sigil case that motivated the softening),
+    // paired with a real `sources:` so we isolate the unknown-key
+    // signal from the no-sources one.
+    let tmp = empty_load_project(
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n\
+         schemas-path: schemas\n",
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: X\n    status: draft\n",
+    );
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let default = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let default_combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&default.stderr),
+        String::from_utf8_lossy(&default.stdout),
+    );
+    assert!(
+        default.status.success(),
+        "default validate must PASS on an unknown top-level key (downstream projects legitimately carry their own); combined:\n{default_combined}"
+    );
+    assert!(
+        default_combined.contains("unknown-config-key")
+            || default_combined.contains("`schemas-path:`"),
+        "default validate must surface the unknown-config-key diagnostic; combined:\n{default_combined}"
+    );
+
+    let strict = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate", "--strict"])
+        .output()
+        .expect("validate --strict");
+    assert!(
+        !strict.status.success(),
+        "--strict must fail on unknown top-level keys; combined:\n{}{}",
+        String::from_utf8_lossy(&strict.stderr),
+        String::from_utf8_lossy(&strict.stdout)
+    );
+}
+
+/// #808 fix (case 2, corrected) — a `rivet.yaml` with zero
+/// configured sources (either because `sources:` is unset, spelled
+/// wrong, or explicitly `[]`) is exactly the silent-empty-load
+/// trigger the naive downgrade of Fix 3 would reopen. Must fire
+/// `no-sources` as a Warning by default and an Error under `--strict`.
+///
+/// The reproducer here is the exact issue case: `typo_sources:`
+/// where `sources:` was meant. `sources:` ends up defaulted (empty),
+/// the loop that emits `empty-source` has nothing to iterate, and
+/// only this new diagnostic catches the silent state.
+///
+/// rivet: verifies #808
+#[test]
+fn typoed_sources_key_fires_no_sources_diagnostic() {
     let tmp = empty_load_project(
         "project:\n  name: p\n  schemas: [common, dev]\n\
          typo_sources:\n  - path: artifacts\n    format: generic-yaml\n",
         "",
     );
     let dir = tmp.path();
-    let out = Command::new(rivet_bin())
-        .args(["--project", dir.to_str().unwrap(), "validate"])
+    let dirs = dir.to_str().unwrap();
+
+    let default = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
         .output()
         .expect("validate");
-    assert!(
-        !out.status.success(),
-        "an unknown top-level key in rivet.yaml must fail — otherwise a config typo silently disables every input"
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&default.stderr),
+        String::from_utf8_lossy(&default.stdout),
     );
-    let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("unknown field `typo_sources`"),
-        "the error must name the offending key so the user knows what to fix; stderr:\n{stderr}"
+        combined.contains("no-sources") || combined.contains("declares no `sources:`"),
+        "default validate must surface the no-sources diagnostic on a typoed sources key; combined:\n{combined}"
+    );
+    // Also proves case-2 is really covered: the mis-keyed config
+    // MUST NOT read as PASS/exit-0/no-warnings under --strict.
+    let strict = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate", "--strict"])
+        .output()
+        .expect("validate --strict");
+    assert!(
+        !strict.status.success(),
+        "--strict on a mis-keyed sources config must fail — this is the case-2 gap #808 exists to close; combined:\n{}{}",
+        String::from_utf8_lossy(&strict.stderr),
+        String::from_utf8_lossy(&strict.stdout)
     );
 }
 

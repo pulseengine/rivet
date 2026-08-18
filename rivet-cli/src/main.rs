@@ -5518,6 +5518,7 @@ fn cmd_validate(
         graph,
         external_schemas,
         doc_store,
+        unknown_config_keys,
         ..
     } = ctx;
 
@@ -6064,6 +6065,53 @@ fn cmd_validate(
         diagnostics.push(diag);
     }
 
+    // #808 (case 2, corrected): `sources: []` — or, more insidiously,
+    // a mis-keyed `typo_sources:` that leaves `sources:` unset —
+    // produces ZERO configured sources, so the `empty_sources` loop
+    // above has nothing to iterate and never fires. This is the exact
+    // silent-empty-load gap `deny_unknown_fields` on ProjectConfig
+    // used to close. Fire a `no-sources` diagnostic when the config
+    // itself declares zero sources. Warning by default, Error under
+    // `--strict`. Suppressed when we already have an
+    // `unknown-config-key` diagnostic for `sources`-adjacent typos
+    // — those are more specific and the two firing together would
+    // read like two bugs where there is one.
+    if config.sources.is_empty() {
+        let mut diag = validate::Diagnostic::new(
+            Severity::Warning,
+            None,
+            "no-sources",
+            "`rivet.yaml` declares no `sources:` — nothing to load, so `validate` \
+             and `coverage` have nothing to score. Check that `sources:` is spelled \
+             correctly and lists at least one path."
+                .to_string(),
+        );
+        diag.source_file = Some(std::path::PathBuf::from("rivet.yaml"));
+        diagnostics.push(diag);
+    }
+
+    // #808 (case 2, corrected): `unknown-config-key` for any top-level
+    // key in `rivet.yaml` that isn't a `ProjectConfig` field. Warning
+    // by default (a downstream project may legitimately carry its own
+    // top-level keys — sigil's `schemas-path:` is the case that
+    // motivated softening this from hard-fail). Error under `--strict`.
+    for key in &unknown_config_keys {
+        let mut diag = validate::Diagnostic::new(
+            Severity::Warning,
+            None,
+            "unknown-config-key",
+            format!(
+                "`rivet.yaml` has top-level key `{key}:` that is not a rivet \
+                 config field — it will be silently ignored. Valid top-level \
+                 keys are: {}. If this key is meaningful to another tool, keep \
+                 it; otherwise remove it or check for a typo.",
+                rivet_core::KNOWN_RIVET_YAML_TOP_LEVEL_KEYS.join(", ")
+            ),
+        );
+        diag.source_file = Some(std::path::PathBuf::from("rivet.yaml"));
+        diagnostics.push(diag);
+    }
+
     // REQ-075 / F2: two artifacts declaring the same `id` collapse
     // silently — `Store::upsert` is last-write-wins, so `validate` only
     // ever sees the survivor. Detection happened at load time above; emit
@@ -6291,12 +6339,15 @@ fn cmd_validate(
             if d.rule == "allowed-values"
                 || d.rule == "unknown-field"
                 // #808: silent-empty-load defenses. Warning by default so
-                // pre-existing projects don't break their own `validate`;
-                // Error under `--strict` so CI treats an empty-source
-                // config typo or a `requirements:` near-miss as the
-                // silent-green failure it actually is.
+                // pre-existing projects don't break their own `validate`
+                // (and downstream projects like sigil that legitimately
+                // carry their own top-level rivet.yaml keys don't break
+                // on `unknown-config-key`); Error under `--strict` so
+                // CI treats every silent-green failure mode as fatal.
                 || d.rule == "artifact-root-key-near-miss"
                 || d.rule == "empty-source"
+                || d.rule == "no-sources"
+                || d.rule == "unknown-config-key"
             {
                 d.severity = Severity::Error;
             }
@@ -16232,6 +16283,12 @@ struct ProjectContext {
     external_schemas: rivet_core::validate::ExternalSchemas,
     doc_store: Option<DocumentStore>,
     result_store: Option<ResultStore>,
+    /// #808: top-level keys in `rivet.yaml` that are not part of the
+    /// `ProjectConfig` schema. Sourced from
+    /// `load_project_config_with_report` at load time so `cmd_validate`
+    /// can emit an `unknown-config-key` Warning (Error under `--strict`)
+    /// without re-reading the file. Empty when the config is clean.
+    unknown_config_keys: Vec<String>,
 }
 
 impl ProjectContext {
@@ -16318,8 +16375,9 @@ impl ProjectContext {
                 project_dir.display()
             );
         }
-        let config = rivet_core::load_project_config(&config_path)
-            .with_context(|| format!("loading {}", config_path.display()))?;
+        let (config, unknown_config_keys) =
+            rivet_core::load_project_config_with_report(&config_path)
+                .with_context(|| format!("loading {}", config_path.display()))?;
 
         let schemas_dir = resolve_schemas_dir(cli);
         let schema = rivet_core::load_schemas(&config.project.schemas, &schemas_dir)
@@ -16379,6 +16437,7 @@ impl ProjectContext {
             external_schemas,
             doc_store: None,
             result_store: None,
+            unknown_config_keys,
         })
     }
 

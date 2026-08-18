@@ -205,11 +205,63 @@ pub fn load_project_full(project_dir: &Path) -> Result<LoadedProject, Error> {
 
 /// Load a project configuration from a `rivet.yaml` file.
 pub fn load_project_config(path: &Path) -> Result<ProjectConfig, Error> {
+    load_project_config_with_report(path).map(|(cfg, _)| cfg)
+}
+
+/// The known-good top-level keys on `ProjectConfig`. Must stay in sync
+/// with the struct definition in `model.rs`; a drift here means the
+/// #808 `unknown-config-key` diagnostic false-fires on a legitimate
+/// key, so it's kept alphabetically ordered next to the struct so a
+/// diff makes the pair impossible to miss.
+pub const KNOWN_RIVET_YAML_TOP_LEVEL_KEYS: &[&str] = &[
+    "baselines",
+    "commits",
+    "docs",
+    "docs-check",
+    "externals",
+    "project",
+    "release",
+    "results",
+    "sources",
+];
+
+/// Load a project configuration from a `rivet.yaml` file, additionally
+/// returning any top-level YAML keys that aren't declared on
+/// [`ProjectConfig`]. #808: those keys get an `unknown-config-key`
+/// diagnostic in `cmd_validate` rather than a hard load failure —
+/// downstream projects may legitimately carry extra top-level keys
+/// (sigil ships `schemas-path:`), and hard-failing on them would break
+/// every such user for no gain over a diagnostic.
+pub fn load_project_config_with_report(path: &Path) -> Result<(ProjectConfig, Vec<String>), Error> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| Error::Io(format!("{}: {}", path.display(), e)))?;
     let config: ProjectConfig = serde_yaml::from_str(&content)
         .map_err(|e| Error::Schema(format!("{}: {}", path.display(), e)))?;
-    Ok(config)
+    // Post-parse: enumerate the raw top-level keys and note any that
+    // aren't in the known-good set. Failure to re-parse as a plain
+    // Value (already-succeeded typed parse implies re-parseability)
+    // returns an empty list, so a race on the file can't invent a
+    // spurious diagnostic — worst case it goes unreported this run.
+    let unknown_keys: Vec<String> = serde_yaml::from_str::<serde_yaml::Value>(&content)
+        .ok()
+        .and_then(|v| match v {
+            serde_yaml::Value::Mapping(m) => Some(m),
+            _ => None,
+        })
+        .map(|m| {
+            let mut keys: Vec<String> = m
+                .into_iter()
+                .filter_map(|(k, _)| match k {
+                    serde_yaml::Value::String(s) => Some(s),
+                    _ => None,
+                })
+                .filter(|k| !KNOWN_RIVET_YAML_TOP_LEVEL_KEYS.contains(&k.as_str()))
+                .collect();
+            keys.sort();
+            keys
+        })
+        .unwrap_or_default();
+    Ok((config, unknown_keys))
 }
 
 /// Load schemas from the built-in schemas directory or from file paths.

@@ -62,6 +62,35 @@ externally against v0.32.0 and reproduced on `main`.
   reference — that material is stable and better fetched on demand via
   `rivet docs` — and lists coverage rules below 100% rather than the full
   table, cutting a 24 KB dump to ~3 KB for per-session context injection.
+### Fixed
+- **Silent empty load: config typos and empty sources scored green** (REQ-294, #808)
+  — for a compliance tool, `validate` PASS and `coverage` `100.0%` over a
+  zero-artifact load is the worst possible failure direction. Two independent
+  triggers demonstrated it: (1) a `generic-yaml` artifact file with a near-miss
+  root key (`requirements:` instead of `artifacts:`) silently classified as
+  non-artifact YAML and dropped; (2) a mis-keyed `sources:` at the top level of
+  `rivet.yaml` (or an explicitly empty `sources: []`) disabled every input, and
+  the per-source diagnostic loop had nothing to iterate. Four new diagnostics
+  close the gap — `artifact-root-key-near-miss` names the offending root key
+  and suggests `artifacts:`; `empty-source` fires per source that yielded zero
+  artifacts; `no-sources` fires when the config declares zero sources at all;
+  `unknown-config-key` warns on any top-level `rivet.yaml` key not in the
+  `ProjectConfig` schema. All four are Warning by default and Error under
+  `--strict`. `coverage` now renders `n/a` (never `100.0%`) for empty-scope
+  rules and gains a `--strict-empty` flag that exits non-zero on an empty load;
+  `--fail-under` also exits non-zero when the load was empty.
+
+### Changed (potentially breaking for machine consumers)
+- **`rivet coverage --format json` gains an `empty_scope: bool` field** on every
+  per-rule entry, every V-closure entry, and the `overall` block; when it is
+  true, the corresponding `percentage` (and `accounted_percentage` on rule
+  entries) emits `null` instead of `100.0`. Consumers that parsed `percentage`
+  as a required number must handle `null` for empty scopes — but doing so is
+  now the difference between a satisfied gate and an empty one.
+- **`rivet coverage` text output renders empty-scope rules as `n/a%`** rather
+  than `100.0%`, with a leading "No artifacts loaded — every rule scores n/a
+  (0/0)" banner when the whole report is empty. A screen scraper matching
+  the exact `100.0%` string will need to accept `n/a%` as a value.
 
 ## [0.33.0] - 2026-08-11
 
