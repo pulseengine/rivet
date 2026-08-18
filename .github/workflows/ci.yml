@@ -955,7 +955,14 @@ jobs:
             echo "no Rust changes in this diff — nothing to mutate"
             exit 0
           fi
-          cargo mutants -p rivet-cli --timeout 60 --jobs 2 --output mutants-out --in-diff pr.diff || true
+          # Record cargo-mutants' own exit status. The check step needs it to
+          # tell "ran fine, nothing in scope" apart from "crashed" — both leave
+          # no mutants-out/. `|| true` alone erased that distinction.
+          set +e
+          cargo mutants -p rivet-cli --timeout 60 --jobs 2 --output mutants-out --in-diff pr.diff
+          echo "$?" > mutants-exit-status
+          set -e
+          echo "cargo-mutants exit status: $(cat mutants-exit-status)"
       - name: Check surviving mutants
         # REQ-288: cargo-mutants writes its report to <--output>/mutants.out/,
         # NOT to <--output>/ — the old gate read `mutants-out/missed.txt`, a path
@@ -969,7 +976,19 @@ jobs:
             exit 0
           fi
           if [ ! -f "$REPORT/outcomes.json" ]; then
-            echo "::error::no $REPORT/outcomes.json — cargo-mutants crashed or its output layout changed; refusing to report a pass over missing evidence"
+            # Two very different situations produce no report, and the original
+            # fail-closed check conflated them (#810 hit this): cargo-mutants
+            # writes nothing at all when the diff contains no mutants for THIS
+            # crate — e.g. a PR that only touches rivet-core — and it exits 0
+            # having done its job. A crash also leaves no report, but exits
+            # non-zero. Only the second is missing evidence.
+            STATUS="$(cat mutants-exit-status 2>/dev/null || echo missing)"
+            if [ "$STATUS" = "0" ]; then
+              echo "cargo-mutants exited 0 and wrote no report: this PR's diff contains no rivet-cli mutants (the changed code lives in another crate). Nothing for this gate to check."
+              echo "NOTE: rivet-core changes are NOT covered by this gate; mutants-core is schedule-only (see #816)."
+              exit 0
+            fi
+            echo "::error::no $REPORT/outcomes.json and cargo-mutants exited '$STATUS' — it crashed or its output layout changed; refusing to report a pass over missing evidence"
             ls -R mutants-out 2>/dev/null || echo "(no mutants-out/ at all)"
             exit 1
           fi
