@@ -652,6 +652,8 @@ every subcommand has an embedded `rivet docs <topic>` entry. See
 rivet init                  Initialize a new project (dev preset)
 rivet init --preset aspice  Initialize with ASPICE schema + examples
 rivet context               Generate .rivet/agent-context.md
+rivet context --stdout      Print the same document to stdout (no file write)
+rivet context --brief       Compact summary — project, counts, coverage gaps, verdict
 ```
 
 Available presets: `dev`, `aspice`, `stpa`, `stpa-ai`, `cybersecurity`,
