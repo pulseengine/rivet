@@ -42,8 +42,8 @@ ran, reported green, and could not go red. Ported from spar's gate audit
   commit broke it. Externals are now emitted before locals. A failed external
   load also no longer degrades silently to "no externals".
 
-- **`rivet check verification-evidence` is now wired into CI + no longer scores
-  an empty scan as a pass** (REQ-290, #770) — the anti-rot check for stale
+- **`rivet check verification-evidence` is now wired into CI + reports an empty
+  scan honestly** (REQ-290, #770) — the anti-rot check for stale
   `cargo test <filter>` names (REQ-236, hardened again in REQ-280 for nextest
   filtersets) BUILT the tool that catches spar#388's failure shape, but no
   workflow ran it, so the protection was opt-in-by-memory. Two fixes: (1) the
@@ -55,6 +55,18 @@ ran, reported green, and could not go red. Ported from spar's gate audit
   and now renders as an explicit `⚠ … no named-test step(s) found to check —
   nothing was verified` with `empty_scan: true` in JSON output so a machine
   can tell the vacuous case from a genuine pass.
+
+  **Known limitations — stated plainly, because this release is about gates that
+  prove less than they appear.** (a) An empty scan still **exits 0**, so CI
+  scores it a pass; what changed is the rendering and the JSON, not the verdict.
+  On rivet's own repo the check currently examines **0 steps**, so this gate
+  protects downstream projects, not this one. (b) Post-release, two further
+  defects were reported and confirmed (#807): the check is blind to tests in
+  nested independent workspaces because a step's `--manifest-path` value is
+  parsed and then discarded rather than widening the scan root (false failures),
+  and it verifies only that a *name* exists somewhere scanned — so an empty stub
+  `#[test] fn the_name() {}` satisfies it (false pass). Both are tracked in
+  #807 for the next release, and must be fixed in that order.
 
 ## [0.32.0] - 2026-08-05
 
