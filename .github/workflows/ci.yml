@@ -38,6 +38,7 @@ jobs:
   changes:
     name: Detect changed areas
     runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 5
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       wasm: ${{ steps.filter.outputs.wasm }}
@@ -131,6 +132,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -169,6 +171,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -195,6 +198,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.wasm == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       # REQ-271 / #567: reclaim disk before a compile-heavy job on the
@@ -215,6 +219,7 @@ jobs:
   yaml-lint:
     name: YAML Lint
     runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
@@ -238,6 +243,7 @@ jobs:
     name: Schema version bump
     runs-on: [self-hosted, linux, x64, light]
     if: github.event_name == 'pull_request'
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -250,6 +256,7 @@ jobs:
   docs-check:
     name: Docs Check
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -277,6 +284,7 @@ jobs:
   traceability:
     name: Traceability (rivet validate + commits)
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -361,6 +369,7 @@ jobs:
     name: Traceability (hosted fallback)
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
@@ -380,6 +389,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 45
     env:
       RIVET_ACTIONLINT: "1"
     steps:
@@ -428,6 +438,11 @@ jobs:
     # `apt-get install` (sudo needed) and pulls in Chromium + a slate
     # of system libraries. Smithy runners have no sudo.
     runs-on: ubuntu-latest
+    # #822: worst observed run 17 min (typical 8-12 min). 30 min fails
+    # 12x sooner than GitHub's 360-min default; a stalled package mirror
+    # in `npx playwright install --with-deps` used to sit for ~6 h with
+    # the check reported as running, blocking a v0.33.1 release cut.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -466,6 +481,7 @@ jobs:
     name: Zola export smoke
     runs-on: ubuntu-latest
     continue-on-error: true
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -493,6 +509,7 @@ jobs:
     # Stays on ubuntu-latest: `xvfb-run` headless display + downloaded
     # VS Code Test environment expects sudo apt-get for system libs.
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -532,6 +549,7 @@ jobs:
     # smithy's sccache-on-cc setup. Move back once smithy bumps
     # cargo-audit (tracked).
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -574,6 +592,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -601,6 +620,7 @@ jobs:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -623,6 +643,7 @@ jobs:
     needs: [changes, test]
     if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       # REQ-267: nightly pinned to 2026-07-11 (last known-good) across every
@@ -672,6 +693,9 @@ jobs:
     needs: changes
     if: github.event_name != 'schedule' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, lean-mem]
+    # Step-level 20 min already caps the miri run; job-level 30 covers
+    # checkout/cache/toolchain-install so setup can't hang for hours.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267); dated toolchain in `with:` below
@@ -710,6 +734,9 @@ jobs:
     name: Miri (full, nightly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, linux, x64, lean-mem]
+    # Step-level 90 min already caps the full sweep; job-level 120 covers
+    # setup so a wedged checkout/install can't inherit the 360-min default.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267); dated toolchain in `with:` below
@@ -734,6 +761,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -1018,6 +1046,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     continue-on-error: true
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267); dated toolchain in `with:` below
@@ -1217,6 +1246,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.89.0
@@ -1233,6 +1263,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test, coverage, miri, proptest, playwright]
     runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 45
     permissions:
       contents: write
       id-token: write
