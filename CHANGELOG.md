@@ -5,6 +5,50 @@
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-08-19
+
+Patch release for one P0 data-loss bug in the artifact write path. Reported
+externally against v0.32.0 and reproduced on `main`.
+
+### Fixed
+
+- **`rivet modify --set-field` silently corrupted multi-line values, or made the
+  file unparseable** (REQ-293, #806) — the custom-`fields:` write path replaced
+  the target key with a **single-line assignment**, orphaning every continuation
+  line that belonged to it: a block scalar body (`|`, `>`, `|-`), a nested block
+  mapping, or a block list. Both failure modes **exit 0** after printing
+  `modified <ID>`:
+
+  1. **Silent corruption** — the orphaned body folds into the new value as a
+     YAML multi-line plain scalar. Setting `rationale=short` over a two-line
+     block produced `'short first body line second body line'`. The file still
+     parses, so nothing goes red.
+  2. **Unparseable file** — if a body line contains `: ` (i.e. ordinary prose),
+     the parse hard-fails. rivet drops a file it cannot parse, so **every
+     artifact in that file vanishes** — the same downstream shape as #573/#687.
+
+  A 10-shape matrix run against the built binary found **6 corrupting shapes**;
+  all 6 are clean after the fix, with the single-line and base-field cases
+  (`--set-description`, `--set-status`) unaffected in both directions.
+
+  Root cause was two sibling paths upholding one invariant unevenly.
+  `YamlEditor::set_field` replaces a key's **full on-disk extent** via
+  `field_block_end` + `splice` — that is what #613/#618/#625 fixed, and its
+  comment says so. The custom-fields loop 700 lines below never received the
+  same treatment and **had no multi-line-value test at all**, which is how three
+  rounds of hardening missed it. The fix mirrors the sibling, using `sub_indent`
+  as the indent basis since custom fields sit one level deeper under `fields:`.
+
+  Eight regression tests were added, each asserting **exact equality** of the
+  resulting value rather than merely that the output parses — mode 1 produces a
+  valid file and still loses data, so a parse-only assertion would go green on
+  the bug. Run against the reverted fix, 7 fail and the 2 controls stay green.
+
+  This is the **fourth** data-loss bug in the same hand-rolled line-oriented
+  writer (#573 flow maps, #618/#625 block lists, REQ-287 tag quoting, now #806).
+  The systemic response — a mutation-safety property harness over the whole
+  write surface — is tracked in #809 for the next minor release.
+
 ## [0.33.0] - 2026-08-18
 
 Gate potency — *a gate that cannot fail is not a gate*. Four required CI checks
