@@ -8065,6 +8065,64 @@ fn modify_help_has_no_duplicated_summary() {
     );
 }
 
+/// Issue #812: the top-level `rivet --help` command list must not carry
+/// REQ ids, issue/PR refs, or in-repo doc paths, and each command's
+/// description must fit on one line under 100 columns. Provenance belongs
+/// in the artifacts, not in the help text a user reads first.
+///
+/// rivet: verifies #812
+#[test]
+fn top_level_help_command_list_is_hygienic() {
+    let out = Command::new(rivet_bin())
+        .args(["--help"])
+        .env("COLUMNS", "9999") // capture unwrapped so long paragraphs are visible
+        .output()
+        .expect("rivet --help");
+    let help = String::from_utf8_lossy(&out.stdout);
+
+    // The command list sits between the "Commands:" header and the blank line
+    // before "Options:". Every line begins with two spaces + command-name.
+    let mut in_commands = false;
+    let mut offenders: Vec<String> = Vec::new();
+    for line in help.lines() {
+        if line.starts_with("Commands:") {
+            in_commands = true;
+            continue;
+        }
+        if in_commands && line.trim().is_empty() {
+            break;
+        }
+        if !in_commands {
+            continue;
+        }
+        // Skip the trailing continuation lines (indented further than the
+        // command column); we only check the primary description line.
+        if !line.starts_with("  ") || line.starts_with("      ") {
+            continue;
+        }
+        // Provenance-ref check (REQ-*, #NNN, docs/foo.md); `help` command
+        // is exempt from the ref scan since it prints no description at all.
+        let has_req = line.contains("REQ-") && line.chars().any(|c| c.is_ascii_digit());
+        let has_issue_ref = line
+            .split_whitespace()
+            .any(|w| w.starts_with('#') && w[1..].chars().take(3).all(|c| c.is_ascii_digit()));
+        let has_doc_path = line.contains("docs/") && line.contains(".md");
+        if has_req || has_issue_ref || has_doc_path {
+            offenders.push(format!("REF: {line}"));
+        }
+        if line.chars().count() > 100 {
+            offenders.push(format!("LEN {}: {}", line.chars().count(), line));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "rivet --help command list must be free of REQ/#/doc-path refs and \
+         under 100 columns per command. Offenders:\n  {}",
+        offenders.join("\n  ")
+    );
+}
+
 /// REQ-287 (P0 DATA LOSS regression): `rivet modify --add-tag` must not corrupt
 /// the file when the artifact already carries a tag that needs quoting (e.g.
 /// `"release: v1.0"`). The buggy path re-emitted the tag list unquoted
@@ -8650,5 +8708,48 @@ fn validate_known_attributes_only_produces_no_warning() {
         out.status.success(),
         "known-only attributes must pass even under --strict-variants; stdout:\n{}\nstderr:\n{stderr}",
         String::from_utf8_lossy(&out.stdout)
+    );
+}
+
+/// #812 part 2: the command list was the loudest offender, but the global
+/// OPTIONS block had its own 184-character line (`--project`) plus two more
+/// over 100. Those are the first thing `-h` shows above the command list.
+///
+/// `-h` is the scannable surface and must stay tight; `--help` is allowed to
+/// carry `long_help` prose, which is what detailed help is for. So this asserts
+/// on SHORT help only — the fix was to give `--project` / `--schemas` a
+/// one-line short help with the "pass it BEFORE the subcommand" detail moved to
+/// `long_help`, and to drop the internal `(TCL design A5)` design reference from
+/// `--qualification-mode`'s short line.
+#[test]
+fn short_help_options_block_stays_scannable() {
+    let out = Command::new(rivet_bin())
+        .args(["-h"])
+        .env("COLUMNS", "9999") // unwrapped, so a long line cannot hide behind wrapping
+        .output()
+        .expect("rivet -h");
+    let help = String::from_utf8_lossy(&out.stdout);
+
+    let mut offenders: Vec<String> = Vec::new();
+    for line in help.lines() {
+        if line.chars().count() > 100 {
+            offenders.push(format!("LEN {}: {}", line.chars().count(), line));
+        }
+        // Same provenance rule as the command list: internal ids belong in the
+        // artifacts, where `rivet get <ID>` answers them and they stay correct.
+        let has_req = line.contains("REQ-") && line.chars().any(|c| c.is_ascii_digit());
+        let has_issue_ref = line.split_whitespace().any(|w| {
+            w.starts_with('#') && w.len() > 3 && w[1..].chars().take(3).all(|c| c.is_ascii_digit())
+        });
+        if has_req || has_issue_ref {
+            offenders.push(format!("REF: {line}"));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "`rivet -h` must have no line over 100 columns and no REQ/# refs \
+         (move detail to long_help, which `--help` still shows); found:\n{}",
+        offenders.join("\n")
     );
 }

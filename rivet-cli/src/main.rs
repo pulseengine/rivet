@@ -200,13 +200,17 @@ struct Cli {
     // subcommands that take positionals (next-id <type>, link <a> <b>,
     // snapshot diff <x>, …). So this must precede the subcommand. See #500
     // (REQ-209 attempted `global = true` and was reverted in #502).
-    /// Path to the project directory (containing rivet.yaml). Pass it BEFORE the
-    /// subcommand: `rivet -p <dir> validate` (not `rivet validate -p <dir>`).
+    /// Path to the project directory containing rivet.yaml
+    ///
+    /// Pass it BEFORE the subcommand: `rivet -p <dir> validate`, not
+    /// `rivet validate -p <dir>`.
     #[arg(short, long, default_value = ".")]
     project: PathBuf,
 
-    /// Path to schemas directory. Like `--project`, pass it BEFORE the
-    /// subcommand (`rivet --schemas <dir> validate`).
+    /// Path to the schemas directory
+    ///
+    /// Like `--project`, pass it BEFORE the subcommand:
+    /// `rivet --schemas <dir> validate`.
     #[arg(long)]
     schemas: Option<PathBuf>,
 
@@ -214,15 +218,14 @@ struct Cli {
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
 
-    /// Quiet: suppress the WARN-level log preamble (e.g. the externals
-    /// "could not load" / skipped-file notices), emitting only ERROR-level
-    /// logs. Leaves a command's own stdout untouched, so it pairs with
-    /// `--format json` for clean machine-consumable output (#353).
+    /// Suppress the WARN-level log preamble; only ERROR-level logs remain.
+    ///
+    /// A command's own stdout is untouched, so `--quiet` pairs with `--format
+    /// json` for clean machine-consumable output.
     #[arg(short = 'q', long, conflicts_with = "verbose")]
     quiet: bool,
 
     /// Restrict rivet to the qualified-for-safety-use feature set
-    /// (TCL design A5).
     ///
     /// When set (or when `RIVET_QUALIFICATION_MODE=1`), rivet refuses
     /// to run subcommands that are out-of-scope for the typed
@@ -296,8 +299,8 @@ enum Command {
 
         /// Vendor the resolved built-in schemas (and their auto-discovered
         /// bridges) into the project's `schemas/` directory, pinning validation
-        /// against rivet upgrades (#431). The loader prefers on-disk schemas
-        /// over the binary's embedded copies, so a vendored set is immune to
+        /// against rivet upgrades. The loader prefers on-disk schemas over
+        /// the binary's embedded copies, so a vendored set is immune to
         /// release-to-release rule drift. Existing files are not overwritten.
         #[arg(long)]
         vendor_schemas: bool,
@@ -333,11 +336,10 @@ enum Command {
         /// `artifacts/variants/<NAME>.yaml`, or a direct path to a
         /// variant configuration YAML file. When passed alone (no
         /// `--model`/`--binding`) the variant is applied as a
-        /// `fields-per-variant:` overlay per issue #287 §5.5 — the
-        /// merged view is validated **in addition** to the default
-        /// view. With `--model` + `--binding` the legacy variant-scoped
-        /// mode runs (only artifacts bound to the variant are kept in
-        /// scope).
+        /// `fields-per-variant:` overlay — the merged view is validated
+        /// **in addition** to the default view. With `--model` +
+        /// `--binding` the legacy variant-scoped mode runs (only
+        /// artifacts bound to the variant are kept in scope).
         #[arg(long, value_name = "NAME_OR_PATH")]
         variant: Option<String>,
 
@@ -366,11 +368,12 @@ enum Command {
         min_severity: Option<String>,
 
         /// Show ONLY diagnostics that are NEW relative to a git ref — the
-        /// answer to "did my change add any warnings?" (#488). Validates the
-        /// current tree and a worktree of <REF>, then prints the set-difference
-        /// (by severity+artifact+rule+message). Exits non-zero if any NEW
-        /// diagnostic is at or above `--fail-on` — a ready "this PR adds no new
-        /// diagnostics" gate (e.g. `rivet validate --new-since origin/main`).
+        /// answer to "did my change add any warnings?". Validates the current
+        /// tree and a worktree of <REF>, then prints the set-difference (by
+        /// severity+artifact+rule+message). Exits non-zero if any NEW
+        /// diagnostic is at or above `--fail-on` — a ready "this PR adds no
+        /// new diagnostics" gate (e.g. `rivet validate --new-since
+        /// origin/main`).
         #[arg(long = "new-since", value_name = "REF")]
         new_since: Option<String>,
 
@@ -411,14 +414,15 @@ enum Command {
         #[arg(long = "strict-orphans")]
         strict_orphans: bool,
 
-        /// REQ-283: compliance-gate mode. Promote the field-correctness lint
-        /// rules — `allowed-values` (a field's value is outside the schema's
-        /// declared enum) and `unknown-field` (a field name not declared in the
+        /// Compliance-gate mode. Promote the field-correctness lint rules —
+        /// `allowed-values` (a field's value is outside the schema's declared
+        /// enum) and `unknown-field` (a field name not declared in the
         /// schema, i.e. a typo or drift) — from Warning/Info to ERROR, so
-        /// `validate` FAILS on them. Default keeps them non-fatal: a project may
-        /// carry pre-existing violations, so a hard-error default would break its
-        /// own dogfood run. Turn this on in CI when `validate` is your compliance
-        /// gate and field values/names must be enforced, not just link integrity.
+        /// `validate` FAILS on them. Default keeps them non-fatal: a project
+        /// may carry pre-existing violations, so a hard-error default would
+        /// break its own dogfood run. Turn this on in CI when `validate` is
+        /// your compliance gate and field values/names must be enforced, not
+        /// just link integrity.
         #[arg(long)]
         strict: bool,
 
@@ -427,9 +431,8 @@ enum Command {
         /// `cross_repo_diagnostics` array (JSON) / a "Cross-repo
         /// diagnostics" section (text). Off by default: the consumer's
         /// PASS does not otherwise reflect the supplier's validation
-        /// state (REQ-065 / AoU-X1). Independent of
-        /// `--skip-external-validation`, which governs cross-*ref*
-        /// checking.
+        /// state. Independent of `--skip-external-validation`, which
+        /// governs cross-*ref* checking.
         #[arg(long = "with-externals-validate")]
         with_externals_validate: bool,
 
@@ -440,7 +443,7 @@ enum Command {
         /// findings (missing fields, orphans, prose-mention, near-duplicates,
         /// status enums). A status flip or coverage gap can't change the
         /// structural set, so this is the "did I break the graph?" gate for
-        /// bulk-edit workflows (#408).
+        /// bulk-edit workflows.
         #[arg(long)]
         structural: bool,
     },
@@ -455,21 +458,22 @@ enum Command {
         format: String,
     },
 
-    /// Trace one artifact: its traceability rules (satisfied/missing, with the
-    /// link type + source types that satisfy each), plus its incoming and
-    /// outgoing links and its own diagnostics. The per-artifact view of the
-    /// trace graph — answers "what connects to/from <ID>, and is it covered?".
-    /// (Same view as `validate --explain <ID>`; REQ-167 / #426.)
+    /// Trace one artifact: its rules, incoming and outgoing links, and diagnostics.
+    ///
+    /// The per-artifact view of the trace graph — answers "what connects
+    /// to/from <ID>, and is it covered?". Same view as `validate --explain
+    /// <ID>`.
     Trace {
         /// Artifact ID to trace
         id: String,
     },
 
-    /// Trace a requirement FORWARD to the test results that cover it (#547).
-    /// Walks backlinks (what verifies it, possibly multi-hop through the ASPICE
-    /// V) and reports each reached artifact with its latest test-result status,
-    /// plus a roll-up verdict. Text or JSON — the JSON is what the `rivet serve`
-    /// graphical trace view consumes.
+    /// Trace a requirement FORWARD to the test results that cover it.
+    ///
+    /// Walks backlinks (what verifies it, possibly multi-hop through the
+    /// ASPICE V) and reports each reached artifact with its latest test-result
+    /// status, plus a roll-up verdict. Text or JSON — the JSON is what the
+    /// `rivet serve` graphical trace view consumes.
     #[command(name = "trace-results")]
     TraceResults {
         /// Requirement (or any artifact) ID to trace forward from.
@@ -499,7 +503,7 @@ enum Command {
 
         /// Also follow INCOMING links (backlinks), not just outgoing — so
         /// bundling a graph sink like a requirement includes the
-        /// design-decisions / features / tests that realize it (REQ-168 / #428).
+        /// design-decisions / features / tests that realize it.
         #[arg(long)]
         incoming: bool,
     },
@@ -526,7 +530,7 @@ enum Command {
         #[arg(long)]
         baseline: Option<String>,
 
-        /// Apply per-variant field overlays (issue #287) — name from
+        /// Apply per-variant field overlays — name from
         /// `artifacts/variants/<NAME>.yaml`, or a path to a variant
         /// config YAML file. When set, JSON output also emits each
         /// artifact's merged `fields:` view for the variant.
@@ -552,13 +556,13 @@ enum Command {
         /// but in bulk. Without it `--format json` emits only the summary
         /// (id/type/title/status/links), so a machine-readable query for a
         /// field value (e.g. `priority`) otherwise needs one `get` call per
-        /// artifact or a raw YAML parse (#506). No effect on text output.
+        /// artifact or a raw YAML parse. No effect on text output.
         #[arg(long)]
         full: bool,
 
         /// Filter to artifacts scoped to a release (e.g. v0.22.0) — the
-        /// release-planning view. Sugar for `--filter '(= release "<ver>")'`
-        /// (#516, REQ-232). Combines with --type/--status/--filter.
+        /// release-planning view. Sugar for `--filter '(= release "<ver>")'`.
+        /// Combines with --type/--status/--filter.
         #[arg(long, value_name = "VERSION")]
         release: Option<String>,
     },
@@ -590,7 +594,7 @@ enum Command {
 
     /// Advance a requirement to `verified` when it has verifying test evidence.
     ///
-    /// #559: closes the right side of the V explicitly. The requirement must
+    /// Closes the right side of the V explicitly. The requirement must
     /// currently be `implemented` and have at least one piece of verifying
     /// evidence — an incoming `verifies` link, OR a `// rivet: verifies <ID>`
     /// source marker. No auto-advance: this is the opt-in, auditable command.
@@ -632,25 +636,23 @@ enum Command {
         #[arg(long)]
         baseline: Option<String>,
 
-        /// Stamp the active variant into the coverage output (issue
-        /// #287). Today this surfaces the variant name in the report
-        /// header for traceability; variant-aware delegated-chain
-        /// scoping is tracked as a follow-up.
+        /// Stamp the active variant into the coverage output. Today this
+        /// surfaces the variant name in the report header for traceability;
+        /// variant-aware delegated-chain scoping is tracked as a follow-up.
         #[arg(long, value_name = "NAME_OR_PATH")]
         variant: Option<String>,
 
-        /// Render the V&V coverage matrix from `repo-status` artifacts
-        /// (rivet#188). Combine with `--format` to choose text, json,
-        /// markdown, or html output. Mutually exclusive with `--tests`.
+        /// Render the V&V coverage matrix from `repo-status` artifacts.
+        /// Combine with `--format` to choose text, json, markdown, or html
+        /// output. Mutually exclusive with `--tests`.
         #[arg(long, conflicts_with = "tests")]
         matrix: bool,
 
         /// Aggregate one or more JSON matrices produced by
-        /// `rivet coverage --matrix --format json` (rivet#188 sub-issue 3,
-        /// the file-based cross-repo aggregator). Each CI job emits its
-        /// repo's JSON; a top-level job merges them with this flag. Implies
-        /// `--matrix`; the local project is not read. Repeat the flag or
-        /// pass several paths.
+        /// `rivet coverage --matrix --format json` (the file-based cross-repo
+        /// aggregator). Each CI job emits its repo's JSON; a top-level job
+        /// merges them with this flag. Implies `--matrix`; the local project
+        /// is not read. Repeat the flag or pass several paths.
         #[arg(long = "aggregate", value_name = "FILE", num_args = 1.., conflicts_with = "tests")]
         aggregate: Vec<PathBuf>,
     },
@@ -670,8 +672,8 @@ enum Command {
         link: Option<String>,
 
         /// Direction: "forward" or "backward". Omit to infer the direction
-        /// (and link type) that actually connects --from to --to (REQ-166 /
-        /// #402) — so `--from design-decision --to requirement` just works.
+        /// (and link type) that actually connects --from to --to — so
+        /// `--from design-decision --to requirement` just works.
         #[arg(long)]
         direction: Option<String>,
 
@@ -755,7 +757,7 @@ enum Command {
         /// Variant name (or path to a variant YAML) whose per-variant field
         /// overlay is applied before export, so a variant-scoped compliance
         /// export needs no hand-translation of IDs into an s-expr --filter.
-        /// Mirrors `list --variant` / `query --variant` (REQ-265).
+        /// Mirrors `list --variant` / `query --variant`.
         #[arg(long)]
         variant: Option<String>,
 
@@ -774,8 +776,9 @@ enum Command {
         action: SchemaAction,
     },
 
-    /// Built-in documentation (topics, search) — `check` subcommand verifies
-    /// docs-vs-reality invariants.
+    /// Built-in documentation (topics, search).
+    ///
+    /// The `check` subcommand verifies docs-vs-reality invariants.
     Docs {
         /// Topic slug to display, or `check` to run the doc invariant engine
         /// (omit for topic list).
@@ -852,7 +855,7 @@ enum Command {
         strict: bool,
     },
 
-    /// Audit AI-authored commits against ai-session artifacts (#127).
+    /// Audit AI-authored commits against ai-session artifacts.
     ///
     /// Two gates: (1) every AI-authored commit on the current branch must
     /// have a matching `ai-session` artifact with `commit-sha` set; (2)
@@ -905,7 +908,7 @@ enum Command {
         update: bool,
     },
 
-    /// Build-system-aware external project discovery (REQ-027).
+    /// Build-system-aware external project discovery.
     ///
     /// Reads MODULE.bazel and flake.lock from the project root and reports
     /// the cross-repo dependencies declared there, without modifying
@@ -916,14 +919,14 @@ enum Command {
         action: ExternalsAction,
     },
 
-    /// Cross-organizational / supplier-boundary traceability (#253).
+    /// Cross-organizational / supplier-boundary traceability.
     ///
     /// `rivet supplier list` shows every `external-anchor` artifact —
     /// the typed leaves marking points where the in-house chain hands
     /// off to a supplier. `rivet supplier check` runs coverage and
     /// reports the 3-state breakdown (satisfied / external-boundary /
     /// uncovered) so the auditor can distinguish "delegated" from
-    /// "missing." See docs/design/cross-org-supplier-traceability.md.
+    /// "missing."
     Supplier {
         #[command(subcommand)]
         action: SupplierAction,
@@ -954,19 +957,21 @@ enum Command {
         action: BaselineAction,
     },
 
-    /// Release planning: scope artifacts to a release and query readiness
-    /// (#516). Pairs with the `release:` field and `list --release`.
+    /// Release planning: scope artifacts to a release and query readiness.
+    ///
+    /// Pairs with the `release:` field and `list --release`.
     Release {
         #[command(subcommand)]
         action: ReleaseAction,
     },
 
-    /// Split a single-file artifact source into one `<ID>.yaml` per artifact
-    /// (REQ-235, #490 / DD-070), so parallel adds never share a file. Writes a
-    /// directory next to the file, verifies the per-id files load identically,
-    /// then removes the original — fully reversible if anything is off. After
-    /// sharding, set `layout: per-id` on the source in rivet.yaml so future
-    /// `rivet add` writes per-id too.
+    /// Split a single-file artifact source into one `<ID>.yaml` per artifact.
+    ///
+    /// Parallel adds never share a file. Writes a directory next to the file,
+    /// verifies the per-id files load identically, then removes the original —
+    /// fully reversible if anything is off. After sharding, set `layout:
+    /// per-id` on the source in rivet.yaml so future `rivet add` writes
+    /// per-id too.
     Shard {
         /// The single-file artifact source to split, e.g.
         /// `artifacts/requirements.yaml`. Becomes `artifacts/requirements/`.
@@ -981,9 +986,6 @@ enum Command {
     },
 
     /// Product line variant management (feature model + constraint solver).
-    ///
-    /// YAML schema reference: docs/feature-model-schema.md.
-    /// Binding file format:   docs/feature-model-bindings.md.
     Variant {
         #[command(subcommand)]
         action: VariantAction,
@@ -1002,13 +1004,12 @@ enum Command {
     },
 
     /// Inspect, render, copy, and diff per-pipeline-kind prompt templates.
-    /// See docs/templates.md (TODO) for the kind catalogue.
     Templates {
         #[command(subcommand)]
         action: TemplatesAction,
     },
 
-    /// Oracle-gated gap-closure loop. MVP: structural pipeline + dev schema.
+    /// Oracle-gated gap-closure loop (MVP: structural pipeline + dev schema).
     CloseGaps {
         /// Variant to scope against (requires bindings).
         #[arg(long)]
@@ -1024,14 +1025,11 @@ enum Command {
         dry_run: bool,
     },
 
-    /// Oracle subcommands: reusable mechanical checks that agent pipelines
-    /// declare in a schema's `agent-pipelines:` block.
+    /// Oracle subcommands: reusable mechanical checks used by agent pipelines.
     ///
     /// Each oracle either passes (exit 0) or fires (exit 1). On
     /// `--format json` the result is emitted as canonical JSON on stdout so
     /// downstream oracles can consume it without re-parsing text.
-    ///
-    /// See docs/oracles.md for the catalog and JSON schemas.
     Check {
         #[command(subcommand)]
         action: CheckAction,
@@ -1119,7 +1117,7 @@ enum Command {
         #[arg(long = "field", value_parser = parse_key_val_mutation)]
         fields: Vec<(String, String)>,
 
-        /// Links as type:target pairs (e.g., --link "satisfies:REQ-001")
+        /// Links as type:target pairs (e.g., --link "satisfies:<ID>")
         #[arg(long = "link", value_parser = parse_link_spec)]
         links: Vec<(String, String)>,
 
@@ -1182,12 +1180,10 @@ enum Command {
         target: Option<String>,
     },
 
-    /// Modify an existing artifact (status, title, description, tags, fields)
+    /// Modify an existing artifact (status, title, description, tags, fields).
     ///
-    /// Use the `--set-*` flags, not positionals. Examples:
-    ///   rivet modify REQ-001 --set-status approved
-    ///   rivet modify REQ-001 --set-description "Updated rationale"
-    ///   rivet modify REQ-001 --set-field priority=must
+    /// Use the `--set-*` flags, not positionals. See `--help` for a fuller
+    /// example set.
     #[command(after_help = "Examples:\n  \
         rivet modify <ID> --set-status approved\n  \
         rivet modify <ID> --set-description \"text\"\n  \
@@ -1220,7 +1216,7 @@ enum Command {
         set_status: Option<String>,
 
         /// Set the release scope (e.g. v0.21.0) — first-class release-planning
-        /// dimension (#516). An unassigned artifact is backlog.
+        /// dimension. An unassigned artifact is backlog.
         #[arg(long)]
         set_release: Option<String>,
 
@@ -1298,16 +1294,16 @@ enum Command {
         #[arg(short, long, default_value = "text")]
         format: String,
 
-        /// Apply per-variant field overlays before matching (issue
-        /// #287). The s-expression sees the merged view, so a filter
-        /// like `(= (field "max-temp-c") "100")` resolves under the
-        /// active variant's overlay. Accepts a name from
-        /// `artifacts/variants/<NAME>.yaml` or a direct path.
+        /// Apply per-variant field overlays before matching. The
+        /// s-expression sees the merged view, so a filter like `(= (field
+        /// "max-temp-c") "100")` resolves under the active variant's
+        /// overlay. Accepts a name from `artifacts/variants/<NAME>.yaml`
+        /// or a direct path.
         #[arg(long, value_name = "NAME_OR_PATH")]
         variant: Option<String>,
     },
 
-    /// Run a SQL query over the artifact store (REQ-229 / DD-068)
+    /// Run a SQL query over the artifact store.
     ///
     /// Projects the artifacts as virtual tables and runs read-only SQL — no
     /// server and no MCP required. Tables: `artifacts(id, type, title,
@@ -1398,9 +1394,10 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    /// List the built-in schema PRESETS you can declare in rivet.yaml's
-    /// `schemas:` list (name, version, #types) — the answer to "which
-    /// standards can I enable?" (#510). Needs no project.
+    /// List the built-in schema PRESETS you can declare in rivet.yaml's `schemas:` list.
+    ///
+    /// Reports name, version, and type count for each — the answer to
+    /// "which standards can I enable?". Needs no project.
     Presets {
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
@@ -1436,8 +1433,10 @@ enum SchemaAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    /// Show where each active schema resolves from: on-disk (pinned) vs
-    /// embedded (compiled into the rivet binary, changes on upgrade) (#431)
+    /// Show where each active schema resolves from: on-disk (pinned) vs embedded.
+    ///
+    /// Embedded schemas are compiled into the rivet binary and change on
+    /// upgrade; pinned schemas live in the project.
     Sources {
         /// Output format: "text" (default) or "json"
         #[arg(short, long, default_value = "text")]
@@ -1465,10 +1464,6 @@ enum SchemaAction {
         content: bool,
     },
     /// Migrate artifacts from one preset/version to another.
-    ///
-    /// Phase 1 of issue #236 shipped the diff engine + mechanical
-    /// apply. Phase 2 adds rebase-style conflict resolution
-    /// (`--continue`, `--skip`, `--edit`).
     ///
     /// Default is plan-only (dry-run). Use `--apply` to rewrite
     /// artifact YAML in place; the CLI pauses at the first conflict
@@ -1545,22 +1540,23 @@ enum BaselineAction {
 
 #[derive(Debug, Subcommand)]
 enum ReleaseAction {
-    /// Readiness burn-down for a release (REQ-233, #516): per-status counts of
-    /// the artifacts scoped to `release: <version>`, plus the set that is not
-    /// yet release-ready. The release is cuttable when that set is empty.
-    /// Exits non-zero when not cuttable (so CI can gate on it).
+    /// Readiness burn-down for a release: per-status counts and the not-yet-ready set.
+    ///
+    /// Reports each status count for artifacts scoped to `release:
+    /// <version>`, plus the set that is not yet release-ready. The release
+    /// is cuttable when that set is empty. Exits non-zero when not cuttable
+    /// (so CI can gate on it).
     ///
     /// By default an artifact is release-ready at `status ∈
     /// {verified, accepted}`. `rivet.yaml`'s `release:` block widens that:
     /// `ready-when: [<status>...]` extends the ready status set;
-    /// `require: coverage` (REQ-240, #612) ALSO counts an artifact ready
-    /// when every applicable validate coverage rule passes for its type —
-    /// the escape hatch for V-model / ASPICE projects that verify via
-    /// links rather than a status flip. `require: coverage` greens when
-    /// the configured coverage-rules pass, which is NOT the same as
-    /// "every verification level present" — see `docs/release-status.md`
-    /// for the precision note and how to tighten the schema when a
-    /// stricter meaning is required.
+    /// `require: coverage` ALSO counts an artifact ready when every
+    /// applicable validate coverage rule passes for its type — the escape
+    /// hatch for V-model / ASPICE projects that verify via links rather
+    /// than a status flip. `require: coverage` greens when the configured
+    /// coverage-rules pass, which is NOT the same as "every verification
+    /// level present" — see `rivet docs release-status` for the precision
+    /// note.
     Status {
         /// Release version, e.g. v0.22.0
         version: String,
@@ -1568,18 +1564,21 @@ enum ReleaseAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    /// Re-target an artifact to a different release (REQ-234, #516) — a logged
-    /// scope decision. Reports the old → new release transition; the artifact
-    /// edit is the durable record.
+    /// Re-target an artifact to a different release (a logged scope decision).
+    ///
+    /// Reports the old → new release transition; the artifact edit is the
+    /// durable record.
     Move {
         /// Artifact ID to move (e.g. REQ-042)
         id: String,
         /// Destination release version (e.g. v0.23.0)
         version: String,
     },
-    /// Cross-check a release against a variant (REQ-254, #673): partition the
-    /// release-tagged artifacts against the variant's resolved artifact-id set
-    /// AND report whether the release is cuttable within that variant.
+    /// Cross-check a release against a variant.
+    ///
+    /// Partitions the release-tagged artifacts against the variant's
+    /// resolved artifact-id set AND reports whether the release is
+    /// cuttable within that variant.
     ///
     /// Consistency partitions into `in-scope` (tagged for the release AND
     /// bound by the variant), `out-of-scope` (tagged for the release but NOT
@@ -1588,9 +1587,9 @@ enum ReleaseAction {
     ///
     /// Cuttability runs the same release-readiness predicate as
     /// `rivet release status`, scoped to the in-scope (intersection) set. An
-    /// empty intersection is NOT cuttable (same rule as `status`, #628). Exits
-    /// non-zero when not cuttable; under `--strict` also non-zero when any
-    /// artifact is out-of-scope (default: out-of-scope is a warning).
+    /// empty intersection is NOT cuttable. Exits non-zero when not cuttable;
+    /// under `--strict` also non-zero when any artifact is out-of-scope
+    /// (default: out-of-scope is a warning).
     Check {
         /// Release version, e.g. v0.26.0
         version: String,
@@ -1665,13 +1664,12 @@ enum SupplierAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    /// Federation pull: fetch an `external-anchor`'s `cited-source`
-    /// into the local supplier cache (#288 Phase 2). Supports
-    /// `kind: file` and `kind: reqif` — both are read-only on the
+    /// Federation pull: fetch an `external-anchor`'s `cited-source` into the local cache.
+    ///
+    /// Supports `kind: file` and `kind: reqif` — both are read-only on the
     /// source side and produce a sha256-verified snapshot under
-    /// `.rivet/supplier-cache/<org>/<contract>/`. Idempotent: a
-    /// re-pull with identical bytes is a no-op aside from updating
-    /// `last-synced`.
+    /// `.rivet/supplier-cache/<org>/<contract>/`. Idempotent: a re-pull
+    /// with identical bytes is a no-op aside from updating `last-synced`.
     Pull {
         /// `external-anchor` artifact ID (e.g. `ANCHOR-ACME-001`).
         anchor: String,
@@ -1684,7 +1682,7 @@ enum SupplierAction {
         /// `pull` normally refuses. With `--accept-drift` the auditor
         /// explicitly authorizes the new bytes — the cache is
         /// overwritten and the anchor's `cited-source` stamp +
-        /// `last-synced` are refreshed. REQ-068.
+        /// `last-synced` are refreshed.
         #[arg(long)]
         accept_drift: bool,
     },
@@ -1797,8 +1795,7 @@ enum TemplatesAction {
 
 #[derive(Subcommand)]
 enum VariantAction {
-    /// Scaffold a starter feature-model.yaml + bindings/<name>.yaml with
-    /// commented fields. See docs/feature-model-schema.md.
+    /// Scaffold a starter feature-model.yaml + bindings/<name>.yaml with commented fields.
     Init {
         /// Variant / project name (used for the bindings file name).
         name: String,
@@ -1828,8 +1825,7 @@ enum VariantAction {
     /// Check every variant declared in a binding file.
     ///
     /// Exits 0 if all declared variants pass, 1 if any fail. The binding
-    /// file may carry a `variants:` list alongside `bindings:` — see
-    /// docs/feature-model-bindings.md.
+    /// file may carry a `variants:` list alongside `bindings:`.
     CheckAll {
         /// Path to feature model YAML file
         #[arg(long)]
@@ -1871,11 +1867,10 @@ enum VariantAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
-    /// Emit effective features + attributes in a build-system-specific
-    /// format. Exits non-zero if the variant fails to solve.
+    /// Emit effective features + attributes in a build-system-specific format.
     ///
-    /// Formats: json, env (sh), cargo (build.rs), cmake, cpp-header,
-    /// bazel, make. See docs/getting-started.md for worked examples.
+    /// Exits non-zero if the variant fails to solve. Formats: json, env
+    /// (sh), cargo (build.rs), cmake, cpp-header, bazel, make.
     Features {
         /// Path to feature model YAML file
         #[arg(long)]
@@ -1956,8 +1951,7 @@ enum VariantAction {
     /// binding model and evaluates every `when:` predicate against the
     /// effective feature set. The output enumerates exactly which source
     /// globs participated in this variant — the audit-facing answer to
-    /// "what files went into this build?" (Gap 5,
-    /// docs/pure-variants-comparison.md).
+    /// "what files went into this build?".
     Manifest {
         /// Path to feature model YAML file
         #[arg(long)]
@@ -1976,9 +1970,9 @@ enum VariantAction {
         format: String,
 
         /// Escalate a source glob whose base directory does not exist on
-        /// disk from a warning to a nonzero exit (REQ-265c). Off by default
-        /// the manifest still WARNS loudly on missing sources, but only
-        /// `--strict` fails the command — matching `validate --strict-variants`.
+        /// disk from a warning to a nonzero exit. Off by default the manifest
+        /// still WARNS loudly on missing sources, but only `--strict` fails
+        /// the command — matching `validate --strict-variants`.
         #[arg(long)]
         strict: bool,
     },
@@ -2080,12 +2074,13 @@ enum CheckAction {
         format: String,
     },
 
-    /// Check that a verification artifact's named-test steps reference tests
-    /// that actually exist (#556 / REQ-236). `cargo test <filter>` exits 0 with
-    /// "0 passed" when the filter matches nothing, so a renamed/typo'd test name
-    /// silently keeps a requirement `verified`. For each `fields.steps[].run`
-    /// that names a cargo test filter, this asserts a matching test exists in
-    /// the scanned Rust sources. Exits non-zero on any missing test.
+    /// Check that a verification artifact's named-test steps reference tests that exist.
+    ///
+    /// `cargo test <filter>` exits 0 with "0 passed" when the filter matches
+    /// nothing, so a renamed/typo'd test name silently keeps a requirement
+    /// `verified`. For each `fields.steps[].run` that names a cargo test
+    /// filter, this asserts a matching test exists in the scanned Rust
+    /// sources. Exits non-zero on any missing test.
     VerificationEvidence {
         /// Directories to scan for Rust test sources (default: workspace-aware
         /// src/ + tests/, same as `rivet verify`).
@@ -2097,9 +2092,10 @@ enum CheckAction {
         format: String,
     },
 
-    /// List artifacts with `cited-source` and the current hash status
-    /// (match / drift / missing-hash / read-error / skipped-remote / stale).
-    /// Phase 1 only handles `kind: file` — see
+    /// List artifacts with `cited-source` and the current hash status.
+    ///
+    /// Status is one of match / drift / missing-hash / read-error /
+    /// skipped-remote / stale. Phase 1 only handles `kind: file` — see
     /// `rivet docs schema-cited-sources`.
     Sources {
         /// Refresh sha256 + last-checked stamps. By default prompts
