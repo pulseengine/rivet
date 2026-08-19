@@ -1273,3 +1273,55 @@ jobs:
           files: |
             release-results-*.tar.gz
             target/release/rivet
+
+  # ── The single required status check (#796) ───────────────────────────
+  # Branch protection had ZERO required checks, so every gate was advisory.
+  # The obvious fix — requiring the individual jobs — does not work here:
+  # most of them are conditional on the `changes` paths-filter, and GitHub
+  # treats a required check that was SKIPPED as UNSATISFIED. Requiring
+  # `Clippy` directly would wedge every docs/artifact-only PR forever.
+  #
+  # So exactly ONE context is required: this job. It always runs, collects
+  # the results of the gated jobs, and fails if any of them actually failed.
+  # A `skipped` result is a pass, because the paths-filter skipping a job is
+  # the intended behaviour — and `changes` is in `needs` so that a FAILURE of
+  # the filter itself (rather than a legitimate skip) still fails the gate.
+  #
+  # Deliberately NOT gated on: Kani (exit-143 runner-shutdown flake would
+  # wedge the queue on infrastructure, not correctness), Mutation Testing
+  # (honest since REQ-288 but young), Coverage (advisory by design), and
+  # Playwright (no timeout-minutes — a hung apt-get blocks for 6h, see #822).
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs:
+      - changes
+      - fmt
+      - clippy
+      - test
+      - msrv
+      - semver-checks
+      - deny
+      - docs-check
+      - yaml-lint
+      - traceability
+      - wasm-seam
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every gated job succeeded or was legitimately skipped
+        run: |
+          cat > needs.json <<'JSON'
+          ${{ toJSON(needs) }}
+          JSON
+          echo "── job results ──"
+          jq -r 'to_entries[] | "  \(.key): \(.value.result)"' needs.json
+          BAD=$(jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "  \(.key) = \(.value.result)"' needs.json)
+          if [ -n "$BAD" ]; then
+            echo "::error::CI Gate: required job(s) did not pass:"
+            echo "$BAD"
+            exit 1
+          fi
+          echo "CI Gate: all gated jobs are success or skipped"
