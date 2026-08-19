@@ -7991,7 +7991,7 @@ artifacts:
     title: "rivet check verification-evidence: actually evaluate nextest filterset expressions (not just skip)"
     status: proposed
     description: "Follow-up to REQ-280. The named-test-exists checker scans a universe of leaf `fn` names, which cannot satisfy nextest filterset predicates that address full test PATHS/regexes (`test(/message::/)`, `test(=mod::name)`, `package()/binary()/kind()` + set operators). v0.30.1 conservatively SKIPS such steps (never false-errors) but therefore does not verify them. Give the check real filterset evaluation. Decision to record (DD): either (a) build qualified test paths by tracking `mod` nesting during the source scan and evaluate the filterset grammar ourselves — a maintenance commitment to track nextest's grammar; or (b) shell out to `cargo nextest list -E <expr>` and assert a non-zero match count, making nextest itself the oracle (correct for all forms, but requires a compiled project + nextest installed, changing the check from a pure static scan to a build-dependent one). Prefer (b) behind an opt-in flag so the default stays fast + build-free. Restores coverage of the steps REQ-280 skips."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8002,7 +8002,7 @@ artifacts:
     title: "rivet sql: self-describing schema (SHOW TABLES / --schema) + discoverability from --help"
     status: proposed
     description: "Downstream question (Ford linc-mesh): 'there is nowhere documentation about the sql tables and formats and what can be queried.' The schema IS documented (docs/getting-started.md 'SQL over the artifact store': tables artifacts/links/fields/provenance + columns, output table|json|csv, read/write rules) but is unreachable from where a user looks — `rivet sql --help` doesn't point to it and the engine can't describe itself. Make `rivet sql` self-describing: support `rivet sql --schema` (and/or `.tables` / `SHOW TABLES` / `.schema`) to print the projected tables + columns, and reference the schema doc from `rivet sql --help`. A query engine that can't enumerate its own tables is a real discoverability gap. Small, docs+CLI-help slice; no engine change beyond a schema dump."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8035,7 +8035,7 @@ artifacts:
     title: "rivet docs check: parse embedded doc snippets + resolve doc-topic references (catch truth-drift mechanically)"
     status: proposed
     description: "Meta-fix for the weak-green docs class (REQ-284): `rivet docs check` today validates token/format hygiene, so a doc snippet whose flags don't parse or that references a non-existent `rivet docs <topic>` passes clean. Add two invariants: (a) shell every fenced ```bash rivet …``` snippet in the embedded docs through the clap parser (arg-validation / --help level, no execution) and fail on unknown args/subcommands; (b) assert every `rivet docs <topic>` / `rivet schema <name>` reference in doc prose resolves to a real topic. The countercheck showed this would have caught 6 of 8 REQ-284 divergences mechanically — turning an expensive human audit into a gate. This is the 'weak green' fix at the meta level: make the green prove the snippets are true, not just well-formed."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8046,7 +8046,7 @@ artifacts:
     title: "rivet release status: be LOUD about which artifacts block a cut (and whether they are in-scope vs backlog)"
     status: proposed
     description: "User-reported: when a release's scope contains artifacts not in a ready status (draft/proposed, or implemented-not-verified), `rivet release status <v>` reports not-cuttable — which may be correct, but the block should be LOUD and actionable, not a terse 'NOT cuttable'. Surface, per blocking artifact: its id, current status, the target status it needs, and (critically) whether it is genuinely IN THIS RELEASE'S SCOPE vs backlog that merely carries the release: field or none — so the user can act (promote it, or move it out of the release) instead of being stuck. Ties to release.ready-when (REQ-240) and the ship-at-implemented gap (the release-status gate is stricter than actual practice). Part of the weak-green/unclear-signal family: a RED that doesn't clearly say why or what to do about it."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8066,7 +8066,7 @@ artifacts:
   - id: REQ-288
     type: requirement
     title: "CI mutation gate is vacuously green: reads a path cargo-mutants never writes (#768, cf. spar#381)"
-    status: implemented
+    status: verified
     description: "v0.33 gate-potency slice. Both `mutants-core` and the `mutants-cli` HARD gate run `cargo mutants --output mutants-out` (which writes the report to `mutants-out/mutants.out/`) then read `mutants-out/missed.txt` — a path that never exists. The `-f` test is always false, MISSED stays 0, `0 -gt 0` is false, exit 0 regardless of survivors. Evidence from rivet's own artifact `mutants-report-rivet-core-13-of-16` (id 7023721130, uploaded with `path: mutants-out/`): the artifact root contains exactly one entry, `mutants.out/`, whose `missed.txt` lists 5 real surviving mutants (yaml_cst.rs parser mutations) while CI printed `Surviving mutants: 0`. The artifact-upload globs (`mutants-out/*.json`, `mutants-out/outcomes.json`) are wrong for the same reason. Fix: read `mutants-out/mutants.out/missed.txt`, FAIL LOUDLY when the results file is absent (a missing report must never read as a clean one), then re-baseline real survivor counts. Ported from spar#381 after that repo found the identical bug."
     release: v0.33.0
     provenance:
@@ -8077,7 +8077,7 @@ artifacts:
   - id: REQ-289
     type: requirement
     title: "Format gate is green on unformatted tracked code: cargo fmt --all misses the fuzz/ workspace (#769, cf. spar#383)"
-    status: implemented
+    status: verified
     description: "v0.33 gate-potency slice. The required `Format` check runs `cargo fmt --all -- --check`; `--all` means all members of THIS workspace, not all crates in the repo. rivet has two `[workspace]` manifests (root + `fuzz/`), and `compose-witness/` carries its own Cargo.lock as well. Live on HEAD: root `cargo fmt --all -- --check` exits 0 while `cargo fmt --manifest-path fuzz/Cargo.toml -- --check` exits 1 with real drift in tracked files (fuzz/examples/oracle_smoke.rs:44,258; fuzz/fuzz_targets/artifact_ids.rs:38,66; fuzz/fuzz_targets/cli_argv.rs:188). Fix: derive the workspace list (`grep -rl '^\\[workspace\\]' --include=Cargo.toml`) and check each, so a newly added nested workspace cannot silently escape the gate. Ported from spar#383."
     release: v0.33.0
     provenance:
@@ -8088,7 +8088,7 @@ artifacts:
   - id: REQ-290
     type: requirement
     title: "check verification-evidence runs in no workflow — the anti-rot check nothing enforces (#770, cf. spar#388)"
-    status: implemented
+    status: verified
     description: "v0.33 gate-potency slice. spar#388 found 7 verification artifacts citing tests that never existed (`cargo test -- <no match>` exits 0, so the gate scored them passing). rivet BUILT the checker for exactly that class — `rivet check verification-evidence` (REQ-236, hardened again in REQ-280 for nextest filtersets) — and `grep verification-evidence .github/workflows/*.yml` returns nothing: no workflow runs it, so the protection is opt-in-by-memory. Second, smaller defect: on an empty scan it prints `✓ verification-evidence: 0 named-test step(s) all reference an existing test` — a checkmark over nothing checked, the same weak-green shape the check exists to kill. Fix: (1) run it in the Traceability job (the binary is already built there); (2) reword the zero-steps case so an empty scan does not render as a pass."
     release: v0.33.0
     provenance:
@@ -8099,7 +8099,7 @@ artifacts:
   - id: REQ-291
     type: requirement
     title: "Detect-changed-areas filter is under-scoped and fails open: embedded schemas skip the compile matrix (#771, cf. spar#384)"
-    status: implemented
+    status: verified
     description: "v0.33 gate-potency slice. A `rust=false` verdict from the `changes` job skips Clippy, Test, MSRV, Semver, Miri, Proptest, Coverage and wasm-seam — and on GitHub a SKIPPED required context is indistinguishable from a passed one. The classifier only matches `(\\.rs$)|(Cargo\\.(toml|lock)$)|(^\\.github/workflows/)`, which misses real build inputs: `schemas/*.yaml` are compiled INTO the binary via `include_str!` (rivet-core/src/embedded.rs), so a schema-only edit — which changes binary content and can break the suite — skips the entire compile matrix; `.github/actions/**` composite actions used BY those jobs likewise skip. Third, the error path is the permissive path: if `git diff` fails (bad/absent base sha, shallow fetch) `changed` is empty, nothing matches, and the step exits 0 with rust=false. Fix: add the real build inputs (derive include_str!/include_dir! sources rather than retyping them) and fail CLOSED — an errored or empty diff must set rust=true. Ported from spar#384."
     release: v0.33.0
     provenance:
@@ -8117,3 +8117,68 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-18T00:00:00Z
+  - id: REQ-294
+    type: requirement
+    title: "Silent empty load: a config typo yields 0 artifacts while validate PASSes and coverage reports 100% (#808)"
+    status: proposed
+    description: "A traceability tool's worst failure direction — loudest-green when it has read nothing. Two independent triggers reproduce it: a `generic-yaml` artifact file whose root key is `requirements:` instead of `artifacts:`, and a mis-keyed section in `rivet.yaml` (`typo_sources:`). Both silently disable inputs; `rivet list` reports 0, `validate` prints `PASS (0 warnings)` exit 0, and `coverage` prints `Overall (weighted) 100.0%` with `V-closure 100.0% [0/0]`. Four fix sites: (1) `empty-source` diagnostic on any configured source yielding zero artifacts; (2) `artifact-root-key-near-miss` naming the offending root key and suggesting `artifacts:`; (3) unknown top-level keys in `rivet.yaml` surfaced; (4) `coverage` renders `n/a` rather than `100.0%` on a 0/0 denominator, and exits non-zero under strict. IMPORTANT sequencing established by probe on PR #818: fix (3) must NOT use serde `deny_unknown_fields` — sigil's `rivet.yaml` carries a top-level `schemas-path:` that rivet has always ignored, so hard-fail makes rivet unusable in that repo. But merely downgrading (3) to a warning REOPENS the `typo_sources:` trigger, because (1) iterates over CONFIGURED sources and a mis-keyed `sources:` leaves zero of them — verified: PASS, 0 warnings, exit 0 even under --strict. The correct shape is three parts: drop deny_unknown_fields, add an `unknown-config-key` warning (error under --strict), and add a distinct `no-sources` diagnostic that fires when the config declares zero sources at all. The third is what actually closes the trigger and is why the first is safe."
+    release: v0.34.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-295
+    type: requirement
+    title: "check verification-evidence is useless as a gate: blind to nested workspaces, and satisfied by an empty stub (#807)"
+    status: proposed
+    description: "Reported externally and confirmed on main. Two independent defects that together make the check unable to gate. Defect 1 — false failures: a step running `cargo test --manifest-path compat/<crate>/Cargo.toml <name>` reports 'no test matching found' though the test exists. `--manifest-path` sits in VALUE_FLAGS purely so its value is not mistaken for the filter, and the value is then discarded; the scan root comes from `default_marker_scan_paths`, which returns the project root only when the root Cargo.toml declares `[workspace]` and otherwise scans just ./src and ./tests — so a nested independent workspace is invisible. Reporter saw 14 false failures, exit 1. Defect 2 — false passes: `filter_matches_any` is `names.iter().any(|n| n.contains(filter))` over every fn name collected from the scan roots, so it asserts only that a function of that name exists SOMEWHERE scanned, never that the step's command reaches it or that it asserts anything. Proven by the reporter: dropping `#[test] fn <missing name>() {}` into the root tests/ took findings 14 to 13. The check built for #556 ('a filter matching nothing exits 0 with 0 passed') is therefore satisfiable by exactly the stub it exists to catch. FIX ORDER IS LOAD-BEARING: Defect 1 must land before or with Defect 2 — fixing 2 alone converts every nested-workspace step from a false failure into a hard failure, making the reporter's 14 strictly worse. Related third property: an empty scan still exits 0, and on rivet's own repo the check examines 0 steps."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-296
+    type: requirement
+    title: "Mutation-safety property harness for the YAML write path — one invariant, four data-loss bugs, no property test (#809)"
+    status: proposed
+    description: "Every mutating command writes through `rivet-core/src/yaml_edit.rs`, a ~2000-line line-oriented editor built on indentation heuristics. Hand-rolled deliberately (it preserves comments, key order and human formatting, which a serde round-trip destroys in version-controlled files) — but it has produced four data-loss bugs, each found by a user rather than a test: #573 flow-style `fields:` maps, #618/#625 block-list orphaning, REQ-287 unquoted tag emission, and #806 multi-line values in `fields:`. All four violate one invariant: replacing a key must consume that key's ENTIRE on-disk extent and change nothing else. #806 is the proof that examples are not enough — `set_field` upholds the invariant via `field_block_end` + `splice` and its comment names the history, while the custom-fields loop 700 lines below did a single-line assignment and had no multi-line-value test at all. The property must be stated as EXACT equality: parse before, mutate, parse after must succeed, every path except the target must be byte-identical, and the target must equal the intended value. 'It parses' is only a precondition — #806 mode 1 produced a perfectly parseable file whose value silently became 'short first body line second body line', so a parse-only assertion would green on the data loss. Corpus axis is scalar STYLE, not field name: plain, single/double-quoted, folded, literal, |- / |+ / |2, empty value, flow map, flow seq, block seq, nested block map, body containing colon / hash / leading dash, internal blank line, anchors, CRLF, tabs, last-field-of-last-artifact, unicode. Mutations: every --set-* flag, --add-tag/--remove-tag, --where bulk, plus `rivet add` and the MCP/batch writers. Lands as a proptest in rivet-core (fast, shrinks, runs in CI) plus a thin CLI-level test for flag wiring. Deliberately does NOT include migrating the writer to the in-tree rowan-yaml CST: that is an architecture decision with real cost for the maintainer to weigh, and the harness is the right thing to have in place BEFORE such a migration so it can prove behavior is preserved."
+    release: v0.34.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-297
+    type: requirement
+    title: "rivet context needs a stdout mode so a session hook can consume it without mutating the working tree (#811)"
+    status: proposed
+    description: "`rivet context` exists to give an agent the project's real state instead of hand-parsing artifact YAML, but it takes no arguments beyond --help and unconditionally writes `.rivet/agent-context.md`. A SessionStart hook that only wants to READ state therefore causes a working-tree mutation, and `.rivet/` is gitignored in rivet's own repo but not in consumers (checked varve and relay) — so the side effect is invisible to us and visible to everyone else, with an easy accidental commit behind it. Reporter dropped the command from their hook and rebuilt a 25-line summary from validate/stats/coverage, reimplementing a slice of a command that already exists. Deliver: (a) `--stdout` so the document can be consumed without writing; (b) `--format json` alongside it so hooks select fields instead of regexing Markdown; (c) `--brief` — at 282 lines / 17.7 KB the document is large for per-session injection and roughly 60 percent of it is the stable schema/link-type reference, which belongs behind `rivet docs` on demand; (d) `rivet init` adds `.rivet/` to .gitignore, since whether the cache directory is ignored should not depend on the repo. Upstream context: pulseengine.eu#166 found the agent skills named 8 of rivet's 52 commands and never pointed at docs/quickstart/context, which is why agents kept hand-parsing YAML — a capability nothing points at is close to one that does not exist."
+    release: v0.34.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-298
+    type: requirement
+    title: "CLI --help hygiene: internal REQ ids and issue refs leak into user-facing help text (#812)"
+    status: proposed
+    description: "Help text is the product surface a new user meets first, and rivet's carries internal bookkeeping — REQ ids, GitHub issue numbers and doc paths that mean nothing outside this repo — with a top-level list long enough that the important commands do not stand out, and at least one entry reaching 405 characters. Fix: strip REQ/# references from user-facing help (they belong in artifact descriptions and commit trailers, which is where traceability already lives), cap entry length, and tighten the top-level command list so the common path is legible. Cross-check against REQ-297: the same discoverability finding (pulseengine.eu#166) applies here — if `docs`, `quickstart` and `context` are not visible in help, agents and humans alike hand-parse YAML instead."
+    release: v0.34.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-299
+    type: requirement
+    title: "Per-PR mutation gate covers rivet-cli only — rivet-core changes get zero coverage while a mutation check reports on them (#816)"
+    status: proposed
+    description: "`mutants-core` is schedule-only (3677 mutants, moved off the every-push path to stop saturating runners); `mutants-cli` is the per-PR hard gate. So a PR changing rivet-core gets no mutation coverage at all, while the checks list shows a mutation job reporting on it. Made concrete by PR #810, a P0 data-loss fix in `rivet-core/src/yaml_edit.rs`: the rivet-core job was SKIPPED and the rivet-cli job FAILED with nothing in scope. A reviewer reading the checks would conclude mutation testing covered that PR; it did not. The original reasoning no longer holds: full-scope cost is what made mutants-core schedule-only, but `--in-diff` (REQ-288) made per-push cost proportional to CHANGED LINES rather than crate size, which is exactly what made mutants-cli affordable. Add a diff-scoped `mutants-core-pr` job mirroring mutants-cli — same fetch-depth 0, same fail-closed evidence check, same exit-status handling — and keep the schedule-only full-scope run for the long tail. Decide hard-gate vs advisory explicitly rather than by default: rivet-core has known-surviving mutants at full scope, but diff-scoped only asks whether the code this PR changed is covered, which is a fair bar; suggest advisory for one or two releases, then promote once the noise level is known. Particularly pointed because the current campaign (#806, #809) is specifically about mutation-path correctness in rivet-core — the code a mutation gate should be interrogating is the code it cannot see."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
