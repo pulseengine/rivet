@@ -8710,3 +8710,46 @@ fn validate_known_attributes_only_produces_no_warning() {
         String::from_utf8_lossy(&out.stdout)
     );
 }
+
+/// #812 part 2: the command list was the loudest offender, but the global
+/// OPTIONS block had its own 184-character line (`--project`) plus two more
+/// over 100. Those are the first thing `-h` shows above the command list.
+///
+/// `-h` is the scannable surface and must stay tight; `--help` is allowed to
+/// carry `long_help` prose, which is what detailed help is for. So this asserts
+/// on SHORT help only — the fix was to give `--project` / `--schemas` a
+/// one-line short help with the "pass it BEFORE the subcommand" detail moved to
+/// `long_help`, and to drop the internal `(TCL design A5)` design reference from
+/// `--qualification-mode`'s short line.
+#[test]
+fn short_help_options_block_stays_scannable() {
+    let out = Command::new(rivet_bin())
+        .args(["-h"])
+        .env("COLUMNS", "9999") // unwrapped, so a long line cannot hide behind wrapping
+        .output()
+        .expect("rivet -h");
+    let help = String::from_utf8_lossy(&out.stdout);
+
+    let mut offenders: Vec<String> = Vec::new();
+    for line in help.lines() {
+        if line.chars().count() > 100 {
+            offenders.push(format!("LEN {}: {}", line.chars().count(), line));
+        }
+        // Same provenance rule as the command list: internal ids belong in the
+        // artifacts, where `rivet get <ID>` answers them and they stay correct.
+        let has_req = line.contains("REQ-") && line.chars().any(|c| c.is_ascii_digit());
+        let has_issue_ref = line.split_whitespace().any(|w| {
+            w.starts_with('#') && w.len() > 3 && w[1..].chars().take(3).all(|c| c.is_ascii_digit())
+        });
+        if has_req || has_issue_ref {
+            offenders.push(format!("REF: {line}"));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "`rivet -h` must have no line over 100 columns and no REQ/# refs \
+         (move detail to long_help, which `--help` still shows); found:\n{}",
+        offenders.join("\n")
+    );
+}

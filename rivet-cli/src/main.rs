@@ -200,13 +200,17 @@ struct Cli {
     // subcommands that take positionals (next-id <type>, link <a> <b>,
     // snapshot diff <x>, …). So this must precede the subcommand. See #500
     // (REQ-209 attempted `global = true` and was reverted in #502).
-    /// Path to the project directory (containing rivet.yaml). Pass it BEFORE the
-    /// subcommand: `rivet -p <dir> validate` (not `rivet validate -p <dir>`).
+    /// Path to the project directory containing rivet.yaml
+    ///
+    /// Pass it BEFORE the subcommand: `rivet -p <dir> validate`, not
+    /// `rivet validate -p <dir>`.
     #[arg(short, long, default_value = ".")]
     project: PathBuf,
 
-    /// Path to schemas directory. Like `--project`, pass it BEFORE the
-    /// subcommand (`rivet --schemas <dir> validate`).
+    /// Path to the schemas directory
+    ///
+    /// Like `--project`, pass it BEFORE the subcommand:
+    /// `rivet --schemas <dir> validate`.
     #[arg(long)]
     schemas: Option<PathBuf>,
 
@@ -222,7 +226,6 @@ struct Cli {
     quiet: bool,
 
     /// Restrict rivet to the qualified-for-safety-use feature set
-    /// (TCL design A5).
     ///
     /// When set (or when `RIVET_QUALIFICATION_MODE=1`), rivet refuses
     /// to run subcommands that are out-of-scope for the typed
