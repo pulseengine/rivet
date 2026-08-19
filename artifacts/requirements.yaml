@@ -8182,3 +8182,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-292
+    type: requirement
+    title: "dev verification type: declare steps/test-name/test-location so a dev-only project can feed the evidence gate (#748)"
+    status: proposed
+    description: "Downstream residual on #748 (reported from spar, 883 artifacts, dev schema). REQ-270 shipped the dev-native `verification` type in v0.29.0 (dev@0.2.0 -> 0.3.0), which resolved the headline complaint — a dev-only project can now put tests on the right side of the V and reach `verified` WITHOUT importing ASPICE's SWE.3 chain. What remains is field-level: of the four fields spar's hand-rolled workaround leans on, only `method` is declared. `steps` (142 spar artifacts), `test-name` (64) and `test-location` (64) are not, so migrating the 227 workaround artifacts onto `verification` fixes their V-side placement but reproduces the undeclared-field warnings — which is why pulseengine/spar#371 is still blocked. `steps` matters most: `fields.steps[].run` is exactly the shape `rivet check verification-evidence` reads (rivet-cli/src/main.rs:8205), the named-test-exists gate hardened by REQ-236 and REQ-280. Because dev's `verification` does not declare it, a dev-only project cannot feed that gate at all — very likely why the check reports `0 named-test step(s)` on rivet's own repo. Scope: declare `steps`, `test-name`, `test-location` on the dev `verification` type (bump dev schema version), and decide whether `verifies` should widen beyond `[requirement]` (the issue asked for `[any]`; verifying a design-decision or feature is currently inexpressible) — widening is a separate judgement call, not automatic."
+    release: v0.34.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-07T00:00:00Z
