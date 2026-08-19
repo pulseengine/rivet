@@ -985,7 +985,7 @@ jobs:
             STATUS="$(cat mutants-exit-status 2>/dev/null || echo missing)"
             if [ "$STATUS" = "0" ]; then
               echo "cargo-mutants exited 0 and wrote no report: this PR's diff contains no rivet-cli mutants (the changed code lives in another crate). Nothing for this gate to check."
-              echo "NOTE: rivet-core changes are NOT covered by this gate; mutants-core is schedule-only (see #816)."
+              echo "NOTE: rivet-core changes are covered by the sibling mutants-core-pr job (advisory), which is diff-scoped the same way as this gate (#816 / REQ-299)."
               exit 0
             fi
             echo "::error::no $REPORT/outcomes.json and cargo-mutants exited '$STATUS' — it crashed or its output layout changed; refusing to report a pass over missing evidence"
@@ -1009,6 +1009,136 @@ jobs:
           name: mutants-report-rivet-cli-0-of-1
           # REQ-288: was `mutants-out/*.txt|*.json`, which matched nothing — no
           # rivet-cli mutants report has ever been uploaded, in any run.
+          path: mutants-out/mutants.out/
+          if-no-files-found: warn
+
+  # rivet-core mutation — ADVISORY diff-scoped gate, single shard, every
+  # push + PR (#816 / REQ-299). Sibling to `mutants-cli` above: same
+  # `--in-diff` cost model (proportional to changed lines, not crate size),
+  # same fetch-depth 0, same fail-closed evidence check, same exit-status
+  # handling — but for rivet-core. Closes the gap where a PR that only
+  # touches rivet-core got zero mutation coverage while a mutation check
+  # reported on it. The full-scope 16-shard `mutants-core` matrix above
+  # stays schedule-only for the long tail (3677 mutants, known-surviving
+  # ones outside PR diffs).
+  #
+  # Advisory (`continue-on-error: true`), NOT a hard gate: rivet-core has
+  # known-surviving mutants at full scope. Diff-scoped only asks "is the
+  # code THIS PR changed covered by a test?" which is a fair bar, but the
+  # honest posture per the issue is to start advisory for one or two
+  # releases so the noise level surfaces before promotion. Deliberately
+  # NOT in `ci-gate.needs` — mirrors the mutants-cli decision recorded on
+  # ci-gate (§ "Deliberately NOT gated on: … Mutation Testing (honest
+  # since REQ-288 but young)").
+  #
+  # Runner pool: `rust-cpu`, not `lean-mem` (same argument as mutants-cli
+  # above — per-PR jobs on lean-mem starve Miri/Verus). Diff-scoped
+  # rivet-core runs are typically a handful of mutants, well under
+  # rust-cpu's headroom; `--jobs 1` (was `--jobs 2` in the sibling)
+  # because rivet-core's test suite is heavier per worker than
+  # rivet-cli's — one worker at ~8G compile peak + tests fits comfortably
+  # under rust-cpu's 16G MemoryHigh, two workers do not. `-- --lib`
+  # matches the nightly `mutants-core` scope: rivet-core is a library
+  # crate and its integration tests would blow the per-PR budget on any
+  # non-trivial diff.
+  mutants-core-pr:
+    name: Mutation Testing (rivet-core, PR-diff)
+    needs: [changes, test]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: [self-hosted, linux, x64, rust-cpu]
+    timeout-minutes: 45
+    # ADVISORY — see the header comment above. Promote to a hard gate only
+    # after diff-scoped rivet-core noise has been observed across a
+    # release or two and the survivors have been triaged.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # REQ-288: --in-diff needs the PR base commit present locally; a
+          # shallow clone makes `git diff <base>...HEAD` fail and (previously,
+          # silently) yield an empty diff.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: mutants-rivet-core-pr-0-of-1
+      - name: Install cargo-mutants
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants
+      - name: Prune stale mutants artefacts
+        run: |
+          rm -rf mutants-out
+          find target -maxdepth 2 -name 'mutants.out*' -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+      - name: Compute diff for in-diff scoping
+        run: |
+          git fetch --no-tags origin "${{ github.event.pull_request.base.sha || 'main' }}" 2>/dev/null || true
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ]; then BASE="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"; fi
+          if ! git diff "$BASE"...HEAD -- '*.rs' > pr.diff; then
+            echo "::error::could not diff $BASE...HEAD — the base commit is not present (shallow clone?); refusing to run a mutation gate over an unknown diff"
+            exit 1
+          fi
+          echo "diff lines: $(wc -l < pr.diff | tr -d ' ')"
+      - name: Run cargo-mutants
+        # #590 memory guard (see mutants-core above): cap address space at
+        # 48 GiB so a memory-runaway mutant aborts ENOMEM process-local
+        # instead of OOM-killing the shared host. `|| true` keeps a clipped
+        # mutant as error, not a gate failure — the explicit check step
+        # below is what would report a real failure.
+        run: |
+          ulimit -v 50331648
+          if [ ! -s pr.diff ]; then
+            echo "no Rust changes in this diff — nothing to mutate"
+            exit 0
+          fi
+          # Record cargo-mutants' own exit status. The check step needs
+          # it to tell "ran fine, nothing in scope" apart from "crashed"
+          # — both leave no mutants-out/.
+          set +e
+          cargo mutants -p rivet-core --timeout 60 --jobs 1 --output mutants-out --in-diff pr.diff -- --lib
+          echo "$?" > mutants-exit-status
+          set -e
+          echo "cargo-mutants exit status: $(cat mutants-exit-status)"
+      - name: Check surviving mutants
+        # Mirrors the mutants-cli gate: missing evidence is RED, an
+        # empty-scope run (rivet-cli-only PR) is honest green. Because
+        # this job is advisory (`continue-on-error: true`), a real MISSED
+        # count reports at the job level as failed but does not fail the
+        # workflow — the diff-scoped survivors surface in the PR checks
+        # so a reviewer can act on them before promotion.
+        run: |
+          REPORT=mutants-out/mutants.out
+          if [ ! -s pr.diff ]; then
+            echo "no Rust changes in this diff — nothing to mutate, nothing to check"
+            exit 0
+          fi
+          if [ ! -f "$REPORT/outcomes.json" ]; then
+            STATUS="$(cat mutants-exit-status 2>/dev/null || echo missing)"
+            if [ "$STATUS" = "0" ]; then
+              echo "cargo-mutants exited 0 and wrote no report: this PR's diff contains no rivet-core mutants (the changed code lives in another crate). Nothing for this gate to check."
+              echo "NOTE: rivet-cli changes are covered by the sibling mutants-cli hard gate."
+              exit 0
+            fi
+            echo "::error::no $REPORT/outcomes.json and cargo-mutants exited '$STATUS' — it crashed or its output layout changed; refusing to report a pass over missing evidence"
+            ls -R mutants-out 2>/dev/null || echo "(no mutants-out/ at all)"
+            exit 1
+          fi
+          MISSED=0
+          if [ -f "$REPORT/missed.txt" ]; then
+            MISSED=$(wc -l < "$REPORT/missed.txt" | tr -d ' ')
+          fi
+          echo "Surviving mutants in rivet-core (diff-scoped): $MISSED"
+          if [ "$MISSED" -gt 0 ]; then
+            echo "::error::$MISSED mutant(s) survived in code this PR changed — add tests to kill them (advisory — the workflow does not fail on this until promotion)"
+            head -30 "$REPORT/missed.txt"
+            exit 1
+          fi
+      - name: Upload mutants report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-report-rivet-core-pr-0-of-1
           path: mutants-out/mutants.out/
           if-no-files-found: warn
 
