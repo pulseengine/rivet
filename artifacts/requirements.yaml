@@ -7954,7 +7954,7 @@ artifacts:
     type: requirement
     title: "serve/export color-contrast audit — fix low-contrast (white on light grey) to WCAG AA (customer request)"
     status: proposed
-    description: "Customer-reported: white text on the light-grey background reads poorly. Audit the render/styles.rs palette (--bg #f5f5f7 grey, --surface #fff, --text-secondary #6e6e73) and every fixed color pair for WCAG AA (>=4.5:1 body text, >=3:1 large/UI) — white (#fff) on #f5f5f7 is ~1.05:1 and fails. Raise the failing pairs (darken text / adjust surface) without a full redesign, keeping the PulseEngine look. Applies to both serve and the static/compliance export (shared styles.rs). Add a small contrast check or documented palette rationale so it doesn't regress."
+    description: "Customer-reported: white text on the light-grey background reads poorly. Audit the render/styles.rs palette (--bg #f5f5f7 grey, --surface #fff, --text-secondary #6e6e73) and every fixed color pair for WCAG AA (>=4.5:1 body text, >=3:1 large/UI) — white (#fff) on #f5f5f7 is ~1.05:1 and fails. Raise the failing pairs (darken text / adjust surface) without a full redesign, keeping the PulseEngine look. Applies to both serve and the static/compliance export (shared styles.rs). Add a small contrast check or documented palette rationale so it doesn't regress. MEASURED 2026-08-19 against the live palette in rivet-cli/src/render/styles.rs, which still carries the cited values (--bg #f5f5f7, --surface #fff, --text-secondary #6e6e73, --text #1d1d1f). 5 of 14 checked pairs fail WCAG AA body text at 4.5:1. The reported pair is confirmed and is the worst: white on --bg measures 1.09:1 (the issue estimated ~1.05). But it is NOT the most pervasive defect — the accent colour #3a86ff, used for LINKS, measures 3.20:1 on --bg and 3.48:1 on --surface, so every link in serve and export fails AA body text. White on accent is also 3.48:1, which passes the 3:1 UI threshold but fails 4.5:1 if the button label is body-size. Border #e5e5ea on --surface is 1.26:1 but is decorative and likely exempt. Passing comfortably: body text 15.46:1 and 16.83:1, secondary text 4.66:1 and 5.07:1, sidebar 6.72:1, and all three result colours between 5.07:1 and 6.08:1 — so this is a targeted fix to the accent and to any white-on-bg usage, not a redesign. ACCEPTANCE is therefore mechanical rather than visual: every body-text pair >= 4.5:1 and every UI/large pair >= 3:1, asserted by a unit test that computes relative luminance over the palette constants. That test is the regression guard the requirement already asks for, and it means this requirement can reach `verified` on evidence rather than on someone eyeballing a screenshot."
     release: v0.34.0
     provenance:
       created-by: ai-assisted
@@ -8193,3 +8193,36 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-07T00:00:00Z
+
+  - id: REQ-300
+    type: requirement
+    title: "Humans have no assisted way to author artifacts — YAML editing is the only path (#546)"
+    status: draft
+    description: "User-reported and the largest gap in the v0.34 customer-UI theme, missed in the first triage pass. rivet's mutation surface is excellent for agents (add, modify, link, batch, next-id, MCP) and its read surface is excellent for everyone (serve, query, sql, trace, export), but a human authoring or correcting an artifact has exactly one option: hand-edit YAML. The reporter's words are the requirement — the editing is cumbersome, and we are missing the UI for helping humans work with it. Note the irony this repo has just paid for: hand-editing is also the path with no guard rails, and the write path underneath has produced four data-loss bugs (#573, #618/#625, REQ-287, #806), so the humans doing it by hand are the ones least protected. DESIGN-FIRST — this must not go straight to implementation. At least three plausible shapes exist and they differ enormously in cost and in who they serve: (a) extend the vscode-rivet VSIX with form-based editing and completion, which meets people where the YAML already is but is limited to VS Code users and the webview has no htmx; (b) make `rivet serve` writable, which reaches any browser and reuses the existing dashboard but turns a read-only viewer into a mutating service with all the authz questions that implies; (c) a guided terminal flow (`rivet add --interactive`) which is cheap and composes with the existing CLI but does not address the reporter's likely mental model of a UI. A design decision artifact must land before any REQ is scoped for implementation, and it must state which of these it is NOT doing and why."
+    release: v0.34.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-301
+    type: requirement
+    title: "Two coverage surfaces contradict each other: --tests reports 100% while the link rule reports 0% (#788, #787)"
+    status: proposed
+    description: "Reported against rivet 0.32.0 on pulseengine/varve v0.5.0. All 12 requirements are `status: verified`, advanced by `rivet verify` on the strength of `// rivet: verifies` source markers, and `rivet coverage --tests` reports 12/12 = 100 percent. The `requirement-verification` link rule reports 0 percent for the same 12 requirements. Both numbers are printed by the same tool about the same artifacts; at most one can be right, and a reader has no way to tell which. For a compliance tool the disagreement is worse than either number being wrong on its own, because it means neither can be cited. Paired with #787, which is plausibly the mechanism or part of it: `coverage --tests` attributes a `// rivet: verifies` marker to the PRECEDING helper fn rather than the FOLLOWING `#[test]` fn, so the marker set it counts may not be the set a reader believes it counted. Deliver: (1) root-cause the attribution bug in the marker scanner and fix it to bind to the next test-like item, not the previous item; (2) decide and document which surface is authoritative — link-based coverage or marker-based `--tests` — and make the non-authoritative one say so in its output rather than presenting a bare competing percentage; (3) a regression fixture holding both surfaces on the same artifact set so they can never silently diverge again. Same family as REQ-294 and the v0.33.0 gate work: a number that cannot be trusted is worse than an absent one."
+    release: v0.34.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-302
+    type: requirement
+    title: "Overlapping sources make every id collide with itself — 184 phantom errors masked 6 real ones (#746)"
+    status: implemented
+    description: "Found while auditing spar's artifact set. When two configured `sources[]` paths overlap (one nested inside another, or the same tree reached twice), every artifact is loaded twice and `duplicate-artifact-id` fires against itself. On spar this produced 184 phantom errors which MASKED 6 genuine ones — the failure mode that matters, since a wall of false errors is functionally identical to no error reporting at all, and it actively caused a wrong number to be reported. Second, independent item in the same report: diagnostic output order is non-deterministic, so two runs over an unchanged tree produce different orderings and report diffing is useless — which is precisely how a compliance workflow detects drift between baselines. Fix: dedupe overlapping source paths at load time so each file is read once, and impose a total order on diagnostics before rendering. PR #759 carries the fix; it predates this artifact, which is being filed retroactively because the issue had no typed home and was therefore invisible to release planning."
+    release: v0.34.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-8
+      timestamp: 2026-08-19T00:00:00Z
