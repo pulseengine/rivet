@@ -1508,6 +1508,183 @@ fn validate_detects_duplicate_artifact_ids() {
     );
 }
 
+/// #746: a `rivet.yaml` that lists both a directory source AND an
+/// individual file source inside that directory used to fail validate
+/// with N `duplicate-artifact-id` errors (one per id in the overlapped
+/// file). The message on each was "id X is declared more than once: A
+/// and A" — same path on both sides, since the file loaded twice via
+/// the two sources.
+///
+/// The fix reports the overlap ONCE as an `overlapping-source` warning
+/// pointing at rivet.yaml, and suppresses the per-id self-collision
+/// errors that were only symptoms of the config.
+///
+/// rivet: verifies REQ-004
+#[test]
+fn validate_reports_source_overlap_once_and_suppresses_self_collisions() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init");
+    assert!(init.status.success(), "rivet init must exit 0");
+
+    // Write a nested source layout: `artifacts/` will be listed as
+    // both a directory source AND as one of its files individually
+    // (using different formats — the pattern from spar's reproducer).
+    let overlapped_file = dir.join("artifacts").join("requirements.yaml");
+    std::fs::write(
+        &overlapped_file,
+        "artifacts:\n  - id: REQ-A\n    type: requirement\n    \
+         title: A\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n  \
+         - id: REQ-B\n    type: requirement\n    \
+         title: B\n    status: draft\n    \
+         fields:\n      priority: must\n      category: functional\n",
+    )
+    .expect("write overlapped requirements.yaml");
+
+    // Rewrite rivet.yaml to declare the overlapping sources. Preserve
+    // the seeded schema so `rivet validate` still finds a schema set.
+    let rivet_yaml_path = dir.join("rivet.yaml");
+    let existing = std::fs::read_to_string(&rivet_yaml_path).expect("read rivet.yaml");
+    // Replace whatever sources block the init wrote with our overlapping
+    // pair. Keeps the rest of the config (project name, schemas) intact.
+    let mut lines: Vec<String> = existing.lines().map(String::from).collect();
+    if let Some(start) = lines.iter().position(|l| l.starts_with("sources:")) {
+        let end = lines[start + 1..]
+            .iter()
+            .position(|l| !l.starts_with(' ') && !l.starts_with('-') && !l.is_empty())
+            .map(|off| start + 1 + off)
+            .unwrap_or(lines.len());
+        lines.drain(start..end);
+    }
+    lines.push(String::new());
+    lines.push("sources:".into());
+    lines.push("  - path: artifacts".into());
+    lines.push("    format: generic-yaml".into());
+    lines.push("  - path: artifacts/requirements.yaml".into());
+    lines.push("    format: generic-yaml".into());
+    std::fs::write(&rivet_yaml_path, lines.join("\n") + "\n").expect("write rivet.yaml");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "validate",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet validate");
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("validate JSON must be valid");
+    let diags = parsed
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .expect("diagnostics array");
+
+    // Exactly one overlapping-source warning, naming rivet.yaml.
+    let overlap_diags: Vec<_> = diags
+        .iter()
+        .filter(|d| d.get("rule").and_then(|r| r.as_str()) == Some("overlapping-source"))
+        .collect();
+    assert_eq!(
+        overlap_diags.len(),
+        1,
+        "exactly one overlapping-source warning expected; got: {parsed}"
+    );
+    assert_eq!(
+        overlap_diags[0].get("severity").and_then(|s| s.as_str()),
+        Some("warning"),
+    );
+    let msg = overlap_diags[0]
+        .get("message")
+        .and_then(|m| m.as_str())
+        .expect("overlap diagnostic must have a message");
+    assert!(
+        msg.contains("artifacts") && msg.contains("requirements.yaml"),
+        "overlap message must name both source paths; got: {msg}"
+    );
+
+    // ZERO duplicate-artifact-id errors — every self-collision was
+    // suppressed because the overlapped file is known to be part of an
+    // overlap.
+    let dup_diags: Vec<_> = diags
+        .iter()
+        .filter(|d| d.get("rule").and_then(|r| r.as_str()) == Some("duplicate-artifact-id"))
+        .collect();
+    assert!(
+        dup_diags.is_empty(),
+        "duplicate-artifact-id must be silent when the collision is self-loading via overlapping sources; got: {dup_diags:?}"
+    );
+}
+
+/// #746: `rivet validate --format json` on the same repo state must
+/// produce byte-identical output across runs. The prior nondeterminism
+/// came from `store.iter()` (HashMap) reaching the diagnostics vec and
+/// from `LifecycleGap.missing` being a HashSet-derived Vec — both
+/// flipped between runs depending on hasher seed.
+///
+/// rivet: verifies REQ-159
+#[test]
+fn validate_output_is_deterministic_across_runs() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("failed to execute rivet init");
+    assert!(init.status.success(), "rivet init must exit 0");
+
+    // Seed a few artifacts with mixed statuses so that some coverage
+    // diagnostics fire, exercising more of the validation passes.
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        (0..10)
+            .map(|i| {
+                format!(
+                    "  - id: REQ-{i:03}\n    type: requirement\n    \
+                     title: Requirement {i}\n    status: implemented\n    \
+                     fields:\n      priority: must\n      category: functional\n"
+                )
+            })
+            .fold("artifacts:\n".to_string(), |acc, s| acc + &s),
+    )
+    .expect("write requirements.yaml");
+
+    let run = || -> Vec<u8> {
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                dir.to_str().unwrap(),
+                "validate",
+                "--format",
+                "json",
+            ])
+            .output()
+            .expect("failed to execute rivet validate");
+        out.stdout
+    };
+
+    // Run three times — three chances to catch a hasher-seed-dependent
+    // ordering flip. All three outputs must be byte-identical.
+    let a = run();
+    let b = run();
+    let c = run();
+    assert_eq!(
+        a, b,
+        "validate JSON output must be byte-identical across runs"
+    );
+    assert_eq!(
+        b, c,
+        "validate JSON output must be byte-identical across runs"
+    );
+}
+
 /// REQ-076: an orphan artifact — no inbound and no outbound links,
 /// disconnected from the traceability graph — must be surfaced by
 /// `rivet validate` as an `orphan-artifact` diagnostic. Severity is

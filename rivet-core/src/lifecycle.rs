@@ -136,12 +136,17 @@ pub fn check_lifecycle_completeness(
         let mut covered_types: HashSet<&str> = backlink_types;
         covered_types.extend(forward_types);
 
-        // Find missing expected types
-        let missing: Vec<String> = expected
+        // Find missing expected types. The `expected` set is a HashSet so
+        // its iteration order is not stable across runs; sort here so both
+        // `--format text` (which joins with ", ") and `--format json`
+        // (which re-emits the list verbatim) are byte-stable — a
+        // prerequisite for diffing two validate reports (#746).
+        let mut missing: Vec<String> = expected
             .iter()
             .filter(|t| !covered_types.contains(t.as_str()))
             .cloned()
             .collect();
+        missing.sort();
 
         if !missing.is_empty() {
             gaps.push(LifecycleGap {
@@ -274,6 +279,54 @@ mod tests {
         let graph = build_graph(&artifacts, &schema);
         let gaps = check_lifecycle_completeness(&artifacts, &schema, &graph);
         assert!(gaps.is_empty()); // draft status not checked
+    }
+
+    // rivet: verifies REQ-004
+    // #746 regression: the `missing` list on a `LifecycleGap` must be
+    // sorted so `--format text` (joined) and `--format json` (raw) are
+    // byte-stable across runs. The upstream `expected` set is a HashSet
+    // whose iteration order flipped between processes; two identical
+    // repo states used to emit `missing: [feature, design-decision]` on
+    // one run and `[design-decision, feature]` on the next, breaking
+    // `diff` and `grep -c` on the report (the exact symptom from the
+    // issue body).
+    #[test]
+    fn lifecycle_gap_missing_is_sorted_alphabetically() {
+        let schema = make_schema_with_rules(vec![TraceabilityRule {
+            name: "req-needs-two".into(),
+            description: "requirements need both".into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("satisfies".into()),
+            target_types: vec![],
+            from_types: vec![
+                // Deliberately out of order so a naive `.collect()` from a
+                // HashSet would land unsorted for at least some hasher seeds.
+                "feature".into(),
+                "design-decision".into(),
+                "test".into(),
+            ],
+            severity: Severity::Warning,
+            alternate_backlinks: vec![],
+        }]);
+        // Provide ONE covered type so the `covered_types.is_empty()`
+        // "no downstream artifacts found" short-circuit doesn't fire and
+        // we exercise the real `missing` list ordering.
+        let artifacts = vec![
+            make_artifact("REQ-001", "requirement", Some("implemented"), vec![]),
+            make_artifact("FEAT-001", "feature", None, vec![("satisfies", "REQ-001")]),
+        ];
+        let graph = build_graph(&artifacts, &schema);
+        let gaps = check_lifecycle_completeness(&artifacts, &schema, &graph);
+        let req_gap = gaps
+            .iter()
+            .find(|g| g.artifact_id == "REQ-001")
+            .expect("REQ-001 should have a gap for the two uncovered types");
+        assert_eq!(
+            req_gap.missing,
+            vec!["design-decision".to_string(), "test".to_string()],
+            "missing must be sorted alphabetically for byte-stable reports"
+        );
     }
 
     // rivet: verifies REQ-004
