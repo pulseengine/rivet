@@ -194,6 +194,58 @@ pub fn filter_matches_any(filter: &str, names: &BTreeSet<String>) -> bool {
     names.iter().any(|n| n.contains(filter))
 }
 
+/// Extract the value of `--manifest-path` from a `cargo test` / `cargo nextest
+/// run` command, so the caller can widen the scan for that step's evidence
+/// check to include the tests reachable from the named crate. Handles both the
+/// bare (`--manifest-path path/to/Cargo.toml`) and equals
+/// (`--manifest-path=path/to/Cargo.toml`) forms.
+///
+/// Returns `None` for non-cargo commands and when the flag is absent. Only
+/// considers tokens before `--` (a test-binary arg after `--` cannot be a
+/// cargo flag).
+///
+/// This is the counterpart to [`parse_cargo_test_filter`]: without it, a step
+/// like `cargo test --manifest-path compat/x/Cargo.toml the_test` false-fails
+/// against a default scan of `./src` + `./tests`, because `--manifest-path` is
+/// parsed only to prevent the value being mistaken for the filter — then
+/// discarded. The flag already names the directory that should be scanned.
+pub fn parse_cargo_manifest_path(command: &str) -> Option<String> {
+    let tokens = shell_tokens(command);
+    let mut i = tokens.iter().position(|t| t == "cargo")? + 1;
+    // Optional `+toolchain`.
+    if tokens.get(i).is_some_and(|t| t.starts_with('+')) {
+        i += 1;
+    }
+    // Validate the subcommand up front. Anything other than `cargo test` /
+    // `cargo nextest run` is not a shape this checker cares about, and its
+    // `--manifest-path` (if any) must not leak through. No `i += 1` is done
+    // after validation on purpose — the loop's default arm skips those
+    // subcommand tokens naturally, which keeps the code from carrying
+    // redundant increments that are equivalent to no-ops.
+    match (
+        tokens.get(i).map(String::as_str),
+        tokens.get(i + 1).map(String::as_str),
+    ) {
+        (Some("test"), _) => {}
+        (Some("nextest"), Some("run")) => {}
+        _ => return None,
+    }
+    while i < tokens.len() {
+        let tok = tokens[i].as_str();
+        if tok == "--" {
+            break;
+        }
+        if let Some(v) = tok.strip_prefix("--manifest-path=") {
+            return Some(v.to_string());
+        }
+        if tok == "--manifest-path" {
+            return tokens.get(i + 1).cloned();
+        }
+        i += 1;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,5 +334,94 @@ mod tests {
         // `refn` / `fnord` must not be read as a `fn` keyword.
         let names = extract_rust_fn_names("let refn = 1; struct fnord;");
         assert!(names.is_empty());
+    }
+
+    #[test]
+    fn parses_manifest_path_in_both_bare_and_equals_forms() {
+        // #807 Defect 1: `--manifest-path` was parsed only to keep its value
+        // from being read as the filter; the value itself was discarded, so
+        // the scan never learned about the nested crate.
+        assert_eq!(
+            parse_cargo_manifest_path("cargo test --manifest-path compat/x/Cargo.toml the_test"),
+            Some("compat/x/Cargo.toml".into())
+        );
+        assert_eq!(
+            parse_cargo_manifest_path("cargo test --manifest-path=compat/x/Cargo.toml the_test"),
+            Some("compat/x/Cargo.toml".into())
+        );
+        // Nextest and `+toolchain` preambles both work.
+        assert_eq!(
+            parse_cargo_manifest_path(
+                "cargo nextest run --manifest-path compat/x/Cargo.toml the_test"
+            ),
+            Some("compat/x/Cargo.toml".into())
+        );
+        assert_eq!(
+            parse_cargo_manifest_path(
+                "cargo +nightly test --manifest-path compat/x/Cargo.toml the_test"
+            ),
+            Some("compat/x/Cargo.toml".into())
+        );
+    }
+
+    #[test]
+    fn manifest_path_absent_or_non_cargo_returns_none() {
+        assert_eq!(
+            parse_cargo_manifest_path("cargo test -p relay-hal the_test"),
+            None
+        );
+        assert_eq!(parse_cargo_manifest_path("cargo test"), None);
+        assert_eq!(parse_cargo_manifest_path("cargo build"), None);
+        assert_eq!(parse_cargo_manifest_path("pytest -k something"), None);
+        // A test-binary flag after `--` is NOT a cargo flag, so a
+        // `--manifest-path` shape appearing there (contrived) must not leak.
+        assert_eq!(
+            parse_cargo_manifest_path("cargo test -p x -- --manifest-path bogus"),
+            None
+        );
+    }
+
+    #[test]
+    fn manifest_path_from_non_test_subcommand_is_not_extracted() {
+        // The checker is only meaningful for `cargo test` / `cargo nextest
+        // run`. A `cargo build --manifest-path X` step is not a
+        // named-test-exists check and its manifest-path must not surface as
+        // if it were, so it is not our --scan responsibility to widen.
+        // Also locks in the boundary that any positional shift on the
+        // subcommand-validation step would let this leak.
+        assert_eq!(
+            parse_cargo_manifest_path("cargo build --manifest-path compat/x/Cargo.toml"),
+            None
+        );
+        assert_eq!(
+            parse_cargo_manifest_path("cargo check --manifest-path compat/x/Cargo.toml"),
+            None
+        );
+        assert_eq!(
+            parse_cargo_manifest_path("cargo run --manifest-path compat/x/Cargo.toml"),
+            None
+        );
+    }
+
+    #[test]
+    fn nextest_without_run_subcommand_is_rejected() {
+        // `cargo nextest` accepts other subcommands (`list`, `show-config`,
+        // ...); only `nextest run` executes tests. A `--manifest-path` on
+        // the wrong nextest subcommand must not surface either.
+        assert_eq!(
+            parse_cargo_manifest_path("cargo nextest list --manifest-path compat/x/Cargo.toml"),
+            None
+        );
+        assert_eq!(
+            parse_cargo_manifest_path(
+                "cargo nextest show-config --manifest-path compat/x/Cargo.toml"
+            ),
+            None
+        );
+        // Boundary: nextest with NO further subcommand also rejects.
+        assert_eq!(
+            parse_cargo_manifest_path("cargo nextest --manifest-path compat/x/Cargo.toml"),
+            None
+        );
     }
 }
