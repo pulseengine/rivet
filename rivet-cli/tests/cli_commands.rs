@@ -9268,12 +9268,29 @@ fn rivet_yaml_unknown_top_level_key_warns_and_escalates_under_strict() {
 /// configured sources (either because `sources:` is unset, spelled
 /// wrong, or explicitly `[]`) is exactly the silent-empty-load
 /// trigger the naive downgrade of Fix 3 would reopen. Must fire
-/// `no-sources` as a Warning by default and an Error under `--strict`.
+/// `no-sources` as an **Error by default** — not merely under
+/// `--strict`.
 ///
 /// The reproducer here is the exact issue case: `typo_sources:`
 /// where `sources:` was meant. `sources:` ends up defaulted (empty),
 /// the loop that emits `empty-source` has nothing to iterate, and
 /// only this new diagnostic catches the silent state.
+///
+/// The default-exit assertion is the load-bearing one. Asserting only
+/// that the message appears, plus that `--strict` fails, leaves the
+/// default path green — and this repo's own Traceability job (the
+/// most load-bearing gate in `ci.yml`) runs plain `rivet validate`
+/// with no `--strict`. A `--strict`-only escalation would therefore
+/// be inert exactly where #808 was found, which is the same
+/// weak-green shape the issue is about.
+///
+/// `no-sources` is deliberately the only one of the four new
+/// diagnostics that is Error-by-default; the others have legitimate
+/// cases (see
+/// `rivet_yaml_unknown_top_level_key_warns_and_escalates_under_strict`,
+/// which asserts the sigil-shaped config still exits 0).
+/// Zero configured sources does not — `rivet init` always scaffolds
+/// `sources:`, so this cannot fire on the happy path.
 ///
 /// rivet: verifies #808
 #[test]
@@ -9298,6 +9315,15 @@ fn typoed_sources_key_fires_no_sources_diagnostic() {
     assert!(
         combined.contains("no-sources") || combined.contains("declares no `sources:`"),
         "default validate must surface the no-sources diagnostic on a typoed sources key; combined:\n{combined}"
+    );
+    // The gate must actually BITE without --strict. Surfacing the text
+    // while exiting 0 is a weak green: CI reads the exit code, not the
+    // prose, so a warning here would leave #808 reproducible in every
+    // pipeline that runs plain `rivet validate` — including this repo's.
+    assert!(
+        !default.status.success(),
+        "default validate on a zero-sources config must EXIT NON-ZERO, not just print a warning \
+         — a green exit over zero loaded artifacts is the #808 defect itself; combined:\n{combined}"
     );
     // Also proves case-2 is really covered: the mis-keyed config
     // MUST NOT read as PASS/exit-0/no-warnings under --strict.

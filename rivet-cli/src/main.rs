@@ -6071,14 +6071,29 @@ fn cmd_validate(
     // above has nothing to iterate and never fires. This is the exact
     // silent-empty-load gap `deny_unknown_fields` on ProjectConfig
     // used to close. Fire a `no-sources` diagnostic when the config
-    // itself declares zero sources. Warning by default, Error under
-    // `--strict`. Suppressed when we already have an
+    // itself declares zero sources. Suppressed when we already have an
     // `unknown-config-key` diagnostic for `sources`-adjacent typos
     // — those are more specific and the two firing together would
     // read like two bugs where there is one.
+    //
+    // Error by DEFAULT, unlike its three siblings. The others are
+    // Warning-by-default because each has a legitimate case: a fresh
+    // project whose configured source is not yet populated
+    // (`empty-source`), a downstream repo carrying its own top-level
+    // keys such as sigil's `schemas-path:` (`unknown-config-key`), and
+    // a heuristic that can misfire (`artifact-root-key-near-miss`).
+    // Zero configured sources has no such case — `rivet init` always
+    // scaffolds `sources:` with a path, so this cannot fire on the
+    // happy path (verified: fresh `rivet init` validates with 0
+    // warnings). Leaving it a warning would keep the exit code green
+    // on precisely the silent-empty-load this diagnostic exists to
+    // catch: this repo's own Traceability gate — the single most
+    // load-bearing gate in ci.yml — runs plain `rivet validate` with
+    // no `--strict`, so a `--strict`-only escalation is inert where it
+    // matters most (#808).
     if config.sources.is_empty() {
         let mut diag = validate::Diagnostic::new(
-            Severity::Warning,
+            Severity::Error,
             None,
             "no-sources",
             "`rivet.yaml` declares no `sources:` — nothing to load, so `validate` \
