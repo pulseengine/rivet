@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787202371330,
+  "lastUpdate": 1787217747775,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "665961e74be987dfa4c92a90cd6450a76c2aa683",
-          "message": "plan(v0.30): CI resilience + compliance-export robustness (#731)\n\nFiles the v0.30.0 scope as requirements (release: v0.30.0):\n- REQ-268 per-PR wasm-seam CI gate (compose-witness + wasm feature) — the\n  depth anchor; the seam is built only in release.yml today, so a change\n  can rot it undetected until release.\n- REQ-271 self-hosted runner disk cleanup that actually frees space (#567) —\n  prune cargo/bazel/docker caches + /tmp, report before/after free bytes.\n- REQ-272 CI single-point-of-failure mitigation (#509 slice 2) — a hosted\n  ubuntu-latest fallback for the light gates so a self-hosted outage does\n  not zero out all main verification; keep compile-heavy gates self-hosted.\n- REQ-273 static compliance export: honest AADL fallback (#468) — replace\n  the misleading forever-\"Loading AADL diagram...\" with an honest fallback,\n  and wire the export-time inline-SVG path to auto-activate once a real\n  spar_wasm component is embedded (real SVG is cross-repo blocked on\n  spar#259; this ships the unblocked user-visible fix).\n\nConfirmed with rivet validate PASS.\n\nRefs: REQ-268, REQ-271, REQ-272, REQ-273",
-          "timestamp": "2026-07-22T08:41:12+02:00",
-          "tree_id": "67b23963091efc05f35c7932befdc336310ff375",
-          "url": "https://github.com/pulseengine/rivet/commit/665961e74be987dfa4c92a90cd6450a76c2aa683"
-        },
-        "date": 1784714598103,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 87947,
-            "range": "± 2481",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 967570,
-            "range": "± 5111",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14274285,
-            "range": "± 398086",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1953,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24883,
-            "range": "± 44",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 366252,
-            "range": "± 1095",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 99,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 99,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 99,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1555426,
-            "range": "± 15336",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 174827,
-            "range": "± 813",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 2051147,
-            "range": "± 6700",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28433020,
-            "range": "± 264304",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 465154,
-            "range": "± 1537",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15615635,
-            "range": "± 156298",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1141534133,
-            "range": "± 22095488",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4267,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46299,
-            "range": "± 357",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 757287,
-            "range": "± 9388",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 65095,
-            "range": "± 192",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 737322,
-            "range": "± 15568",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8065828,
-            "range": "± 49254",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1196,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14243,
-            "range": "± 27",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 223643,
-            "range": "± 1956",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22759,
-            "range": "± 184",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 158263,
-            "range": "± 438",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1481621,
-            "range": "± 11382",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1539916,
             "range": "± 23085",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "562a3eb293cad16fbd1f6b37b48ba3fee723d463",
+          "message": "fix(validate): dedupe overlapping sources + deterministic diagnostic order (#746) (#759)\n\nOverlapping sources produced duplicate artifacts and a non-deterministic\ndiagnostic order. This dedupes the source set and makes diagnostic ordering\nstable.\n\nMeasured effect on external-artifact ordering, `/api/v1/artifacts?limit=1000\n&origin=all` against the real repo, same input three times:\n\n  main       PROC,REQ,SYS,THR / REQ,THR,SYS,PROC / PROC,REQ,SYS,THR\n  this PR    PROC,REQ,SYS,THR (stable, positions 0-3)\n\nRun 2 on main differs from runs 1 and 3 — ordering was genuinely\nnon-deterministic before this change.\n\nOn the CI failure this PR carried for 14 days: both red jobs were the same\ntest (api_artifacts_external_excluded_under_variant_scope), and it was the\nPREMISE assertion, not the property under test. It did not reproduce on either\nbase across 3 full serve_integration runs plus the whole workspace suite, and\nafter rebasing onto current main it passes on the first attempt with no retry\n(2257 tests run, 2257 passed, 0 flaky). The original root cause was NOT\nestablished. Recording that plainly rather than crediting the rebase: a green\nrun is absence of evidence here, not an explanation. Two hypotheses were\ntested and discarded — a /api/v1/health readiness race (load_externals is\nsynchronous, called before the socket binds) and window truncation (the\nexternals sit at positions 0-3, inside the 1000 cap).\n\nFound while diagnosing it, filed separately rather than fixed here: #832,\n/api/v1/artifacts silently drops 17 of 1017 artifacts at its limit cap with no\ntruncation signal in the response.\n\nFixes: REQ-004\nRefs: REQ-159, #746",
+          "timestamp": "2026-08-20T11:09:25+02:00",
+          "tree_id": "741720f918732452aa1d315f3d8fab683c19c53f",
+          "url": "https://github.com/pulseengine/rivet/commit/562a3eb293cad16fbd1f6b37b48ba3fee723d463"
+        },
+        "date": 1787217745958,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85092,
+            "range": "± 1124",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 900666,
+            "range": "± 7784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13898477,
+            "range": "± 852784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2277,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25777,
+            "range": "± 997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 350356,
+            "range": "± 1530",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1511327,
+            "range": "± 37036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 164629,
+            "range": "± 2167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1950803,
+            "range": "± 17028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 36180103,
+            "range": "± 3324509",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 512376,
+            "range": "± 2972",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 18448920,
+            "range": "± 144953",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1466475660,
+            "range": "± 12012034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4306,
+            "range": "± 25",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 61112,
+            "range": "± 346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 779274,
+            "range": "± 12586",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60253,
+            "range": "± 298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 674785,
+            "range": "± 4971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8679207,
+            "range": "± 548614",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1075,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14518,
+            "range": "± 71",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 320371,
+            "range": "± 2167",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23479,
+            "range": "± 111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 163766,
+            "range": "± 1460",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1525053,
+            "range": "± 20942",
             "unit": "ns/iter"
           }
         ]
