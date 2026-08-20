@@ -8337,7 +8337,7 @@ fn modify_help_has_no_duplicated_summary() {
 /// description must fit on one line under 100 columns. Provenance belongs
 /// in the artifacts, not in the help text a user reads first.
 ///
-/// rivet: verifies #812
+/// rivet: verifies REQ-298
 #[test]
 fn top_level_help_command_list_is_hygienic() {
     let out = Command::new(rivet_bin())
@@ -9217,7 +9217,7 @@ fn empty_load_project(root_yaml: &str, artifact_yaml: &str) -> tempfile::TempDir
 /// `sources:` unset, so nothing loads — is caught by the sibling
 /// `no-sources` diagnostic (see the next test).
 ///
-/// rivet: verifies #808
+/// rivet: verifies REQ-294
 #[test]
 fn rivet_yaml_unknown_top_level_key_warns_and_escalates_under_strict() {
     // Downstream-style config: a legitimate extra top-level key
@@ -9292,7 +9292,7 @@ fn rivet_yaml_unknown_top_level_key_warns_and_escalates_under_strict() {
 /// Zero configured sources does not — `rivet init` always scaffolds
 /// `sources:`, so this cannot fire on the happy path.
 ///
-/// rivet: verifies #808
+/// rivet: verifies REQ-294
 #[test]
 fn typoed_sources_key_fires_no_sources_diagnostic() {
     let tmp = empty_load_project(
@@ -9344,7 +9344,7 @@ fn typoed_sources_key_fires_no_sources_diagnostic() {
 /// `artifacts:`) must surface as an `artifact-root-key-near-miss`
 /// Warning at validate time, escalating to Error under `--strict`.
 ///
-/// rivet: verifies #808
+/// rivet: verifies REQ-294
 #[test]
 fn validate_flags_generic_yaml_near_miss_root_key() {
     let tmp = empty_load_project(
@@ -9389,7 +9389,7 @@ fn validate_flags_generic_yaml_near_miss_root_key() {
 /// #808 fix #1 — empty source (path exists, no artifacts produced) is
 /// a warning by default and an error under `--strict`.
 ///
-/// rivet: verifies #808
+/// rivet: verifies REQ-294
 #[test]
 fn validate_flags_empty_source() {
     // Source path exists but produces nothing (no files at all).
@@ -9431,7 +9431,7 @@ fn validate_flags_empty_source() {
 /// (never `100.0%`) and exit non-zero under `--strict-empty` and under
 /// `--fail-under` when the load was empty.
 ///
-/// rivet: verifies #808
+/// rivet: verifies REQ-294
 #[test]
 fn coverage_prints_n_a_and_exits_nonzero_on_empty_load() {
     let tmp = empty_load_project(
