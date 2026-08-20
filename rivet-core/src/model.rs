@@ -1002,6 +1002,14 @@ pub struct ReleaseConfig {
 }
 
 /// Project configuration loaded from `rivet.yaml`.
+///
+/// #808 uses a soft-warn (not `deny_unknown_fields`) for unknown
+/// top-level keys — a downstream project may legitimately carry its
+/// own keys at the top level (sigil's `schemas-path:` is one such),
+/// and hard-failing would break every such user. The diagnostic path
+/// lives in [`ProjectConfigLoad`] + `cmd_validate` instead: the
+/// unknown keys become an `unknown-config-key` Warning by default and
+/// an Error under `--strict`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
     pub project: ProjectMetadata,

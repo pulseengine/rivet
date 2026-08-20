@@ -98,8 +98,20 @@ pub enum CoverageDirection {
 }
 
 impl CoverageEntry {
+    /// True when this rule has no source artifacts to score against
+    /// (`total == 0`). Callers that display or gate on coverage should
+    /// check this first — a zero denominator is "we don't know," not
+    /// "everything is fine," and printing `100%` for that case is exactly
+    /// the silent-green failure #808 exists to remove.
+    pub fn is_empty_scope(&self) -> bool {
+        self.total == 0
+    }
+
     /// In-house coverage percentage (0..100). Counts only `covered`,
-    /// excluding `external_boundary`. Returns 100 when total is 0.
+    /// excluding `external_boundary`. Returns 100 when total is 0 for
+    /// legacy callers; display code MUST check [`Self::is_empty_scope`]
+    /// first and render `n/a` rather than trust this value in the empty
+    /// case.
     pub fn percentage(&self) -> f64 {
         if self.total == 0 {
             100.0
@@ -111,7 +123,8 @@ impl CoverageEntry {
     /// Combined accounted percentage: `(covered + external_boundary) /
     /// total`. Issue #253: an auditor sees this as "what's not strictly
     /// missing from the trace — either we satisfy it, or a supplier
-    /// owes it on a recorded boundary." Returns 100 when total is 0.
+    /// owes it on a recorded boundary." Returns 100 when total is 0
+    /// (see [`Self::percentage`] for the display-side caveat).
     pub fn accounted_percentage(&self) -> f64 {
         if self.total == 0 {
             100.0
@@ -151,7 +164,17 @@ pub struct ClosureEntry {
 }
 
 impl ClosureEntry {
-    /// Closure percentage (0..100). Returns 100 when total is 0.
+    /// True when this closure has no source artifacts to score
+    /// (`total == 0`). Callers must check this before treating
+    /// [`Self::percentage`] as meaningful.
+    pub fn is_empty_scope(&self) -> bool {
+        self.total == 0
+    }
+
+    /// Closure percentage (0..100). Returns 100 when total is 0 for
+    /// legacy callers; display code MUST check
+    /// [`Self::is_empty_scope`] first and render `n/a` rather than
+    /// trust this value in the empty case.
     pub fn percentage(&self) -> f64 {
         if self.total == 0 {
             100.0
@@ -168,7 +191,19 @@ pub struct CoverageReport {
 }
 
 impl CoverageReport {
-    /// Overall coverage: weighted average across all rules (by artifact count).
+    /// True when EVERY rule has zero source artifacts — the "no data
+    /// to score" state that #808 exists to make loud instead of silent.
+    /// When this is true, [`Self::overall_coverage`] returns 100.0 for
+    /// legacy compatibility, but display / gating code MUST treat the
+    /// report as "n/a" or "no artifacts" rather than a satisfied gate.
+    pub fn is_empty_scope(&self) -> bool {
+        self.entries.iter().all(|e| e.total == 0)
+    }
+
+    /// Overall coverage: weighted average across all rules (by artifact
+    /// count). Returns 100 when the total denominator is 0 for legacy
+    /// callers; display / gating code MUST check
+    /// [`Self::is_empty_scope`] first.
     pub fn overall_coverage(&self) -> f64 {
         let total: usize = self.entries.iter().map(|e| e.total).sum();
         if total == 0 {
@@ -502,18 +537,31 @@ mod tests {
     }
 
     // rivet: verifies REQ-004
+    // rivet: verifies #808
     #[test]
-    fn zero_artifacts_gives_100_percent() {
+    fn zero_artifacts_is_flagged_as_empty_scope_not_a_100_percent_pass() {
+        // #808: a project that loads zero artifacts must NOT read as
+        // "everything is fine." percentage() still returns 100 for legacy
+        // callers, but display code must consult is_empty_scope() and
+        // render "n/a" — that's what the renderer regression at CLI
+        // level enforces, and this unit test locks the invariant at the
+        // model layer.
         let schema = test_schema();
         let store = Store::new();
         let graph = LinkGraph::build(&store, &schema);
         let report = compute_coverage(&store, &schema, &graph);
 
-        // Both rules have 0 source artifacts → percentage is 100
         for entry in &report.entries {
             assert_eq!(entry.total, 0);
+            assert!(entry.is_empty_scope(), "zero total ⇒ empty-scope");
+            // legacy value preserved for now; display path guarded separately
             assert!((entry.percentage() - 100.0).abs() < f64::EPSILON);
         }
+        assert!(
+            report.is_empty_scope(),
+            "every rule empty ⇒ report empty-scope"
+        );
+        // legacy value preserved
         assert!((report.overall_coverage() - 100.0).abs() < f64::EPSILON);
     }
 
