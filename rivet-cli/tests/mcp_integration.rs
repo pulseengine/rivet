@@ -39,21 +39,33 @@ use serde_json::Value;
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /// Path to the compiled `rivet` binary (built by cargo).
+///
+/// #293: this used to walk up from `current_exe()` — pop the filename, pop
+/// once more *only if* the parent is literally named `deps`, then append
+/// `rivet` — and `assert!(path.exists())`. That is a guess about where cargo
+/// put things, and on release.yml's `build-test-evidence` runner the guess
+/// landed here:
+///
+/// ```text
+/// target/debug/build/rivet-cli/e015544e6f99c26d/out/rivet
+/// ```
+///
+/// a build-script `OUT_DIR`. The `deps` check didn't match, so the second pop
+/// never happened and `rivet` was appended to the wrong directory. Every test
+/// in this file then failed instantly at the assert — all three nextest
+/// retries, ~5ms each — and `continue-on-error: true` on that job hid it, so
+/// v0.31.0 through v0.33.1 each shipped a compliance bundle with no test
+/// evidence in it.
+///
+/// The point is not the specific directory: any layout the heuristic did not
+/// anticipate produces a wrong path, and `path.exists()` reports it as a
+/// missing binary rather than as a bad guess. `CARGO_BIN_EXE_<name>` removes
+/// the guess entirely — for an integration test, Cargo both builds the binary
+/// and substitutes its absolute path at compile time. Every other integration
+/// test in this directory already used it; this file was the sole holdout
+/// (27 of 28).
 fn rivet_bin() -> PathBuf {
-    // `cargo test` places the test binary alongside the built artifacts.
-    let mut path = std::env::current_exe().expect("current_exe");
-    // Go up from target/debug/deps/<test_binary> to target/debug/
-    path.pop();
-    if path.ends_with("deps") {
-        path.pop();
-    }
-    path.push("rivet");
-    assert!(
-        path.exists(),
-        "rivet binary not found at {}; run `cargo build -p rivet-cli` first",
-        path.display()
-    );
-    path
+    PathBuf::from(env!("CARGO_BIN_EXE_rivet"))
 }
 
 /// Create a minimal rivet project in `dir` with the `dev` schema.

@@ -195,14 +195,22 @@ jobs:
           path: ${{ steps.report.outputs.archive-path }}
 
   # ── Test evidence bundle ──────────────────────────────────────────────
-  # Non-blocking: this job pulls in the spar wasm32-wasip2 build, which
-  # transitively requires the highs-sys C++ solver. WASI cross-compile of
-  # highs-sys has been flaky (CMake Threads::Threads target unavailable in
-  # the WASI sysroot — see v0.10.0 release run 25966236046). Until that
-  # upstream issue is resolved (tracked separately), this job must NOT
-  # block `create-release` from publishing the binaries that DID build.
-  # Test evidence is a desirable add-on, not a required gate; cargo test
-  # already ran on the merge commit before the tag was pushed.
+  # #293: the comment that used to live here blamed a flaky highs-sys WASI
+  # cross-compile. That was stale. This job went red at v0.31.0 and stayed
+  # red through v0.33.1, and the failing step was `Run tests with JUnit XML`
+  # — not the WASI build. Root cause: `mcp_integration.rs` derived the
+  # `rivet` binary path by walking up from `current_exe()`, and on this
+  # runner that guess resolved into a build-script OUT_DIR
+  # (target/debug/build/rivet-cli/<hash>/out/rivet), so the existence assert
+  # fired on every test in the file. Fixed by using `CARGO_BIN_EXE_rivet`,
+  # as the other 27 integration tests already did.
+  #
+  # `continue-on-error` is retained ONLY so a green-binaries release is not
+  # blocked by an evidence-bundle hiccup — but note what it cost: it hid a
+  # real failure for four consecutive releases, each of which shipped a
+  # compliance bundle with no test evidence. If this job goes red again,
+  # treat it as a release blocker and investigate rather than shipping past
+  # it; the flag is a convenience, not a verdict that the failure is benign.
   build-test-evidence:
     name: Build test evidence
     runs-on: ubuntu-latest
