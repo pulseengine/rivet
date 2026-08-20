@@ -211,21 +211,23 @@ pub fn filter_matches_any(filter: &str, names: &BTreeSet<String>) -> bool {
 /// discarded. The flag already names the directory that should be scanned.
 pub fn parse_cargo_manifest_path(command: &str) -> Option<String> {
     let tokens = shell_tokens(command);
-    let mut i = tokens.iter().position(|t| t == "cargo")?;
-    i += 1;
+    let mut i = tokens.iter().position(|t| t == "cargo")? + 1;
     // Optional `+toolchain`.
     if tokens.get(i).is_some_and(|t| t.starts_with('+')) {
         i += 1;
     }
-    match tokens.get(i).map(String::as_str) {
-        Some("test") => i += 1,
-        Some("nextest") => {
-            i += 1;
-            if tokens.get(i).map(String::as_str) != Some("run") {
-                return None;
-            }
-            i += 1;
-        }
+    // Validate the subcommand up front. Anything other than `cargo test` /
+    // `cargo nextest run` is not a shape this checker cares about, and its
+    // `--manifest-path` (if any) must not leak through. No `i += 1` is done
+    // after validation on purpose — the loop's default arm skips those
+    // subcommand tokens naturally, which keeps the code from carrying
+    // redundant increments that are equivalent to no-ops.
+    match (
+        tokens.get(i).map(String::as_str),
+        tokens.get(i + 1).map(String::as_str),
+    ) {
+        (Some("test"), _) => {}
+        (Some("nextest"), Some("run")) => {}
         _ => return None,
     }
     while i < tokens.len() {
@@ -375,6 +377,50 @@ mod tests {
         // `--manifest-path` shape appearing there (contrived) must not leak.
         assert_eq!(
             parse_cargo_manifest_path("cargo test -p x -- --manifest-path bogus"),
+            None
+        );
+    }
+
+    #[test]
+    fn manifest_path_from_non_test_subcommand_is_not_extracted() {
+        // The checker is only meaningful for `cargo test` / `cargo nextest
+        // run`. A `cargo build --manifest-path X` step is not a
+        // named-test-exists check and its manifest-path must not surface as
+        // if it were, so it is not our --scan responsibility to widen.
+        // Also locks in the boundary that any positional shift on the
+        // subcommand-validation step would let this leak.
+        assert_eq!(
+            parse_cargo_manifest_path("cargo build --manifest-path compat/x/Cargo.toml"),
+            None
+        );
+        assert_eq!(
+            parse_cargo_manifest_path("cargo check --manifest-path compat/x/Cargo.toml"),
+            None
+        );
+        assert_eq!(
+            parse_cargo_manifest_path("cargo run --manifest-path compat/x/Cargo.toml"),
+            None
+        );
+    }
+
+    #[test]
+    fn nextest_without_run_subcommand_is_rejected() {
+        // `cargo nextest` accepts other subcommands (`list`, `show-config`,
+        // ...); only `nextest run` executes tests. A `--manifest-path` on
+        // the wrong nextest subcommand must not surface either.
+        assert_eq!(
+            parse_cargo_manifest_path("cargo nextest list --manifest-path compat/x/Cargo.toml"),
+            None
+        );
+        assert_eq!(
+            parse_cargo_manifest_path(
+                "cargo nextest show-config --manifest-path compat/x/Cargo.toml"
+            ),
+            None
+        );
+        // Boundary: nextest with NO further subcommand also rejects.
+        assert_eq!(
+            parse_cargo_manifest_path("cargo nextest --manifest-path compat/x/Cargo.toml"),
             None
         );
     }
