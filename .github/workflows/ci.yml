@@ -1392,7 +1392,11 @@ jobs:
     name: Publish Test Results on Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [test, coverage, miri, proptest, playwright]
-    runs-on: [self-hosted, linux, x64, light]
+    # #782: this job attests a SHIPPED release binary. SLSA Build L3 requires an
+    # ephemeral, isolated build environment; a persistent self-hosted runner
+    # does not satisfy that, so our provenance was L2 while the surrounding
+    # claim implied L3. GitHub-hosted runners are torn down per job.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: write
@@ -1454,6 +1458,9 @@ jobs:
   # Playwright (no timeout-minutes — a hung apt-get blocks for 6h, see #822).
   ci-gate:
     name: CI Gate
+    # #822: added in #825, after #824 capped every other job, so this was the
+    # last job inheriting the 360-minute default. It only reads `needs`.
+    timeout-minutes: 5
     if: always()
     needs:
       - changes
