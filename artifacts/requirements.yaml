@@ -8120,7 +8120,7 @@ artifacts:
   - id: REQ-294
     type: requirement
     title: "Silent empty load: config typos and empty sources score green (#808)"
-    status: implemented
+    status: verified
     description: "For a compliance tool, `validate` PASS and `coverage` 100% on a zero-artifact load is the worst failure direction. Reproducer shows two independent triggers: (case 1) a `generic-yaml` file with a near-miss root key (`requirements:` where `artifacts:` was expected) silently classifies as a non-artifact file; (case 2) a mis-keyed `sources:` (e.g. `typo_sources:`) at the top level of `rivet.yaml` disables every input, leaving the configured-sources loop with nothing to iterate — so the per-source `empty-source` diagnostic never fires either. Fix: (a) new `artifact-root-key-near-miss` diagnostic naming both the file and the offending key when a single-root-key generic-yaml file uses a plausible artifact-plural typo; (b) new `empty-source` diagnostic when a configured source yields zero artifacts; (c) new `unknown-config-key` diagnostic when `rivet.yaml` carries a top-level key outside the `ProjectConfig` schema (warning by default; hard-fail via `deny_unknown_fields` breaks legitimate downstream carrying of their own top-level keys like sigil's `schemas-path:`); (d) new `no-sources` diagnostic when the config declares zero sources at all — the case-2 gap the per-source loop cannot see, and also the plain `sources: []` case; (e) all four new diagnostics are Warning by default, Error under `--strict`; (f) `coverage` renders `n/a` (never `100.0%`) for zero-denominator rules, with a new `--strict-empty` flag that exits non-zero on empty load and `--fail-under` that also fails on empty load; (g) JSON output emits `null` percentages plus an `empty_scope: bool` field on every rule, closure entry, and the overall block so machine consumers can tell a satisfied gate from an empty one."
     release: v0.34.0
     provenance:
@@ -8153,7 +8153,7 @@ artifacts:
   - id: REQ-297
     type: requirement
     title: "rivet context needs a stdout mode so a session hook can consume it without mutating the working tree (#811)"
-    status: proposed
+    status: implemented
     description: "`rivet context` exists to give an agent the project's real state instead of hand-parsing artifact YAML, but it takes no arguments beyond --help and unconditionally writes `.rivet/agent-context.md`. A SessionStart hook that only wants to READ state therefore causes a working-tree mutation, and `.rivet/` is gitignored in rivet's own repo but not in consumers (checked varve and relay) — so the side effect is invisible to us and visible to everyone else, with an easy accidental commit behind it. Reporter dropped the command from their hook and rebuilt a 25-line summary from validate/stats/coverage, reimplementing a slice of a command that already exists. Deliver: (a) `--stdout` so the document can be consumed without writing; (b) `--format json` alongside it so hooks select fields instead of regexing Markdown; (c) `--brief` — at 282 lines / 17.7 KB the document is large for per-session injection and roughly 60 percent of it is the stable schema/link-type reference, which belongs behind `rivet docs` on demand; (d) `rivet init` adds `.rivet/` to .gitignore, since whether the cache directory is ignored should not depend on the repo. Upstream context: pulseengine.eu#166 found the agent skills named 8 of rivet's 52 commands and never pointed at docs/quickstart/context, which is why agents kept hand-parsing YAML — a capability nothing points at is close to one that does not exist."
     release: v0.34.0
     provenance:
@@ -8164,7 +8164,7 @@ artifacts:
   - id: REQ-298
     type: requirement
     title: "CLI --help hygiene: internal REQ ids and issue refs leak into user-facing help text (#812)"
-    status: proposed
+    status: implemented
     description: "Help text is the product surface a new user meets first, and rivet's carries internal bookkeeping — REQ ids, GitHub issue numbers and doc paths that mean nothing outside this repo — with a top-level list long enough that the important commands do not stand out, and at least one entry reaching 405 characters. Fix: strip REQ/# references from user-facing help (they belong in artifact descriptions and commit trailers, which is where traceability already lives), cap entry length, and tighten the top-level command list so the common path is legible. Cross-check against REQ-297: the same discoverability finding (pulseengine.eu#166) applies here — if `docs`, `quickstart` and `context` are not visible in help, agents and humans alike hand-parse YAML instead."
     release: v0.34.0
     provenance:
@@ -8226,3 +8226,47 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-303
+    type: requirement
+    title: "serve: /api/v1/artifacts silently truncates at limit=1000 while the repo holds 1017 (#832)"
+    status: proposed
+    description: "`/api/v1/artifacts` caps `limit` at `.min(1000)` (rivet-cli/src/serve/api.rs:459, again at :630). This repo now holds 1017 artifacts, so a client asking for everything receives 1000 rows with no indication that 17 were dropped. Measured: `total: 1017, returned: 1000`. A cap is fine; a SILENT cap is not — the response carries `total` next to a short array, so the data needed to detect truncation is present but nothing marks the payload as partial, and every consumer reading `artifacts` as the full set is quietly wrong. Two consequences are already visible: serve_integration.rs:569 asserts `externals_unscoped > 0` on `origin=all&limit=1000`, i.e. it assumes that window contains every artifact (it passes today only because the externals happen to sort into positions 0-3); and before #746/#759 the ordering was non-deterministic, so WHICH 17 fell off the end varied run to run. Fix in order of value: (1) emit `truncated: true` (or `returned` alongside `total`) whenever `artifacts.len() < total` so consumers can fail loudly; (2) keep the window deterministic so truncation is at least reproducible; (3) decide the cap deliberately — either document 1000 as a paging boundary with a working offset/cursor, or let `limit=0`/`limit=all` mean no cap on the machine-readable endpoint. Step 1 alone converts this from silent to detectable. Verified NOT to affect the export path: `rivet export --format generic-yaml` emits 1017 of 1017."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z
+
+  - id: REQ-304
+    type: requirement
+    title: "ci: the Test job can produce no JUnit XML and still report success — three stacked silencers (#833)"
+    status: proposed
+    description: "The `Test` job's evidence step (.github/workflows/ci.yml:414-428) is named `Run tests (JUnit XML output)` and can satisfy none of that name while going green, because three independent silencers sit in a row: (1) `cargo install cargo-nextest --locked 2>/dev/null || true` swallows an install failure twice, by discarding stderr and by discarding the exit code, so a registry outage or an MSRV bump is indistinguishable from success; (2) the `else` branch falls back to `cargo test --all`, which emits no JUnit XML and drops the `ci` profile's `retries = 2` and `fail-fast = false` — silently removing the flake protection #494 added; (3) the upload step then carries `if-no-files-found: ignore`, so the missing artifact is not an error. Each silencer is individually defensible and their composition is not. Same family as #293, where `continue-on-error: true` on release.yml's `build-test-evidence` hid a real failure across four releases, each shipping a compliance bundle with no test evidence. Fix: install via `taiki-e/install-action` (already used for this exact tool in the Proptest job and in release.yml, so this makes three jobs consistent rather than introducing anything new), run nextest unconditionally, and flip `if-no-files-found` to `error` — that last is the part that makes the evidence claim checkable. The fix is only real if the gate can then go red, so whoever lands it must negative-control it: point the tool or the path at something nonexistent and confirm the job FAILS rather than skipping."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z
+
+  - id: REQ-305
+    type: requirement
+    title: "ci: Proptest (extended) runs cargo test without nextest retries, so the documented serve race reddens it (#835)"
+    status: proposed
+    description: "`.config/nextest.toml` carries `retries = 2` specifically because the serve/integration tests bind ports and spin up a server, so under CI parallelism one occasionally loses a timing/port race. The `Proptest (extended)` job runs those same tests under 10x load (`PROPTEST_CASES: 1000`, the worst case for that race) via `cargo test --all` — not nextest, therefore no `--profile ci`, therefore no retries. The protection that exists for this exact flake is absent in the job most likely to trigger it. Observed on PR #818: `api_artifacts_search` failed with `left: 0, right: 200`, i.e. no HTTP response at all rather than an error status — verbatim the failure mode `start_server()` documents in its own comment (`status=0 on api_artifacts_unfiltered / api_artifacts_search under Proptest load`). The same suite passed 2257/2257 in the `Test` job on the same commit, so the difference is the runner, not the code. Two costs already paid: #759 carried a red Proptest for 14 days and took a full investigation (including two hypotheses built and discarded) to establish as environmental; and a job that reddens on a known race trains reviewers to merge past it, which is how a real failure eventually gets waved through. Fix: either give the job the same retry semantics (`cargo nextest run --all --profile ci`, which reports a retry-passing test as FLAKY so the signal is kept rather than hidden), or exclude the serve/integration tests from this job entirely — they are not property tests and gain nothing from PROPTEST_CASES=1000, which is arguably cleaner and also cuts the job's runtime."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z
+
+  - id: REQ-306
+    type: requirement
+    title: "check verification-evidence is name-existence, not command-reachability — an empty stub satisfies it (#807 Defect 2)"
+    status: proposed
+    description: "Second of the two defects in #807; Defect 1 (the discarded `--manifest-path`) shipped in #830. `filter_matches_any` is `names.iter().any(|n| n.contains(filter))` — it checks that a function name resembling the filter exists SOMEWHERE in the scanned tree, not that the step's command would actually reach that test. The reporter proved it: dropping an EMPTY `#[test] fn <missing_name>() {}` into the root `tests/` made a finding disappear. So the real test can error while a hollow one passes, and the check is satisfiable by exactly the stub it exists to catch — the same shape as #556 (`a filter matching nothing exits 0 with 0 passed`). Fixing this changes the check's semantics from name-existence to command-reachability: resolve the step's command to its actual target set (per manifest/package/test-target) and match only within that, plus reject empty-bodied test functions as evidence. That is a design change rather than a parser fix, which is why it was deliberately sequenced after Defect 1 — the issue notes that fixing 2 alone would have converted every nested-workspace step from a false failure into a hard failure. With Defect 1 landed, stricter matching now tightens real steps instead. Related: the check exits 0 on an empty scan (REQ-290 added the warning but not the exit code), so a project with no parseable steps still reads as a pass."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z
