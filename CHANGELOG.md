@@ -5,7 +5,65 @@
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-08-20
+
+Evidence you can check. Five places where a gate ran, reported green, and
+checked less than its name claimed — plus the silent-empty-load window where
+`validate` printed PASS over zero artifacts read.
+
+### Added
+- **`rivet context --stdout` / `--brief`** (REQ-297, #811) — `rivet context`
+  previously took no arguments and unconditionally wrote
+  `.rivet/agent-context.md`, so a SessionStart hook that only wanted to *read*
+  project state mutated the working tree. `.rivet/` is gitignored in this repo
+  but not in consumers, making the side effect invisible here and visible
+  everywhere else, with an accidental commit one `git add -A` away. `--stdout`
+  prints the document and writes nothing; `--brief` drops the schema/link/rule
+  reference (stable material better fetched via `rivet docs`) and keeps the
+  state a hook actually wants — project, artifact counts, coverage gaps,
+  verdict. Note that the **default path still writes the file** — that is
+  deliberate and asserted by a test, but it does mean the reported side effect
+  persists unless you pass `--stdout`, so hooks should use the new flag rather
+  than relying on any change to the default.
+
+### Changed
+- **`--help` no longer carries internal bookkeeping** (REQ-298, #812) — help
+  text is the surface a new user meets first, and rivet's carried REQ ids,
+  GitHub issue numbers and in-repo doc paths that mean nothing outside this
+  repository, with the `trace` entry reaching **405 characters** on one line.
+  Provenance belongs in the artifacts, which is exactly what rivet makes
+  queryable (`rivet get REQ-167`); duplicating it into help just made the help
+  the second-best copy. Every top-level entry is now a single sentence: `rivet
+  -h` has zero REQ ids, zero issue references, and no line over 100 columns
+  (longest is 97, `trace` down from 405). Longer prose moved into per-command
+  `--help` long help. *(The issue also asked to tighten the top-level list so
+  the common path is legible; that was implemented as one-sentence-per-entry
+  and the list is still 52 flat commands — the residual is tracked as
+  REQ-307.)*
+
 ### Fixed
+- **`check verification-evidence` was blind to nested workspaces** (REQ-236,
+  #807) — a step of the shape
+  `cargo test --manifest-path <nested>/Cargo.toml <filter>` reported
+  "no test matching found" even though the test existed. `--manifest-path` was
+  parsed only so its value would not be mistaken for the positional filter, and
+  was then discarded. The flag already names precisely the directory that should
+  be scanned; it is now threaded back through, widening the scan for that step
+  only. One reporting project went from 14 false failures and exit 1 to green.
+  *(This is Defect 1 of two in #807; the check is still name-existence rather
+  than command-reachability, so an empty stub can still satisfy it — tracked as
+  REQ-306.)*
+- **Overlapping `sources` made every id collide with itself** (REQ-302, #746) —
+  when two configured `sources[]` paths overlapped, every artifact loaded twice
+  and `duplicate-artifact-id` fired against itself. On one project this produced
+  **184 phantom errors that masked 6 genuine ones**, which is the failure mode
+  that matters: a wall of false errors is functionally identical to no error
+  reporting. Overlapping source paths are now deduped at load time. Separately,
+  diagnostic output order was non-deterministic, so two runs over an unchanged
+  tree produced different orderings and report diffing — how a compliance
+  workflow detects drift between baselines — was useless. Diagnostics now carry
+  a total order.
+
 - **Silent empty load: config typos and empty sources scored green** (REQ-294, #808)
   — for a compliance tool, `validate` PASS and `coverage` `100.0%` over a
   zero-artifact load is the worst possible failure direction. Two independent
@@ -51,6 +109,18 @@
   than `100.0%`, with a leading "No artifacts loaded — every rule scores n/a
   (0/0)" banner when the whole report is empty. A screen scraper matching
   the exact `100.0%` string will need to accept `n/a%` as a value.
+
+### Internal
+- **Release test-evidence bundles were empty since v0.31.0** (#293) — the
+  `Build test evidence` job had been failing on every release since v0.31.0
+  while `continue-on-error: true` kept it out of sight, so **v0.31.0, v0.32.0,
+  v0.33.0 and v0.33.1 each shipped a compliance bundle containing no test
+  evidence**. The job comment blamed a flaky WASI cross-compile; the actual
+  failure was `mcp_integration` deriving the `rivet` binary path from
+  `current_exe()` and landing in a build-script `OUT_DIR`. It was the only one
+  of 28 integration tests not using `CARGO_BIN_EXE_rivet`. This is the first
+  release expected to carry real test evidence again — verify the bundle rather
+  than assuming it.
 
 ## [0.33.1] - 2026-08-19
 
