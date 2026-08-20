@@ -7933,7 +7933,7 @@ artifacts:
     title: "test-result trace: collapsible tree view (fold/expand) in serve + export (customer request)"
     status: proposed
     description: "Customer-reported. The req->test-result forward trace (REQ-238) renders its hops flat; deep artifacts (e.g. the ASPICE chain sw-req<-sw-detail-design<-unit-verification) produce a lot of hops that become hard to read. The trace data is already a tree — rivet-core/src/result_trace.rs ResultTraceNode carries `parent` (id one hop toward the requirement) + `distance` (depth) — and rivet already ships a fold/expand primitive: rivet-cli/src/serve/components.rs collapsible_tree() (nested native <details> + Expand All/Collapse All, used for the STPA hierarchy). Render the ResultTraceNode tree through collapsible_tree() (deep branches collapsed by default, per-branch expand, verdict badge per hop). Native <details> works with zero JS, so it renders in BOTH `rivet serve` AND static export. Rendering change over an existing tree model + existing component; no new infra."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -7944,7 +7944,7 @@ artifacts:
     title: "serve: human-friendly tag filter — select all / unselect all + filter box (customer request)"
     status: proposed
     description: "Customer-reported. Tag filtering today is a comma-separated `tags` param (serve/components.rs:50, matched client-side via data-tags in js.rs:1197) — efficient for machines, cumbersome for humans. Add a proper multi-select tag-filter UI: a checkbox list of the project's tags with Select All / Unselect All controls and a small filter/search box to narrow a long tag list, driving the existing tag-match filter. Reuse the existing filter plumbing (params.tags) so it's a UI layer over the current mechanism, not a new filter engine. serve-only surface."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -7955,7 +7955,7 @@ artifacts:
     title: "serve/export color-contrast audit — fix low-contrast (white on light grey) to WCAG AA (customer request)"
     status: proposed
     description: "Customer-reported: white text on the light-grey background reads poorly. Audit the render/styles.rs palette (--bg #f5f5f7 grey, --surface #fff, --text-secondary #6e6e73) and every fixed color pair for WCAG AA (>=4.5:1 body text, >=3:1 large/UI) — white (#fff) on #f5f5f7 is ~1.05:1 and fails. Raise the failing pairs (darken text / adjust surface) without a full redesign, keeping the PulseEngine look. Applies to both serve and the static/compliance export (shared styles.rs). Add a small contrast check or documented palette rationale so it doesn't regress. MEASURED 2026-08-19 against the live palette in rivet-cli/src/render/styles.rs, which still carries the cited values (--bg #f5f5f7, --surface #fff, --text-secondary #6e6e73, --text #1d1d1f). 5 of 14 checked pairs fail WCAG AA body text at 4.5:1. The reported pair is confirmed and is the worst: white on --bg measures 1.09:1 (the issue estimated ~1.05). But it is NOT the most pervasive defect — the accent colour #3a86ff, used for LINKS, measures 3.20:1 on --bg and 3.48:1 on --surface, so every link in serve and export fails AA body text. White on accent is also 3.48:1, which passes the 3:1 UI threshold but fails 4.5:1 if the button label is body-size. Border #e5e5ea on --surface is 1.26:1 but is decorative and likely exempt. Passing comfortably: body text 15.46:1 and 16.83:1, secondary text 4.66:1 and 5.07:1, sidebar 6.72:1, and all three result colours between 5.07:1 and 6.08:1 — so this is a targeted fix to the accent and to any white-on-bg usage, not a redesign. ACCEPTANCE is therefore mechanical rather than visual: every body-text pair >= 4.5:1 and every UI/large pair >= 3:1, asserted by a unit test that computes relative luminance over the palette constants. That test is the regression guard the requirement already asks for, and it means this requirement can reach `verified` on evidence rather than on someone eyeballing a screenshot."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8120,7 +8120,7 @@ artifacts:
   - id: REQ-294
     type: requirement
     title: "Silent empty load: config typos and empty sources score green (#808)"
-    status: implemented
+    status: verified
     description: "For a compliance tool, `validate` PASS and `coverage` 100% on a zero-artifact load is the worst failure direction. Reproducer shows two independent triggers: (case 1) a `generic-yaml` file with a near-miss root key (`requirements:` where `artifacts:` was expected) silently classifies as a non-artifact file; (case 2) a mis-keyed `sources:` (e.g. `typo_sources:`) at the top level of `rivet.yaml` disables every input, leaving the configured-sources loop with nothing to iterate — so the per-source `empty-source` diagnostic never fires either. Fix: (a) new `artifact-root-key-near-miss` diagnostic naming both the file and the offending key when a single-root-key generic-yaml file uses a plausible artifact-plural typo; (b) new `empty-source` diagnostic when a configured source yields zero artifacts; (c) new `unknown-config-key` diagnostic when `rivet.yaml` carries a top-level key outside the `ProjectConfig` schema (warning by default; hard-fail via `deny_unknown_fields` breaks legitimate downstream carrying of their own top-level keys like sigil's `schemas-path:`); (d) new `no-sources` diagnostic when the config declares zero sources at all — the case-2 gap the per-source loop cannot see, and also the plain `sources: []` case; (e) all four new diagnostics are Warning by default, Error under `--strict`; (f) `coverage` renders `n/a` (never `100.0%`) for zero-denominator rules, with a new `--strict-empty` flag that exits non-zero on empty load and `--fail-under` that also fails on empty load; (g) JSON output emits `null` percentages plus an `empty_scope: bool` field on every rule, closure entry, and the overall block so machine consumers can tell a satisfied gate from an empty one."
     release: v0.34.0
     provenance:
@@ -8144,7 +8144,7 @@ artifacts:
     title: "Mutation-safety property harness for the YAML write path — one invariant, four data-loss bugs, no property test (#809)"
     status: proposed
     description: "Every mutating command writes through `rivet-core/src/yaml_edit.rs`, a ~2000-line line-oriented editor built on indentation heuristics. Hand-rolled deliberately (it preserves comments, key order and human formatting, which a serde round-trip destroys in version-controlled files) — but it has produced four data-loss bugs, each found by a user rather than a test: #573 flow-style `fields:` maps, #618/#625 block-list orphaning, REQ-287 unquoted tag emission, and #806 multi-line values in `fields:`. All four violate one invariant: replacing a key must consume that key's ENTIRE on-disk extent and change nothing else. #806 is the proof that examples are not enough — `set_field` upholds the invariant via `field_block_end` + `splice` and its comment names the history, while the custom-fields loop 700 lines below did a single-line assignment and had no multi-line-value test at all. The property must be stated as EXACT equality: parse before, mutate, parse after must succeed, every path except the target must be byte-identical, and the target must equal the intended value. 'It parses' is only a precondition — #806 mode 1 produced a perfectly parseable file whose value silently became 'short first body line second body line', so a parse-only assertion would green on the data loss. Corpus axis is scalar STYLE, not field name: plain, single/double-quoted, folded, literal, |- / |+ / |2, empty value, flow map, flow seq, block seq, nested block map, body containing colon / hash / leading dash, internal blank line, anchors, CRLF, tabs, last-field-of-last-artifact, unicode. Mutations: every --set-* flag, --add-tag/--remove-tag, --where bulk, plus `rivet add` and the MCP/batch writers. Lands as a proptest in rivet-core (fast, shrinks, runs in CI) plus a thin CLI-level test for flag wiring. Deliberately does NOT include migrating the writer to the in-tree rowan-yaml CST: that is an architecture decision with real cost for the maintainer to weigh, and the harness is the right thing to have in place BEFORE such a migration so it can prove behavior is preserved."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8153,7 +8153,7 @@ artifacts:
   - id: REQ-297
     type: requirement
     title: "rivet context needs a stdout mode so a session hook can consume it without mutating the working tree (#811)"
-    status: proposed
+    status: verified
     description: "`rivet context` exists to give an agent the project's real state instead of hand-parsing artifact YAML, but it takes no arguments beyond --help and unconditionally writes `.rivet/agent-context.md`. A SessionStart hook that only wants to READ state therefore causes a working-tree mutation, and `.rivet/` is gitignored in rivet's own repo but not in consumers (checked varve and relay) — so the side effect is invisible to us and visible to everyone else, with an easy accidental commit behind it. Reporter dropped the command from their hook and rebuilt a 25-line summary from validate/stats/coverage, reimplementing a slice of a command that already exists. Deliver: (a) `--stdout` so the document can be consumed without writing; (b) `--format json` alongside it so hooks select fields instead of regexing Markdown; (c) `--brief` — at 282 lines / 17.7 KB the document is large for per-session injection and roughly 60 percent of it is the stable schema/link-type reference, which belongs behind `rivet docs` on demand; (d) `rivet init` adds `.rivet/` to .gitignore, since whether the cache directory is ignored should not depend on the repo. Upstream context: pulseengine.eu#166 found the agent skills named 8 of rivet's 52 commands and never pointed at docs/quickstart/context, which is why agents kept hand-parsing YAML — a capability nothing points at is close to one that does not exist."
     release: v0.34.0
     provenance:
@@ -8164,7 +8164,7 @@ artifacts:
   - id: REQ-298
     type: requirement
     title: "CLI --help hygiene: internal REQ ids and issue refs leak into user-facing help text (#812)"
-    status: proposed
+    status: verified
     description: "Help text is the product surface a new user meets first, and rivet's carries internal bookkeeping — REQ ids, GitHub issue numbers and doc paths that mean nothing outside this repo — with a top-level list long enough that the important commands do not stand out, and at least one entry reaching 405 characters. Fix: strip REQ/# references from user-facing help (they belong in artifact descriptions and commit trailers, which is where traceability already lives), cap entry length, and tighten the top-level command list so the common path is legible. Cross-check against REQ-297: the same discoverability finding (pulseengine.eu#166) applies here — if `docs`, `quickstart` and `context` are not visible in help, agents and humans alike hand-parse YAML instead."
     release: v0.34.0
     provenance:
@@ -8188,7 +8188,7 @@ artifacts:
     title: "dev verification type: declare steps/test-name/test-location so a dev-only project can feed the evidence gate (#748)"
     status: proposed
     description: "Downstream residual on #748 (reported from spar, 883 artifacts, dev schema). REQ-270 shipped the dev-native `verification` type in v0.29.0 (dev@0.2.0 -> 0.3.0), which resolved the headline complaint — a dev-only project can now put tests on the right side of the V and reach `verified` WITHOUT importing ASPICE's SWE.3 chain. What remains is field-level: of the four fields spar's hand-rolled workaround leans on, only `method` is declared. `steps` (142 spar artifacts), `test-name` (64) and `test-location` (64) are not, so migrating the 227 workaround artifacts onto `verification` fixes their V-side placement but reproduces the undeclared-field warnings — which is why pulseengine/spar#371 is still blocked. `steps` matters most: `fields.steps[].run` is exactly the shape `rivet check verification-evidence` reads (rivet-cli/src/main.rs:8205), the named-test-exists gate hardened by REQ-236 and REQ-280. Because dev's `verification` does not declare it, a dev-only project cannot feed that gate at all — very likely why the check reports `0 named-test step(s)` on rivet's own repo. Scope: declare `steps`, `test-name`, `test-location` on the dev `verification` type (bump dev schema version), and decide whether `verifies` should widen beyond `[requirement]` (the issue asked for `[any]`; verifying a design-decision or feature is currently inexpressible) — widening is a separate judgement call, not automatic."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8199,7 +8199,7 @@ artifacts:
     title: "Humans have no assisted way to author artifacts — YAML editing is the only path (#546)"
     status: draft
     description: "User-reported and the largest gap in the v0.34 customer-UI theme, missed in the first triage pass. rivet's mutation surface is excellent for agents (add, modify, link, batch, next-id, MCP) and its read surface is excellent for everyone (serve, query, sql, trace, export), but a human authoring or correcting an artifact has exactly one option: hand-edit YAML. The reporter's words are the requirement — the editing is cumbersome, and we are missing the UI for helping humans work with it. Note the irony this repo has just paid for: hand-editing is also the path with no guard rails, and the write path underneath has produced four data-loss bugs (#573, #618/#625, REQ-287, #806), so the humans doing it by hand are the ones least protected. DESIGN-FIRST — this must not go straight to implementation. At least three plausible shapes exist and they differ enormously in cost and in who they serve: (a) extend the vscode-rivet VSIX with form-based editing and completion, which meets people where the YAML already is but is limited to VS Code users and the webview has no htmx; (b) make `rivet serve` writable, which reaches any browser and reuses the existing dashboard but turns a read-only viewer into a mutating service with all the authz questions that implies; (c) a guided terminal flow (`rivet add --interactive`) which is cheap and composes with the existing CLI but does not address the reporter's likely mental model of a UI. A design decision artifact must land before any REQ is scoped for implementation, and it must state which of these it is NOT doing and why."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8210,7 +8210,7 @@ artifacts:
     title: "Two coverage surfaces contradict each other: --tests reports 100% while the link rule reports 0% (#788, #787)"
     status: proposed
     description: "Reported against rivet 0.32.0 on pulseengine/varve v0.5.0. All 12 requirements are `status: verified`, advanced by `rivet verify` on the strength of `// rivet: verifies` source markers, and `rivet coverage --tests` reports 12/12 = 100 percent. The `requirement-verification` link rule reports 0 percent for the same 12 requirements. Both numbers are printed by the same tool about the same artifacts; at most one can be right, and a reader has no way to tell which. For a compliance tool the disagreement is worse than either number being wrong on its own, because it means neither can be cited. Paired with #787, which is plausibly the mechanism or part of it: `coverage --tests` attributes a `// rivet: verifies` marker to the PRECEDING helper fn rather than the FOLLOWING `#[test]` fn, so the marker set it counts may not be the set a reader believes it counted. Deliver: (1) root-cause the attribution bug in the marker scanner and fix it to bind to the next test-like item, not the previous item; (2) decide and document which surface is authoritative — link-based coverage or marker-based `--tests` — and make the non-authoritative one say so in its output rather than presenting a bare competing percentage; (3) a regression fixture holding both surfaces on the same artifact set so they can never silently diverge again. Same family as REQ-294 and the v0.33.0 gate work: a number that cannot be trusted is worse than an absent one."
-    release: v0.34.0
+    release: v0.35.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8219,10 +8219,65 @@ artifacts:
   - id: REQ-302
     type: requirement
     title: "Overlapping sources make every id collide with itself — 184 phantom errors masked 6 real ones (#746)"
-    status: implemented
+    status: verified
     description: "Found while auditing spar's artifact set. When two configured `sources[]` paths overlap (one nested inside another, or the same tree reached twice), every artifact is loaded twice and `duplicate-artifact-id` fires against itself. On spar this produced 184 phantom errors which MASKED 6 genuine ones — the failure mode that matters, since a wall of false errors is functionally identical to no error reporting at all, and it actively caused a wrong number to be reported. Second, independent item in the same report: diagnostic output order is non-deterministic, so two runs over an unchanged tree produce different orderings and report diffing is useless — which is precisely how a compliance workflow detects drift between baselines. Fix: dedupe overlapping source paths at load time so each file is read once, and impose a total order on diagnostics before rendering. PR #759 carries the fix; it predates this artifact, which is being filed retroactively because the issue had no typed home and was therefore invisible to release planning."
     release: v0.34.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-08-19T00:00:00Z
+
+  - id: REQ-303
+    type: requirement
+    title: "serve: /api/v1/artifacts silently truncates at limit=1000 while the repo holds 1017 (#832)"
+    status: proposed
+    description: "`/api/v1/artifacts` caps `limit` at `.min(1000)` (rivet-cli/src/serve/api.rs:459, again at :630). This repo now holds 1017 artifacts, so a client asking for everything receives 1000 rows with no indication that 17 were dropped. Measured: `total: 1017, returned: 1000`. A cap is fine; a SILENT cap is not — the response carries `total` next to a short array, so the data needed to detect truncation is present but nothing marks the payload as partial, and every consumer reading `artifacts` as the full set is quietly wrong. Two consequences are already visible: serve_integration.rs:569 asserts `externals_unscoped > 0` on `origin=all&limit=1000`, i.e. it assumes that window contains every artifact (it passes today only because the externals happen to sort into positions 0-3); and before #746/#759 the ordering was non-deterministic, so WHICH 17 fell off the end varied run to run. Fix in order of value: (1) emit `truncated: true` (or `returned` alongside `total`) whenever `artifacts.len() < total` so consumers can fail loudly; (2) keep the window deterministic so truncation is at least reproducible; (3) decide the cap deliberately — either document 1000 as a paging boundary with a working offset/cursor, or let `limit=0`/`limit=all` mean no cap on the machine-readable endpoint. Step 1 alone converts this from silent to detectable. Verified NOT to affect the export path: `rivet export --format generic-yaml` emits 1017 of 1017."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z
+
+  - id: REQ-304
+    type: requirement
+    title: "ci: the Test job can produce no JUnit XML and still report success — three stacked silencers (#833)"
+    status: proposed
+    description: "The `Test` job's evidence step (.github/workflows/ci.yml:414-428) is named `Run tests (JUnit XML output)` and can satisfy none of that name while going green, because three independent silencers sit in a row: (1) `cargo install cargo-nextest --locked 2>/dev/null || true` swallows an install failure twice, by discarding stderr and by discarding the exit code, so a registry outage or an MSRV bump is indistinguishable from success; (2) the `else` branch falls back to `cargo test --all`, which emits no JUnit XML and drops the `ci` profile's `retries = 2` and `fail-fast = false` — silently removing the flake protection #494 added; (3) the upload step then carries `if-no-files-found: ignore`, so the missing artifact is not an error. Each silencer is individually defensible and their composition is not. Same family as #293, where `continue-on-error: true` on release.yml's `build-test-evidence` hid a real failure across four releases, each shipping a compliance bundle with no test evidence. Fix: install via `taiki-e/install-action` (already used for this exact tool in the Proptest job and in release.yml, so this makes three jobs consistent rather than introducing anything new), run nextest unconditionally, and flip `if-no-files-found` to `error` — that last is the part that makes the evidence claim checkable. The fix is only real if the gate can then go red, so whoever lands it must negative-control it: point the tool or the path at something nonexistent and confirm the job FAILS rather than skipping."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z
+
+  - id: REQ-305
+    type: requirement
+    title: "ci: Proptest (extended) runs cargo test without nextest retries, so the documented serve race reddens it (#835)"
+    status: proposed
+    description: "`.config/nextest.toml` carries `retries = 2` specifically because the serve/integration tests bind ports and spin up a server, so under CI parallelism one occasionally loses a timing/port race. The `Proptest (extended)` job runs those same tests under 10x load (`PROPTEST_CASES: 1000`, the worst case for that race) via `cargo test --all` — not nextest, therefore no `--profile ci`, therefore no retries. The protection that exists for this exact flake is absent in the job most likely to trigger it. Observed on PR #818: `api_artifacts_search` failed with `left: 0, right: 200`, i.e. no HTTP response at all rather than an error status — verbatim the failure mode `start_server()` documents in its own comment (`status=0 on api_artifacts_unfiltered / api_artifacts_search under Proptest load`). The same suite passed 2257/2257 in the `Test` job on the same commit, so the difference is the runner, not the code. Two costs already paid: #759 carried a red Proptest for 14 days and took a full investigation (including two hypotheses built and discarded) to establish as environmental; and a job that reddens on a known race trains reviewers to merge past it, which is how a real failure eventually gets waved through. Fix: either give the job the same retry semantics (`cargo nextest run --all --profile ci`, which reports a retry-passing test as FLAKY so the signal is kept rather than hidden), or exclude the serve/integration tests from this job entirely — they are not property tests and gain nothing from PROPTEST_CASES=1000, which is arguably cleaner and also cuts the job's runtime."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z
+
+  - id: REQ-306
+    type: requirement
+    title: "check verification-evidence is name-existence, not command-reachability — an empty stub satisfies it (#807 Defect 2)"
+    status: proposed
+    description: "Second of the two defects in #807; Defect 1 (the discarded `--manifest-path`) shipped in #830. `filter_matches_any` is `names.iter().any(|n| n.contains(filter))` — it checks that a function name resembling the filter exists SOMEWHERE in the scanned tree, not that the step's command would actually reach that test. The reporter proved it: dropping an EMPTY `#[test] fn <missing_name>() {}` into the root `tests/` made a finding disappear. So the real test can error while a hollow one passes, and the check is satisfiable by exactly the stub it exists to catch — the same shape as #556 (`a filter matching nothing exits 0 with 0 passed`). Fixing this changes the check's semantics from name-existence to command-reachability: resolve the step's command to its actual target set (per manifest/package/test-target) and match only within that, plus reject empty-bodied test functions as evidence. That is a design change rather than a parser fix, which is why it was deliberately sequenced after Defect 1 — the issue notes that fixing 2 alone would have converted every nested-workspace step from a false failure into a hard failure. With Defect 1 landed, stricter matching now tightens real steps instead. Related: the check exits 0 on an empty scan (REQ-290 added the warning but not the exit code), so a project with no parseable steps still reads as a pass."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z
+
+  - id: REQ-307
+    type: requirement
+    title: "CLI top-level command list is 52 flat entries — the common path still is not legible (#812 residual)"
+    status: proposed
+    description: "Residual clause from REQ-298. #812 asked to strip REQ/# refs from help, cap entry length, AND \"tighten the top-level command list so the common path is legible\". The first two are done and measured: `rivet -h` now has 0 REQ ids, 0 issue refs, a longest line of 97 columns and no line over 100 (`trace` came down from 405 characters). The third was implemented as one-sentence-per-ENTRY, which is a defensible reading, but the list itself is unchanged at 52 flat top-level commands with no grouping and no distinction between the handful a new user needs (init, validate, list, coverage, check) and the long tail (variant-*, shard, supplier-pull, ordeal, migrate, templates). `-h` and `--help` print the same 52; there is no short form. REQ-298 was accepted as verified on the entry-length reading rather than blocking the v0.34.0 cut, so this artifact carries the remaining clause explicitly rather than letting it disappear into a closed requirement. Options worth weighing: group commands by concern in the help output; mark advanced commands hidden from `-h` while keeping them in `--help` (clap supports this directly); or promote a short `COMMON COMMANDS` block above the full list. Cross-check against REQ-297 — the same discoverability concern motivated the `rivet context` work, and both come from the same org-wide CLI survey."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-20T00:00:00Z

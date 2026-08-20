@@ -1520,6 +1520,7 @@ fn validate_detects_duplicate_artifact_ids() {
 /// errors that were only symptoms of the config.
 ///
 /// rivet: verifies REQ-004
+/// rivet: verifies REQ-302
 #[test]
 fn validate_reports_source_overlap_once_and_suppresses_self_collisions() {
     let tmp = tempfile::tempdir().expect("create temp dir");
@@ -1629,6 +1630,7 @@ fn validate_reports_source_overlap_once_and_suppresses_self_collisions() {
 /// flipped between runs depending on hasher seed.
 ///
 /// rivet: verifies REQ-159
+/// rivet: verifies REQ-302
 #[test]
 fn validate_output_is_deterministic_across_runs() {
     let tmp = tempfile::tempdir().expect("create temp dir");
@@ -9043,6 +9045,8 @@ fn context_test_project() -> tempfile::TempDir {
 /// #811 primary ask: `rivet context --stdout` must print the document to
 /// stdout and MUST NOT create `.rivet/agent-context.md` — a session-start
 /// hook cannot leave an untracked directory behind in the consumer's tree.
+///
+/// rivet: verifies REQ-297
 #[test]
 fn context_stdout_does_not_mutate_working_tree() {
     let tmp = context_test_project();
@@ -9088,6 +9092,8 @@ fn context_stdout_does_not_mutate_working_tree() {
 
 /// Default (no `--stdout`): behaviour is unchanged — the document lands
 /// at `.rivet/agent-context.md` and stdout carries only the banner.
+///
+/// rivet: verifies REQ-297
 #[test]
 fn context_default_still_writes_file() {
     let tmp = context_test_project();
@@ -9126,6 +9132,8 @@ fn context_default_still_writes_file() {
 /// `--brief --stdout` drops the schema/link/rule/commands reference (the
 /// stable material better fetched via `rivet docs`), keeping the actual
 /// state a hook wants: project, artifact counts, coverage gaps, verdict.
+///
+/// rivet: verifies REQ-297
 #[test]
 fn context_brief_is_smaller_and_drops_the_reference() {
     let tmp = context_test_project();
