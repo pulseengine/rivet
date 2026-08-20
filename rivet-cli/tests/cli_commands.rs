@@ -1075,6 +1075,96 @@ fn check_verification_evidence_non_empty_scan_still_reads_as_pass() {
     assert_eq!(v["ok"], true);
 }
 
+/// #807 Defect 1 (REQ-236): a step's `cargo test --manifest-path <p> <filter>`
+/// used to false-fail with "no test matching found" when the crate at `<p>`
+/// lived in a nested workspace outside the default scan (`./src` + `./tests`).
+/// The `--manifest-path` value was parsed only to prevent it being read as the
+/// filter — then discarded. The fix threads it back through: the manifest's
+/// parent directory is scanned for that step only, so the check no longer
+/// hides the crate that cargo would have compiled.
+///
+/// A step without `--manifest-path`, in the same project, still fails on a
+/// test that only exists in the nested workspace — proving the widening is
+/// scoped to the flag and does not blanket-expand every step's scan.
+///
+/// rivet: verifies REQ-236
+#[test]
+fn check_verification_evidence_scans_the_crate_named_by_manifest_path() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    // Nested independent workspace outside `./src` and `./tests`.
+    std::fs::create_dir_all(dir.join("compat/mudp-dataformats/src")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    // Root `./src` carries an unrelated fn — enough to make
+    // `default_marker_scan_paths` return `./src` (confining the base scan) so
+    // the nested `compat/` is genuinely invisible without the fix.
+    std::fs::write(dir.join("src/lib.rs"), "pub fn helper() {}\n").unwrap();
+    // The real test lives only in the nested crate.
+    std::fs::write(
+        dir.join("compat/mudp-dataformats/Cargo.toml"),
+        "[package]\nname = \"mudp-dataformats\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("compat/mudp-dataformats/src/lib.rs"),
+        "#[test]\nfn decode_roundtrip() { assert!(true); }\n",
+    )
+    .unwrap();
+    // Two steps: one carries `--manifest-path` (must pass); one names the
+    // same nested-only test without the flag (must still fail — the widening
+    // is per-step, not global).
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: FV-001\n    type: requirement\n    title: v\n    status: implemented\n    \
+             fields:\n      steps:\n        \
+             - run: \"cargo test --manifest-path compat/mudp-dataformats/Cargo.toml decode_roundtrip\"\n  \
+         - id: FV-002\n    type: requirement\n    title: v\n    status: implemented\n    \
+             fields:\n      steps:\n        \
+             - run: \"cargo test -p p decode_roundtrip\"\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "check",
+            "verification-evidence",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("check");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    assert_eq!(v["named_test_steps_checked"], 2);
+    let missing: Vec<&str> = v["missing"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["artifact"].as_str().unwrap())
+        .collect();
+    // FV-001 (with --manifest-path) resolves against the nested scan and passes.
+    // FV-002 (without) still fails — its default scan cannot see the test.
+    assert_eq!(
+        missing,
+        vec!["FV-002"],
+        "the --manifest-path widening must be per-step, not global"
+    );
+    assert!(
+        !out.status.success(),
+        "the without-flag step still legitimately fails"
+    );
+}
+
 /// #547 (REQ-238): `rivet trace-results <req>` walks FORWARD from a requirement
 /// to the test results that cover it (the reverse of the authored `verifies`
 /// direction) and rolls up a pass/fail verdict — the data behind the graphical

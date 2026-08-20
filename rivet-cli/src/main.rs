@@ -8178,6 +8178,16 @@ fn cmd_check_verification_evidence(
     for p in &scan_paths {
         collect_rust_fn_names(p, &mut fn_names);
     }
+    // #807 Defect 1: a step's `cargo test --manifest-path <p>` names precisely
+    // the crate that should also be scanned for that step. Without this the
+    // fn-name universe is only the default scan (`./src` + `./tests`) and every
+    // step targeting a nested workspace false-fails ("no test matching found")
+    // even though the test exists. The cache is keyed by the manifest's parent
+    // directory so many steps targeting the same crate scan it once.
+    let mut manifest_scan_cache: std::collections::HashMap<
+        std::path::PathBuf,
+        std::collections::BTreeSet<String>,
+    > = std::collections::HashMap::new();
 
     // Walk every artifact's `steps` for `run` commands naming a cargo filter.
     #[derive(serde::Serialize)]
@@ -8208,7 +8218,37 @@ fn cmd_check_verification_evidence(
             match ve::parse_cargo_test_filter(run) {
                 Some(filter) => {
                     checked += 1;
-                    if !ve::filter_matches_any(&filter, &fn_names) {
+                    let matched = ve::filter_matches_any(&filter, &fn_names) || {
+                        // Widen the scan for THIS step only when its
+                        // command carries `--manifest-path <p>`. The scan
+                        // added is the manifest's parent directory —
+                        // exactly what cargo would compile.
+                        match ve::parse_cargo_manifest_path(run) {
+                            Some(m) => {
+                                let manifest_path = if std::path::Path::new(&m).is_absolute() {
+                                    std::path::PathBuf::from(&m)
+                                } else {
+                                    cli.project.join(&m)
+                                };
+                                match manifest_path.parent() {
+                                    Some(dir) => {
+                                        let dir = dir.to_path_buf();
+                                        let names = manifest_scan_cache
+                                            .entry(dir.clone())
+                                            .or_insert_with(|| {
+                                                let mut n = std::collections::BTreeSet::new();
+                                                collect_rust_fn_names(&dir, &mut n);
+                                                n
+                                            });
+                                        ve::filter_matches_any(&filter, names)
+                                    }
+                                    None => false,
+                                }
+                            }
+                            None => false,
+                        }
+                    };
+                    if !matched {
                         missing.push(Missing {
                             artifact: a.id.clone(),
                             filter,
