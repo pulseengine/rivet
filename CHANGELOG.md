@@ -50,6 +50,20 @@ externally against v0.32.0 and reproduced on `main`.
   write surface — is tracked in #809 for the next minor release.
 
 ## [0.33.0] - 2026-08-18
+### Added
+- **`rivet context --stdout` and `--brief`** (#811) — `rivet context` always
+  wrote `.rivet/agent-context.md`. That made it unusable from a Claude Code
+  `SessionStart` hook: the hook wants to *read* the document, and the command
+  turned that read into a working-tree mutation (untracked `.rivet/` in every
+  consumer repo — most don't gitignore it). `--stdout` prints the document
+  without creating the directory or writing any file, and suppresses the
+  `Generated …` banner so a downstream consumer gets only the document.
+  `--brief` drops the schema / link-type / traceability-rule / commands
+  reference — that material is stable and better fetched on demand via
+  `rivet docs` — and lists coverage rules below 100% rather than the full
+  table, cutting a 24 KB dump to ~3 KB for per-session context injection.
+
+## [0.33.0] - 2026-08-11
 
 Gate potency — *a gate that cannot fail is not a gate*. Four required CI checks
 ran, reported green, and could not go red. Ported from spar's gate audit

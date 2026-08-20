@@ -831,7 +831,27 @@ enum Command {
     },
 
     /// Generate .rivet/agent-context.md from current project state
-    Context,
+    ///
+    /// By default writes `.rivet/agent-context.md`. Pass `--stdout` to
+    /// print the document instead — useful for session-start hooks that
+    /// should not mutate the working tree. `--brief` emits a compact
+    /// project/schemas/counts/coverage-gaps/verdict summary suitable for
+    /// per-session context injection.
+    Context {
+        /// Write the document to stdout instead of `.rivet/agent-context.md`.
+        /// Leaves the working tree untouched — no directory is created and
+        /// no file is written. Intended for `SessionStart` hooks and
+        /// `rivet context | pbcopy`-style consumers.
+        #[arg(long)]
+        stdout: bool,
+
+        /// Emit a compact summary (project, schemas, counts, coverage gaps,
+        /// validate verdict) rather than the full document. Skips the
+        /// schema/link-type reference — that is better fetched on demand
+        /// via `rivet docs`.
+        #[arg(long)]
+        brief: bool,
+    },
 
     /// Validate a commit message for artifact trailers (pre-commit hook)
     CommitMsgCheck {
@@ -2324,8 +2344,8 @@ fn run(cli: Cli) -> Result<bool> {
     if let Command::Quickstart { format } = &cli.command {
         return cmd_docs(Some("quickstart"), false, None, format, 2);
     }
-    if let Command::Context = &cli.command {
-        return cmd_context(&cli);
+    if let Command::Context { stdout, brief } = &cli.command {
+        return cmd_context(&cli, *stdout, *brief);
     }
     if let Command::CommitMsgCheck { file } = &cli.command {
         return cmd_commit_msg_check(&cli, file);
@@ -2363,7 +2383,7 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Init { .. }
         | Command::Docs { .. }
         | Command::Quickstart { .. }
-        | Command::Context
+        | Command::Context { .. }
         | Command::CommitMsgCheck { .. } => unreachable!(),
         #[cfg(feature = "lsp")]
         Command::Lsp => unreachable!(),
@@ -12953,8 +12973,13 @@ fn cmd_schema_get_json(cli: &Cli, name: &str, print_content: bool) -> Result<boo
     Ok(true)
 }
 
-/// Generate .rivet/agent-context.md from project state.
-fn cmd_context(cli: &Cli) -> Result<bool> {
+/// Generate the agent-context document from project state.
+///
+/// With `stdout: true` the document is printed to stdout and the working
+/// tree is left untouched — no `.rivet/` directory is created. Otherwise
+/// `.rivet/agent-context.md` is written as before. `brief: true` emits a
+/// compact summary optimised for per-session context injection.
+fn cmd_context(cli: &Cli, stdout: bool, brief: bool) -> Result<bool> {
     let ctx = ProjectContext::load_with_docs(cli)?;
     let config = ctx.config;
     let store = ctx.store;
@@ -12964,10 +12989,6 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
     let doc_store = ctx.doc_store.unwrap_or_default();
     let diagnostics = validate::validate_with_externals(&store, &schema, &graph, &external_schemas);
     let coverage_report = coverage::compute_coverage(&store, &schema, &graph);
-
-    let rivet_dir = cli.project.join(".rivet");
-    std::fs::create_dir_all(&rivet_dir)
-        .with_context(|| format!("creating {}", rivet_dir.display()))?;
 
     let mut out = String::new();
     out.push_str("# Rivet Agent Context\n\n");
@@ -13019,78 +13040,98 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
     out.push_str(&format!("| **Total** | **{}** | |\n\n", store.len()));
 
     // ── 3. Schema summary (types + required fields) ─────────────────────
-    out.push_str("## Schema\n\n");
-    let mut stypes: Vec<_> = schema.artifact_types.values().collect();
-    stypes.sort_by_key(|t| &t.name);
-    for t in &stypes {
-        let required: Vec<&str> = t
-            .fields
-            .iter()
-            .filter(|f| f.required)
-            .map(|f| f.name.as_str())
-            .collect();
-        let req_str = if required.is_empty() {
-            String::from("(none)")
-        } else {
-            required.join(", ")
-        };
-        out.push_str(&format!(
-            "- **`{}`** — {}  \n  Required fields: {}\n",
-            t.name, t.description, req_str
-        ));
-    }
-
-    // Link types
-    out.push_str("\n### Link Types\n\n");
-    let mut links: Vec<_> = schema.link_types.values().collect();
-    links.sort_by_key(|l| &l.name);
-    for l in &links {
-        let inv = l.inverse.as_deref().unwrap_or("-");
-        out.push_str(&format!("- `{}` (inverse: `{}`)\n", l.name, inv));
-    }
-    out.push('\n');
-
-    // ── 4. Traceability rules ───────────────────────────────────────────
-    out.push_str("## Traceability Rules\n\n");
-    if schema.traceability_rules.is_empty() {
-        out.push_str("No traceability rules defined.\n\n");
-    } else {
-        out.push_str("| Rule | Source Type | Severity | Description |\n");
-        out.push_str("|------|------------|----------|-------------|\n");
-        for rule in &schema.traceability_rules {
-            let sev = match rule.severity {
-                Severity::Error => "error",
-                Severity::Warning => "warning",
-                Severity::Info => "info",
+    // Skipped under --brief: the schema/link/rule reference is stable and
+    // better fetched on demand via `rivet docs`; per-session injection
+    // wants project state, not the reference (#811).
+    if !brief {
+        out.push_str("## Schema\n\n");
+        let mut stypes: Vec<_> = schema.artifact_types.values().collect();
+        stypes.sort_by_key(|t| &t.name);
+        for t in &stypes {
+            let required: Vec<&str> = t
+                .fields
+                .iter()
+                .filter(|f| f.required)
+                .map(|f| f.name.as_str())
+                .collect();
+            let req_str = if required.is_empty() {
+                String::from("(none)")
+            } else {
+                required.join(", ")
             };
             out.push_str(&format!(
-                "| {} | {} | {} | {} |\n",
-                rule.name, rule.source_type, sev, rule.description
+                "- **`{}`** — {}  \n  Required fields: {}\n",
+                t.name, t.description, req_str
             ));
         }
+
+        // Link types
+        out.push_str("\n### Link Types\n\n");
+        let mut links: Vec<_> = schema.link_types.values().collect();
+        links.sort_by_key(|l| &l.name);
+        for l in &links {
+            let inv = l.inverse.as_deref().unwrap_or("-");
+            out.push_str(&format!("- `{}` (inverse: `{}`)\n", l.name, inv));
+        }
         out.push('\n');
+
+        // ── 4. Traceability rules ───────────────────────────────────────
+        out.push_str("## Traceability Rules\n\n");
+        if schema.traceability_rules.is_empty() {
+            out.push_str("No traceability rules defined.\n\n");
+        } else {
+            out.push_str("| Rule | Source Type | Severity | Description |\n");
+            out.push_str("|------|------------|----------|-------------|\n");
+            for rule in &schema.traceability_rules {
+                let sev = match rule.severity {
+                    Severity::Error => "error",
+                    Severity::Warning => "warning",
+                    Severity::Info => "info",
+                };
+                out.push_str(&format!(
+                    "| {} | {} | {} | {} |\n",
+                    rule.name, rule.source_type, sev, rule.description
+                ));
+            }
+            out.push('\n');
+        }
     }
 
     // ── 5. Coverage summary ─────────────────────────────────────────────
+    // Under --brief, list only rules below 100% (the actionable ones);
+    // otherwise emit the full table.
     out.push_str("## Coverage\n\n");
     out.push_str(&format!(
         "**Overall: {:.1}%**\n\n",
         coverage_report.overall_coverage()
     ));
     if !coverage_report.entries.is_empty() {
-        out.push_str("| Rule | Source Type | Covered | Total | % |\n");
-        out.push_str("|------|------------|---------|-------|---|\n");
-        for entry in &coverage_report.entries {
-            out.push_str(&format!(
-                "| {} | {} | {} | {} | {:.1}% |\n",
-                entry.rule_name,
-                entry.source_type,
-                entry.covered,
-                entry.total,
-                entry.percentage()
-            ));
+        let entries: Vec<_> = if brief {
+            coverage_report
+                .entries
+                .iter()
+                .filter(|e| e.percentage() < 100.0)
+                .collect()
+        } else {
+            coverage_report.entries.iter().collect()
+        };
+        if entries.is_empty() {
+            out.push_str("All rules at 100% coverage.\n\n");
+        } else {
+            out.push_str("| Rule | Source Type | Covered | Total | % |\n");
+            out.push_str("|------|------------|---------|-------|---|\n");
+            for entry in entries {
+                out.push_str(&format!(
+                    "| {} | {} | {} | {} | {:.1}% |\n",
+                    entry.rule_name,
+                    entry.source_type,
+                    entry.covered,
+                    entry.total,
+                    entry.percentage()
+                ));
+            }
+            out.push('\n');
         }
-        out.push('\n');
     }
 
     // ── 6. Validation summary ───────────────────────────────────────────
@@ -13116,23 +13157,41 @@ fn cmd_context(cli: &Cli) -> Result<bool> {
     }
 
     // ── 7. Quick command reference ──────────────────────────────────────
-    out.push_str("## Commands\n\n");
-    out.push_str("```bash\n");
-    out.push_str("rivet validate              # validate all artifacts\n");
-    out.push_str("rivet list                  # list all artifacts\n");
-    out.push_str("rivet list -t <type>        # filter by type\n");
-    out.push_str("rivet stats                 # artifact counts + orphans\n");
-    out.push_str("rivet coverage              # traceability coverage report\n");
-    out.push_str("rivet matrix --from X --to Y  # traceability matrix\n");
-    out.push_str("rivet diff --base A --head B  # compare artifact sets\n");
-    out.push_str("rivet schema list           # list schema types\n");
-    out.push_str("rivet schema show <type>    # show type details\n");
-    out.push_str("rivet schema rules          # list traceability rules\n");
-    out.push_str("rivet export -f generic-yaml  # export as YAML\n");
-    out.push_str("rivet serve                 # start dashboard on :3000\n");
-    out.push_str("rivet context               # regenerate this file\n");
-    out.push_str("```\n");
+    if !brief {
+        out.push_str("## Commands\n\n");
+        out.push_str("```bash\n");
+        out.push_str("rivet validate              # validate all artifacts\n");
+        out.push_str("rivet list                  # list all artifacts\n");
+        out.push_str("rivet list -t <type>        # filter by type\n");
+        out.push_str("rivet stats                 # artifact counts + orphans\n");
+        out.push_str("rivet coverage              # traceability coverage report\n");
+        out.push_str("rivet matrix --from X --to Y  # traceability matrix\n");
+        out.push_str("rivet diff --base A --head B  # compare artifact sets\n");
+        out.push_str("rivet schema list           # list schema types\n");
+        out.push_str("rivet schema show <type>    # show type details\n");
+        out.push_str("rivet schema rules          # list traceability rules\n");
+        out.push_str("rivet export -f generic-yaml  # export as YAML\n");
+        out.push_str("rivet serve                 # start dashboard on :3000\n");
+        out.push_str("rivet context               # regenerate this file\n");
+        out.push_str("```\n");
+    }
 
+    // --stdout leaves the working tree untouched: no directory created,
+    // no file written, no "Generated ..." line on stdout (which would
+    // corrupt a hook consuming the document).
+    if stdout {
+        use std::io::Write;
+        let stdout_lock = std::io::stdout();
+        let mut handle = stdout_lock.lock();
+        handle
+            .write_all(out.as_bytes())
+            .context("writing agent context to stdout")?;
+        return Ok(true);
+    }
+
+    let rivet_dir = cli.project.join(".rivet");
+    std::fs::create_dir_all(&rivet_dir)
+        .with_context(|| format!("creating {}", rivet_dir.display()))?;
     let context_path = rivet_dir.join("agent-context.md");
     std::fs::write(&context_path, &out)
         .with_context(|| format!("writing {}", context_path.display()))?;

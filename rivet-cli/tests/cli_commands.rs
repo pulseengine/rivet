@@ -9020,3 +9020,171 @@ fn short_help_options_block_stays_scannable() {
         offenders.join("\n")
     );
 }
+
+// ── rivet context (issue #811) ──────────────────────────────────────────
+
+/// Bootstrap a fresh dev project in a temp dir so `context` has real
+/// input to reason about, without touching the caller's repo.
+fn context_test_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let out = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("run rivet init for context tests");
+    assert!(
+        out.status.success(),
+        "rivet init must succeed. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    tmp
+}
+
+/// #811 primary ask: `rivet context --stdout` must print the document to
+/// stdout and MUST NOT create `.rivet/agent-context.md` — a session-start
+/// hook cannot leave an untracked directory behind in the consumer's tree.
+#[test]
+fn context_stdout_does_not_mutate_working_tree() {
+    let tmp = context_test_project();
+    let dir = tmp.path();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dir.to_str().unwrap(), "context", "--stdout"])
+        .output()
+        .expect("run rivet context --stdout");
+
+    assert!(
+        out.status.success(),
+        "rivet context --stdout must exit 0. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("# Rivet Agent Context"),
+        "--stdout must print the document header, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("## Project"),
+        "--stdout must print the Project section, got:\n{stdout}"
+    );
+    // The disk-writing path emits "Generated <path>" on stdout; that
+    // banner would corrupt any downstream consumer of the document.
+    assert!(
+        !stdout.contains("Generated "),
+        "--stdout must not print the 'Generated ...' banner (it would \
+         corrupt a hook consuming the document); got:\n{stdout}"
+    );
+
+    // No `.rivet/` directory should have been created — the entire point
+    // of --stdout is that a session-start hook leaves the tree clean.
+    let rivet_dir = dir.join(".rivet");
+    assert!(
+        !rivet_dir.exists(),
+        "--stdout must not create .rivet/ (found at {})",
+        rivet_dir.display()
+    );
+}
+
+/// Default (no `--stdout`): behaviour is unchanged — the document lands
+/// at `.rivet/agent-context.md` and stdout carries only the banner.
+#[test]
+fn context_default_still_writes_file() {
+    let tmp = context_test_project();
+    let dir = tmp.path();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dir.to_str().unwrap(), "context"])
+        .output()
+        .expect("run rivet context");
+
+    assert!(
+        out.status.success(),
+        "rivet context must exit 0. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let context_path = dir.join(".rivet").join("agent-context.md");
+    assert!(
+        context_path.exists(),
+        "default mode must write {}",
+        context_path.display()
+    );
+    let body = std::fs::read_to_string(&context_path).expect("read agent-context.md");
+    assert!(
+        body.contains("# Rivet Agent Context"),
+        "written document must contain the header, got:\n{body}"
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("Generated ") && stdout.contains("agent-context.md"),
+        "default mode must print the 'Generated ...' banner, got:\n{stdout}"
+    );
+}
+
+/// `--brief --stdout` drops the schema/link/rule/commands reference (the
+/// stable material better fetched via `rivet docs`), keeping the actual
+/// state a hook wants: project, artifact counts, coverage gaps, verdict.
+#[test]
+fn context_brief_is_smaller_and_drops_the_reference() {
+    let tmp = context_test_project();
+    let dir = tmp.path();
+
+    let full = Command::new(rivet_bin())
+        .args(["--project", dir.to_str().unwrap(), "context", "--stdout"])
+        .output()
+        .expect("run rivet context --stdout");
+    let brief = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "context",
+            "--stdout",
+            "--brief",
+        ])
+        .output()
+        .expect("run rivet context --stdout --brief");
+
+    assert!(full.status.success(), "full --stdout must exit 0");
+    assert!(brief.status.success(), "--brief --stdout must exit 0");
+
+    let full = String::from_utf8_lossy(&full.stdout);
+    let brief = String::from_utf8_lossy(&brief.stdout);
+
+    // Brief must still carry the state a hook actually needs.
+    for header in [
+        "# Rivet Agent Context",
+        "## Project",
+        "## Artifacts",
+        "## Coverage",
+        "## Validation",
+    ] {
+        assert!(
+            brief.contains(header),
+            "--brief must retain '{header}', got:\n{brief}"
+        );
+    }
+    // Brief must drop the stable reference material.
+    for dropped in [
+        "## Schema",
+        "### Link Types",
+        "## Traceability Rules",
+        "## Commands",
+    ] {
+        assert!(
+            !brief.contains(dropped),
+            "--brief must drop '{dropped}' (available via `rivet docs`); got:\n{brief}"
+        );
+        assert!(
+            full.contains(dropped),
+            "regression: full mode must still carry '{dropped}'; got:\n{full}"
+        );
+    }
+    assert!(
+        brief.len() < full.len(),
+        "brief must be strictly smaller than full (brief={}, full={})",
+        brief.len(),
+        full.len()
+    );
+}
