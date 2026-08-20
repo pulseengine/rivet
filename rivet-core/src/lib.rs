@@ -798,6 +798,67 @@ mod tests {
     }
 
     // rivet: verifies REQ-004
+    // #746: the whole point of canonicalizing both `source_file`s before
+    // the overlap-set membership check is to bring textually-different
+    // but semantically-equivalent paths into equality — the exact shape
+    // rivet.yaml can produce when the same file is referenced through
+    // different path spellings across two overlapping sources. Without
+    // canonicalization the two paths compare unequal, membership lookup
+    // misses, and the phantom `duplicate-artifact-id` leaks back through.
+    //
+    // Uses `subdir/..` traversal to differ textually — `.` components
+    // are silently normalized by `PathBuf::PartialEq` (via
+    // `Path::components`) so they can't be used to force literal
+    // inequality, but `..` components are preserved verbatim and only
+    // resolved by `canonicalize` (which walks the filesystem). This
+    // kills the "delete match arm `(Ok(cx), Ok(cy))`" mutation on
+    // `is_same_overlapped_file` — with that arm deleted, both sides
+    // fall through to the un-canonicalized fallback and compare
+    // unequal, the suppression doesn't fire, and this assertion fails.
+    #[test]
+    fn excluding_overlaps_suppresses_via_canonicalize_on_textually_distinct_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Both `subdir` and `file.yaml` must exist for `canonicalize` on
+        // `subdir/../file.yaml` to succeed — it walks each component.
+        std::fs::create_dir(tmp.path().join("subdir")).unwrap();
+        let file = tmp.path().join("file.yaml");
+        std::fs::write(&file, "- id: REQ-1\n").unwrap();
+        let canon = file.canonicalize().unwrap();
+
+        // Textually distinct: `dir/file.yaml` vs `dir/subdir/../file.yaml`.
+        // `PathBuf::PartialEq` uses `Path::components`, which normalizes
+        // `.` away but preserves `..`, so the second form retains a `..`
+        // component and compares unequal to the first. Both canonicalize
+        // to the same on-disk file.
+        let path_a = tmp.path().join("file.yaml");
+        let path_b = tmp.path().join("subdir").join("..").join("file.yaml");
+        assert_ne!(
+            path_a, path_b,
+            "premise: paths must differ textually for this test to \
+             exercise the canonicalize branch of is_same_overlapped_file"
+        );
+        assert_eq!(
+            path_a.canonicalize().unwrap(),
+            path_b.canonicalize().unwrap(),
+            "premise: both must canonicalize to the same on-disk file"
+        );
+
+        let artifacts = vec![
+            make_artifact("REQ-1", Some(path_a)),
+            make_artifact("REQ-1", Some(path_b)),
+        ];
+        let mut overlapped = std::collections::HashSet::new();
+        overlapped.insert(canon);
+        assert!(
+            detect_duplicate_ids_excluding_overlaps(&artifacts, &overlapped).is_empty(),
+            "self-collision must be suppressed even when the two source_file \
+             paths differ textually but canonicalize to the same on-disk \
+             file — that's why is_same_overlapped_file canonicalizes both \
+             sides before the overlap-set membership check"
+        );
+    }
+
+    // rivet: verifies REQ-004
     // #746: genuine cross-file collisions must still fire — the same id
     // in two DIFFERENT files is a real bug (the second silently
     // overwrites the first) and continues to surface as
