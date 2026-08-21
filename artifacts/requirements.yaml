@@ -8281,3 +8281,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-08-20T00:00:00Z
+
+  - id: REQ-308
+    type: requirement
+    title: "`rivet verify` advances on the existence of evidence, not its sufficiency (#838)"
+    status: proposed
+    description: "Reported from varve, where rivet is the release-readiness gate, and reproduced in rivet's own v0.34.0 cut the same day. `rivet verify REQ-X` correctly refuses when there is NO evidence — that guard works and stopped the reporter twice. But when a `verifies` marker exists it advances unconditionally, and a marker is cheap: one comment line above one `#[test]`. The structural problem is granularity: a requirement is a set of clauses, a marker attaches to the requirement, so the evidence link is coarser than the claim and the gap is invisible. The failure is not a missing check but a graph that LOOKS complete, which is worse — readers stop reading the requirement text once status says `verified`. In varve three requirements had markers and undischarged clauses (a gate that cannot detect the failure mode its clause names; a clause implemented for one transport but not another; a clause parsing a field nothing consumes). In rivet, REQ-298 was flipped to `verified` during the v0.34.0 release with its third clause ('tighten the top-level command list so the common path is legible') knowingly undischarged — 52 flat top-level commands remain — and `coverage --tests` reported `REQ-298  1 test marker`, indistinguishable from full discharge. The residual was hand-carried into REQ-307 plus commit prose, i.e. the reporter's option (3) improvised manually, and crucially the trace graph does NOT carry that caveat, so the caveat is not traceable. Degenerate variant found the same day: a marker that matches nothing is reported as neither present nor broken — the scanner regex accepts only word characters and hyphens after `verifies`, and `#` is neither, so `rivet: verifies #808` silently is not a marker at all; six such markers existed against 593 valid ones. Options in cost order: (1) per-clause markers `rivet: verifies REQ-X clause 3`, the real fix, but needs clauses addressable rather than prose inside `description` — a schema migration across every artifact; (2) make `partially-verifies` BLOCK rather than annotate, so `verify` refuses to advance past `implemented` without explicit override — no schema change, converts the common case into a refusal, and is therefore the right first move; (3) record the human judgement explicitly (`--clauses-discharged 1,2,4 --note ...`) so an unexamined default becomes a stated claim — cheap, but only meaningful if clause numbering is stable, and prose clauses renumber on any description edit, so record clause TEXT alongside the index or do (1) first."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-21T00:00:00Z
