@@ -7931,7 +7931,7 @@ artifacts:
   - id: REQ-274
     type: requirement
     title: "test-result trace: collapsible tree view (fold/expand) in serve + export (customer request)"
-    status: proposed
+    status: verified
     description: "Customer-reported. The req->test-result forward trace (REQ-238) renders its hops flat; deep artifacts (e.g. the ASPICE chain sw-req<-sw-detail-design<-unit-verification) produce a lot of hops that become hard to read. The trace data is already a tree — rivet-core/src/result_trace.rs ResultTraceNode carries `parent` (id one hop toward the requirement) + `distance` (depth) — and rivet already ships a fold/expand primitive: rivet-cli/src/serve/components.rs collapsible_tree() (nested native <details> + Expand All/Collapse All, used for the STPA hierarchy). Render the ResultTraceNode tree through collapsible_tree() (deep branches collapsed by default, per-branch expand, verdict badge per hop). Native <details> works with zero JS, so it renders in BOTH `rivet serve` AND static export. Rendering change over an existing tree model + existing component; no new infra."
     release: v0.35.0
     provenance:

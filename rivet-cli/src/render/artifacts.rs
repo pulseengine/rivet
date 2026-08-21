@@ -36,6 +36,65 @@
     clippy::print_stderr
 )]
 
+// Leaves render as a plain line, not a <details>: a disclosure
+// triangle over "no further hops" is noise. Only hops that actually
+// have children are foldable.
+//
+// A large trace opens nothing — 33 expanded siblings is the wall this
+// requirement is about. A small one opens its first level, because
+// folding three hops helps nobody. Expand All covers the rest.
+pub(crate) fn render_trace_hop(
+    n: &rivet_core::result_trace::TraceTreeNode<'_>,
+    total: usize,
+    out: &mut String,
+) {
+    let node_id = html_escape(&n.node.artifact_id);
+    let result_badge = match &n.node.status {
+        Some(status) => {
+            let (cls, label) = match status {
+                rivet_core::results::TestStatus::Pass => ("badge-ok", "pass"),
+                rivet_core::results::TestStatus::Fail => ("badge-error", "fail"),
+                rivet_core::results::TestStatus::Error => ("badge-error", "error"),
+                rivet_core::results::TestStatus::Skip => ("badge-warn", "skip"),
+                rivet_core::results::TestStatus::Blocked => ("badge-warn", "blocked"),
+            };
+            format!("<span class=\"badge {cls}\">{label}</span>")
+        }
+        None => String::from("<span class=\"meta\">&mdash;</span>"),
+    };
+    let label = format!(
+        "<span class=\"link-pill\">{link_type}</span> \
+         <a hx-get=\"/artifacts/{node_id}\" hx-target=\"#content\" \
+         hx-push-url=\"true\" href=\"/artifacts/{node_id}\">{node_id}</a> \
+         {result_badge}",
+        link_type = html_escape(&n.node.link_type),
+    );
+
+    if n.children.is_empty() {
+        out.push_str(&format!(
+            "<div class=\"trace-hop-leaf\" style=\"padding:.2rem 0 .2rem 1.15rem\">\
+             {label}</div>"
+        ));
+        return;
+    }
+
+    let subtree = n.len() - 1;
+    let open = if total <= 10 && n.node.distance <= 1 {
+        " open"
+    } else {
+        ""
+    };
+    out.push_str(&format!(
+        "<details class=\"stpa-details\"{open}><summary>{label} \
+         <span class=\"meta\">{subtree} more</span></summary>\
+         <div style=\"margin-left:.75rem\">"
+    ));
+    for child in &n.children {
+        render_trace_hop(child, total, out);
+    }
+    out.push_str("</div></details>");
+}
+
 use rivet_core::document::html_escape;
 use rivet_core::markdown::{render_markdown, strip_html_tags};
 
@@ -859,37 +918,29 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
                 ("badge-warn", "no test evidence")
             }
         };
-        html.push_str(&format!(
-            "<div class=\"card\"><h3>Test Result Trace \
-             <span class=\"badge {verdict_class}\">{verdict_label}</span></h3>\
-             <table><thead><tr><th>Hops</th><th>Artifact</th><th>Via</th><th>Result</th></tr></thead><tbody>"
-        ));
-        for node in &trace {
-            let node_id = html_escape(&node.artifact_id);
-            let result_cell = match &node.status {
-                Some(status) => {
-                    let (cls, label) = match status {
-                        rivet_core::results::TestStatus::Pass => ("badge-ok", "pass"),
-                        rivet_core::results::TestStatus::Fail => ("badge-error", "fail"),
-                        rivet_core::results::TestStatus::Error => ("badge-error", "error"),
-                        rivet_core::results::TestStatus::Skip => ("badge-warn", "skip"),
-                        rivet_core::results::TestStatus::Blocked => ("badge-warn", "blocked"),
-                    };
-                    format!("<span class=\"badge {cls}\">{label}</span>")
-                }
-                None => String::from("<span class=\"meta\">&mdash;</span>"),
-            };
-            html.push_str(&format!(
-                "<tr><td>{hops}</td>\
-                 <td><a hx-get=\"/artifacts/{node_id}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/artifacts/{node_id}\">{node_id}</a></td>\
-                 <td><span class=\"link-pill\">{link_type}</span> {via}</td>\
-                 <td>{result_cell}</td></tr>",
-                hops = node.distance,
-                link_type = html_escape(&node.link_type),
-                via = html_escape(&node.via_target),
-            ));
+        // REQ-274: the hops render as a nested <details> tree rather than a
+        // flat table. Deep chains (the ASPICE sw-req <- sw-detail-design <-
+        // unit-verification shape) were an undifferentiated wall of rows.
+        //
+        // Native <details> means this needs no JavaScript, so the same markup
+        // works in `rivet serve` AND in the static export. The Expand/Collapse
+        // All buttons are progressive enhancement — without JS every branch is
+        // still individually operable.
+        let tree = rivet_core::result_trace::as_tree(id, &trace);
+
+        let mut tree_html = format!(
+            "<p style=\"margin:0 0 .6rem\"><span class=\"badge {verdict_class}\">\
+             {verdict_label}</span> <span class=\"meta\">{n} hop(s) traced</span></p>",
+            n = trace.len()
+        );
+        for top in &tree {
+            render_trace_hop(top, trace.len(), &mut tree_html);
         }
-        html.push_str("</tbody></table></div>");
+        html.push_str(&crate::render::components::collapsible_tree(
+            "Test Result Trace",
+            &tree_html,
+            "trace-results-tree",
+        ));
     }
 
     // Documents referencing this artifact — reverse index from DocumentStore.
@@ -1187,5 +1238,107 @@ mod tests {
         // Two viewer wrappers present.
         assert_eq!(wrapped.matches("<div class=\"svg-viewer\">").count(), 2);
         assert_eq!(wrapped.matches("svg-viewer-toolbar").count(), 2);
+    }
+
+    fn tn(id: &str, via: &str, dist: usize) -> rivet_core::result_trace::ResultTraceNode {
+        rivet_core::result_trace::ResultTraceNode {
+            artifact_id: id.into(),
+            via_target: via.into(),
+            link_type: "verifies".into(),
+            distance: dist,
+            status: None,
+        }
+    }
+
+    /// REQ-274: the rendered tree must contain every hop the trace holds.
+    /// The whole risk of turning a flat table into a fold/expand tree is that
+    /// a branch quietly stops being emitted — and a collapsed view that is
+    /// missing hops looks identical to one that is merely folded.
+    ///
+    /// rivet: verifies REQ-274
+    #[test]
+    fn rendered_trace_tree_contains_every_hop() {
+        let flat = vec![
+            tn("DD-1", "REQ-1", 1),
+            tn("UT-1", "DD-1", 2),
+            tn("UT-2", "DD-1", 2),
+            tn("DD-2", "REQ-1", 1),
+        ];
+        let tree = rivet_core::result_trace::as_tree("REQ-1", &flat);
+        let mut html = String::new();
+        for top in &tree {
+            render_trace_hop(top, flat.len(), &mut html);
+        }
+        for n in &flat {
+            assert!(
+                html.contains(&n.artifact_id),
+                "hop {} missing from the rendered tree",
+                n.artifact_id
+            );
+        }
+    }
+
+    /// Hops with children are foldable; leaves are plain lines. A disclosure
+    /// triangle over nothing is noise, and it was what made the first version
+    /// of this view no more readable than the table it replaced.
+    ///
+    /// rivet: verifies REQ-274
+    #[test]
+    fn only_hops_with_children_are_foldable() {
+        let flat = vec![
+            tn("DD-1", "REQ-1", 1),
+            tn("UT-1", "DD-1", 2),
+            tn("DD-2", "REQ-1", 1),
+        ];
+        let tree = rivet_core::result_trace::as_tree("REQ-1", &flat);
+        let mut html = String::new();
+        for top in &tree {
+            render_trace_hop(top, flat.len(), &mut html);
+        }
+        assert_eq!(
+            html.matches("<details").count(),
+            1,
+            "only DD-1 has children, so only it should fold"
+        );
+        assert_eq!(
+            html.matches("trace-hop-leaf").count(),
+            2,
+            "UT-1 and DD-2 are leaves and should render as plain lines"
+        );
+        assert!(!html.contains("no further hops"));
+    }
+
+    /// A large trace collapses by default — 33 expanded siblings is the wall
+    /// the customer reported. A small one opens its first level, because
+    /// folding three hops helps nobody.
+    ///
+    /// rivet: verifies REQ-274
+    #[test]
+    fn large_traces_collapse_and_small_ones_expand() {
+        let small = vec![tn("DD-1", "REQ-1", 1), tn("UT-1", "DD-1", 2)];
+        let tree = rivet_core::result_trace::as_tree("REQ-1", &small);
+        let mut html = String::new();
+        for t in &tree {
+            render_trace_hop(t, small.len(), &mut html);
+        }
+        assert!(
+            html.contains("<details class=\"stpa-details\" open>"),
+            "small trace opens"
+        );
+
+        let mut big: Vec<rivet_core::result_trace::ResultTraceNode> = (0..20)
+            .map(|i| tn(&format!("DD-{i}"), "REQ-1", 1))
+            .collect();
+        big.push(tn("UT-1", "DD-0", 2));
+        let tree = rivet_core::result_trace::as_tree("REQ-1", &big);
+        let mut html = String::new();
+        for t in &tree {
+            render_trace_hop(t, big.len(), &mut html);
+        }
+        assert!(
+            !html.contains("<details class=\"stpa-details\" open>"),
+            "a {}-hop trace must not open anything by default",
+            big.len()
+        );
     }
 }

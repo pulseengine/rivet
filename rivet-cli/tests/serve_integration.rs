@@ -960,10 +960,16 @@ fn artifact_detail_source_link_opens_source_view() {
 /// Trace" panel — the dashboard counterpart of `rivet trace-results`. It walks
 /// forward from the artifact to the verifications/tests that trace back to it,
 /// rolls them into a verdict badge, and lists each reached node with its
-/// result. REQ-001 has downstream links, so the card (with the Hops/Via table)
-/// must be present.
+/// result. REQ-001 has downstream links, so the panel must be present.
+///
+/// REQ-274 changed the presentation from a flat Hops/Via table to a nested
+/// `<details>` tree — this test now asserts the tree, and additionally that
+/// every hop the trace reports actually appears. A fold/expand view whose
+/// branches silently stop rendering looks identical to one that is merely
+/// collapsed, so hop-count parity is the assertion that matters.
 ///
 /// rivet: verifies REQ-238
+/// rivet: verifies REQ-274
 #[test]
 fn artifact_detail_renders_test_result_trace() {
     let (mut child, port) = start_server();
@@ -981,12 +987,33 @@ fn artifact_detail_renders_test_result_trace() {
         body.contains("passing") || body.contains("failing") || body.contains("no test evidence"),
         "the trace panel must show a rolled-up verdict badge"
     );
-    // The reached-node table columns are unique to this panel.
+    // REQ-274: rendered as a fold/expand tree, wrapped in the shared
+    // collapsible_tree component (Expand All / Collapse All).
     assert!(
-        body.contains("<th>Hops</th>") && body.contains("<th>Via</th>"),
-        "the trace panel must list reached nodes in a Hops/Artifact/Via/Result table"
+        body.contains("trace-results-tree") && body.contains("Expand All"),
+        "the trace panel must render through the collapsible tree component"
+    );
+    assert!(
+        !body.contains("<th>Hops</th>"),
+        "the flat Hops/Via table was replaced by the tree (REQ-274)"
     );
 
+    // The tree must actually contain hops. Foldable ones render as
+    // <details class="stpa-details">, leaves as .trace-hop-leaf lines.
+    //
+    // Exact hop-count parity is asserted in
+    // `render::artifacts::tests::rendered_trace_tree_contains_every_hop`,
+    // against a synthetic trace where the expected count is known. It is
+    // deliberately NOT re-derived here: there is no trace-results API route to
+    // compare against, and an earlier version of this test guarded the
+    // comparison on a 404 response — so it silently checked nothing while
+    // reporting green, which is the exact defect class this panel is for.
+    let hops =
+        body.matches("class=\"stpa-details\"").count() + body.matches("trace-hop-leaf").count();
+    assert!(
+        hops > 0,
+        "the trace tree rendered no hops at all for REQ-001, which has downstream links"
+    );
     child.kill().ok();
     child.wait().ok();
 }
