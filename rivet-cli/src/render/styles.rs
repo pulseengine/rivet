@@ -3,6 +3,17 @@
 /// Bundled font faces (Latin subset) — no Google Fonts CDN needed.
 pub(crate) const FONTS_CSS: &str = include_str!("../../assets/fonts.css");
 
+/// The single source of truth for the accent colour.
+///
+/// The CSS below declares `--accent` and several render modules emit the same
+/// colour into inline `style=` attributes, SVG strokes and graph edge colours
+/// where a CSS variable is not reachable. Those used to be hand-copied hex
+/// literals, which is how `.stat-blue`, the source-file icon, the doc-linkage
+/// graph and the status bars all drifted to the pre-REQ-276 blue while the
+/// palette moved. Reference this constant instead of retyping the hex; the
+/// `accent_constant_matches_css` test asserts the CSS agrees with it.
+pub(crate) const ACCENT_HEX: &str = "#2059b8";
+
 pub(crate) const CSS: &str = r#"
 /* ── Reset & base ─────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -16,8 +27,8 @@ pub(crate) const CSS: &str = r#"
   --text:   #1d1d1f;
   --text-secondary:#6e6e73;
   --border: #e5e5ea;
-  --accent: #3a86ff;
-  --accent-hover:#2568d6;
+  --accent: #2059b8;
+  --accent-hover:#18458d;
   --radius: 10px;
   --radius-sm:6px;
   --shadow: 0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
@@ -65,7 +76,7 @@ nav a{display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-radi
       color:var(--sidebar-text);font-size:.875rem;font-weight:500;
       transition:all var(--transition)}
 nav a:hover{background:var(--sidebar-hover);color:var(--sidebar-active);text-decoration:none}
-nav a.active{background:rgba(58,134,255,.08);color:var(--sidebar-active);border-left:2px solid var(--accent);padding-left:calc(.75rem - 2px)}
+nav a.active{background:rgba(32,89,184,.08);color:var(--sidebar-active);border-left:2px solid var(--accent);padding-left:calc(.75rem - 2px)}
 nav a:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
 /* ── Main content ─────────────────────────────────────────────── */
@@ -96,7 +107,7 @@ th{font-weight:600;font-size:.75rem;text-transform:uppercase;letter-spacing:.06e
 td{border-bottom:1px solid var(--border)}
 tbody tr{transition:background var(--transition)}
 tbody tr:nth-child(even){background:rgba(0,0,0,.015)}
-tbody tr:hover{background:rgba(58,134,255,.04)}
+tbody tr:hover{background:rgba(32,89,184,.04)}
 .tbl-filter-wrap{margin-bottom:.5rem}
 .tbl-filter{width:100%;max-width:20rem;padding:.4rem .65rem;font-size:.85rem;font-family:var(--mono);
   border:1px solid var(--border);border-radius:5px;background:var(--surface);color:var(--text);
@@ -142,9 +153,9 @@ td a{font-family:var(--mono);font-size:.85rem;font-weight:500}
                   font-variant-numeric:tabular-nums;line-height:1.2}
 .stat-box .label{font-size:.8rem;font-weight:500;color:var(--text-secondary);margin-top:.25rem;
                  text-transform:uppercase;letter-spacing:.04em}
-.stat-blue{border-top-color:#3a86ff}.stat-blue .number{color:#3a86ff}
+.stat-blue{border-top-color:#2059b8}.stat-blue .number{color:#2059b8}
 .stat-green{border-top-color:#15713a}.stat-green .number{color:#15713a}
-.stat-orange{border-top-color:#e67e22}.stat-orange .number{color:#e67e22}
+.stat-orange{border-top-color:#c66c1d}.stat-orange .number{color:#c66c1d}
 .stat-red{border-top-color:#c62828}.stat-red .number{color:#c62828}
 .stat-amber{border-top-color:#b8860b}.stat-amber .number{color:#b8860b}
 .stat-purple{border-top-color:#6f42c1}.stat-purple .number{color:#6f42c1}
@@ -167,14 +178,14 @@ td a{font-family:var(--mono);font-size:.85rem;font-weight:500}
 .form-row select{padding-right:2rem;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236e6e73' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat:no-repeat;background-position:right .75rem center}
 .form-row input:focus,.form-row select:focus{
-  outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(58,134,255,.15)}
+  outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(32,89,184,.15)}
 .form-row input[type="range"]{padding:0;border:none;accent-color:var(--accent);width:100%}
 .form-row input[type="range"]:focus{box-shadow:none}
 .form-row button{padding:.5rem 1.25rem;background:var(--accent);color:#fff;border:none;
                  border-radius:var(--radius-sm);font-size:.875rem;font-weight:600;
                  font-family:var(--font);cursor:pointer;transition:all var(--transition);
                  box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.form-row button:hover{background:var(--accent-hover);box-shadow:0 2px 6px rgba(58,134,255,.25);transform:translateY(-1px)}
+.form-row button:hover{background:var(--accent-hover);box-shadow:0 2px 6px rgba(32,89,184,.25);transform:translateY(-1px)}
 .form-row button:active{transform:translateY(0)}
 .form-row button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
@@ -203,7 +214,7 @@ nav .nav-divider{height:1px;background:rgba(255,255,255,.06);margin:.75rem .75re
 .context-bar .ctx-project{font-weight:700;color:var(--text);font-size:.82rem}
 .context-bar .ctx-sep{opacity:.25}
 .context-bar .ctx-git{font-family:var(--mono);font-size:.72rem;padding:.15rem .4rem;border-radius:4px;
-  background:rgba(58,134,255,.08);color:var(--accent)}
+  background:rgba(32,89,184,.08);color:var(--accent)}
 .context-bar .ctx-dirty{font-family:var(--mono);font-size:.68rem;padding:.15rem .4rem;border-radius:4px;
   background:rgba(220,53,69,.1);color:#c62828}
 .context-bar .ctx-clean{font-family:var(--mono);font-size:.68rem;padding:.15rem .4rem;border-radius:4px;
@@ -237,8 +248,8 @@ nav .nav-divider{height:1px;background:rgba(255,255,255,.06);margin:.75rem .75re
 details.ver-row>summary{cursor:pointer;list-style:none;padding:.6rem .875rem;border-bottom:1px solid var(--border);
   display:flex;align-items:center;gap:.75rem;transition:background var(--transition)}
 details.ver-row>summary::-webkit-details-marker{display:none}
-details.ver-row>summary:hover{background:rgba(58,134,255,.04)}
-details.ver-row[open]>summary{background:rgba(58,134,255,.04);border-bottom-color:var(--accent)}
+details.ver-row>summary:hover{background:rgba(32,89,184,.04)}
+details.ver-row[open]>summary{background:rgba(32,89,184,.04);border-bottom-color:var(--accent)}
 details.ver-row>.ver-detail{padding:1rem 1.5rem;background:rgba(0,0,0,.01);border-bottom:1px solid var(--border)}
 .ver-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4}
 details.ver-row[open] .ver-chevron{transform:rotate(90deg)}
@@ -274,7 +285,7 @@ details.ver-row[open] .ver-chevron{transform:rotate(90deg)}
 details.diff-row>summary{cursor:pointer;list-style:none;padding:.6rem .875rem;border-bottom:1px solid var(--border);
   display:flex;align-items:center;gap:.5rem;transition:background var(--transition)}
 details.diff-row>summary::-webkit-details-marker{display:none}
-details.diff-row>summary:hover{background:rgba(58,134,255,.04)}
+details.diff-row>summary:hover{background:rgba(32,89,184,.04)}
 details.diff-row[open]>summary{background:rgba(184,134,11,.06);border-bottom-color:var(--border)}
 details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);border-bottom:1px solid var(--border);font-size:.88rem}
 .diff-field{padding:.3rem 0;display:flex;align-items:baseline;gap:.5rem}
@@ -327,7 +338,7 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
                    color:var(--text-secondary);cursor:pointer;padding:.2rem .45rem;
                    border-radius:4px;transition:background var(--transition);
                    text-transform:none;letter-spacing:0;font-weight:500}
-.filter-grid label:hover{background:rgba(58,134,255,.06)}
+.filter-grid label:hover{background:rgba(32,89,184,.06)}
 .filter-grid input[type="checkbox"]{margin:0;accent-color:var(--accent);width:14px;height:14px;
                                     cursor:pointer;border-radius:3px}
 
@@ -368,7 +379,7 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .art-preview-links{font-size:.72rem;color:var(--text-secondary);margin-top:.35rem;font-family:var(--mono)}
 .art-preview-tags{margin-top:.35rem;display:flex;flex-wrap:wrap;gap:.25rem}
 .art-preview-tag{font-size:.65rem;padding:.1rem .35rem;border-radius:3px;
-  background:rgba(58,134,255,.08);color:var(--accent);font-family:var(--mono)}
+  background:rgba(32,89,184,.08);color:var(--accent);font-family:var(--mono)}
 .doc-glossary{font-size:.9rem}
 .doc-glossary dt{font-weight:600;color:var(--text)}
 .doc-glossary dd{margin:0 0 .5rem 1rem;color:var(--text-secondary)}
@@ -389,20 +400,20 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .source-tree li{margin:0}
 .source-tree .tree-item{display:flex;align-items:center;gap:.4rem;padding:.2rem .5rem;border-radius:var(--radius-sm);
   transition:background var(--transition);color:var(--text)}
-.source-tree .tree-item:hover{background:rgba(58,134,255,.06);text-decoration:none}
+.source-tree .tree-item:hover{background:rgba(32,89,184,.06);text-decoration:none}
 .source-tree .tree-icon{display:inline-flex;width:1rem;height:1rem;align-items:center;justify-content:center;flex-shrink:0;opacity:.55}
 .source-tree .indent{display:inline-block;width:1.25rem;flex-shrink:0}
 .source-viewer{font-family:var(--mono);font-size:.82rem;line-height:1.7;overflow-x:auto;
   background:#fafbfc;border:1px solid var(--border);border-radius:var(--radius);padding:0}
 .source-viewer table{width:100%;border-collapse:collapse;margin:0}
 .source-viewer table td{padding:0;border:none;vertical-align:top}
-.source-viewer table tr:hover{background:rgba(58,134,255,.04)}
+.source-viewer table tr:hover{background:rgba(32,89,184,.04)}
 .source-line{display:table-row}
 .source-line .line-no{display:table-cell;width:3.5rem;min-width:3.5rem;padding:.05rem .75rem .05rem .5rem;
   text-align:right;color:#b0b0b8;user-select:none;border-right:1px solid var(--border);background:#f5f5f7}
 .source-line .line-content{display:table-cell;padding:.05rem .75rem;white-space:pre;tab-size:4}
-.source-line-highlight{background:rgba(58,134,255,.08) !important}
-.source-line-highlight .line-no{background:rgba(58,134,255,.12);color:var(--accent);font-weight:600}
+.source-line-highlight{background:rgba(32,89,184,.08) !important}
+.source-line-highlight .line-no{background:rgba(32,89,184,.12);color:var(--accent);font-weight:600}
 .source-line:target{background:rgba(255,210,50,.18) !important}
 .source-line:target .line-no{background:rgba(255,210,50,.25);color:#9a6700;font-weight:700}
 .source-line .line-no a{color:inherit;text-decoration:none}
@@ -433,19 +444,19 @@ details.diff-row>.diff-detail{padding:.75rem 1.25rem;background:rgba(0,0,0,.01);
 .stpa-node{display:flex;align-items:center;gap:.5rem;padding:.35rem 0;font-size:.9rem}
 .stpa-node a{font-family:var(--mono);font-size:.82rem;font-weight:500}
 .stpa-link-label{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.68rem;
-  font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);font-weight:500;
+  font-family:var(--mono);background:rgba(32,89,184,.08);color:var(--accent);font-weight:500;
   margin-right:.35rem;white-space:nowrap}
 details.stpa-details>summary{cursor:pointer;list-style:none;padding:.4rem .5rem;border-radius:var(--radius-sm);
   display:flex;align-items:center;gap:.5rem;transition:background var(--transition);font-size:.9rem}
 details.stpa-details>summary::-webkit-details-marker{display:none}
-details.stpa-details>summary:hover{background:rgba(58,134,255,.04)}
+details.stpa-details>summary:hover{background:rgba(32,89,184,.04)}
 details.stpa-details>summary .stpa-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
 details.stpa-details[open]>summary .stpa-chevron{transform:rotate(90deg)}
 .stpa-uca-table{width:100%;border-collapse:collapse;font-size:.88rem;margin-top:.75rem}
 .stpa-uca-table th{font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;
   color:var(--text-secondary);padding:.5rem .75rem;border-bottom:2px solid var(--border)}
 .stpa-uca-table td{padding:.55rem .75rem;border-bottom:1px solid var(--border);vertical-align:top}
-.stpa-uca-table tbody tr:hover{background:rgba(58,134,255,.04)}
+.stpa-uca-table tbody tr:hover{background:rgba(32,89,184,.04)}
 .uca-type-badge{display:inline-flex;padding:.15rem .5rem;border-radius:4px;font-size:.72rem;font-weight:600;white-space:nowrap}
 .uca-type-not-providing{background:#fee;color:#c62828}
 .uca-type-providing{background:#fff3e0;color:#e65100}
@@ -458,7 +469,7 @@ details.stpa-details[open]>summary .stpa-chevron{transform:rotate(90deg)}
   color:var(--text-secondary);padding:.45rem .6rem;border-bottom:2px solid var(--border);white-space:nowrap}
 .trace-matrix td{padding:.35rem .6rem;border-bottom:1px solid var(--border);text-align:center}
 .trace-matrix td:first-child{text-align:left;font-family:var(--mono);font-size:.78rem;font-weight:500}
-.trace-matrix tbody tr:hover{background:rgba(58,134,255,.04)}
+.trace-matrix tbody tr:hover{background:rgba(32,89,184,.04)}
 .trace-cell{display:inline-flex;align-items:center;justify-content:center;width:28px;height:22px;
   border-radius:4px;font-size:.75rem;font-weight:700;font-variant-numeric:tabular-nums}
 .trace-cell-ok{background:rgba(21,113,58,.1);color:#15713a}
@@ -466,16 +477,16 @@ details.stpa-details[open]>summary .stpa-chevron{transform:rotate(90deg)}
 .trace-tree{margin-top:1rem}
 .trace-node{display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;border-radius:var(--radius-sm);
   transition:background var(--transition);font-size:.88rem}
-.trace-node:hover{background:rgba(58,134,255,.04)}
+.trace-node:hover{background:rgba(32,89,184,.04)}
 .trace-node a{font-family:var(--mono);font-size:.82rem;font-weight:500}
 .trace-edge{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.68rem;
-  font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);font-weight:500;
+  font-family:var(--mono);background:rgba(32,89,184,.08);color:var(--accent);font-weight:500;
   margin-right:.35rem;white-space:nowrap}
 .trace-level{padding-left:1.5rem;border-left:2px solid var(--border);margin-left:.5rem}
 details.trace-details>summary{cursor:pointer;list-style:none;padding:.4rem .5rem;border-radius:var(--radius-sm);
   display:flex;align-items:center;gap:.5rem;transition:background var(--transition);font-size:.88rem}
 details.trace-details>summary::-webkit-details-marker{display:none}
-details.trace-details>summary:hover{background:rgba(58,134,255,.04)}
+details.trace-details>summary:hover{background:rgba(32,89,184,.04)}
 details.trace-details>summary .trace-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
 details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
 .trace-history{margin:.35rem 0 .5rem 1.5rem;padding:.5rem .75rem;background:rgba(0,0,0,.015);
@@ -532,7 +543,7 @@ details.trace-details[open]>summary .trace-chevron{transform:rotate(90deg)}
 ::-webkit-scrollbar-thumb:hover{background:#a0a0aa}
 
 /* ── Selection ────────────────────────────────────────────────── */
-::selection{background:rgba(58,134,255,.18)}
+::selection{background:rgba(32,89,184,.18)}
 
 /* ── Cmd+K search modal ──────────────────────────────────────── */
 .cmd-k-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
@@ -629,13 +640,13 @@ table.sortable th:hover{color:var(--text)}
 .facet-list{display:flex;flex-direction:column;gap:.35rem}
 .facet-item{display:flex;align-items:center;gap:.4rem;font-size:.82rem;color:var(--text);
   cursor:pointer;padding:.2rem .35rem;border-radius:4px;transition:background var(--transition)}
-.facet-item:hover{background:rgba(58,134,255,.06)}
+.facet-item:hover{background:rgba(32,89,184,.06)}
 .facet-item input[type="checkbox"]{margin:0;accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
 .facet-item .facet-count{margin-left:auto;font-size:.72rem;color:var(--text-secondary);
   font-variant-numeric:tabular-nums;font-family:var(--mono)}
 
 /* ── Group-by header rows ────────────────────────────────── */
-.group-header-row td{background:rgba(58,134,255,.06);font-weight:600;font-size:.85rem;
+.group-header-row td{background:rgba(32,89,184,.06);font-weight:600;font-size:.85rem;
   color:var(--text);padding:.5rem .875rem;border-bottom:2px solid var(--border);letter-spacing:.02em}
 
 /* ── Document tree hierarchy ─────────────────────────────── */
@@ -645,7 +656,7 @@ table.sortable th:hover{color:var(--text)}
   padding:.5rem .75rem;border-radius:var(--radius-sm);font-weight:600;font-size:.9rem;
   color:var(--text);transition:background var(--transition)}
 .doc-tree summary::-webkit-details-marker{display:none}
-.doc-tree summary:hover{background:rgba(58,134,255,.04)}
+.doc-tree summary:hover{background:rgba(32,89,184,.04)}
 .doc-tree summary .tree-chevron{transition:transform var(--transition);display:inline-flex;opacity:.4;font-size:.7rem}
 .doc-tree details[open]>summary .tree-chevron{transform:rotate(90deg)}
 .doc-tree summary .tree-count{font-size:.75rem;color:var(--text-secondary);font-weight:500;
@@ -654,13 +665,13 @@ table.sortable th:hover{color:var(--text)}
 .doc-tree li{margin:.15rem 0}
 .doc-tree li a{display:flex;align-items:center;gap:.5rem;padding:.35rem .75rem;border-radius:var(--radius-sm);
   font-size:.88rem;color:var(--text);transition:background var(--transition);text-decoration:none}
-.doc-tree li a:hover{background:rgba(58,134,255,.04)}
+.doc-tree li a:hover{background:rgba(32,89,184,.04)}
 .doc-tree .doc-tree-id{font-family:var(--mono);font-size:.8rem;font-weight:500;color:var(--accent)}
 .doc-tree .doc-tree-status{font-size:.72rem}
 
 /* ── Matrix cell drill-down ──────────────────────────────── */
 .matrix-cell-clickable{cursor:pointer;transition:background var(--transition)}
-.matrix-cell-clickable:hover{background:rgba(58,134,255,.08)}
+.matrix-cell-clickable:hover{background:rgba(32,89,184,.08)}
 .cell-detail{font-size:.82rem}
 .cell-detail ul{list-style:none;padding:.5rem;margin:0}
 .cell-detail li{padding:.25rem .5rem;border-bottom:1px solid var(--border)}
@@ -690,3 +701,332 @@ table.sortable th:hover{color:var(--text)}
 .pagination-ellipsis{display:inline-flex;align-items:center;justify-content:center;
   min-width:1.5rem;height:2rem;font-size:.82rem;color:var(--text-secondary)}
 "#;
+
+#[cfg(test)]
+mod contrast_tests {
+    use super::CSS;
+
+    /// Pull `--name: #rrggbb;` out of the live `CSS` constant.
+    ///
+    /// Deliberately parsed from `CSS` rather than copied into the test: a
+    /// hardcoded palette copy passes while the stylesheet drifts away from it,
+    /// which is the failure mode this whole requirement is about.
+    fn palette_var(name: &str) -> (u8, u8, u8) {
+        let needle = format!("--{name}:");
+        let start = CSS
+            .find(&needle)
+            .unwrap_or_else(|| panic!("palette var --{name} not found in CSS"));
+        let rest = &CSS[start + needle.len()..];
+        let hash = rest
+            .find('#')
+            .unwrap_or_else(|| panic!("--{name} has no hex literal"));
+        let hex: String = rest[hash + 1..]
+            .chars()
+            .take_while(|c| c.is_ascii_hexdigit())
+            .collect();
+        parse_hex(&hex)
+    }
+
+    fn parse_hex(hex: &str) -> (u8, u8, u8) {
+        let expand = |s: &str| u8::from_str_radix(s, 16).expect("hex");
+        match hex.len() {
+            3 => {
+                let d: Vec<char> = hex.chars().collect();
+                (
+                    expand(&format!("{}{}", d[0], d[0])),
+                    expand(&format!("{}{}", d[1], d[1])),
+                    expand(&format!("{}{}", d[2], d[2])),
+                )
+            }
+            6 => (expand(&hex[0..2]), expand(&hex[2..4]), expand(&hex[4..6])),
+            _ => panic!("unexpected hex length in `{hex}`"),
+        }
+    }
+
+    /// WCAG 2.1 relative luminance (§ "relative luminance").
+    fn luminance((r, g, b): (u8, u8, u8)) -> f64 {
+        let lin = |c: u8| {
+            let c = f64::from(c) / 255.0;
+            if c <= 0.039_28 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+
+    /// WCAG 2.1 contrast ratio: (L1 + 0.05) / (L2 + 0.05), lighter first.
+    fn contrast(fg: (u8, u8, u8), bg: (u8, u8, u8)) -> f64 {
+        let (a, b) = (luminance(fg), luminance(bg));
+        let (hi, lo) = if a > b { (a, b) } else { (b, a) };
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    /// AA thresholds: 4.5:1 for body text, 3:1 for large text and UI
+    /// components / graphical objects.
+    const AA_BODY: f64 = 4.5;
+    const AA_LARGE: f64 = 3.0;
+
+    /// REQ-276: every colour pair the stylesheet actually renders must meet
+    /// WCAG AA. This is the regression guard the requirement asks for, and it
+    /// is what lets REQ-276 reach `verified` on evidence rather than on
+    /// someone eyeballing a screenshot.
+    ///
+    /// Each entry is (foreground var, background var, threshold, where it is
+    /// used). Only pairs that genuinely occur in `CSS` are listed — a failing
+    /// pair that is never rendered is not a defect, and asserting on it would
+    /// make the oracle lie in the other direction.
+    ///
+    /// rivet: verifies REQ-276
+    #[test]
+    fn palette_meets_wcag_aa() {
+        let pairs: &[(&str, &str, f64, &str)] = &[
+            ("text", "bg", AA_BODY, "body copy on the page background"),
+            ("text", "surface", AA_BODY, "body copy on cards/tables"),
+            ("text-secondary", "bg", AA_BODY, "muted copy on the page"),
+            (
+                "text-secondary",
+                "surface",
+                AA_BODY,
+                "table headers, captions",
+            ),
+            ("accent", "bg", AA_BODY, "links on the page background"),
+            (
+                "accent",
+                "surface",
+                AA_BODY,
+                "links inside cards and tables",
+            ),
+            ("accent-hover", "bg", AA_BODY, "link hover on the page"),
+            (
+                "accent-hover",
+                "surface",
+                AA_BODY,
+                "link hover inside cards",
+            ),
+            ("sidebar-text", "sidebar", AA_BODY, "nav item labels"),
+            (
+                "sidebar-active",
+                "sidebar",
+                AA_BODY,
+                "active/hovered nav item",
+            ),
+            (
+                "sidebar-active",
+                "sidebar-hover",
+                AA_BODY,
+                "nav item on hover",
+            ),
+        ];
+
+        let mut failures = Vec::new();
+        for (fg, bg, min, usage) in pairs {
+            let ratio = contrast(palette_var(fg), palette_var(bg));
+            if ratio < *min {
+                failures.push(format!(
+                    "  --{fg} on --{bg} = {ratio:.2}:1 (needs {min}:1) — {usage}"
+                ));
+            }
+        }
+
+        // White button labels sit on --accent, not on --bg. The originally
+        // reported "white on light grey" pair does not occur in this
+        // stylesheet; the button is what a reader would have seen.
+        let white = (0xff, 0xff, 0xff);
+        for (bg, min, usage) in [
+            ("accent", AA_BODY, "white label on a primary button"),
+            ("accent-hover", AA_BODY, "white label on a hovered button"),
+        ] {
+            let ratio = contrast(white, palette_var(bg));
+            if ratio < min {
+                failures.push(format!(
+                    "  #fff on --{bg} = {ratio:.2}:1 (needs {min}:1) — {usage}"
+                ));
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "WCAG AA contrast failures in the serve/export palette \
+             (rivet-cli/src/render/styles.rs), which is shared by the dashboard \
+             and the static compliance export:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// `ACCENT_HEX` is emitted by render modules that cannot reach a CSS
+    /// variable. If it drifts from the stylesheet's `--accent`, the dashboard
+    /// and the export disagree about the brand colour and the contrast audit
+    /// below silently stops covering those elements.
+    ///
+    /// rivet: verifies REQ-276
+    #[test]
+    fn accent_constant_matches_css() {
+        let css_accent = {
+            let start = CSS.find("--accent:").expect("--accent in CSS");
+            let rest = &CSS[start..];
+            let hash = rest.find('#').expect("hex");
+            let hex: String = rest[hash..].chars().take(7).collect();
+            hex
+        };
+        assert_eq!(
+            css_accent,
+            super::ACCENT_HEX,
+            "CSS --accent and ACCENT_HEX have drifted apart"
+        );
+    }
+
+    /// Stat numbers are 2rem / weight 800, which is WCAG "large text", so they
+    /// are held to 3:1 rather than 4.5:1 — and they sit on `--surface`
+    /// (`.stat-box{background:var(--surface)}`), not on the page background,
+    /// so that is the pair that matters.
+    ///
+    /// REQ-276's own audit did not cover these; `.stat-orange` was #e67e22 at
+    /// **2.85:1**, failing even the large-text bar.
+    ///
+    /// rivet: verifies REQ-276
+    #[test]
+    fn stat_number_colours_meet_wcag_aa_large() {
+        let surface = palette_var("surface");
+        let stats: &[(&str, &str)] = &[
+            ("stat-blue", "#2059b8"),
+            ("stat-green", "#15713a"),
+            ("stat-orange", "#c66c1d"),
+            ("stat-red", "#c62828"),
+            ("stat-amber", "#b8860b"),
+            ("stat-purple", "#6f42c1"),
+        ];
+        let mut failures = Vec::new();
+        for (name, hex) in stats {
+            // The declaration must still be present in the CSS — a colour that
+            // has been renamed or removed should fail loudly, not silently
+            // pass because the test checks a value nothing renders.
+            assert!(
+                CSS.contains(&format!(".{name} .number{{color:{hex}}}")),
+                ".{name} .number is no longer declared as {hex} in CSS"
+            );
+            let ratio = contrast(parse_hex(hex.trim_start_matches('#')), surface);
+            if ratio < AA_LARGE {
+                failures.push(format!(
+                    "  .{name} ({hex}) on --surface = {ratio:.2}:1 (needs {AA_LARGE}:1)"
+                ));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "stat number colours below WCAG AA large-text:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// The retired pre-REQ-276 accent must not reappear anywhere in the render
+    /// modules. Four hand-copies of it (`.stat-blue`, the source-file icon, the
+    /// doc-linkage graph node and edge, the status-bar fill) survived a palette
+    /// change and kept painting the old colour while `--accent` moved — a
+    /// drift a contrast audit over the CSS alone cannot see, because those
+    /// literals are not in the CSS.
+    ///
+    /// Static-string scan rather than a runtime check: the value is baked into
+    /// format strings and SVG markup at compile time.
+    ///
+    /// rivet: verifies REQ-276
+    #[test]
+    fn retired_accent_is_not_reintroduced() {
+        const RETIRED: &str = "3a86ff";
+        const RETIRED_RGB: &str = "58,134,255";
+        let sources: &[(&str, &str)] = &[
+            ("styles.rs", include_str!("styles.rs")),
+            ("stats.rs", include_str!("stats.rs")),
+            ("source.rs", include_str!("source.rs")),
+            ("doc_linkage.rs", include_str!("doc_linkage.rs")),
+            ("search.rs", include_str!("search.rs")),
+            // serve/layout.rs emits inline `style=` and `onmouseover=`
+            // attributes carrying the accent as a literal rgba(). It was
+            // missed by the first version of this scan, which listed only
+            // render/ modules — and it was the one file still painting the
+            // retired tint under new-accent text. Any file that can emit the
+            // colour belongs here, not just the ones that obviously style.
+            ("serve/layout.rs", include_str!("../serve/layout.rs")),
+        ];
+        let mut hits = Vec::new();
+        for (name, body) in sources {
+            for (needle, kind) in [(RETIRED, "hex"), (RETIRED_RGB, "rgb")] {
+                // Skip this test's own declarations of the retired values.
+                let occurrences = body.matches(needle).count();
+                let self_refs = if *name == "styles.rs" { 2 } else { 0 };
+                if occurrences > self_refs {
+                    hits.push(format!(
+                        "  {name}: {} {kind} occurrence(s) of the retired accent",
+                        occurrences - self_refs
+                    ));
+                }
+            }
+        }
+        assert!(
+            hits.is_empty(),
+            "the pre-REQ-276 accent was reintroduced; reference \
+             `styles::ACCENT_HEX` instead of retyping a hex:\n{}",
+            hits.join("\n")
+        );
+    }
+
+    /// Composite `fg` at `alpha` over `bg` — what the browser actually paints
+    /// for an `rgba(...)` wash.
+    fn over(fg: (u8, u8, u8), alpha: f64, bg: (u8, u8, u8)) -> (u8, u8, u8) {
+        let mix =
+            |f: u8, b: u8| (alpha * f64::from(f) + (1.0 - alpha) * f64::from(b)).round() as u8;
+        (mix(fg.0, bg.0), mix(fg.1, bg.1), mix(fg.2, bg.2))
+    }
+
+    /// Several elements paint `color:var(--accent)` on top of an
+    /// `rgba(<accent>, .08)` wash — id chips, source-line highlights, the
+    /// `.mono` inline tags. That is a real rendered text pair, and it is not
+    /// visible to a naive fg/bg audit because the background is translucent
+    /// rather than a palette variable. Composite it and hold it to AA body.
+    ///
+    /// rivet: verifies REQ-276
+    #[test]
+    fn accent_text_on_accent_tint_meets_wcag_aa() {
+        let accent = palette_var("accent");
+        let mut failures = Vec::new();
+        // The wash alphas actually used with accent-coloured text.
+        for (alpha, usage) in [
+            (0.08, "id chips / inline mono tags / source-line highlight"),
+            (0.12, "highlighted source line number"),
+        ] {
+            for (bg_name, bg) in [
+                ("surface", palette_var("surface")),
+                ("bg", palette_var("bg")),
+            ] {
+                let composited = over(accent, alpha, bg);
+                let ratio = contrast(accent, composited);
+                if ratio < AA_BODY {
+                    failures.push(format!(
+                        "  --accent on rgba(accent,{alpha}) over --{bg_name} \
+                         = {ratio:.2}:1 (needs {AA_BODY}:1) — {usage}"
+                    ));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "accent-on-accent-tint contrast failures:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// The decorative border is exempt from AA text thresholds but must still
+    /// be perceivable, so it gets its own weaker assertion rather than being
+    /// silently omitted from the audit.
+    ///
+    /// rivet: verifies REQ-276
+    #[test]
+    fn decorative_border_is_at_least_perceivable() {
+        let ratio = contrast(palette_var("border"), palette_var("surface"));
+        assert!(
+            ratio >= 1.2,
+            "--border on --surface = {ratio:.2}:1 — too faint to see at all"
+        );
+    }
+}

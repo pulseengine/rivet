@@ -197,7 +197,7 @@ pub(crate) fn render_stats(ctx: &RenderContext) -> String {
             "draft" => "#b8860b",
             "obsolete" => "#c62828",
             "unknown" => "#9898a6",
-            _ => "#3a86ff",
+            _ => crate::render::styles::ACCENT_HEX,
         };
         html.push_str(&format!(
             "<div class=\"status-bar-row\">\
