@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787316295626,
+  "lastUpdate": 1787388669089,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "71c7a848c40a7fb50936859dfb6acf17ec7253a0",
-          "message": "fix(verify): check verification-evidence no longer false-errors on nextest -E filtersets (REQ-280, #756) (#757)\n\nA downstream consumer (Ford linc-mesh, v0.30.0) hit 22 false \"no test\nmatching\" findings from `rivet check verification-evidence`. Steps whose\n`run` selects tests via a nextest filterset — e.g.\n`cargo nextest run -p x --lib -E 'test(/message::/)'` — were reported as a\nmissing test, wrongly blocking a `verified` requirement.\n\nRoot cause: parse_cargo_test_filter did not treat `-E`/`--filter-expr` as\nvalue-taking, so split_whitespace grabbed the filterset expression (literal\nquotes included) as a positional substring filter, then substring-matched it\nagainst bare `fn` names (which can never contain a `test(/re/)` string or a\n`mod::path` segment).\n\n- rivet-core: quote-aware tokenizer + `-E`/`--filter-expr` consumed as value\n  flags, so a filterset can never surface as a bogus positional filter, and\n  shell quotes are stripped from a real positional filter. Public API frozen.\n- rivet-cli: a filterset step is reported as SKIPPED (not verified) — a\n  skipped safety check must not read as a passed one — never errored.\n\nReproduced + regression-tested (rivet-core unit + rivet-cli integration).\nShips as v0.30.1. Real filterset evaluation tracked as REQ-281; the parallel\n`rivet sql` schema-discoverability finding as REQ-282.\n\nFixes: REQ-280\nRefs: REQ-236, REQ-281",
-          "timestamp": "2026-08-04T21:09:00+02:00",
-          "tree_id": "806b260776b1a3938fdd6ce41b6a2ddc12cde622",
-          "url": "https://github.com/pulseengine/rivet/commit/71c7a848c40a7fb50936859dfb6acf17ec7253a0"
-        },
-        "date": 1785871654544,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84716,
-            "range": "± 464",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 918110,
-            "range": "± 4134",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 20572981,
-            "range": "± 2084975",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1950,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24908,
-            "range": "± 68",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 346128,
-            "range": "± 1520",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1522259,
-            "range": "± 16668",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 168729,
-            "range": "± 473",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 2026186,
-            "range": "± 19138",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 53734172,
-            "range": "± 4385773",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 456763,
-            "range": "± 6900",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16580460,
-            "range": "± 1655058",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1144634392,
-            "range": "± 23220023",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4287,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46439,
-            "range": "± 350",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 787279,
-            "range": "± 3177",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 64223,
-            "range": "± 1000",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 723660,
-            "range": "± 4181",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 12070968,
-            "range": "± 523718",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1180,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 13829,
-            "range": "± 102",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 221938,
-            "range": "± 1826",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21765,
-            "range": "± 876",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 154035,
-            "range": "± 3173",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1424316,
-            "range": "± 6298",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1517967,
             "range": "± 24251",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6ab55ac1163193d8e71f0bc20e173129103c9fb3",
+          "message": "fix(render): raise the serve/export palette to WCAG AA (REQ-276) (#842)\n\nCustomer-reported low contrast in the dashboard and the static compliance\nexport, which share rivet-cli/src/render/styles.rs.\n\nOracle first: six unit tests compute WCAG 2.1 relative luminance over the\npalette and assert 4.5:1 for body text, 3:1 for large text and UI. They parse\nhex values OUT OF the live CSS constant instead of copying them, so a\nstylesheet edit cannot drift away from its own audit. The suite was red on\nthree pairs before any colour changed -- accent on --bg 3.20:1, accent on\n--surface 3.48:1, white-on-accent 3.48:1 -- matching the values measured when\nthe requirement was triaged.\n\nFix: accent #3a86ff -> #2059b8, accent-hover #2568d6 -> #18458d, hue preserved\nand chosen for headroom rather than the bare minimum (worst pair 5.07:1, not\n4.60:1). 27 translucent rgba washes reshaded to the new rgb so tints match the\ncolour they tint. .stat-orange #e67e22 -> #c66c1d.\n\nThree findings the requirement's own audit did not have:\n\n  1. The reported pair does not occur. No element paints white text on --bg.\n     What a reader actually saw is the white label on the primary button\n     (3.48:1) and every link (3.20:1). Both real, both fixed.\n  2. Accent text sits on rgba(accent,.08/.12) washes in id chips, inline mono\n     tags and source-line highlights. Composited, three of those measured\n     4.08-4.42:1 and failed. A naive fg/bg audit cannot see them because the\n     background is translucent rather than a palette variable, so the test\n     composites alpha.\n  3. .stat-orange measured 2.85:1 on --surface, failing even the 3:1\n     large-text bar.\n\nRemoved the drift class behind (2) and (3) rather than fixing instances: five\nhand-copied hex literals of the accent lived OUTSIDE the CSS -- in stats.rs,\nsource.rs, doc_linkage.rs and serve/layout.rs -- still painting the old blue\nafter the palette moved. styles::ACCENT_HEX is now the source of truth, one\ntest asserts the CSS agrees with it, and a static scan fails if the retired\nvalue reappears anywhere.\n\nThe scan's first version listed only render/ modules and missed\nserve/layout.rs, which was the one file still painting the retired tint under\nnew-accent text. Widened, and the scan is negative-controlled: injecting\n#3a86ff into stats.rs turns it red and names the file; removing it turns it\ngreen.\n\nVerified in rendered output rather than in source alone: `rivet export --format\nhtml` and `rivet serve` both emit --accent #2059b8 with zero retired\nreferences. (One match remains in artifacts/REQ-276.html, where the\nrequirement's own prose quotes the old hex.)\n\nConfirmed with cargo fmt --check, clippy --all-targets -D warnings on 1.97.0,\ncargo test --workspace (exit 0, 65 ok), rivet validate and rivet docs check --\nall exit 0.\n\nImplements: REQ-276\nVerifies: REQ-276",
+          "timestamp": "2026-08-22T10:40:41+02:00",
+          "tree_id": "d66ecadff4f502d0d87cabb5e3e839b2bad385a5",
+          "url": "https://github.com/pulseengine/rivet/commit/6ab55ac1163193d8e71f0bc20e173129103c9fb3"
+        },
+        "date": 1787388667943,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 67629,
+            "range": "± 2912",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 738715,
+            "range": "± 2984",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13024659,
+            "range": "± 1380431",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1473,
+            "range": "± 65",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 17970,
+            "range": "± 661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 251833,
+            "range": "± 12449",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 74,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 74,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 74,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1167816,
+            "range": "± 43304",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 126478,
+            "range": "± 885",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1486732,
+            "range": "± 29512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30560062,
+            "range": "± 1587461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 356229,
+            "range": "± 29454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 11595257,
+            "range": "± 127171",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 828365146,
+            "range": "± 8650155",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3283,
+            "range": "± 44",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 35250,
+            "range": "± 188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 566762,
+            "range": "± 9543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 47909,
+            "range": "± 126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 529057,
+            "range": "± 2786",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 6255974,
+            "range": "± 250553",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 859,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11226,
+            "range": "± 24",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 184013,
+            "range": "± 892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 16510,
+            "range": "± 33",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 112486,
+            "range": "± 954",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1042829,
+            "range": "± 6111",
             "unit": "ns/iter"
           }
         ]
