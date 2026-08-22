@@ -261,19 +261,19 @@ pub(crate) fn page_layout_with_variant(
          {variant_selector_html}\
          <span class=\"ctx-time\">Loaded {loaded_at}</span>\
          <button hx-post=\"/reload\" style=\"margin-left:.5rem;padding:.15rem .5rem;font-size:.72rem;\
-         font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);border:1px solid var(--accent);\
+         font-family:var(--mono);background:rgba(32,89,184,.08);color:var(--accent);border:1px solid var(--accent);\
          border-radius:4px;cursor:pointer;font-weight:600;transition:all var(--transition)\"\
          title=\"Reload project from disk\"\
-         onmouseover=\"this.style.background='rgba(58,134,255,.18)'\"\
-         onmouseout=\"this.style.background='rgba(58,134,255,.08)'\"\
+         onmouseover=\"this.style.background='rgba(32,89,184,.18)'\"\
+         onmouseout=\"this.style.background='rgba(32,89,184,.08)'\"\
          >&#8635; Reload</button>\
          <button onclick=\"var h=window.location.href;var s=h.indexOf('?')>=0?'&amp;':'?';window.open(h+s+'print=1','_blank')\" \
          style=\"padding:.15rem .5rem;font-size:.72rem;\
-         font-family:var(--mono);background:rgba(58,134,255,.08);color:var(--accent);border:1px solid var(--accent);\
+         font-family:var(--mono);background:rgba(32,89,184,.08);color:var(--accent);border:1px solid var(--accent);\
          border-radius:4px;cursor:pointer;font-weight:600;transition:all var(--transition)\"\
          title=\"Open printable view in new tab\"\
-         onmouseover=\"this.style.background='rgba(58,134,255,.18)'\"\
-         onmouseout=\"this.style.background='rgba(58,134,255,.08)'\"\
+         onmouseover=\"this.style.background='rgba(32,89,184,.18)'\"\
+         onmouseout=\"this.style.background='rgba(32,89,184,.08)'\"\
          >&#128438; Print</button>\
          </div>",
         project = html_escape(&ctx.project_name),
@@ -451,7 +451,7 @@ fn render_variant_banner(state: &AppState, active_variant: Option<&str>) -> Stri
         Ok(Some(scope)) => format!(
             "<div class=\"variant-banner\" role=\"status\" \
              style=\"margin:.75rem 2rem 0 2rem;padding:.6rem .9rem;font-size:.82rem;\
-             background:rgba(58,134,255,.08);color:var(--accent);\
+             background:rgba(32,89,184,.08);color:var(--accent);\
              border:1px solid var(--accent);border-radius:6px;\
              display:flex;align-items:center;gap:.75rem;flex-wrap:wrap\">\
              <span><svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" \

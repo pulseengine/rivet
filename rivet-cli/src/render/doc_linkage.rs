@@ -153,7 +153,7 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
             doc_infos.iter().map(|d| d.id.clone()).collect();
 
         let mut colors = type_color_map();
-        colors.insert("document".into(), "#3a86ff".into());
+        colors.insert("document".into(), crate::render::styles::ACCENT_HEX.into());
         colors.insert("source-group".into(), "#4caf50".into());
 
         let svg_opts = SvgOptions {
@@ -162,7 +162,7 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
             base_url: Some("/documents".into()),
             background: Some("#fafbfc".into()),
             font_size: 12.0,
-            edge_color: "#3a86ff".into(),
+            edge_color: crate::render::styles::ACCENT_HEX.into(),
             ..SvgOptions::default()
         };
 

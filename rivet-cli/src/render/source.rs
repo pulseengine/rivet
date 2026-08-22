@@ -128,7 +128,7 @@ fn render_tree(entries: &[TreeEntry], html: &mut String, depth: usize) {
             } else if entry.name.ends_with(".rs") {
                 "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#e67e22\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"5 4.5 1.5 8 5 11.5\"/><polyline points=\"11 4.5 14.5 8 11 11.5\"/></svg>"
             } else if entry.name.ends_with(".md") {
-                "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#3a86ff\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z\"/><path d=\"M9 1.5V5.5h4\"/></svg>"
+                "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#2059b8\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 1.5H4.5A1.5 1.5 0 003 3v10a1.5 1.5 0 001.5 1.5h7A1.5 1.5 0 0013 13V5.5L9 1.5z\"/><path d=\"M9 1.5V5.5h4\"/></svg>"
             } else if entry.name.ends_with(".toml") {
                 "<svg width=\"14\" height=\"14\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#6f42c1\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"1.5\" width=\"10\" height=\"13\" rx=\"1.5\"/><path d=\"M6 5h4M6 8h2\"/></svg>"
             } else {
