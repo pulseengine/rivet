@@ -8932,6 +8932,31 @@ fn cmd_coverage(
             }
         }
 
+        // #848: name the declared exemptions rather than leaving them implicit.
+        // A goal that carries GSN's `undeveloped: true` is out of the
+        // denominator above, and that has to be visible — otherwise the reader
+        // sees 100% and cannot tell a complete argument from one with declared
+        // gaps. Printed as a count per rule, not folded into the percentage.
+        let exempt_lines: Vec<String> = report
+            .entries
+            .iter()
+            .filter(|e| e.exempt > 0)
+            .map(|e| {
+                format!(
+                    "  {:<30} {} declared exempt (not counted): {}",
+                    e.rule_name,
+                    e.exempt,
+                    e.exempt_ids.join(", ")
+                )
+            })
+            .collect();
+        if !exempt_lines.is_empty() {
+            println!();
+            for line in &exempt_lines {
+                println!("{line}");
+            }
+        }
+
         let overall = report.overall_coverage();
         println!("  {}", "-".repeat(80));
         println!(

@@ -8292,3 +8292,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-08-21T00:00:00Z
+
+  - id: REQ-309
+    type: requirement
+    title: "coverage: a goal declared `undeveloped: true` counts identically to one that was forgotten (#848)"
+    status: proposed
+    description: "Reported from scry's safety case. `rivet coverage` returns a true number that is not measuring what a reader assumes. Three of five safety goals carried GSN's `undeveloped: true` — the diamond notation for a goal DELIBERATELY not yet decomposed, a declaration of known incompleteness that is correct practice to write down — and coverage did not read the field at all, so a declared gap and an oversight contributed identically. Reproduced in rivet with a three-goal fixture: goal-has-support scored 1/3 = 33.3% with one supported goal, one declared undeveloped and one simply forgotten. The safety-case schema's own rule description already promised the exemption (\"unless marked undeveloped\") while `undeveloped` appeared in no Rust file — the semantics were documented and unimplemented. The figure misled in BOTH directions. False alarm: a project doing the right thing scored as if it had drifted, and the natural remedy is to add links until the number goes green, which is the cosmetic move a coverage gate exists to prevent. False comfort, the one that bites: a genuinely forgotten goal hides among the declared ones, because three accepted gaps becoming four reads as more of the same. Same shape as scry#117, where an MC/DC gate's green was real and measured a population that was 49% Rust stdlib. Fix landed as a schema-declared rule field `exempt-when-field`, NOT a hardcoded field name, so any schema can express its own notion of a declared accepted gap; safety-case wires it to `undeveloped` on goal-has-support. An exempt source leaves the denominator and is reported as its own named count with ids, never silently dropped. Only an explicit `true` exempts — `false` or absent keeps the source in scope, so an exemption is always something an author wrote on purpose. Measured after: the same fixture reports 1/2 = 50.0% plus \"1 declared exempt (not counted): G-002\", and with the forgotten goal removed 1/1 = 100.0% — so a forgotten goal now moves the figure 100% -> 50% where it is loud. Deliberately NOT applied to goal-has-context: `undeveloped` states that a goal is not yet decomposed into evidence and says nothing about whether it has context, so exempting that rule too would silently weaken a separate check. Reporter's remaining asks, not done here: `--fail-under` treating exemptions as a policy choice (allowed in development, blocking for a qualification claim, since an undeveloped ASIL D goal is fine in-flight and is a release blocker for certification)."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-26T00:00:00Z
