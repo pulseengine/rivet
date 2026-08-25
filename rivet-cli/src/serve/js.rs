@@ -1130,79 +1130,57 @@ document.body.addEventListener('htmx:afterSwap', initTables);
 document.addEventListener('DOMContentLoaded', initTables);
 
 // ── Tag faceting (artifacts page) ──────────────────────────
-function initTagFacets(){
-  var sidebar=document.getElementById('tag-facets');
-  if(!sidebar) return;
-  var table=document.getElementById('artifacts-table');
-  if(!table) return;
-  var tbody=table.querySelector('tbody');
-  if(!tbody) return;
-  // Find the tag column index (data-col="tags")
-  var tagColIdx=-1;
-  var ths=table.querySelectorAll('thead th');
-  ths.forEach(function(th,i){ if(th.getAttribute('data-col')==='tags') tagColIdx=i; });
-  if(tagColIdx<0) return;
-
-  // Collect all unique tags with counts
-  var tagCounts={};
-  tbody.querySelectorAll('tr').forEach(function(row){
-    var cell=row.children[tagColIdx];
-    if(!cell) return;
-    var tags=cell.getAttribute('data-tags');
-    if(!tags) return;
-    tags.split(',').forEach(function(t){
-      t=t.trim();
-      if(t){ tagCounts[t]=(tagCounts[t]||0)+1; }
-    });
-  });
-
-  var tagNames=Object.keys(tagCounts).sort();
-  if(tagNames.length===0){
-    sidebar.textContent='No tags';
-    sidebar.style.cssText='font-size:.8rem;color:var(--text-secondary)';
-    return;
-  }
-
-  // Build facet checkboxes via DOM API
-  sidebar.textContent='';
-  var list=document.createElement('div');
-  list.className='facet-list';
-  tagNames.forEach(function(tag){
-    var label=document.createElement('label');
-    label.className='facet-item';
-    var cb=document.createElement('input');
-    cb.type='checkbox';
-    cb.value=tag;
-    cb.checked=true;
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(' '+tag+' '));
-    var cnt=document.createElement('span');
-    cnt.className='facet-count';
-    cnt.textContent=tagCounts[tag];
-    label.appendChild(cnt);
-    list.appendChild(label);
-  });
-  sidebar.appendChild(list);
-
-  // Filter rows when checkboxes change
-  sidebar.addEventListener('change',function(){
-    var checked=[];
-    sidebar.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb){ checked.push(cb.value); });
-    var allChecked=checked.length===tagNames.length;
-    tbody.querySelectorAll('tr').forEach(function(row){
-      if(row.classList.contains('group-header-row')){ row.style.display=''; return; }
-      if(allChecked){ row.style.display=''; return; }
-      var cell=row.children[tagColIdx];
-      if(!cell){ row.style.display='none'; return; }
-      var tags=(cell.getAttribute('data-tags')||'').split(',').map(function(t){return t.trim()}).filter(Boolean);
-      if(tags.length===0){ row.style.display=checked.length===0?'':'none'; return; }
-      var match=tags.some(function(t){ return checked.indexOf(t)!==-1; });
-      row.style.display=match?'':'none';
-    });
-  });
+// REQ-275. The previous version built this list in JS from the rows of the
+// current page and filtered by setting row.style.display. Three problems, and
+// the third is the one that mattered:
+//   * a tag absent from the current page did not exist as a filter option, with
+//     no sign the list was a subset;
+//   * the selection never reached the URL, so it died on reload and did not
+//     compose with paging;
+//   * it matched with tags.some(...) — OR — while the server-side `tags` param
+//     matches with .all(...) — AND. Two tag filters, opposite meanings.
+// The checkbox list is now server-rendered from the whole project, and these
+// helpers drive the `tags` query param so there is one filter with one meaning.
+function rivetTagFacetSelected(){
+  var out=[];
+  document.querySelectorAll('.tag-facet-cb:checked').forEach(function(cb){ out.push(cb.value); });
+  return out;
 }
-document.body.addEventListener('htmx:afterSwap', initTagFacets);
-document.addEventListener('DOMContentLoaded', initTagFacets);
+window.rivetTagFacetApply=function(){
+  var url=new URL(window.location.href);
+  var sel=rivetTagFacetSelected();
+  if(sel.length){ url.searchParams.set('tags', sel.join(',')); }
+  else { url.searchParams.delete('tags'); }
+  var m=document.getElementById('tag-match');
+  // `all` is the default; leave it out of the URL so an unchanged filter does
+  // not grow a redundant param.
+  if(m && m.value==='any'){ url.searchParams.set('tag-match','any'); }
+  else { url.searchParams.delete('tag-match'); }
+  // A changed filter invalidates the current page offset.
+  url.searchParams.delete('page');
+  window.location.assign(url.toString());
+};
+window.rivetTagFacetAll=function(on){
+  document.querySelectorAll('.tag-facet-cb').forEach(function(cb){ cb.checked=!!on; });
+  // Select All under `all of` asks for artifacts carrying EVERY tag in the
+  // project, which is guaranteed to return nothing. That is not a useful
+  // button, so selecting everything switches the combinator to `any of` —
+  // which is what "select all" means in a faceted list.
+  if(on){
+    var m=document.getElementById('tag-match');
+    if(m) m.value='any';
+  }
+  rivetTagFacetApply();
+};
+// Narrows the visible list only — it does not change the selection, so
+// filtering the list cannot silently drop a tag you had already chosen.
+window.rivetTagFacetFilter=function(q){
+  q=(q||'').trim().toLowerCase();
+  document.querySelectorAll('.facet-item').forEach(function(item){
+    var tag=item.getAttribute('data-tag')||'';
+    item.style.display=(!q||tag.indexOf(q)!==-1)?'':'none';
+  });
+};
 
 // ── Group-by (artifacts page) ──────────────────────────────
 window.groupArtifacts=function(field){

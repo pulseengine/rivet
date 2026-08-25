@@ -162,6 +162,94 @@ fn wrap_markdown_mermaid_in_svg_viewer(html: &str) -> String {
 
 // ── Artifacts list ────────────────────────────────────────────────────────
 
+/// Every tag in the PROJECT, with how many artifacts carry it, sorted by name.
+///
+/// REQ-275: the previous tag facet was built in JavaScript from the rows of the
+/// *current page*. `/artifacts` clamps to a page of rows, so a tag that
+/// happened not to appear on the page you were looking at simply did not exist
+/// as a filter — the control silently offered a subset of the project and gave
+/// no sign it was doing so.
+pub(crate) fn tag_facets(store: &rivet_core::store::Store) -> Vec<(String, usize)> {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for a in store.iter() {
+        for t in &a.tags {
+            let t = t.trim();
+            if !t.is_empty() {
+                *counts.entry(t.to_string()).or_insert(0) += 1;
+            }
+        }
+    }
+    counts.into_iter().collect()
+}
+
+/// Render the tag facet as a real control over the `tags` query parameter.
+///
+/// REQ-275 asks for a checkbox list with Select All / Unselect All and a filter
+/// box for long tag lists. The important part is *what it drives*: the previous
+/// facet hid table rows with `style.display`, which meant the selection did not
+/// survive a reload, did not compose with paging, never reached the URL, and —
+/// the real defect — used OR semantics (`tags.some(...)`) while the server-side
+/// `tags` param uses AND (`tag_filter.iter().all(...)`). Two tag filters in one
+/// product that disagreed about what a selection means.
+///
+/// This drives `params.tags`, so there is now one tag filter with one meaning.
+pub(crate) fn render_tag_facets(store: &rivet_core::store::Store, params: &ViewParams) -> String {
+    let facets = tag_facets(store);
+    if facets.is_empty() {
+        return "<div class=\"facet-sidebar\"><h3>Filter by tag</h3>\
+                <p class=\"meta\" style=\"font-size:.8rem\">No tags in this project</p>\
+                </div>"
+            .to_string();
+    }
+    let selected: Vec<String> = params
+        .tag_list()
+        .iter()
+        .map(|t| t.trim().to_lowercase())
+        .collect();
+
+    let any = params.tag_match_any();
+    let opts = format!(
+        "<option value=\"all\"{a}>all of</option><option value=\"any\"{b}>any of</option>",
+        a = if any { "" } else { " selected" },
+        b = if any { " selected" } else { "" },
+    );
+    let mut html = String::from(
+        "<div class=\"facet-sidebar\"><h3>Filter by tag</h3>\
+         <div class=\"facet-controls\" style=\"display:flex;gap:.4rem;margin-bottom:.4rem\">\
+         <button type=\"button\" class=\"btn btn-secondary\" style=\"padding:.2rem .5rem;font-size:.72rem\" \
+         onclick=\"rivetTagFacetAll(true)\">Select All</button>\
+         <button type=\"button\" class=\"btn btn-secondary\" style=\"padding:.2rem .5rem;font-size:.72rem\" \
+         onclick=\"rivetTagFacetAll(false)\">Unselect All</button>\
+         </div>\
+         <label style=\"display:block;font-size:.72rem;color:var(--text-secondary);margin-bottom:.5rem\">\
+         match <select id=\"tag-match\" onchange=\"rivetTagFacetApply()\" \
+         style=\"font-size:.72rem;padding:.1rem .2rem\">{opts}</select> selected tags\
+         </label>\
+         <input type=\"text\" id=\"tag-facet-filter\" placeholder=\"filter tags…\" \
+         oninput=\"rivetTagFacetFilter(this.value)\" \
+         style=\"width:100%;margin-bottom:.5rem;padding:.3rem .45rem;font-size:.8rem\">\
+         <div class=\"facet-list\" id=\"tag-facets\">",
+    )
+    .replace("{opts}", &opts);
+    for (tag, count) in &facets {
+        let esc = html_escape(tag);
+        let checked = if selected.contains(&tag.to_lowercase()) {
+            " checked"
+        } else {
+            ""
+        };
+        html.push_str(&format!(
+            "<label class=\"facet-item\" data-tag=\"{lower}\">\
+             <input type=\"checkbox\" class=\"tag-facet-cb\" value=\"{esc}\"{checked} \
+             onchange=\"rivetTagFacetApply()\"> {esc} \
+             <span class=\"facet-count\">{count}</span></label>",
+            lower = html_escape(&tag.to_lowercase()),
+        ));
+    }
+    html.push_str("</div></div>");
+    html
+}
+
 pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) -> String {
     let store = ctx.store;
 
@@ -242,7 +330,15 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
             }
             if !tag_filter.is_empty() {
                 let have: Vec<String> = a.tags.iter().map(|t| t.trim().to_lowercase()).collect();
-                if !tag_filter.iter().all(|want| have.contains(want)) {
+                // REQ-275: `tag-match=any` unions, anything else intersects.
+                // Intersection stays the default so an existing `tags=` URL
+                // keeps meaning exactly what it meant.
+                let matched = if params.tag_match_any() {
+                    tag_filter.iter().any(|want| have.contains(want))
+                } else {
+                    tag_filter.iter().all(|want| have.contains(want))
+                };
+                if !matched {
                     return false;
                 }
             }
@@ -492,13 +588,10 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
 
     html.push_str("</div>"); // end artifacts-main
 
-    // Facet sidebar
-    html.push_str(
-        "<div class=\"facet-sidebar\">\
-        <h3>Filter by tag</h3>\
-        <div id=\"tag-facets\"></div>\
-        </div>",
-    );
+    // Facet sidebar (REQ-275): server-rendered from the whole project and
+    // wired to the `tags` query param, replacing the JS-built list that only
+    // saw the current page and only hid rows.
+    html.push_str(&render_tag_facets(ctx.store, params));
 
     html.push_str("</div>"); // end artifacts-layout
 
@@ -1340,5 +1433,139 @@ mod tests {
             "a {}-hop trace must not open anything by default",
             big.len()
         );
+    }
+
+    fn tagged(id: &str, tags: &[&str]) -> rivet_core::model::Artifact {
+        let mut a = rivet_core::model::Artifact {
+            id: id.to_string(),
+            artifact_type: "requirement".to_string(),
+            ..Default::default()
+        };
+        a.tags = tags.iter().map(|t| (*t).to_string()).collect();
+        a
+    }
+
+    /// REQ-275: the facet list is built from the WHOLE project, not from the
+    /// rows of the page you happen to be looking at. `/artifacts` clamps to a
+    /// page, and the previous JS facet collected tags from `tbody`, so a tag
+    /// that fell outside the page silently did not exist as a filter option.
+    ///
+    /// rivet: verifies REQ-275
+    #[test]
+    fn tag_facets_cover_the_whole_project_with_counts() {
+        let mut store = rivet_core::store::Store::new();
+        store.upsert(tagged("R-1", &["safety", "critical"]));
+        store.upsert(tagged("R-2", &["safety"]));
+        store.upsert(tagged("R-3", &[]));
+        let facets = tag_facets(&store);
+        assert_eq!(
+            facets,
+            vec![("critical".to_string(), 1), ("safety".to_string(), 2)],
+            "tags are project-wide, counted, and name-sorted"
+        );
+    }
+
+    /// The checkbox state must reflect the `tags` query param, because that
+    /// param is now the single source of truth for the filter — it survives a
+    /// reload, composes with paging, and is what the server matches on.
+    ///
+    /// rivet: verifies REQ-275
+    #[test]
+    fn facet_checkboxes_reflect_the_tags_param() {
+        let mut store = rivet_core::store::Store::new();
+        store.upsert(tagged("R-1", &["safety", "critical"]));
+        store.upsert(tagged("R-2", &["perf"]));
+
+        let none = ViewParams::default();
+        let html = render_tag_facets(&store, &none);
+        assert_eq!(html.matches("type=\"checkbox\"").count(), 3);
+        assert_eq!(
+            html.matches(" checked").count(),
+            0,
+            "nothing selected by default"
+        );
+
+        let some = ViewParams {
+            tags: Some("safety".into()),
+            ..Default::default()
+        };
+        let html = render_tag_facets(&store, &some);
+        assert_eq!(
+            html.matches(" checked").count(),
+            1,
+            "exactly the tag named in the param is checked"
+        );
+        assert!(html.contains("value=\"safety\" checked"));
+    }
+
+    /// The controls REQ-275 asks for, and the empty case. Asserting they are
+    /// present is weak on its own, so the empty-project branch is pinned too —
+    /// a facet box rendered with no tags and no message reads as "no filter
+    /// available" when it means "nothing loaded".
+    ///
+    /// rivet: verifies REQ-275
+    #[test]
+    fn facet_offers_select_all_unselect_all_and_a_filter_box() {
+        let mut store = rivet_core::store::Store::new();
+        store.upsert(tagged("R-1", &["safety"]));
+        let html = render_tag_facets(&store, &ViewParams::default());
+        assert!(html.contains("Select All"));
+        assert!(html.contains("Unselect All"));
+        assert!(html.contains("tag-facet-filter"));
+        assert!(html.contains("rivetTagFacetApply"));
+
+        let empty = rivet_core::store::Store::new();
+        let html = render_tag_facets(&empty, &ViewParams::default());
+        assert!(html.contains("No tags in this project"));
+        assert_eq!(html.matches("type=\"checkbox\"").count(), 0);
+    }
+
+    /// REQ-275: multiple tags combine per `tag-match`, defaulting to
+    /// intersection so an existing `tags=` URL keeps its meaning.
+    ///
+    /// This existed as a real inconsistency before: the server param
+    /// intersected while the client-side facet unioned, so the same selection
+    /// meant two different things depending on which control you used.
+    ///
+    /// rivet: verifies REQ-275
+    #[test]
+    fn tag_match_defaults_to_all_and_opts_into_any() {
+        let mut p = ViewParams::default();
+        assert!(!p.tag_match_any(), "default is intersection");
+        p.tag_match = Some("all".into());
+        assert!(!p.tag_match_any());
+        p.tag_match = Some("any".into());
+        assert!(p.tag_match_any());
+        // anything unrecognised must fall back to the safe default rather than
+        // silently widening the result set
+        p.tag_match = Some("ANY".into());
+        assert!(
+            !p.tag_match_any(),
+            "unrecognised values must not widen the filter"
+        );
+        p.tag_match = Some("".into());
+        assert!(!p.tag_match_any());
+    }
+
+    /// The `all of` / `any of` selector must render with the active mode
+    /// selected, otherwise the control lies about the filter in effect.
+    ///
+    /// rivet: verifies REQ-275
+    #[test]
+    fn facet_toggle_shows_the_active_combinator() {
+        let mut store = rivet_core::store::Store::new();
+        store.upsert(tagged("R-1", &["safety"]));
+
+        let html = render_tag_facets(&store, &ViewParams::default());
+        assert!(html.contains("<option value=\"all\" selected>"));
+        assert!(html.contains("<option value=\"any\">"));
+
+        let any = ViewParams {
+            tag_match: Some("any".into()),
+            ..Default::default()
+        };
+        let html = render_tag_facets(&store, &any);
+        assert!(html.contains("<option value=\"any\" selected>"));
+        assert!(html.contains("<option value=\"all\">"));
     }
 }

@@ -47,9 +47,21 @@ pub(crate) struct ViewParams {
     pub types: Option<String>,
     /// Status filter (e.g. "approved", "draft", "error", "warning").
     pub status: Option<String>,
-    /// Comma-separated tag filter. An artifact matches when it carries
-    /// ALL listed tags.
+    /// Comma-separated tag filter. Combined per [`Self::tag_match_any`] —
+    /// by default an artifact must carry ALL listed tags.
     pub tags: Option<String>,
+    /// How multiple `tags` combine: `"any"` (union) or `"all"` (intersection,
+    /// the default and the historic behaviour of this param).
+    ///
+    /// REQ-275. The dashboard grew a tag facet whose "Select All" is only
+    /// meaningful under union — under intersection, checking every tag asks
+    /// for artifacts carrying all 427 of them, which is guaranteed to return
+    /// nothing. The two tag filters in the product had also silently
+    /// disagreed: this param intersected while the old client-side facet
+    /// unioned. Making the choice explicit fixes both, without changing what
+    /// an existing `tags=` URL means.
+    #[serde(rename = "tag-match")]
+    pub tag_match: Option<String>,
     /// S-expression predicate filter (same language as the JSON API's
     /// `filter=` param and `rivet list --filter`), e.g.
     /// `(and (= status "approved") (has-tag "safety"))`. Applied via
@@ -87,6 +99,11 @@ impl ViewParams {
         if let Some(ref v) = self.status {
             if !v.is_empty() {
                 parts.push(format!("status={}", urlencoding::encode(v)));
+            }
+        }
+        if let Some(ref v) = self.tag_match {
+            if !v.is_empty() {
+                parts.push(format!("tag-match={}", urlencoding::encode(v)));
             }
         }
         if let Some(ref v) = self.tags {
@@ -156,6 +173,12 @@ impl ViewParams {
             .filter(|s| !s.is_empty())
             .map(|s| s.split(',').map(|t| t.trim().to_string()).collect())
             .unwrap_or_default()
+    }
+
+    /// True when `tags` should be combined as a union rather than an
+    /// intersection. Defaults to false, preserving the documented behaviour.
+    pub fn tag_match_any(&self) -> bool {
+        self.tag_match.as_deref() == Some("any")
     }
 
     /// Parse the `tags` param into a list of tag names.
