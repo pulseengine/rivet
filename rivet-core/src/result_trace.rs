@@ -187,43 +187,74 @@ pub fn as_tree<'a>(root: &str, nodes: &'a [ResultTraceNode]) -> Vec<TraceTreeNod
     for n in nodes {
         by_parent.entry(n.via_target.as_str()).or_default().push(n);
     }
-    let known: std::collections::BTreeSet<&str> =
-        nodes.iter().map(|n| n.artifact_id.as_str()).collect();
-
     fn build<'a>(
         parent: &str,
         by_parent: &BTreeMap<&str, Vec<&'a ResultTraceNode>>,
-        depth: usize,
+        on_path: &mut Vec<String>,
     ) -> Vec<TraceTreeNode<'a>> {
-        // `trace_test_results` cannot produce a cycle (the `seen` set makes the
-        // walk a tree), but this guard means a hand-built or future input
-        // cannot turn a rendering bug into a stack overflow.
-        if depth > 64 {
-            return Vec::new();
-        }
         by_parent
             .get(parent)
             .map(|kids| {
                 kids.iter()
-                    .map(|n| TraceTreeNode {
-                        node: n,
-                        children: build(&n.artifact_id, by_parent, depth + 1),
+                    .filter_map(|n| {
+                        let id = n.artifact_id.as_str();
+                        // `trace_test_results` cannot produce a cycle — its
+                        // `seen` set makes the walk a tree — but a hand-built
+                        // or future input could, and unguarded recursion would
+                        // turn that into a stack overflow.
+                        //
+                        // This tracks the CURRENT PATH rather than capping
+                        // depth. An earlier version bailed out past depth 64,
+                        // which silently dropped the entire subtree — the exact
+                        // node loss `tree_preserves_every_node` forbids, and
+                        // invisible because nothing exercised the guard. The
+                        // rivet-core mutation gate is what surfaced it: the
+                        // comparison survived mutation, meaning no test
+                        // distinguished `>` from `==`. A legitimately deep
+                        // chain must render in full; only a genuine revisit is
+                        // skipped.
+                        if on_path.iter().any(|p| p == id) {
+                            return None;
+                        }
+                        on_path.push(id.to_string());
+                        let children = build(id, by_parent, on_path);
+                        on_path.pop();
+                        Some(TraceTreeNode { node: n, children })
                     })
                     .collect()
             })
             .unwrap_or_default()
     }
 
-    let mut out = build(root, &by_parent, 0);
-    // Re-home anything whose parent is neither the root nor a reached node.
-    for n in nodes {
-        let parent = n.via_target.as_str();
-        if parent != root && !known.contains(parent) {
-            out.push(TraceTreeNode {
-                node: n,
-                children: build(&n.artifact_id, &by_parent, 0),
-            });
+    fn collect_ids(nodes: &[TraceTreeNode<'_>], out: &mut std::collections::BTreeSet<String>) {
+        for n in nodes {
+            out.insert(n.node.artifact_id.clone());
+            collect_ids(&n.children, out);
         }
+    }
+
+    let mut on_path: Vec<String> = vec![root.to_string()];
+    let mut out = build(root, &by_parent, &mut on_path);
+
+    // Nothing may be lost. Rather than special-casing orphans, sweep for any
+    // input node absent from the tree and re-home it at top level. That covers
+    // both a parent that was never reached and a group of nodes cycling among
+    // themselves with no path from the root. Neither is reachable from
+    // `trace_test_results`, and both would otherwise vanish silently — a
+    // rendered tree smaller than the trace it claims to show.
+    let mut rendered = std::collections::BTreeSet::new();
+    collect_ids(&out, &mut rendered);
+    for n in nodes {
+        if rendered.contains(&n.artifact_id) {
+            continue;
+        }
+        let mut path = vec![n.artifact_id.clone()];
+        let subtree = TraceTreeNode {
+            node: n,
+            children: build(&n.artifact_id, &by_parent, &mut path),
+        };
+        collect_ids(std::slice::from_ref(&subtree), &mut rendered);
+        out.push(subtree);
     }
     out
 }
@@ -446,5 +477,69 @@ mod tests {
     #[test]
     fn tree_of_empty_trace_is_empty() {
         assert!(as_tree("REQ-1", &[]).is_empty());
+    }
+
+    /// The rivet-core mutation gate found the depth guard untested — the `>`
+    /// comparison survived mutation to both `==` and `>=`, meaning no test
+    /// distinguished them. Writing the test exposed a real defect: the guard
+    /// bailed out past depth 64 and silently dropped the whole subtree, which
+    /// is the node loss `tree_preserves_every_node` exists to forbid.
+    ///
+    /// A legitimately deep chain must render in full.
+    ///
+    /// rivet: verifies REQ-274
+    #[test]
+    fn a_very_deep_chain_keeps_every_node() {
+        const DEPTH: usize = 200;
+        let mut flat = vec![node("N0", "REQ-1", 1)];
+        for i in 1..DEPTH {
+            flat.push(node(&format!("N{i}"), &format!("N{}", i - 1), i + 1));
+        }
+        let tree = as_tree("REQ-1", &flat);
+        let total: usize = tree.iter().map(TraceTreeNode::len).sum();
+        assert_eq!(total, DEPTH, "a {DEPTH}-deep chain lost nodes");
+
+        // and it is genuinely nested, not flattened into siblings
+        assert_eq!(tree.len(), 1);
+        let mut n = &tree[0];
+        let mut walked = 1;
+        while let Some(child) = n.children.first() {
+            n = child;
+            walked += 1;
+        }
+        assert_eq!(walked, DEPTH, "chain is not nested to full depth");
+    }
+
+    /// A cyclic input cannot come from `trace_test_results`, but it must
+    /// terminate rather than recurse forever if it ever arrives — and its
+    /// nodes must still surface rather than vanish.
+    ///
+    /// rivet: verifies REQ-274
+    #[test]
+    fn a_cycle_terminates_and_keeps_its_nodes() {
+        let flat = vec![node("A", "B", 1), node("B", "A", 2)];
+        let tree = as_tree("REQ-1", &flat);
+        let total: usize = tree.iter().map(TraceTreeNode::len).sum();
+        assert_eq!(
+            total,
+            flat.len(),
+            "a cycle unreachable from the root must still surface both nodes"
+        );
+    }
+
+    /// `is_empty` exists because clippy requires it alongside `len`; a node
+    /// always contains at least itself. Pinned so it cannot silently become
+    /// `true` and make a populated subtree read as empty — the mutation gate
+    /// flagged exactly that substitution as surviving.
+    ///
+    /// rivet: verifies REQ-274
+    #[test]
+    fn a_tree_node_is_never_empty() {
+        let flat = vec![node("A", "REQ-1", 1), node("B", "A", 2)];
+        let tree = as_tree("REQ-1", &flat);
+        assert!(!tree[0].is_empty());
+        assert!(!tree[0].children[0].is_empty());
+        assert_eq!(tree[0].len(), 2);
+        assert_eq!(tree[0].children[0].len(), 1);
     }
 }
