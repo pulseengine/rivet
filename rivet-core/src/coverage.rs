@@ -71,6 +71,15 @@ pub struct CoverageEntry {
     pub target_types: Vec<String>,
     /// Number of source artifacts that satisfy the rule in-house.
     pub covered: usize,
+    /// Sources excluded from `total` because they declared themselves exempt
+    /// via the rule's `exempt-when-field` (#848). Counted and named rather
+    /// than silently dropped: a declared gap must stay visible AS a
+    /// declaration.
+    #[serde(default)]
+    pub exempt: usize,
+    /// Ids of the exempt sources, so a report can name them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exempt_ids: Vec<String>,
     /// Number of source artifacts whose derivative is delegated to a
     /// supplier (terminates at an `external-anchor`). Issue #253 MVP.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -272,8 +281,31 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
     let mut entries = Vec::new();
 
     for rule in &schema.traceability_rules {
-        let source_ids = store.by_type(&rule.source_type);
+        let all_source_ids = store.by_type(&rule.source_type);
+
+        // #848: a source that DECLARES itself exempt (GSN `undeveloped: true`
+        // and equivalents) leaves the denominator and is counted separately.
+        // Only an explicit `true` exempts — `false` or an absent field keeps
+        // the source in scope, so the exemption is always something an author
+        // wrote down on purpose.
+        let mut exempt_ids: Vec<String> = Vec::new();
+        let source_ids: Vec<&String> = match rule.exempt_when_field.as_deref() {
+            Some(field) => all_source_ids
+                .iter()
+                .filter(|id| {
+                    let declared = store.get(id).is_some_and(|a| {
+                        a.fields.get(field) == Some(&serde_yaml::Value::Bool(true))
+                    });
+                    if declared {
+                        exempt_ids.push((*id).to_string());
+                    }
+                    !declared
+                })
+                .collect(),
+            None => all_source_ids.iter().collect(),
+        };
         let total = source_ids.len();
+        let exempt = exempt_ids.len();
         let mut covered = 0usize;
         let mut external_boundary = 0usize;
         let mut external_boundary_ids = Vec::new();
@@ -354,13 +386,15 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
                 covered += 1;
             } else if terminates_at_external_anchor(store, graph, id, &target_types) {
                 external_boundary += 1;
-                external_boundary_ids.push(id.clone());
+                external_boundary_ids.push((*id).clone());
             } else {
-                uncovered_ids.push(id.clone());
+                uncovered_ids.push((*id).clone());
             }
         }
 
         entries.push(CoverageEntry {
+            exempt,
+            exempt_ids,
             rule_name: rule.name.clone(),
             description: rule.description.clone(),
             source_type: rule.source_type.clone(),
@@ -450,6 +484,7 @@ mod tests {
                 from_types: vec!["design-decision".into()],
                 severity: Severity::Warning,
                 alternate_backlinks: vec![],
+                exempt_when_field: None,
             },
             TraceabilityRule {
                 name: "dd-justification".into(),
@@ -461,6 +496,7 @@ mod tests {
                 from_types: vec![],
                 severity: Severity::Error,
                 alternate_backlinks: vec![],
+                exempt_when_field: None,
             },
         ];
         Schema::merge(&[file])
@@ -599,6 +635,7 @@ mod tests {
             from_types: vec![],
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -646,6 +683,7 @@ mod tests {
             from_types: vec![],
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -723,6 +761,7 @@ mod tests {
             from_types: vec![],
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -773,6 +812,7 @@ mod tests {
             from_types: vec![], // match any
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -830,6 +870,7 @@ mod tests {
             from_types: vec!["safety-solution".into()],
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -901,6 +942,7 @@ mod tests {
                 from_types: vec!["safety-strategy".into()],
             }],
             severity: Severity::Error,
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -937,6 +979,8 @@ mod tests {
 
     fn rule_entry(rule: &str, source: &str, total: usize, uncovered: &[&str]) -> CoverageEntry {
         CoverageEntry {
+            exempt: 0,
+            exempt_ids: Vec::new(),
             rule_name: rule.into(),
             description: String::new(),
             source_type: source.into(),
@@ -1004,5 +1048,132 @@ mod tests {
             "external-boundary REQ-003 counts as closed (accounted)"
         );
         assert!(closure[0].open_ids.is_empty());
+    }
+
+    /// #848: a goal that declares `undeveloped: true` — GSN's own notation for
+    /// a deliberately-not-yet-decomposed goal — counted identically to a goal
+    /// somebody simply forgot.
+    ///
+    /// The metric was misleading in BOTH directions. False alarm: a safety case
+    /// doing the right thing scored as if it had drifted, and the natural
+    /// remedy is to add links until the number goes green — the cosmetic move a
+    /// coverage gate exists to prevent. False comfort, the one that bites: a
+    /// genuinely forgotten goal hides among the declared ones, because 3
+    /// declared gaps going to 4 gaps reads as more of the same.
+    ///
+    /// The fix is schema-declared rather than a hardcoded field name: a rule
+    /// names the boolean field that exempts a source via `exempt-when-field`.
+    ///
+    /// rivet: verifies REQ-309
+    #[test]
+    fn declared_exempt_sources_leave_the_denominator_and_are_counted_separately() {
+        let mut file = minimal_schema("test");
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "goal-has-support".into(),
+            description: "goals need evidence unless declared undeveloped".into(),
+            source_type: "safety-goal".into(),
+            required_link: None,
+            required_backlink: Some("supports".into()),
+            target_types: vec![],
+            from_types: vec![],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+            exempt_when_field: Some("undeveloped".into()),
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        store.upsert(minimal_artifact("G-001", "safety-goal"));
+        store.upsert(artifact_with_links(
+            "S-001",
+            "safety-solution",
+            &[("supports", "G-001")],
+        ));
+        let mut undeveloped = minimal_artifact("G-002", "safety-goal");
+        undeveloped
+            .fields
+            .insert("undeveloped".into(), serde_yaml::Value::Bool(true));
+        store.upsert(undeveloped);
+
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let e = report
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "goal-has-support")
+            .expect("rule present");
+
+        // G-002 declared itself undeveloped: out of the denominator, surfaced
+        // as its own count.
+        assert_eq!(
+            e.total, 1,
+            "declared-undeveloped goal must leave the denominator"
+        );
+        assert_eq!(e.covered, 1);
+        assert_eq!(e.exempt, 1, "it must still be COUNTED, not merely dropped");
+        assert!(e.exempt_ids.contains(&"G-002".to_string()));
+
+        // The load-bearing half: a FORGOTTEN goal must now be loud, not hidden
+        // among the declared ones.
+        let mut store2 = store.clone();
+        store2.upsert(minimal_artifact("G-003", "safety-goal"));
+        let graph2 = LinkGraph::build(&store2, &schema);
+        let report2 = compute_coverage(&store2, &schema, &graph2);
+        let e2 = report2
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "goal-has-support")
+            .expect("rule present");
+        assert_eq!(e2.total, 2, "the forgotten goal stays in the denominator");
+        assert_eq!(e2.covered, 1);
+        assert_eq!(e2.exempt, 1);
+        assert!(
+            e2.percentage() < 100.0,
+            "a forgotten goal must drop the figure below 100%, where it is loud"
+        );
+    }
+
+    /// A rule with no `exempt-when-field` behaves exactly as before, and a
+    /// field set to `false` (or absent) does not exempt — only an explicit
+    /// `true` declaration does.
+    ///
+    /// rivet: verifies REQ-309
+    #[test]
+    fn exemption_requires_an_explicit_true() {
+        let mut file = minimal_schema("test");
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "goal-has-support".into(),
+            description: "d".into(),
+            source_type: "safety-goal".into(),
+            required_link: None,
+            required_backlink: Some("supports".into()),
+            target_types: vec![],
+            from_types: vec![],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+            exempt_when_field: Some("undeveloped".into()),
+        }];
+        let schema = Schema::merge(&[file]);
+
+        let mut store = Store::new();
+        let mut explicit_false = minimal_artifact("G-001", "safety-goal");
+        explicit_false
+            .fields
+            .insert("undeveloped".into(), serde_yaml::Value::Bool(false));
+        store.upsert(explicit_false);
+        store.upsert(minimal_artifact("G-002", "safety-goal")); // field absent
+
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let e = report
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "goal-has-support")
+            .expect("rule present");
+        assert_eq!(
+            e.total, 2,
+            "false and absent must both stay in the denominator"
+        );
+        assert_eq!(e.exempt, 0);
     }
 }

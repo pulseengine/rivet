@@ -334,6 +334,22 @@ pub struct TraceabilityRule {
     /// duplicating the whole rule.
     #[serde(default, rename = "alternate-backlinks")]
     pub alternate_backlinks: Vec<AlternateBacklink>,
+    /// Names a boolean artifact field that EXEMPTS a source from this rule
+    /// (#848). An exempt source leaves the coverage denominator and is
+    /// reported as its own count, rather than being indistinguishable from a
+    /// source that simply lacks the link.
+    ///
+    /// The motivating case is GSN's `undeveloped: true` — the diamond
+    /// notation for a goal deliberately not yet decomposed. Declaring
+    /// incompleteness is correct practice, and scoring it identically to an
+    /// oversight makes the metric misleading in both directions: it cries
+    /// wolf on a well-run safety case, and it lets a genuinely forgotten goal
+    /// hide among the declared ones.
+    ///
+    /// Schema-declared rather than a hardcoded field name, so any schema can
+    /// express its own notion of a declared, accepted gap.
+    #[serde(default, rename = "exempt-when-field")]
+    pub exempt_when_field: Option<String>,
 }
 
 /// One alternative backlink shape inside a TraceabilityRule.
@@ -2251,6 +2267,7 @@ mod tests {
             from_types: vec!["sw-verification".into(), "unit-verification".into()],
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         });
         let schema = Schema::merge(&[file]);
 
@@ -2301,6 +2318,7 @@ mod tests {
             from_types: vec!["unit-verification".into()],
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         });
         let dup = ConditionalRule {
             name: "dup-rule".into(),
@@ -2360,6 +2378,7 @@ mod tests {
             from_types: vec!["sw-verification".into(), "alt-verification".into()],
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         });
         let schema = Schema::merge(&[file]);
         assert!(

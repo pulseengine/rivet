@@ -2137,6 +2137,7 @@ then:
             from_types: vec![],
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         Schema::merge(&[file])
     }
@@ -2562,6 +2563,7 @@ then:
             from_types: vec![],
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -2646,6 +2648,7 @@ then:
             from_types: vec![], // empty — the ambiguous case
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -2719,6 +2722,7 @@ then:
             from_types: vec![],
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -2834,6 +2838,7 @@ then:
             from_types: vec!["safety-solution".into()],
             severity: Severity::Error,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 
@@ -2901,6 +2906,7 @@ then:
                 from_types: vec!["safety-strategy".into()],
             }],
             severity: Severity::Error,
+            exempt_when_field: None,
         }];
         let schema = Schema::merge(&[file]);
 

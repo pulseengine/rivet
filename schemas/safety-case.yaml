@@ -300,6 +300,10 @@ traceability-rules:
         from-types: [safety-strategy]
       - link-type: has-sub-goal
         from-types: [safety-goal, away-goal]
+    # GSN's diamond: a goal deliberately not yet decomposed. Declaring the gap
+    # is correct practice, so it leaves the denominator and is reported as its
+    # own count instead of being scored as an oversight (#848).
+    exempt-when-field: undeveloped
     severity: error
 
   # Every strategy must decompose a goal

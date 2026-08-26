@@ -210,6 +210,7 @@ mod tests {
             from_types: vec!["feature".into()],
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }]);
         let artifacts = vec![make_artifact(
             "REQ-001",
@@ -236,6 +237,7 @@ mod tests {
             from_types: vec!["feature".into()],
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }]);
         let artifacts = vec![
             make_artifact("REQ-001", "requirement", Some("implemented"), vec![]),
@@ -269,6 +271,7 @@ mod tests {
             from_types: vec!["feature".into()],
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }]);
         let artifacts = vec![make_artifact(
             "REQ-001",
@@ -308,6 +311,7 @@ mod tests {
             ],
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }]);
         // Provide ONE covered type so the `covered_types.is_empty()`
         // "no downstream artifacts found" short-circuit doesn't fire and
@@ -342,6 +346,7 @@ mod tests {
             from_types: vec!["feature".into(), "design-decision".into()],
             severity: Severity::Warning,
             alternate_backlinks: vec![],
+            exempt_when_field: None,
         }]);
         let artifacts = vec![
             make_artifact("REQ-001", "requirement", Some("implemented"), vec![]),
