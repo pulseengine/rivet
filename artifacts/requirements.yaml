@@ -8336,3 +8336,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-08-26T00:00:00Z
+
+  - id: REQ-313
+    type: requirement
+    title: "No way to declare an acceptance criterion as not-yet-dischargeable, so gates deadlock or silently pass (#856)"
+    status: implemented
+    description: "Reported from scry. `acceptance-criteria` is `list<string>`, so an author who KNOWS a criterion cannot yet be discharged has nowhere to record that except inside the string in shouty caps, where the tool cannot act on it. The reporter's case is a genuine deadlock: a feature scoped to `release: v3.2.6` carried an AC that could only be discharged BY that release completing, so the release cannot become cuttable until the feature is verified and the feature cannot be verified until the release ships. `rivet validate` passes, `rivet release status` says 'not yet verified', and nothing indicates why it will stay that way forever; it was caught only by re-reading the artifact three weeks later. The author's two options are both invisible: write the criterion and stall the release with no machine-readable reason, or omit it and let the gate go green on something nobody can discharge. Same family as REQ-309/#848 one level down — a DECLARED incompleteness the tool has no home for. Two things measured here at HEAD that the report does not mention. First, the object form ALREADY validates clean: `type: list<string>` is not enforced per element, so a list of mappings passes `rivet validate` today with no diagnostic. Second, and worse, `rivet export --format gherkin` SILENTLY DROPS such a criterion — the generated .feature file for an object-form AC contains a header and no scenarios at all, so an author who adopts the shape the reporter proposes loses the criterion from the export with no error. Scope for this artifact: (a) recognise the object form `{text, status, blocked-by}` alongside bare strings, keeping strings working unchanged; (b) render it in the gherkin export instead of dropping it; (c) a criterion whose `blocked-by` names the release its own artifact is scoped to is a circular deadlock and is mechanically detectable — a clean error, not a heuristic; (d) report declared-blocked criteria as their own category so 'declared blocked' is distinguishable from 'not yet verified'. Explicitly OUT of scope on the reporter's own advice: detecting a requirement written as a conjunction of independent obligations — that needs to tell an AND of two obligations from ordinary prose containing 'and', and a false positive on every requirement would be worse than the occasional real one. It is a review problem, not a validation problem."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-26T00:00:00Z

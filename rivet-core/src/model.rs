@@ -463,6 +463,70 @@ impl Artifact {
     }
 }
 
+/// One `acceptance-criteria` entry, in either of the two shapes an author may
+/// write (#856 / REQ-313).
+///
+/// The field is declared `list<string>`, and a bare string stays the normal
+/// case. But `list<string>` is not enforced per element, so an author who needs
+/// to record that a criterion is not yet dischargeable can — and does — write a
+/// mapping instead, and it validates clean today. Before this type existed the
+/// mapping form was then **silently dropped** by the gherkin export: the
+/// generated `.feature` file carried a header and no scenarios, because the
+/// exporter called `as_str()` and skipped anything that returned `None`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcceptanceCriterion {
+    /// The criterion prose — the bare string, or the mapping's `text`.
+    pub text: String,
+    /// Declared lifecycle of the criterion, e.g. `blocked`. `None` for a bare
+    /// string, which carries no such claim.
+    pub status: Option<String>,
+    /// What the author says must happen first — a release name or an artifact
+    /// id. Only meaningful alongside a `status`.
+    pub blocked_by: Option<String>,
+}
+
+impl AcceptanceCriterion {
+    /// True when the author has explicitly declared this criterion as not yet
+    /// dischargeable. Only an explicit `blocked` counts, so the declaration is
+    /// always something written on purpose.
+    pub fn is_blocked(&self) -> bool {
+        self.status.as_deref() == Some("blocked")
+    }
+}
+
+/// Read one `acceptance-criteria` entry, accepting both shapes.
+///
+/// Returns `None` only when there is no usable prose at all — an empty string,
+/// or a mapping with no non-empty `text`. Callers should treat `None` as
+/// "nothing to render", not as "skip silently": the whole point of REQ-313 is
+/// that a criterion which cannot be read must not vanish without a word.
+pub fn parse_acceptance_criterion(value: &serde_yaml::Value) -> Option<AcceptanceCriterion> {
+    match value {
+        serde_yaml::Value::String(s) if !s.trim().is_empty() => Some(AcceptanceCriterion {
+            text: s.clone(),
+            status: None,
+            blocked_by: None,
+        }),
+        serde_yaml::Value::Mapping(m) => {
+            let get = |k: &str| {
+                m.get(serde_yaml::Value::String(k.to_string()))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            };
+            let text = get("text")?;
+            if text.trim().is_empty() {
+                return None;
+            }
+            Some(AcceptanceCriterion {
+                text,
+                status: get("status"),
+                blocked_by: get("blocked-by").or_else(|| get("blocked_by")),
+            })
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,6 +917,68 @@ target:
         assert!(yaml2.contains("source-org: acme"));
         let parsed: Provenance = serde_yaml::from_str(&yaml2).unwrap();
         assert_eq!(parsed.federation, prov_fed.federation);
+    }
+    fn yaml(src: &str) -> serde_yaml::Value {
+        serde_yaml::from_str(src).expect("yaml")
+    }
+
+    /// REQ-313: both shapes parse, and a bare string carries no blocked claim.
+    ///
+    /// rivet: verifies REQ-313
+    #[test]
+    fn parses_both_criterion_shapes() {
+        let s = parse_acceptance_criterion(&yaml("\"Given X, When Y, Then Z\"")).unwrap();
+        assert_eq!(s.text, "Given X, When Y, Then Z");
+        assert_eq!(s.status, None);
+        assert!(!s.is_blocked(), "a bare string declares nothing");
+
+        let m = parse_acceptance_criterion(&yaml(
+            "text: \"Given the next release, When it completes, Then delta.html returns 200\"\nstatus: blocked\nblocked-by: v3.2.6",
+        ))
+        .unwrap();
+        assert!(m.text.starts_with("Given the next release"));
+        assert_eq!(m.status.as_deref(), Some("blocked"));
+        assert_eq!(m.blocked_by.as_deref(), Some("v3.2.6"));
+        assert!(m.is_blocked());
+    }
+
+    /// Only an explicit `blocked` is a declaration. Anything else keeps the
+    /// criterion ordinary, so the category cannot be entered by accident.
+    ///
+    /// rivet: verifies REQ-313
+    #[test]
+    fn only_an_explicit_blocked_status_declares_a_criterion_blocked() {
+        for st in ["draft", "BLOCKED", "", "pending"] {
+            let c = parse_acceptance_criterion(&yaml(&format!("text: \"t\"\nstatus: \"{st}\"")))
+                .unwrap();
+            assert!(!c.is_blocked(), "status {st:?} must not count as blocked");
+        }
+    }
+
+    /// Nothing usable yields None so the caller can say so, rather than the
+    /// exporter silently skipping it — which is the defect REQ-313 is about.
+    ///
+    /// rivet: verifies REQ-313
+    #[test]
+    fn unusable_criteria_are_reported_as_none_not_skipped_silently() {
+        assert!(parse_acceptance_criterion(&yaml("\"\"")).is_none());
+        assert!(parse_acceptance_criterion(&yaml("\"   \"")).is_none());
+        assert!(parse_acceptance_criterion(&yaml("status: blocked")).is_none());
+        assert!(parse_acceptance_criterion(&yaml("text: \"  \"")).is_none());
+        assert!(parse_acceptance_criterion(&yaml("[1, 2]")).is_none());
+    }
+
+    /// `blocked_by` is accepted in both spellings — the schema uses kebab-case
+    /// but authors reach for snake_case, and silently ignoring one would put
+    /// the blocker back where the tool cannot see it.
+    ///
+    /// rivet: verifies REQ-313
+    #[test]
+    fn blocked_by_accepts_both_spellings() {
+        let a = parse_acceptance_criterion(&yaml("text: t\nblocked-by: v1")).unwrap();
+        let b = parse_acceptance_criterion(&yaml("text: t\nblocked_by: v1")).unwrap();
+        assert_eq!(a.blocked_by.as_deref(), Some("v1"));
+        assert_eq!(b.blocked_by.as_deref(), Some("v1"));
     }
 }
 
