@@ -9626,3 +9626,196 @@ fn a_project_without_externals_still_reports_a_normal_summary() {
     );
     assert!(combined.contains("Result: PASS"));
 }
+
+/// REQ-313 / #856: an acceptance criterion declared `blocked-by` the release
+/// its own artifact is scoped to is a deadlock — the release cannot be cut
+/// until the artifact verifies, and the artifact cannot verify until that
+/// release ships.
+///
+/// The reporter hit exactly this and caught it only by re-reading the artifact
+/// three weeks later: `validate` passed and `release status` said "not yet
+/// verified", with nothing indicating it would stay that way forever.
+///
+/// Error rather than warning, because unlike a block on some OTHER release
+/// this one can never be discharged — there is no in-flight state where it is
+/// acceptable.
+///
+/// rivet: verifies REQ-313
+#[test]
+fn a_criterion_blocked_by_its_own_release_is_a_deadlock_error() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        r#"project:
+  name: ac
+  schemas: [common, dev]
+sources:
+  - path: artifacts
+    format: generic-yaml
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        r#"artifacts:
+  - id: FEAT-001
+    type: feature
+    title: t
+    status: approved
+    release: v3.2.6
+    fields:
+      acceptance-criteria:
+        - text: "Given the next release, When it completes, Then X"
+          status: blocked
+          blocked-by: v3.2.6
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        combined.contains("criterion-blocked-by-own-release") || combined.contains("deadlock"),
+        "a self-blocking criterion must be reported as a deadlock; combined:\n{combined}"
+    );
+    assert!(
+        !out.status.success(),
+        "it must fail the run, not merely mention it; combined:\n{combined}"
+    );
+}
+
+/// The counterpart: a criterion blocked on a DIFFERENT release is a legitimate
+/// in-flight declaration and must not error. Without this the check could have
+/// flagged every blocked criterion and the test above would still pass.
+///
+/// rivet: verifies REQ-313
+#[test]
+fn a_criterion_blocked_by_another_release_is_not_an_error() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        r#"project:
+  name: ac
+  schemas: [common, dev]
+sources:
+  - path: artifacts
+    format: generic-yaml
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        r#"artifacts:
+  - id: FEAT-001
+    type: feature
+    title: t
+    status: approved
+    release: v3.2.6
+    fields:
+      acceptance-criteria:
+        - text: "Given the follow-up, When it ships, Then X"
+          status: blocked
+          blocked-by: v3.3.0
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !combined.contains("criterion-blocked-by-own-release"),
+        "a block on a different release is legitimate; combined:\n{combined}"
+    );
+    assert!(out.status.success(), "combined:\n{combined}");
+}
+
+/// REQ-313: the object form used to be dropped from the gherkin export without
+/// a word — `as_str()` returned None and the loop skipped it, so the .feature
+/// file carried a header and no scenarios at all.
+///
+/// rivet: verifies REQ-313
+#[test]
+fn gherkin_export_renders_object_form_criteria_instead_of_dropping_them() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        r#"project:
+  name: ac
+  schemas: [common, dev]
+sources:
+  - path: artifacts
+    format: generic-yaml
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        r#"artifacts:
+  - id: FEAT-002
+    type: feature
+    title: t
+    status: approved
+    release: v9.9.9
+    fields:
+      acceptance-criteria:
+        - text: "Given the next release, When it completes, Then delta returns 200"
+          status: blocked
+          blocked-by: v1.0.0
+"#,
+    )
+    .unwrap();
+
+    let outdir = dir.join("gherkin");
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "export",
+            "--format",
+            "gherkin",
+            "--output",
+            outdir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("export");
+    assert!(out.status.success());
+
+    let feature = std::fs::read_to_string(outdir.join("feat_002.feature"))
+        .expect("feature file for FEAT-002");
+    assert!(
+        feature.contains("delta returns 200"),
+        "the criterion prose must survive the export; got:\n{feature}"
+    );
+    assert!(
+        feature.contains("Scenario:"),
+        "it must produce a scenario, not just a header; got:\n{feature}"
+    );
+    assert!(
+        feature.contains("@blocked"),
+        "a declared-blocked criterion must be tagged so a reader can tell it \
+         from one expected to pass; got:\n{feature}"
+    );
+}

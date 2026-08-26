@@ -6105,6 +6105,54 @@ fn cmd_validate(
         diagnostics.push(diag);
     }
 
+    // REQ-313 / #856: a criterion whose `blocked-by` names the release its own
+    // artifact is scoped to is a DEADLOCK, and a mechanically detectable one.
+    // The release cannot become cuttable until the artifact is verified, and
+    // the artifact cannot be verified until that release ships. `validate`
+    // passed and `release status` said "not yet verified", with nothing to
+    // indicate it would stay that way forever — the reporter caught it only by
+    // re-reading the artifact three weeks later.
+    //
+    // Error, not warning: unlike a declared block on some OTHER release, this
+    // one can never be discharged, so there is no in-flight state where it is
+    // acceptable.
+    for artifact in store.iter() {
+        let Some(release) = artifact.release.as_deref() else {
+            continue;
+        };
+        let Some(criteria) = artifact
+            .fields
+            .get("acceptance-criteria")
+            .and_then(|v| v.as_sequence())
+        else {
+            continue;
+        };
+        for (i, raw) in criteria.iter().enumerate() {
+            let Some(c) = rivet_core::model::parse_acceptance_criterion(raw) else {
+                continue;
+            };
+            if !c.is_blocked() {
+                continue;
+            }
+            if c.blocked_by.as_deref() == Some(release) {
+                let mut diag = validate::Diagnostic::new(
+                    Severity::Error,
+                    Some(artifact.id.clone()),
+                    "criterion-blocked-by-own-release",
+                    format!(
+                        "acceptance-criteria[{i}] is declared blocked-by '{release}', which is \
+                         the release this artifact is itself scoped to — a deadlock: the release \
+                         cannot be cut until this artifact verifies, and it cannot verify until \
+                         that release ships. Point `blocked-by` at the release or artifact that \
+                         genuinely unblocks it, or move this artifact to a later release."
+                    ),
+                );
+                diag.source_file = artifact.source_file.clone();
+                diagnostics.push(diag);
+            }
+        }
+    }
+
     // #808 (case 2, corrected): `unknown-config-key` for any top-level
     // key in `rivet.yaml` that isn't a `ProjectConfig` field. Warning
     // by default (a downstream project may legitimately carry its own
@@ -10946,16 +10994,44 @@ fn cmd_export_gherkin(
             .collect();
 
         for (i, criterion) in criteria.iter().enumerate() {
-            let text = criterion.as_str().unwrap_or_default();
-            if text.is_empty() {
+            // REQ-313 / #856: a criterion may be a bare string OR a mapping
+            // carrying `text` / `status` / `blocked-by`, which is what an
+            // author writes when a criterion is not yet dischargeable. This
+            // used to call `as_str()` and `continue` on anything else, so the
+            // mapping form was SILENTLY DROPPED — the generated .feature file
+            // got a header and no scenarios, with no error anywhere.
+            let Some(parsed) = rivet_core::model::parse_acceptance_criterion(criterion) else {
+                // Not silently. An unreadable criterion is exactly the thing
+                // this requirement exists to stop vanishing.
+                eprintln!(
+                    "  warning: {} acceptance-criteria[{}] has no usable `text` — \
+                     skipped in the gherkin export",
+                    art.id, i
+                );
                 continue;
-            }
+            };
+            let text = parsed.text.as_str();
 
             // Parse "Given X, When Y, Then Z" or just use as-is
             if !req_tags.is_empty() {
                 feature.push_str(&format!("  {}\n", req_tags.join(" ")));
             }
+            // A declared-blocked criterion is tagged and annotated rather than
+            // rendered as an ordinary scenario, so a reader of the .feature —
+            // and any runner that reads tags — can tell "declared not yet
+            // dischargeable" from "expected to pass".
+            if parsed.is_blocked() {
+                feature.push_str("  @blocked\n");
+            }
             feature.push_str(&format!("  Scenario: {} criterion {}\n", art.id, i + 1));
+            if parsed.is_blocked() {
+                match parsed.blocked_by.as_deref() {
+                    Some(b) => feature.push_str(&format!(
+                        "    # DECLARED BLOCKED — cannot be discharged until: {b}\n"
+                    )),
+                    None => feature.push_str("    # DECLARED BLOCKED — no blocker recorded\n"),
+                }
+            }
 
             // Try to parse structured given/when/then
             let parts: Vec<&str> = text.splitn(3, ',').collect();
