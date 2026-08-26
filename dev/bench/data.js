@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787737050888,
+  "lastUpdate": 1787740396796,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "7619b0d524fd2d7f3e9320c9f1ce98b99e5f0f53",
-          "message": "build(deps): bump wasmtime 45->47 (fixes RUSTSEC-2026-0222); justify-ignore rkyv advisory (#762)\n\nRUSTSEC-2026-0222 (wasmtime: stores can mix up type indices between engines)\nis cleared by bumping wasmtime + wasmtime-wasi 45.0.3 -> 47.0.3. The host wasm\nseam still builds (`cargo build -p rivet-cli --features wasm` OK) — the bump is\nsource-compatible for rivet's single-engine usage.\n\nRUSTSEC-2026-0235 (rkyv 0.7 out-of-bounds reads) is added to the cargo-audit\nignore list with justification: rkyv is an OPTIONAL feature of rust_decimal\n(pulled via gluesql-core) that rivet does not enable, so it is a Cargo.lock\nentry only and is never compiled into any rivet binary. rust_decimal pins\nrkyv ^0.7, so it cannot advance to the fixed 0.8 line without an upstream bump.\n\nResult: `cargo audit` reports 0 vulnerabilities (2 allowed warnings remain:\ninstant unmaintained, scc) — the Security Audit gate goes green again.\n\nTrace: skip",
-          "timestamp": "2026-08-05T11:48:26+02:00",
-          "tree_id": "483b3a5d0ee77ea05baa2a7d98e4311a64a9941e",
-          "url": "https://github.com/pulseengine/rivet/commit/7619b0d524fd2d7f3e9320c9f1ce98b99e5f0f53"
-        },
-        "date": 1785924082404,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84981,
-            "range": "± 2496",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 925308,
-            "range": "± 21685",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 19071206,
-            "range": "± 1315923",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1979,
-            "range": "± 29",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25260,
-            "range": "± 1768",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 354863,
-            "range": "± 2076",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1531392,
-            "range": "± 43945",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 168274,
-            "range": "± 961",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1955338,
-            "range": "± 21285",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 59897799,
-            "range": "± 9733941",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 460187,
-            "range": "± 9293",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16790170,
-            "range": "± 199462",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1188270736,
-            "range": "± 22998568",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4290,
-            "range": "± 78",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46852,
-            "range": "± 546",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 830359,
-            "range": "± 18423",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 64597,
-            "range": "± 322",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 724843,
-            "range": "± 3104",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9370249,
-            "range": "± 823581",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1011,
-            "range": "± 22",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14045,
-            "range": "± 188",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 238264,
-            "range": "± 4638",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22175,
-            "range": "± 122",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 152108,
-            "range": "± 2293",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1436823,
-            "range": "± 11714",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1354762,
             "range": "± 21267",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9d1a87fb905c15ceaafd9193c15e1e31bc5a17b0",
+          "message": "ci: move CI Gate and the zola smoke off GitHub-hosted runners (#855)\n\nci: move CI Gate and the zola smoke off GitHub-hosted runners\n\nAudited every `ubuntu-latest` job for a genuine hosted requirement. Two had\nnone; the other eight all do and are staying.\n\nCI Gate is the important one. It is a `jq` read of `toJSON(needs)` — no\ncheckout, no toolchain, no sudo, no network — and all eleven jobs it aggregates\nrun on the self-hosted pool. Its availability was therefore ALREADY gated on\nthat pool. Being hosted added a SECOND, independent dependency on GitHub-hosted\ncapacity, which can only add failure modes and never removes one.\n\nThat bit on 2026-08-26. Hosted was starved — a run queued about 24 hours —\nwhile twelve self-hosted runners sat idle. Because `CI Gate` is the sole\nrequired context with enforce_admins: true, no PR could reach a green required\ncheck and `--admin` is not an escape. Every one of the gate's needs was green;\nonly the aggregation of them was stuck. Moved to the `light` pool: it is a\nfive-second script, and by the time it runs its needs have finished, so that\nrunner is free.\n\nZola export smoke has no hosted requirement either. It fetches zola from a\nGitHub release into $HOME/.local/bin — no sudo, no apt-get — which is exactly\nwhat pins the jobs that genuinely must stay hosted. Moved to `rust-cpu` since\nit builds a release binary.\n\nVerified mechanically rather than by reading: every job in ci-gate's `needs`,\nand ci-gate itself, now resolves to a self-hosted label, so no job that can\nblock a merge depends on GitHub-hosted capacity.\n\nThe eight jobs staying on ubuntu-latest each have a reason, and none is in\nci-gate's needs, so none can block a merge:\n\n  traceability-hosted-fallback  deliberate hosted floor for a self-hosted outage\n  playwright                    `playwright install --with-deps` needs sudo apt-get\n  vscode-extension              xvfb + VS Code test env needs sudo apt-get\n  audit                         smithy's cargo-audit 0.21.2 rejects RUSTSEC-2026-0037\n  kani                          bundles CBMC (~100 MB), not provisioned on smithy\n  verus                         cachix Nix installer needs full sudo / no NoNewPrivileges\n  rocq                          Rocq/Coq install heavy, not provisioned on smithy\n  release-results               SLSA L3 build isolation on an ephemeral runner (#782)\n\nConfirmed with yamllint -c .yamllint.yaml (exit 0; the remaining warnings are\npre-existing long lines), workflow YAML parses under yaml.safe_load, and rivet\nvalidate / docs check exit 0. actionlint's `runner-label` warnings for custom\nlabels are pre-existing — 21 on main, 23 here, same class.\n\nRefs: #849\nci(zola): verify by absolute path and assert zola before the smoke check\n\nThe zola job failed on its first self-hosted run — exit 127, \"zola: command not\nfound\" — after the download had succeeded. The install step appends\n$HOME/.local/bin to $GITHUB_PATH and then runs a bare `zola --version` in the\nSAME step, but $GITHUB_PATH only affects LATER steps. That worked on\nubuntu-latest purely because $HOME/.local/bin is on PATH there by default, and\nbroke the moment the job moved. A latent bug in the step, surfaced rather than\ncaused by the move; verifying by absolute path makes it portable.\n\nThe more interesting half is what the failure revealed. scripts/zola-export-\nsmoke.sh deliberately skips with exit 0 when zola is absent, so it stays usable\non a workstation without it. In CI that makes the job a vacuous pass: had the\n$GITHUB_PATH entry silently failed to take effect in the NEXT step rather than\nerroring in this one, the smoke check would have reported green having built\nnothing at all.\n\nSo the job now asserts zola is on PATH before invoking the script. The gate is\npotent; the script stays friendly. This is the same shape as #833 and #835 --\na tolerance for absence placed around the assertion that absence is the failure.\n\nConfirmed with yaml.safe_load, yamllint -c .yamllint.yaml (exit 0), actionlint\n(0 real findings, identical to main; only the pre-existing custom-label\nwarnings), rivet validate and rivet docs check (exit 0).\n\nRefs: #849",
+          "timestamp": "2026-08-26T11:50:31+02:00",
+          "tree_id": "b42b2dbc2b3fb210109030e903733843bc90bf38",
+          "url": "https://github.com/pulseengine/rivet/commit/9d1a87fb905c15ceaafd9193c15e1e31bc5a17b0"
+        },
+        "date": 1787740395215,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 77370,
+            "range": "± 2323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 940603,
+            "range": "± 19232",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11475390,
+            "range": "± 235164",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1515,
+            "range": "± 50",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 18370,
+            "range": "± 643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 284793,
+            "range": "± 6589",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 72,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 73,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 72,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1352539,
+            "range": "± 39923",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 159299,
+            "range": "± 3922",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1780837,
+            "range": "± 56637",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24831175,
+            "range": "± 579634",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 428971,
+            "range": "± 11704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 14143484,
+            "range": "± 352159",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 991574019,
+            "range": "± 14545367",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3701,
+            "range": "± 97",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 40178,
+            "range": "± 1110",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 817920,
+            "range": "± 11397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 53843,
+            "range": "± 1273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 573291,
+            "range": "± 12297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7044374,
+            "range": "± 147355",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 947,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11094,
+            "range": "± 266",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 293415,
+            "range": "± 6162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20203,
+            "range": "± 742",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 144220,
+            "range": "± 4430",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1316238,
+            "range": "± 33216",
             "unit": "ns/iter"
           }
         ]
