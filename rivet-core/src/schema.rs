@@ -2423,4 +2423,90 @@ mod tests {
             "all from-types can form the backlink -> no diagnostic"
         );
     }
+
+    /// REQ-310: the discriminating cases for `source_types_for_backlink`.
+    ///
+    /// The rivet-core mutation gate found FOUR survivors in this function —
+    /// every operator in its filter predicate (`==` on the link type, the `&&`
+    /// joining it to the target check, the `||` inside, and the `==` on the
+    /// target type). All four survived because the only coverage was a
+    /// happy-path CLI test that could not tell them apart.
+    ///
+    /// Each assertion below fails under exactly one of those mutations.
+    ///
+    /// rivet: verifies REQ-310
+    #[test]
+    fn source_types_for_backlink_discriminates_on_every_predicate_term() {
+        let mut typed = mk_type("verification", vec![], vec![]);
+        typed.link_fields = vec![LinkFieldDef {
+            name: "verifies".into(),
+            link_type: "verifies".into(),
+            target_types: vec!["requirement".into()],
+            required: false,
+            cardinality: Cardinality::ZeroOrMany,
+            description: None,
+        }];
+        // Same link type, but points somewhere else — kills `t == target` -> `!=`.
+        let mut wrong_target = mk_type("design-verification", vec![], vec![]);
+        wrong_target.link_fields = vec![LinkFieldDef {
+            name: "verifies".into(),
+            link_type: "verifies".into(),
+            target_types: vec!["design-decision".into()],
+            required: false,
+            cardinality: Cardinality::ZeroOrMany,
+            description: None,
+        }];
+        // Different link type entirely — kills `link_type == l` -> `!=`.
+        let mut other_link = mk_type("design-decision", vec![], vec![]);
+        other_link.link_fields = vec![LinkFieldDef {
+            name: "satisfies".into(),
+            link_type: "satisfies".into(),
+            target_types: vec!["requirement".into()],
+            required: false,
+            cardinality: Cardinality::ZeroOrMany,
+            description: None,
+        }];
+        // Unconstrained target list — matches ANY target, so it kills both the
+        // `&&` -> `||` and the `||` -> `&&` mutations.
+        let mut unconstrained = mk_type("review", vec![], vec![]);
+        unconstrained.link_fields = vec![LinkFieldDef {
+            name: "verifies".into(),
+            link_type: "verifies".into(),
+            target_types: vec![],
+            required: false,
+            cardinality: Cardinality::ZeroOrMany,
+            description: None,
+        }];
+        // Declares nothing at all — must never be a candidate.
+        let bare = mk_type("note", vec![], vec![]);
+
+        let mut file = crate::test_helpers::minimal_schema("t");
+        file.artifact_types = vec![typed, wrong_target, other_link, unconstrained, bare];
+        let schema = Schema::merge(&[file]);
+
+        let got = schema.source_types_for_backlink("verifies", "requirement");
+        assert_eq!(
+            got,
+            vec!["review".to_string(), "verification".to_string()],
+            "only types declaring a `verifies` that can target `requirement` \
+             qualify — sorted, and excluding a same-link-type field aimed \
+             elsewhere, a different link type, and a type declaring nothing"
+        );
+
+        // A type whose `verifies` targets design-decision IS a candidate for
+        // that target — the exclusion above must be about the target, not the
+        // type being blanket-ignored.
+        assert_eq!(
+            schema.source_types_for_backlink("verifies", "design-decision"),
+            vec!["design-verification".to_string(), "review".to_string()]
+        );
+
+        // Nothing sources an unknown link type: the empty result is meaningful
+        // (genuinely unsatisfiable) and must not collapse to "everything".
+        assert!(
+            schema
+                .source_types_for_backlink("no-such-link", "requirement")
+                .is_empty()
+        );
+    }
 }
