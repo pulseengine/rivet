@@ -7942,7 +7942,7 @@ artifacts:
   - id: REQ-275
     type: requirement
     title: "serve: human-friendly tag filter — select all / unselect all + filter box (customer request)"
-    status: proposed
+    status: verified
     description: "Customer-reported. Tag filtering today is a comma-separated `tags` param (serve/components.rs:50, matched client-side via data-tags in js.rs:1197) — efficient for machines, cumbersome for humans. Add a proper multi-select tag-filter UI: a checkbox list of the project's tags with Select All / Unselect All controls and a small filter/search box to narrow a long tag list, driving the existing tag-match filter. Reuse the existing filter plumbing (params.tags) so it's a UI layer over the current mechanism, not a new filter engine. serve-only surface."
     release: v0.35.0
     provenance:
