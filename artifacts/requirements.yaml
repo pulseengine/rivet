@@ -8303,3 +8303,36 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-08-26T00:00:00Z
+
+  - id: REQ-310
+    type: requirement
+    title: "validate --explain reports the allowed-source set as [] for a rule that IS satisfiable (#852)"
+    status: proposed
+    description: "`rivet validate --explain REQ-001` prints \"needs an incoming 'verifies' from one of []\", which reads unambiguously as 'no artifact type may source this link' — i.e. the rule is structurally unsatisfiable. The reporter concluded exactly that and was about to file a schema gap before testing it. The `verification` type in `dev` declares `verifies -> [requirement]`, and its own description documents that it was ADDED to fix precisely this class (#721); adding one `verification` artifact flips the line to `[satisfied]` immediately. So the rule is satisfiable and the explain output simply does not consult the type registry for types whose LINK-FIELDS can source the required link — it appears to look only at an explicit from-types list on the rule and renders an empty list rather than deriving the set. The failure mode is a diagnostic that actively causes a wrong diagnosis: an empty `[]` is indistinguishable from 'unsatisfiable', which is a real and different condition rivet should be able to report. Fix shape: derive the allowed-source set from the schema's types (any type declaring a link-field of that link-type targeting this source-type) and render it; if the derived set is genuinely empty, say so explicitly ('no type in the loaded schemas can source this link — the rule is unsatisfiable') rather than printing bare brackets, so the two cases are distinguishable in the output rather than only in the reader's head."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-26T00:00:00Z
+
+  - id: REQ-311
+    type: requirement
+    title: "rivet sync ignores rivet.lock — no --locked mode, so federated CI floats with sibling heads (#853)"
+    status: proposed
+    description: "Reported from synth's federated CI (synth#1012). `rivet lock` writes and commits exact commit pins for each external, but `rivet sync` always fetches the external's `ref:` head and never reads the lockfile — confirmed at HEAD: `rivet-core/src/externals.rs` `sync_all`/`sync_external` never call `read_lockfile`, and `rivet sync --help` offers only `--local` / `--force`. The consequence is that a consumer's committed lock pins for provenance and impact tooling while the graph CI actually validates against whatever the sibling repos' heads are at that moment: a sibling force-push, artifact rename or bad commit silently changes what the consumer's CI sees, and a run cannot be reproduced later. It also means `rivet lock` followed by `rivet sync` on two machines can disagree about the same lock. This is a reproducibility gap in the cross-repo story rather than a cosmetic one — the reporter's workaround was to make synth's federated job deliberately NON-required and document the coupling in a job comment, which is the tell that the tool cannot express what the workflow needs. Fix shape: `rivet sync --locked` that resolves each external to the sha recorded in `rivet.lock` and fails rather than floating when the lock is absent or stale, mirroring `cargo --locked`; consider making it the default in CI-detected environments, and have `rivet sync` report which sha each external resolved to so a log makes the state auditable."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-26T00:00:00Z
+
+  - id: REQ-312
+    type: requirement
+    title: "A dead externals path: poisons cross-repo resolution and validate still reports '0 broken cross-refs' (#854)"
+    status: implemented
+    description: "Reported from synth (synth#1012) and reproduced locally at HEAD with a single external declaring both `git:` and a nonexistent `path:`. Two compounding behaviours. FIRST, a dead `path:` poisons resolution instead of falling back to the declared `git:` — one nonexistent path is enough that external artifacts are never loaded, so every cross-repo ref degrades into a local `link 'traces-to' targets 'X' which does not exist` error, INCLUDING refs into repos that synced fine. On the reporter's tree 38 of 50 errors were artifacts of the poisoned state and 12 real dangling refs were invisible behind them. `rivet lock` fails outright with `IO error: git rev-parse: No such file or directory (os error 2)` naming neither the external nor the path (measured exit 1). SECOND, and the more dangerous half, the summary line reports `FAIL (N errors, 0 warnings, 0 broken cross-refs)` in that state. `0 broken cross-refs` beside N unresolved-target errors means resolution never RAN, but it reads as 'the cross-repo graph is clean' — the same shape as REQ-309, where a zero denominator rendered as 100%, and as the `empty_scan` case in REQ-290. Measured locally: 1 unresolved-target ERROR alongside `0 broken cross-refs`, and the summary also reports `0 warnings` while printing a `warning:` line, so the cross-repo INCOMPLETE warning is excluded from its own count. Fix shape, in value order: (1) render the cross-ref figure as NOT CHECKED rather than 0 whenever external loading failed, so an unrun check can never read as a clean one; (2) count the INCOMPLETE warning in the warning total; (3) fall back to `git:` when `path:` does not resolve, or fail loudly naming the external and the path instead of degrading every downstream ref; (4) name the external and path in the `rivet lock` error."
+    release: v0.35.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-26T00:00:00Z

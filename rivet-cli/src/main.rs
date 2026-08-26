@@ -6193,6 +6193,13 @@ fn cmd_validate(
     }
 
     // Cross-repo link validation (skipped with --skip-external-validation)
+    // #854: whether cross-ref resolution actually RAN. When external loading
+    // fails, `cross_repo_broken` stays empty and the summary used to report
+    // "0 broken cross-refs" — which reads as "the cross-repo graph is clean"
+    // when it means "the graph was never checked". Same shape as REQ-309's
+    // zero-denominator 100% and REQ-290's empty scan: an unrun check must
+    // never be indistinguishable from a passing one.
+    let mut cross_refs_checked = true;
     let mut cross_repo_broken: Vec<rivet_core::externals::BrokenRef> = Vec::new();
     let mut backlinks: Vec<rivet_core::externals::CrossRepoBacklink> = Vec::new();
     let mut circular_deps: Vec<rivet_core::externals::CircularDependency> = Vec::new();
@@ -6245,6 +6252,7 @@ fn cmd_validate(
                         backlinks = rivet_core::externals::compute_backlinks(&resolved, &local_ids);
                     }
                     Err(e) => {
+                        cross_refs_checked = false;
                         eprintln!(
                             "  warning: could not load externals for cross-repo validation: {e}"
                         );
@@ -6654,13 +6662,24 @@ fn cmd_validate(
 
         println!();
         let total_errors = errors + cross_errors;
+        // #854: never print a cross-ref COUNT that resolution did not produce.
+        let cross_refs_field = if cross_refs_checked {
+            format!("{cross_errors} broken cross-refs")
+        } else {
+            String::from("cross-refs NOT CHECKED — externals failed to load")
+        };
         if total_errors > 0 {
             println!(
-                "Result: FAIL ({} errors, {} warnings, {} broken cross-refs)",
-                errors, warnings, cross_errors
+                "Result: FAIL ({} errors, {} warnings, {})",
+                errors, warnings, cross_refs_field
             );
-        } else {
+        } else if cross_refs_checked {
             println!("Result: PASS ({} warnings)", warnings);
+        } else {
+            println!(
+                "Result: PASS ({} warnings) — but {}",
+                warnings, cross_refs_field
+            );
         }
 
         // #431: show the schema set this run validated against — name@version

@@ -9525,3 +9525,104 @@ fn coverage_prints_n_a_and_exits_nonzero_on_empty_load() {
         String::from_utf8_lossy(&threshold.stderr)
     );
 }
+/// #854 (REQ-312): when external loading fails, cross-ref resolution never
+/// runs — and the summary used to report `0 broken cross-refs`, which reads as
+/// "the cross-repo graph is clean" when it means "the graph was never checked".
+///
+/// On the reporting project that cost a real diagnosis: 38 of 50 errors were
+/// artifacts of the poisoned state and 12 genuine dangling refs were invisible
+/// behind them, all beside a confident `0 broken cross-refs`.
+///
+/// Same shape as REQ-309 (a zero denominator rendering as 100%) and REQ-290
+/// (an empty scan reading as a pass): an unrun check must never be
+/// indistinguishable from a passing one.
+///
+/// rivet: verifies REQ-312
+#[test]
+fn a_dead_external_path_reports_cross_refs_not_checked_not_zero() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: dp\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n\
+         externals:\n  ghost:\n    git: https://example.invalid/x.git\n\
+         \x20   path: /nonexistent/definitely/not/here\n    prefix: ghost\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: t\n\
+         \x20   status: draft\n    links:\n      - type: traces-to\n\
+         \x20       target: ghost:SPAR-REQ-001\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The premise: this fixture really does produce an unresolved-target error.
+    // Without it the assertion below could pass on a run that found nothing.
+    assert!(
+        combined.contains("does not exist"),
+        "fixture must produce an unresolved cross-repo target; combined:\n{combined}"
+    );
+    assert!(
+        combined.contains("cross-refs NOT CHECKED"),
+        "a failed external load must report cross-refs as NOT CHECKED; combined:\n{combined}"
+    );
+    assert!(
+        !combined.contains("0 broken cross-refs"),
+        "must not report a cross-ref count that resolution never produced; combined:\n{combined}"
+    );
+}
+
+/// The counterpart: a project with no externals at all still reports normally.
+/// Without this, the fix could have made every run say NOT CHECKED and the
+/// test above would still pass.
+///
+/// rivet: verifies REQ-312
+#[test]
+fn a_project_without_externals_still_reports_a_normal_summary() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: n\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: t\n\
+         \x20   status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !combined.contains("NOT CHECKED"),
+        "a project with no externals has nothing to check and must not be \
+         flagged as unchecked; combined:\n{combined}"
+    );
+    assert!(combined.contains("Result: PASS"));
+}
