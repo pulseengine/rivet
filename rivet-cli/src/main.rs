@@ -7165,8 +7165,32 @@ fn explain_rule(
         let target_type = store.get(id).map(|a| a.artifact_type.as_str());
         match target_type {
             Some(tt) => {
-                let (direct, indirect): (Vec<&String>, Vec<&String>) = rule
-                    .from_types
+                // #852 / REQ-310: a rule may omit `from-types` (dev's
+                // `requirement-verification` does). Rendering that empty list
+                // literally as `from one of []` reads as "no type may source
+                // this link" — i.e. structurally unsatisfiable — which is a
+                // real and DIFFERENT condition. Derive the set from the types
+                // that declare the ability to source it, and only say
+                // unsatisfiable when that derivation is genuinely empty.
+                let derived: Vec<String>;
+                let from_types: &[String] = if rule.from_types.is_empty() {
+                    derived = schema.source_types_for_backlink(req, tt);
+                    if derived.is_empty() {
+                        return (
+                            false,
+                            format!(
+                                "needs an incoming '{req}', but NO type in the loaded schemas \
+                                 declares a '{req}' link targeting '{tt}' — this rule is \
+                                 currently unsatisfiable; add a type that can source it, or \
+                                 drop the rule"
+                            ),
+                        );
+                    }
+                    &derived
+                } else {
+                    &rule.from_types
+                };
+                let (direct, indirect): (Vec<&String>, Vec<&String>) = from_types
                     .iter()
                     .partition(|ft| schema.from_type_can_link(ft, req, tt));
                 if direct.is_empty() || indirect.is_empty() {
@@ -7175,10 +7199,7 @@ fn explain_rule(
                     // full list, so also leave it unchanged.
                     (
                         false,
-                        format!(
-                            "needs an incoming '{req}' from one of {:?}",
-                            rule.from_types
-                        ),
+                        format!("needs an incoming '{req}' from one of {from_types:?}"),
                     )
                 } else {
                     (

@@ -1359,6 +1359,43 @@ impl Schema {
         }
     }
 
+    /// Which artifact types can actually SOURCE `link_type` at `target_type`.
+    ///
+    /// #852 / REQ-310. A traceability rule may omit `from-types` — `dev`'s
+    /// `requirement-verification` does — and `validate --explain` rendered that
+    /// empty list literally as `from one of []`, which reads unambiguously as
+    /// "no artifact type may source this link", i.e. the rule is structurally
+    /// unsatisfiable. The reporter concluded exactly that and was about to file
+    /// a schema gap; the `verification` type declares `verifies -> [requirement]`
+    /// and adding one flips the line to satisfied immediately.
+    ///
+    /// Note this is deliberately STRICTER than [`Self::from_type_can_link`],
+    /// which answers "is this link permissible" and returns `true` for a type
+    /// declaring no such field at all. Here the question is "which types
+    /// declare the ability to source it", so a type with no matching
+    /// link-field is not a candidate — otherwise every type in the schema
+    /// would be listed and the answer would be useless.
+    ///
+    /// An empty result is meaningful: it means the rule genuinely cannot be
+    /// satisfied by anything in the loaded schemas, which is a real and
+    /// different condition from "the rule did not enumerate its sources".
+    pub fn source_types_for_backlink(&self, link_type: &str, target_type: &str) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .artifact_types
+            .values()
+            .filter(|td| {
+                td.link_fields.iter().any(|lf| {
+                    lf.link_type == link_type
+                        && (lf.target_types.is_empty()
+                            || lf.target_types.iter().any(|t| t == target_type))
+                })
+            })
+            .map(|td| td.name.clone())
+            .collect();
+        out.sort();
+        out
+    }
+
     /// Look up a link type definition by name.
     #[inline]
     pub fn link_type(&self, name: &str) -> Option<&LinkTypeDef> {
