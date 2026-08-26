@@ -479,7 +479,12 @@ jobs:
   # (continue-on-error) until the install proves stable on the runners.
   zola-export-smoke:
     name: Zola export smoke
-    runs-on: ubuntu-latest
+    # Self-hosted: audited 2026-08-26 and this job has no hosted requirement.
+    # zola is fetched from a GitHub release and unpacked into $HOME/.local/bin
+    # — no `sudo`, no `apt-get` — which is what pins the genuinely-hosted jobs
+    # here (playwright, vscode-extension, verus, rocq). `rust-cpu` because it
+    # builds a release binary.
+    runs-on: [self-hosted, linux, x64, rust-cpu]
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -1474,7 +1479,22 @@ jobs:
       - yaml-lint
       - traceability
       - wasm-seam
-    runs-on: ubuntu-latest
+    # Self-hosted, deliberately. This job is a `jq` read of `toJSON(needs)` —
+    # no checkout, no toolchain, no sudo, no network — and every one of the
+    # eleven jobs above runs on the self-hosted pool. Its availability was
+    # therefore ALREADY gated on that pool; putting it on ubuntu-latest added a
+    # SECOND, independent dependency on GitHub-hosted capacity, which can only
+    # add failure modes and never removes one.
+    #
+    # That bit on 2026-08-26: hosted was starved (a run queued ~24h) while
+    # twelve self-hosted runners sat idle, and because `CI Gate` is the sole
+    # required context with `enforce_admins: true`, no PR could reach a green
+    # required check and `--admin` is not an escape. The gate's needs were all
+    # green; only the aggregation of them was stuck.
+    #
+    # `light` rather than `rust-cpu`: this is a five-second script, and by the
+    # time it runs its needs have finished, so the single light runner is free.
+    runs-on: [self-hosted, linux, x64, light]
     steps:
       - name: Verify every gated job succeeded or was legitimately skipped
         run: |
