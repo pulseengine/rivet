@@ -794,13 +794,18 @@ fn api_artifacts_truncation_signal() {
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
     let total_full = json["total"].as_u64().unwrap();
     let count_full = json["count"].as_u64().expect("count field required");
-    let truncated_full = json["truncated"].as_bool().expect("truncated field required");
+    let truncated_full = json["truncated"]
+        .as_bool()
+        .expect("truncated field required");
     assert_eq!(
         count_full,
         json["artifacts"].as_array().unwrap().len() as u64,
         "count must equal artifacts.len()",
     );
-    assert_eq!(count_full, total_full, "full window: count must equal total");
+    assert_eq!(
+        count_full, total_full,
+        "full window: count must equal total"
+    );
     assert!(
         !truncated_full,
         "full window: truncated must be false when count == total"
@@ -812,7 +817,9 @@ fn api_artifacts_truncation_signal() {
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
     let total_small = json["total"].as_u64().unwrap();
     let count_small = json["count"].as_u64().expect("count field required");
-    let truncated_small = json["truncated"].as_bool().expect("truncated field required");
+    let truncated_small = json["truncated"]
+        .as_bool()
+        .expect("truncated field required");
     assert!(
         total_small > 1,
         "premise: fixture must hold more than one artifact"
@@ -911,13 +918,18 @@ fn api_diagnostics_truncation_signal() {
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
     let total_full = json["total"].as_u64().unwrap();
     let count_full = json["count"].as_u64().expect("count field required");
-    let truncated_full = json["truncated"].as_bool().expect("truncated field required");
+    let truncated_full = json["truncated"]
+        .as_bool()
+        .expect("truncated field required");
     assert_eq!(
         count_full,
         json["diagnostics"].as_array().unwrap().len() as u64,
         "count must equal diagnostics.len()"
     );
-    assert_eq!(count_full, total_full, "full window: count must equal total");
+    assert_eq!(
+        count_full, total_full,
+        "full window: count must equal total"
+    );
     assert!(
         !truncated_full,
         "full window: truncated must be false when count == total"
