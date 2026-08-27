@@ -411,21 +411,36 @@ jobs:
           mv /tmp/actionlint "$HOME/.local/bin/actionlint"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/actionlint" --version
+      # REQ-304 / #833. This step used to be three silencers in a row:
+      # `cargo install ... 2>/dev/null || true` swallowed an install failure
+      # twice, the `else` branch fell back to `cargo test` (no JUnit XML, and
+      # no `retries = 2` from the ci profile), and the upload then carried
+      # `if-no-files-found: ignore`. Net effect: a step whose NAME promises
+      # JUnit XML could produce none, lose the flake protection #494 added,
+      # and still go green.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       - name: Run tests (JUnit XML output)
-        run: |
-          cargo install cargo-nextest --locked 2>/dev/null || true
-          if command -v cargo-nextest &>/dev/null; then
-            cargo nextest run --all --profile ci
-          else
-            cargo test --all
-          fi
+        run: cargo nextest run --all --profile ci
+      # nextest does not run doctests. They used to be covered only by the
+      # `proptest` job's `cargo test --all` — an ADVISORY job outside CI Gate's
+      # needs — so making that job use nextest (REQ-305, below) would have
+      # dropped them from CI entirely. Running them here puts them behind a
+      # gating job, which is where they belong.
+      - name: Run doctests
+        run: cargo test --workspace --doc
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: target/nextest/ci/junit.xml
-          if-no-files-found: ignore
+          # `error`, not `ignore`: a missing junit.xml means the evidence this
+          # step exists to produce was not produced, which must not read as a
+          # pass.
+          if-no-files-found: error
 
   # ── Playwright E2E ────────────────────────────────────────────────────
   playwright:
@@ -790,8 +805,25 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # REQ-305 / #835. This ran `cargo test --all`, so the `ci` profile's
+      # `retries = 2` never applied — and this job runs the serve/integration
+      # tests at 10x load, which is the worst case for the port/startup race
+      # those retries exist for. It reddened on #859 and #861 within a week,
+      # each time costing a diagnosis to establish as environmental. nextest
+      # reports a retry-passing test as FLAKY in the summary, so the signal is
+      # kept rather than hidden.
+      #
+      # Measured while fixing this: serve_integration.rs contains ZERO proptest
+      # references, and only six files in the tree use proptest at all — so the
+      # 10x case count buys nothing for the tests that flake here. Narrowing
+      # this job to the property tests is the better long-term shape and is
+      # left as follow-up rather than bundled in.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       - name: Run proptest with 10x cases
-        run: cargo test --all
+        run: cargo nextest run --all --profile ci
         env:
           PROPTEST_CASES: "1000"
       # The extended run uses 1000 random cases, so it can surface a rare
