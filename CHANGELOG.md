@@ -5,6 +5,98 @@
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-08-27
+
+The friction round. Every issue a human reported this cycle is fixed here —
+#832, #833, #835, #848, #852, #853, #854, #856 — alongside the three
+customer-requested dashboard changes.
+
+### Added
+- **`rivet sync --locked`** (REQ-311, #853) — check out the exact commits
+  recorded in `rivet.lock` instead of each external's `ref:` head. `rivet lock`
+  wrote pins that `sync` never read, so a consumer's committed lock pinned for
+  provenance while its federated CI validated against whatever the sibling
+  repos' heads happened to be: a force-push, artifact rename or bad commit
+  silently changed what CI saw, and a run could not be reproduced later.
+  Mirroring cargo, `--locked` never updates the lock and **fails rather than
+  floating** when it cannot honour it — a missing lockfile or an unpinned
+  external are both hard errors. Each resolved commit is printed so a CI log
+  records what was actually validated.
+- **`rivet context --stdout` / `--brief`** (REQ-297, #811) — read project state
+  without mutating the working tree.
+- **Declared-blocked acceptance criteria** (REQ-313, #856) — an
+  `acceptance-criteria` entry may be a mapping (`text` / `status` /
+  `blocked-by`) as well as a bare string, so a criterion an author knows is not
+  yet dischargeable has somewhere to live other than shouty caps inside the
+  string. A criterion `blocked-by` the release its own artifact is scoped to is
+  a **deadlock** and is now an error: the release cannot be cut until the
+  artifact verifies, and the artifact cannot verify until that release ships.
+
+### Fixed
+- **Declared incompleteness scored as an oversight** (REQ-309, #848) — a safety
+  goal carrying GSN's `undeveloped: true` counted identically to a goal someone
+  forgot. The schema's own rule description already promised the exemption
+  (*"unless marked undeveloped"*) while `undeveloped` appeared in no Rust file.
+  A traceability rule may now name an exempting boolean field via
+  `exempt-when-field`; an exempt source leaves the denominator and is reported
+  as its own named count. A forgotten goal moves the figure 100% → 50%, where
+  it is loud, instead of hiding among declared gaps.
+- **`validate --explain` reported `from one of []`** (REQ-310, #852) for a rule
+  that is satisfiable — which reads as "no type may source this link" and sent
+  the reporter toward filing a schema gap that did not exist. The source set is
+  now derived from the types that declare the ability to source the link, and a
+  rule nothing can satisfy says so explicitly.
+- **A dead `externals` path reported `0 broken cross-refs`** (REQ-312, #854).
+  When external loading fails, cross-ref resolution never runs — and a zero read
+  as "the cross-repo graph is clean" when it meant "the graph was never
+  checked". On the reporting project that hid 12 genuine dangling refs behind 38
+  phantom errors. The summary now says `cross-refs NOT CHECKED`.
+- **Overlapping `sources` collided every id with itself** (REQ-302, #746) — 184
+  phantom errors masked 6 real ones. Sources are deduped at load; diagnostic
+  order is now total, so report diffing between baselines works.
+- **`check verification-evidence` was blind to nested workspaces** (REQ-236,
+  #807) — `--manifest-path` was parsed and then discarded. 14 false failures to
+  green.
+- **`/api/v1/artifacts` truncated silently** (REQ-303, #832) — the cap dropped
+  17 of 1017 artifacts with nothing marking the payload partial.
+
+### Changed
+- **`--help` no longer carries internal bookkeeping** (REQ-298, #812) — REQ ids,
+  issue numbers and doc paths are gone; longest line 97 columns, down from 405.
+- **Dashboard and export raised to WCAG AA** (REQ-276) — accent `#3a86ff` →
+  `#2059b8`. Six unit tests compute relative luminance over the palette, parsing
+  the hex values out of the live CSS so the audit cannot drift from what ships.
+- **The test-result trace renders as a fold/expand tree** (REQ-274) — a 40-hop
+  ASPICE chain was a flat table; deep branches now collapse with counts. Native
+  `<details>`, so it works in `rivet serve` and the static export alike.
+- **Tag filtering is a real facet** (REQ-275) — a server-rendered checkbox list
+  over the whole project with Select All / Unselect All and a filter box,
+  driving the `tags` param. A `tag-match` parameter makes the combinator
+  explicit (`all of` by default, so existing URLs are unchanged).
+
+### Internal
+- **CI gates that could not fail** (REQ-304 #833, REQ-305 #835) — the Test job's
+  evidence step could produce no JUnit XML and still go green (a swallowed
+  install, a fallback that dropped both XML and retries, and an upload that
+  ignored a missing file). The Proptest job ran without nextest retries, so a
+  documented port race reddened it repeatedly. Both fixed; doctests moved to a
+  gating job, where they had never been.
+- **Kani proofs did not compile** (REQ-309 follow-up, #865) — REQ-309 added two
+  fields to `CoverageEntry` and missed the `#[cfg(kani)]` harness, which is
+  invisible to `cargo build`, `cargo test` and `clippy --all-targets`. The Kani
+  job was reporting a genuine `error[E0063]` that was repeatedly dismissed as
+  infrastructure flake.
+- **Per-PR mutation coverage for rivet-core** (REQ-299) — previously rivet-cli
+  only.
+
+### Known residuals
+The nine `implemented` artifacts in this release each carry a named
+undischarged clause, recorded in the artifact rather than rounded up to
+`verified`: the `--fail-under` policy on REQ-309, the `git:` fallback and
+`rivet lock` error message on REQ-312, and release-status categories on
+REQ-313. Deferred to the next minor: REQ-295, 306, 307, 314, 315.
+
+
 ## [0.34.0] - 2026-08-20
 
 Evidence you can check. Five places where a gate ran, reported green, and

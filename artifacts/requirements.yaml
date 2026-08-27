@@ -8276,7 +8276,7 @@ artifacts:
     title: "CLI top-level command list is 52 flat entries — the common path still is not legible (#812 residual)"
     status: proposed
     description: "Residual clause from REQ-298. #812 asked to strip REQ/# refs from help, cap entry length, AND \"tighten the top-level command list so the common path is legible\". The first two are done and measured: `rivet -h` now has 0 REQ ids, 0 issue refs, a longest line of 97 columns and no line over 100 (`trace` came down from 405 characters). The third was implemented as one-sentence-per-ENTRY, which is a defensible reading, but the list itself is unchanged at 52 flat top-level commands with no grouping and no distinction between the handful a new user needs (init, validate, list, coverage, check) and the long tail (variant-*, shard, supplier-pull, ordeal, migrate, templates). `-h` and `--help` print the same 52; there is no short form. REQ-298 was accepted as verified on the entry-length reading rather than blocking the v0.34.0 cut, so this artifact carries the remaining clause explicitly rather than letting it disappear into a closed requirement. Options worth weighing: group commands by concern in the help output; mark advanced commands hidden from `-h` while keeping them in `--help` (clap supports this directly); or promote a short `COMMON COMMANDS` block above the full list. Cross-check against REQ-297 — the same discoverability concern motivated the `rivet context` work, and both come from the same org-wide CLI survey."
-    release: v0.36.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8365,6 +8365,39 @@ artifacts:
     status: proposed
     description: "Observed five times in one release cycle, every time by the same author, and caught only by manual audit: REQ-309 (shipped #850), REQ-299 (shipped 6b3be3c), REQ-295 (Defect 1 shipped #830), REQ-304 and REQ-305 (shipped #863, found still `proposed` within the hour), and REQ-303 (shipped #864). In each case the merge commit carried a correct `Implements:`/`Fixes:` trailer naming the artifact, and the artifact's `status` was never advanced. The root cause is that a trailer is a LINK, not a state transition — `rivet commits` validates that trailers reference real artifacts, and nothing asserts the converse: that an artifact which a merged commit claims to implement is no longer sitting at `proposed`/`draft`. The consequence is that release readiness, which is defined as a query over `release:` + `status`, reports scope as unshipped when it has shipped, so a release looks further away than it is and a human has to re-derive the truth by reading git log. This is the same defect class the tool exists to prevent, in the tool's own artifacts. Proposed check: a `rivet commits` (or `rivet check`) rule that walks merge commits on the default branch, collects artifacts named in `Implements:`/`Fixes:` trailers, and reports any that remain `proposed` or `draft` — Warning by default so a genuinely-partial implementation can carry a trailer without failing the gate, Error under `--strict` so CI can enforce it. Deliberately NOT auto-advancing status: whether shipped code discharges every acceptance clause is a judgement (REQ-308), and a tool that flipped `proposed` to `verified` on a trailer would manufacture exactly the false confidence REQ-308 is about. The check should say the artifact and the commit and let a human decide which status is right."
     release: v0.36.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-27T00:00:00Z
+
+  - id: REQ-316
+    type: requirement
+    title: "The self-hosted fleet restarts mid-run, killing in-flight jobs and reporting them as failures (#862)"
+    status: proposed
+    description: "Twice confirmed within two days, and each time it presents as a set of unrelated red checks that look like real regressions. On 2026-08-27 three jobs on three DIFFERENT runners (Code Coverage on 01-10, Mutation Testing rivet-cli on 01-9, Mutation Testing rivet-core PR-diff on 01-6) all started 04:54:38 and died within ten seconds of each other at 04:56:37 with `The runner has received a shutdown signal`; all three had been green on the previous commit of the same PR. On 2026-08-26 the same message at 04:33:47 killed WASM seam build, Test and Proptest across two labels within one second, and all three passed on re-run. The cost is not the re-run. The jobs report `failure`, not `cancelled`, and there is no failed STEP — the steps end `skipped` — so the GitHub UI shows a red X that is indistinguishable from a broken test, and only the raw log carries the reason. That indistinguishability has already produced one published misattribution (PR #855, where duplicate pull_request runs were blamed and a correction had to be issued) and it is the mechanism by which a genuinely red mutation gate could be waved through. Two things needed. First, find the cause: unattended upgrades, a systemd timer, a config-management run or an autoscaler reclaim would all produce this, and if it is scheduled, moving it outside working hours costs nothing. Second, make the state legible without opening logs — a post-job step that detects the shutdown and annotates the job would let a reader distinguish 'the runner went away' from 'the test failed' at a glance. Related: this same message is emitted by the HOSTED pool too, which is why the Kani attribution in #839 was wrong; the message alone does not identify which pool restarted."
+    release: v0.36.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-27T00:00:00Z
+
+  - id: REQ-317
+    type: requirement
+    title: "The runner-liveness probe misdiagnoses in three distinct ways and re-fires instead of being fixed (#839, #849, #860, #867)"
+    status: proposed
+    description: "The scheduled liveness probe auto-files an issue when a run sits queued, and it has now fired four times with guidance that sends the reader to the wrong conclusion. Three separate defects, each verified. (1) Its own diagnose hint says to run `gh api repos/pulseengine/rivet/actions/runners --jq .total_count` and reads `0 = pool offline`; runners here are registered at the ORG, so that command returns 0 on a perfectly healthy pool and can never say otherwise — measured repo-scope 0 against org-scope 12. (2) GitHub-hosted capacity appears in the runners API at NO scope, so no `total_count` query can distinguish 'self-hosted offline' from 'hosted starved', and hosted starvation is the mode this alert most often fires on — every queued job was `[ubuntu-latest]` on both #860 and #867 while self-hosted sat idle. (3) It counts queue age on runs that were CANCELLED: #867 reported 'queued 177m — runners are not picking up jobs' for run 33078970036, which was `completed/cancelled` and therefore never going to start. The compounding problem is that each alert auto-closes when the symptom clears, so the probe's own defects survive every occurrence and the next reader starts from the same wrong hint. Fix: skip completed runs when computing queue age; report the LABELS of the still-queued jobs rather than a duration alone; and branch the guidance — `[self-hosted, …]` plus a low online count is a pool problem, `[ubuntu-latest]` is hosted starvation and the self-hosted numbers are irrelevant. Four distinct runner failure modes are now documented across these issues (pool offline, pool saturated, hosted starvation, fleet restart) and this probe describes only the first."
+    release: v0.36.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-27T00:00:00Z
+
+  - id: REQ-318
+    type: requirement
+    title: "Externally-owned verification: a criterion only another project can run has no home but prose (#800)"
+    status: proposed
+    description: "A requirement can carry a verification criterion that only a DIFFERENT project can run. `rivet verify` already refuses to promote without evidence, which is the correct block, so the mechanism is present; what is missing is a way to say WHY it is unrun and WHO owns it, so the set is queryable rather than living in a description field. `external-anchor` is not it — that models the INBOUND boundary, requirements handed to us by a supplier, with `source-of-truth`, `expected-derived-types` and `received-status`. This is the outbound direction: evidence we are waiting on from someone else. Same family as REQ-313, which gave a declared-blocked acceptance criterion a machine-readable home instead of shouty caps inside the string, and as REQ-308, which is about `verify` advancing on the existence of evidence rather than its sufficiency. Deliberately NOT scheduled into a release yet: the three overlap enough that solving them piecemeal risks three near-identical mechanisms for 'this obligation is declared, owned elsewhere, and not yet discharged'. REQ-308 already needs clauses to become addressable, which is a schema migration across every artifact; this should be designed alongside it rather than bolted on first. Backlog pending that design decision."
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
