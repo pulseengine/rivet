@@ -94,7 +94,7 @@ The nine `implemented` artifacts in this release each carry a named
 undischarged clause, recorded in the artifact rather than rounded up to
 `verified`: the `--fail-under` policy on REQ-309, the `git:` fallback and
 `rivet lock` error message on REQ-312, and release-status categories on
-REQ-313. Deferred to the next minor: REQ-295, 306, 307, 314, 315.
+REQ-313. Deferred to the next minor: REQ-295, 306, 314, 315, 316, 317.
 
 
 ## [0.34.0] - 2026-08-20
