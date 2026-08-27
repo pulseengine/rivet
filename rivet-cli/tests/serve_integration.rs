@@ -783,52 +783,69 @@ fn api_artifacts_pagination() {
 /// return the full set. Otherwise every consumer reading `artifacts` as the
 /// full set is silently wrong.
 ///
+/// The endpoint caps `limit` at 1000 internally, so on a fixture whose
+/// `total` exceeds the cap the endpoint cannot return an untruncated
+/// window at all — which is *precisely why* this signal exists. The test
+/// asserts the shape rather than the specific full-vs-partial state:
+/// truncated iff count < total, and count == artifacts.len(), on both a
+/// small window (forces truncated=true) and, when the fixture fits, a
+/// window that covers the whole store (verifies truncated=false).
+///
 /// rivet: verifies REQ-303
 #[test]
 fn api_artifacts_truncation_signal() {
     let (mut child, port) = start_server();
 
-    // Full window: not truncated. count == total, artifacts.len() == count.
-    let (status, body, _headers) = fetch(port, "/api/v1/artifacts?limit=100000", false);
-    assert_eq!(status, 200);
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let total_full = json["total"].as_u64().unwrap();
-    let count_full = json["count"].as_u64().expect("count field required");
-    let truncated_full = json["truncated"]
-        .as_bool()
-        .expect("truncated field required");
-    assert_eq!(
-        count_full,
-        json["artifacts"].as_array().unwrap().len() as u64,
-        "count must equal artifacts.len()",
-    );
-    assert_eq!(
-        count_full, total_full,
-        "full window: count must equal total"
-    );
-    assert!(
-        !truncated_full,
-        "full window: truncated must be false when count == total"
-    );
-
-    // Small window: truncated. count < total, truncated: true.
+    // Small window: truncated. count == 1, truncated: true.
     let (status, body, _headers) = fetch(port, "/api/v1/artifacts?limit=1", false);
     assert_eq!(status, 200);
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let total_small = json["total"].as_u64().unwrap();
+    let total = json["total"].as_u64().unwrap();
     let count_small = json["count"].as_u64().expect("count field required");
     let truncated_small = json["truncated"]
         .as_bool()
         .expect("truncated field required");
     assert!(
-        total_small > 1,
+        total > 1,
         "premise: fixture must hold more than one artifact"
+    );
+    assert_eq!(
+        count_small,
+        json["artifacts"].as_array().unwrap().len() as u64,
+        "count must equal artifacts.len()",
     );
     assert_eq!(count_small, 1, "limit=1 must return exactly one artifact");
     assert!(
         truncated_small,
         "limit=1 on a >1-artifact fixture must report truncated: true"
     );
+
+    // Full window: only when the fixture fits under the endpoint's
+    // internal `.min(1000)` cap. When it doesn't, an untruncated response
+    // is unreachable from this endpoint — exactly the state this signal
+    // exists to make legible — so we skip this leg rather than assert an
+    // impossibility.
+    const ENDPOINT_LIMIT_CAP: u64 = 1000;
+    if total <= ENDPOINT_LIMIT_CAP {
+        let url = format!("/api/v1/artifacts?limit={total}");
+        let (status, body, _headers) = fetch(port, &url, false);
+        assert_eq!(status, 200);
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let count_full = json["count"].as_u64().expect("count field required");
+        let truncated_full = json["truncated"]
+            .as_bool()
+            .expect("truncated field required");
+        assert_eq!(
+            count_full,
+            json["artifacts"].as_array().unwrap().len() as u64,
+            "count must equal artifacts.len()",
+        );
+        assert_eq!(count_full, total, "full window: count must equal total");
+        assert!(
+            !truncated_full,
+            "full window: truncated must be false when count == total"
+        );
+    }
 
     child.kill().ok();
     child.wait().ok();
@@ -903,56 +920,69 @@ fn api_diagnostics_response_shape() {
 /// #832 / REQ-303: the diagnostics endpoint has the same `.min(1000)` cap
 /// as the artifacts endpoint and needs the same truncation signal. The
 /// consequence a client cares about — "the array I got back may not be the
-/// full set" — is identical, so the response shape is aligned.
+/// full set" — is identical, so the response shape is aligned. Same
+/// full-window caveat as `api_artifacts_truncation_signal`: when `total`
+/// exceeds the endpoint's cap, an untruncated response is unreachable
+/// and the "full window" leg is skipped.
 ///
 /// rivet: verifies REQ-303
 #[test]
 fn api_diagnostics_truncation_signal() {
     let (mut child, port) = start_server();
 
-    // Full window: shape carries `count` and `truncated`, and truncated is
-    // false when the whole set fits. This must hold even when the fixture
-    // has no diagnostics (`count == total == 0`).
-    let (status, body, _headers) = fetch(port, "/api/v1/diagnostics?limit=100000", false);
-    assert_eq!(status, 200);
-    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let total_full = json["total"].as_u64().unwrap();
-    let count_full = json["count"].as_u64().expect("count field required");
-    let truncated_full = json["truncated"]
-        .as_bool()
-        .expect("truncated field required");
-    assert_eq!(
-        count_full,
-        json["diagnostics"].as_array().unwrap().len() as u64,
-        "count must equal diagnostics.len()"
-    );
-    assert_eq!(
-        count_full, total_full,
-        "full window: count must equal total"
-    );
-    assert!(
-        !truncated_full,
-        "full window: truncated must be false when count == total"
-    );
-
-    // Small window: truncated iff there is more than one diagnostic; the
-    // fixture doesn't guarantee any, so guard the truncation assertion on
-    // total > 1 rather than presuming shape.
+    // First call: discover the fixture's `total` and check shape.
     let (status, body, _headers) = fetch(port, "/api/v1/diagnostics?limit=1", false);
     assert_eq!(status, 200);
     let json: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let total_small = json["total"].as_u64().unwrap();
-    let count_small = json["count"].as_u64().unwrap();
-    let truncated_small = json["truncated"].as_bool().unwrap();
-    if total_small > 1 {
+    let total = json["total"].as_u64().unwrap();
+    let count_small = json["count"].as_u64().expect("count field required");
+    let truncated_small = json["truncated"]
+        .as_bool()
+        .expect("truncated field required");
+    assert_eq!(
+        count_small,
+        json["diagnostics"].as_array().unwrap().len() as u64,
+        "count must equal diagnostics.len()"
+    );
+
+    // The fixture doesn't guarantee any diagnostics, so branch on `total`
+    // rather than presume shape.
+    if total > 1 {
         assert_eq!(count_small, 1, "limit=1 must return exactly one diagnostic");
         assert!(
             truncated_small,
             "limit=1 with total > 1 must report truncated: true"
         );
     } else {
-        assert_eq!(count_small, total_small);
+        assert_eq!(count_small, total);
         assert!(!truncated_small);
+    }
+
+    // Full window: only when the fixture fits under the endpoint's cap.
+    const ENDPOINT_LIMIT_CAP: u64 = 1000;
+    if total <= ENDPOINT_LIMIT_CAP {
+        let url = if total == 0 {
+            "/api/v1/diagnostics".to_string()
+        } else {
+            format!("/api/v1/diagnostics?limit={total}")
+        };
+        let (status, body, _headers) = fetch(port, &url, false);
+        assert_eq!(status, 200);
+        let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+        let count_full = json["count"].as_u64().expect("count field required");
+        let truncated_full = json["truncated"]
+            .as_bool()
+            .expect("truncated field required");
+        assert_eq!(
+            count_full,
+            json["diagnostics"].as_array().unwrap().len() as u64,
+            "count must equal diagnostics.len()"
+        );
+        assert_eq!(count_full, total, "full window: count must equal total");
+        assert!(
+            !truncated_full,
+            "full window: truncated must be false when count == total"
+        );
     }
 
     child.kill().ok();
