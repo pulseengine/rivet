@@ -7991,7 +7991,7 @@ artifacts:
     title: "rivet check verification-evidence: actually evaluate nextest filterset expressions (not just skip)"
     status: proposed
     description: "Follow-up to REQ-280. The named-test-exists checker scans a universe of leaf `fn` names, which cannot satisfy nextest filterset predicates that address full test PATHS/regexes (`test(/message::/)`, `test(=mod::name)`, `package()/binary()/kind()` + set operators). v0.30.1 conservatively SKIPS such steps (never false-errors) but therefore does not verify them. Give the check real filterset evaluation. Decision to record (DD): either (a) build qualified test paths by tracking `mod` nesting during the source scan and evaluate the filterset grammar ourselves — a maintenance commitment to track nextest's grammar; or (b) shell out to `cargo nextest list -E <expr>` and assert a non-zero match count, making nextest itself the oracle (correct for all forms, but requires a compiled project + nextest installed, changing the check from a pure static scan to a build-dependent one). Prefer (b) behind an opt-in flag so the default stays fast + build-free. Restores coverage of the steps REQ-280 skips."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8002,7 +8002,7 @@ artifacts:
     title: "rivet sql: self-describing schema (SHOW TABLES / --schema) + discoverability from --help"
     status: proposed
     description: "Downstream question (Ford linc-mesh): 'there is nowhere documentation about the sql tables and formats and what can be queried.' The schema IS documented (docs/getting-started.md 'SQL over the artifact store': tables artifacts/links/fields/provenance + columns, output table|json|csv, read/write rules) but is unreachable from where a user looks — `rivet sql --help` doesn't point to it and the engine can't describe itself. Make `rivet sql` self-describing: support `rivet sql --schema` (and/or `.tables` / `SHOW TABLES` / `.schema`) to print the projected tables + columns, and reference the schema doc from `rivet sql --help`. A query engine that can't enumerate its own tables is a real discoverability gap. Small, docs+CLI-help slice; no engine change beyond a schema dump."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8035,7 +8035,7 @@ artifacts:
     title: "rivet docs check: parse embedded doc snippets + resolve doc-topic references (catch truth-drift mechanically)"
     status: proposed
     description: "Meta-fix for the weak-green docs class (REQ-284): `rivet docs check` today validates token/format hygiene, so a doc snippet whose flags don't parse or that references a non-existent `rivet docs <topic>` passes clean. Add two invariants: (a) shell every fenced ```bash rivet …``` snippet in the embedded docs through the clap parser (arg-validation / --help level, no execution) and fail on unknown args/subcommands; (b) assert every `rivet docs <topic>` / `rivet schema <name>` reference in doc prose resolves to a real topic. The countercheck showed this would have caught 6 of 8 REQ-284 divergences mechanically — turning an expensive human audit into a gate. This is the 'weak green' fix at the meta level: make the green prove the snippets are true, not just well-formed."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8046,7 +8046,7 @@ artifacts:
     title: "rivet release status: be LOUD about which artifacts block a cut (and whether they are in-scope vs backlog)"
     status: proposed
     description: "User-reported: when a release's scope contains artifacts not in a ready status (draft/proposed, or implemented-not-verified), `rivet release status <v>` reports not-cuttable — which may be correct, but the block should be LOUD and actionable, not a terse 'NOT cuttable'. Surface, per blocking artifact: its id, current status, the target status it needs, and (critically) whether it is genuinely IN THIS RELEASE'S SCOPE vs backlog that merely carries the release: field or none — so the user can act (promote it, or move it out of the release) instead of being stuck. Ties to release.ready-when (REQ-240) and the ship-at-implemented gap (the release-status gate is stricter than actual practice). Part of the weak-green/unclear-signal family: a RED that doesn't clearly say why or what to do about it."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8133,7 +8133,7 @@ artifacts:
     title: "check verification-evidence is useless as a gate: blind to nested workspaces, and satisfied by an empty stub (#807)"
     status: proposed
     description: "Reported externally and confirmed on main. Two independent defects that together make the check unable to gate. Defect 1 — false failures: a step running `cargo test --manifest-path compat/<crate>/Cargo.toml <name>` reports 'no test matching found' though the test exists. `--manifest-path` sits in VALUE_FLAGS purely so its value is not mistaken for the filter, and the value is then discarded; the scan root comes from `default_marker_scan_paths`, which returns the project root only when the root Cargo.toml declares `[workspace]` and otherwise scans just ./src and ./tests — so a nested independent workspace is invisible. Reporter saw 14 false failures, exit 1. Defect 2 — false passes: `filter_matches_any` is `names.iter().any(|n| n.contains(filter))` over every fn name collected from the scan roots, so it asserts only that a function of that name exists SOMEWHERE scanned, never that the step's command reaches it or that it asserts anything. Proven by the reporter: dropping `#[test] fn <missing name>() {}` into the root tests/ took findings 14 to 13. The check built for #556 ('a filter matching nothing exits 0 with 0 passed') is therefore satisfiable by exactly the stub it exists to catch. FIX ORDER IS LOAD-BEARING: Defect 1 must land before or with Defect 2 — fixing 2 alone converts every nested-workspace step from a false failure into a hard failure, making the reporter's 14 strictly worse. Related third property: an empty scan still exits 0, and on rivet's own repo the check examines 0 steps."
-    release: v0.35.0
+    release: v0.36.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8144,7 +8144,7 @@ artifacts:
     title: "Mutation-safety property harness for the YAML write path — one invariant, four data-loss bugs, no property test (#809)"
     status: proposed
     description: "Every mutating command writes through `rivet-core/src/yaml_edit.rs`, a ~2000-line line-oriented editor built on indentation heuristics. Hand-rolled deliberately (it preserves comments, key order and human formatting, which a serde round-trip destroys in version-controlled files) — but it has produced four data-loss bugs, each found by a user rather than a test: #573 flow-style `fields:` maps, #618/#625 block-list orphaning, REQ-287 unquoted tag emission, and #806 multi-line values in `fields:`. All four violate one invariant: replacing a key must consume that key's ENTIRE on-disk extent and change nothing else. #806 is the proof that examples are not enough — `set_field` upholds the invariant via `field_block_end` + `splice` and its comment names the history, while the custom-fields loop 700 lines below did a single-line assignment and had no multi-line-value test at all. The property must be stated as EXACT equality: parse before, mutate, parse after must succeed, every path except the target must be byte-identical, and the target must equal the intended value. 'It parses' is only a precondition — #806 mode 1 produced a perfectly parseable file whose value silently became 'short first body line second body line', so a parse-only assertion would green on the data loss. Corpus axis is scalar STYLE, not field name: plain, single/double-quoted, folded, literal, |- / |+ / |2, empty value, flow map, flow seq, block seq, nested block map, body containing colon / hash / leading dash, internal blank line, anchors, CRLF, tabs, last-field-of-last-artifact, unicode. Mutations: every --set-* flag, --add-tag/--remove-tag, --where bulk, plus `rivet add` and the MCP/batch writers. Lands as a proptest in rivet-core (fast, shrinks, runs in CI) plus a thin CLI-level test for flag wiring. Deliberately does NOT include migrating the writer to the in-tree rowan-yaml CST: that is an architecture decision with real cost for the maintainer to weigh, and the harness is the right thing to have in place BEFORE such a migration so it can prove behavior is preserved."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8188,7 +8188,7 @@ artifacts:
     title: "dev verification type: declare steps/test-name/test-location so a dev-only project can feed the evidence gate (#748)"
     status: proposed
     description: "Downstream residual on #748 (reported from spar, 883 artifacts, dev schema). REQ-270 shipped the dev-native `verification` type in v0.29.0 (dev@0.2.0 -> 0.3.0), which resolved the headline complaint — a dev-only project can now put tests on the right side of the V and reach `verified` WITHOUT importing ASPICE's SWE.3 chain. What remains is field-level: of the four fields spar's hand-rolled workaround leans on, only `method` is declared. `steps` (142 spar artifacts), `test-name` (64) and `test-location` (64) are not, so migrating the 227 workaround artifacts onto `verification` fixes their V-side placement but reproduces the undeclared-field warnings — which is why pulseengine/spar#371 is still blocked. `steps` matters most: `fields.steps[].run` is exactly the shape `rivet check verification-evidence` reads (rivet-cli/src/main.rs:8205), the named-test-exists gate hardened by REQ-236 and REQ-280. Because dev's `verification` does not declare it, a dev-only project cannot feed that gate at all — very likely why the check reports `0 named-test step(s)` on rivet's own repo. Scope: declare `steps`, `test-name`, `test-location` on the dev `verification` type (bump dev schema version), and decide whether `verifies` should widen beyond `[requirement]` (the issue asked for `[any]`; verifying a design-decision or feature is currently inexpressible) — widening is a separate judgement call, not automatic."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8199,7 +8199,7 @@ artifacts:
     title: "Humans have no assisted way to author artifacts — YAML editing is the only path (#546)"
     status: draft
     description: "User-reported and the largest gap in the v0.34 customer-UI theme, missed in the first triage pass. rivet's mutation surface is excellent for agents (add, modify, link, batch, next-id, MCP) and its read surface is excellent for everyone (serve, query, sql, trace, export), but a human authoring or correcting an artifact has exactly one option: hand-edit YAML. The reporter's words are the requirement — the editing is cumbersome, and we are missing the UI for helping humans work with it. Note the irony this repo has just paid for: hand-editing is also the path with no guard rails, and the write path underneath has produced four data-loss bugs (#573, #618/#625, REQ-287, #806), so the humans doing it by hand are the ones least protected. DESIGN-FIRST — this must not go straight to implementation. At least three plausible shapes exist and they differ enormously in cost and in who they serve: (a) extend the vscode-rivet VSIX with form-based editing and completion, which meets people where the YAML already is but is limited to VS Code users and the webview has no htmx; (b) make `rivet serve` writable, which reaches any browser and reuses the existing dashboard but turns a read-only viewer into a mutating service with all the authz questions that implies; (c) a guided terminal flow (`rivet add --interactive`) which is cheap and composes with the existing CLI but does not address the reporter's likely mental model of a UI. A design decision artifact must land before any REQ is scoped for implementation, and it must state which of these it is NOT doing and why."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8210,7 +8210,7 @@ artifacts:
     title: "Two coverage surfaces contradict each other: --tests reports 100% while the link rule reports 0% (#788, #787)"
     status: proposed
     description: "Reported against rivet 0.32.0 on pulseengine/varve v0.5.0. All 12 requirements are `status: verified`, advanced by `rivet verify` on the strength of `// rivet: verifies` source markers, and `rivet coverage --tests` reports 12/12 = 100 percent. The `requirement-verification` link rule reports 0 percent for the same 12 requirements. Both numbers are printed by the same tool about the same artifacts; at most one can be right, and a reader has no way to tell which. For a compliance tool the disagreement is worse than either number being wrong on its own, because it means neither can be cited. Paired with #787, which is plausibly the mechanism or part of it: `coverage --tests` attributes a `// rivet: verifies` marker to the PRECEDING helper fn rather than the FOLLOWING `#[test]` fn, so the marker set it counts may not be the set a reader believes it counted. Deliver: (1) root-cause the attribution bug in the marker scanner and fix it to bind to the next test-like item, not the previous item; (2) decide and document which surface is authoritative — link-based coverage or marker-based `--tests` — and make the non-authoritative one say so in its output rather than presenting a bare competing percentage; (3) a regression fixture holding both surfaces on the same artifact set so they can never silently diverge again. Same family as REQ-294 and the v0.33.0 gate work: a number that cannot be trusted is worse than an absent one."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8241,7 +8241,7 @@ artifacts:
   - id: REQ-304
     type: requirement
     title: "ci: the Test job can produce no JUnit XML and still report success — three stacked silencers (#833)"
-    status: proposed
+    status: implemented
     description: "The `Test` job's evidence step (.github/workflows/ci.yml:414-428) is named `Run tests (JUnit XML output)` and can satisfy none of that name while going green, because three independent silencers sit in a row: (1) `cargo install cargo-nextest --locked 2>/dev/null || true` swallows an install failure twice, by discarding stderr and by discarding the exit code, so a registry outage or an MSRV bump is indistinguishable from success; (2) the `else` branch falls back to `cargo test --all`, which emits no JUnit XML and drops the `ci` profile's `retries = 2` and `fail-fast = false` — silently removing the flake protection #494 added; (3) the upload step then carries `if-no-files-found: ignore`, so the missing artifact is not an error. Each silencer is individually defensible and their composition is not. Same family as #293, where `continue-on-error: true` on release.yml's `build-test-evidence` hid a real failure across four releases, each shipping a compliance bundle with no test evidence. Fix: install via `taiki-e/install-action` (already used for this exact tool in the Proptest job and in release.yml, so this makes three jobs consistent rather than introducing anything new), run nextest unconditionally, and flip `if-no-files-found` to `error` — that last is the part that makes the evidence claim checkable. The fix is only real if the gate can then go red, so whoever lands it must negative-control it: point the tool or the path at something nonexistent and confirm the job FAILS rather than skipping."
     release: v0.35.0
     provenance:
@@ -8252,7 +8252,7 @@ artifacts:
   - id: REQ-305
     type: requirement
     title: "ci: Proptest (extended) runs cargo test without nextest retries, so the documented serve race reddens it (#835)"
-    status: proposed
+    status: implemented
     description: "`.config/nextest.toml` carries `retries = 2` specifically because the serve/integration tests bind ports and spin up a server, so under CI parallelism one occasionally loses a timing/port race. The `Proptest (extended)` job runs those same tests under 10x load (`PROPTEST_CASES: 1000`, the worst case for that race) via `cargo test --all` — not nextest, therefore no `--profile ci`, therefore no retries. The protection that exists for this exact flake is absent in the job most likely to trigger it. Observed on PR #818: `api_artifacts_search` failed with `left: 0, right: 200`, i.e. no HTTP response at all rather than an error status — verbatim the failure mode `start_server()` documents in its own comment (`status=0 on api_artifacts_unfiltered / api_artifacts_search under Proptest load`). The same suite passed 2257/2257 in the `Test` job on the same commit, so the difference is the runner, not the code. Two costs already paid: #759 carried a red Proptest for 14 days and took a full investigation (including two hypotheses built and discarded) to establish as environmental; and a job that reddens on a known race trains reviewers to merge past it, which is how a real failure eventually gets waved through. Fix: either give the job the same retry semantics (`cargo nextest run --all --profile ci`, which reports a retry-passing test as FLAKY so the signal is kept rather than hidden), or exclude the serve/integration tests from this job entirely — they are not property tests and gain nothing from PROPTEST_CASES=1000, which is arguably cleaner and also cuts the job's runtime."
     release: v0.35.0
     provenance:
@@ -8265,7 +8265,7 @@ artifacts:
     title: "check verification-evidence is name-existence, not command-reachability — an empty stub satisfies it (#807 Defect 2)"
     status: proposed
     description: "Second of the two defects in #807; Defect 1 (the discarded `--manifest-path`) shipped in #830. `filter_matches_any` is `names.iter().any(|n| n.contains(filter))` — it checks that a function name resembling the filter exists SOMEWHERE in the scanned tree, not that the step's command would actually reach that test. The reporter proved it: dropping an EMPTY `#[test] fn <missing_name>() {}` into the root `tests/` made a finding disappear. So the real test can error while a hollow one passes, and the check is satisfiable by exactly the stub it exists to catch — the same shape as #556 (`a filter matching nothing exits 0 with 0 passed`). Fixing this changes the check's semantics from name-existence to command-reachability: resolve the step's command to its actual target set (per manifest/package/test-target) and match only within that, plus reject empty-bodied test functions as evidence. That is a design change rather than a parser fix, which is why it was deliberately sequenced after Defect 1 — the issue notes that fixing 2 alone would have converted every nested-workspace step from a false failure into a hard failure. With Defect 1 landed, stricter matching now tightens real steps instead. Related: the check exits 0 on an empty scan (REQ-290 added the warning but not the exit code), so a project with no parseable steps still reads as a pass."
-    release: v0.35.0
+    release: v0.36.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8276,7 +8276,7 @@ artifacts:
     title: "CLI top-level command list is 52 flat entries — the common path still is not legible (#812 residual)"
     status: proposed
     description: "Residual clause from REQ-298. #812 asked to strip REQ/# refs from help, cap entry length, AND \"tighten the top-level command list so the common path is legible\". The first two are done and measured: `rivet -h` now has 0 REQ ids, 0 issue refs, a longest line of 97 columns and no line over 100 (`trace` came down from 405 characters). The third was implemented as one-sentence-per-ENTRY, which is a defensible reading, but the list itself is unchanged at 52 flat top-level commands with no grouping and no distinction between the handful a new user needs (init, validate, list, coverage, check) and the long tail (variant-*, shard, supplier-pull, ordeal, migrate, templates). `-h` and `--help` print the same 52; there is no short form. REQ-298 was accepted as verified on the entry-length reading rather than blocking the v0.34.0 cut, so this artifact carries the remaining clause explicitly rather than letting it disappear into a closed requirement. Options worth weighing: group commands by concern in the help output; mark advanced commands hidden from `-h` while keeping them in `--help` (clap supports this directly); or promote a short `COMMON COMMANDS` block above the full list. Cross-check against REQ-297 — the same discoverability concern motivated the `rivet context` work, and both come from the same org-wide CLI survey."
-    release: v0.35.0
+    release: v0.36.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8287,7 +8287,7 @@ artifacts:
     title: "`rivet verify` advances on the existence of evidence, not its sufficiency (#838)"
     status: proposed
     description: "Reported from varve, where rivet is the release-readiness gate, and reproduced in rivet's own v0.34.0 cut the same day. `rivet verify REQ-X` correctly refuses when there is NO evidence — that guard works and stopped the reporter twice. But when a `verifies` marker exists it advances unconditionally, and a marker is cheap: one comment line above one `#[test]`. The structural problem is granularity: a requirement is a set of clauses, a marker attaches to the requirement, so the evidence link is coarser than the claim and the gap is invisible. The failure is not a missing check but a graph that LOOKS complete, which is worse — readers stop reading the requirement text once status says `verified`. In varve three requirements had markers and undischarged clauses (a gate that cannot detect the failure mode its clause names; a clause implemented for one transport but not another; a clause parsing a field nothing consumes). In rivet, REQ-298 was flipped to `verified` during the v0.34.0 release with its third clause ('tighten the top-level command list so the common path is legible') knowingly undischarged — 52 flat top-level commands remain — and `coverage --tests` reported `REQ-298  1 test marker`, indistinguishable from full discharge. The residual was hand-carried into REQ-307 plus commit prose, i.e. the reporter's option (3) improvised manually, and crucially the trace graph does NOT carry that caveat, so the caveat is not traceable. Degenerate variant found the same day: a marker that matches nothing is reported as neither present nor broken — the scanner regex accepts only word characters and hyphens after `verifies`, and `#` is neither, so `rivet: verifies #808` silently is not a marker at all; six such markers existed against 593 valid ones. Options in cost order: (1) per-clause markers `rivet: verifies REQ-X clause 3`, the real fix, but needs clauses addressable rather than prose inside `description` — a schema migration across every artifact; (2) make `partially-verifies` BLOCK rather than annotate, so `verify` refuses to advance past `implemented` without explicit override — no schema change, converts the common case into a refusal, and is therefore the right first move; (3) record the human judgement explicitly (`--clauses-discharged 1,2,4 --note ...`) so an unexamined default becomes a stated claim — cheap, but only meaningful if clause numbering is stable, and prose clauses renumber on any description edit, so record clause TEXT alongside the index or do (1) first."
-    release: v0.35.0
+    release: backlog
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
