@@ -106,6 +106,29 @@ pub fn sync_external(
     local_only: bool,
     force: bool,
 ) -> Result<PathBuf, crate::error::Error> {
+    sync_external_pinned(ext, cache_dir, project_dir, local_only, force, None)
+}
+
+/// As [`sync_external`], but checking out an exact commit when `pinned` is set.
+///
+/// REQ-311 / #853. `rivet lock` writes exact commit pins, but sync always
+/// fetched the external's `ref:` head and never read the lockfile — so a
+/// consumer's committed lock pinned for provenance while its federated CI
+/// validated against whatever the sibling repos' heads happened to be. A
+/// sibling force-push, artifact rename or bad commit silently changed what CI
+/// saw, and a run could not be reproduced later.
+///
+/// The checkout machinery already handled SHAs (`is_sha` triggers
+/// `--unshallow` so arbitrary commits are reachable); it simply was never
+/// given one.
+pub fn sync_external_pinned(
+    ext: &ExternalProject,
+    cache_dir: &Path,
+    project_dir: &Path,
+    local_only: bool,
+    force: bool,
+    pinned: Option<&str>,
+) -> Result<PathBuf, crate::error::Error> {
     let dest = cache_dir.join(&ext.prefix);
     std::fs::create_dir_all(cache_dir)
         .map_err(|e| crate::error::Error::Io(format!("create cache dir: {e}")))?;
@@ -177,7 +200,9 @@ pub fn sync_external(
     }
 
     if let Some(ref git_url) = ext.git {
-        let git_ref = ext.git_ref.as_deref().unwrap_or("main");
+        // A lockfile pin wins over the declared `ref:` — that is what makes a
+        // `--locked` sync reproducible.
+        let git_ref = pinned.unwrap_or_else(|| ext.git_ref.as_deref().unwrap_or("main"));
         let dest_str = dest
             .to_str()
             .ok_or_else(|| crate::error::Error::Io("invalid cache path".into()))?
@@ -358,6 +383,44 @@ pub fn sync_all(
     for (name, ext) in externals {
         let path = sync_external(ext, &cache_dir, project_dir, local_only, force)?;
         results.push((name.clone(), path));
+    }
+    Ok(results)
+}
+
+/// Sync every external to the exact commit recorded in `rivet.lock`.
+///
+/// REQ-311 / #853. Mirrors `cargo --locked`: it does not update the lock and it
+/// FAILS rather than floating when a pin is missing, because silently falling
+/// back to the branch head is precisely the behaviour that made a committed
+/// lock decorative.
+///
+/// Returns each external's resolved path alongside the commit it was pinned to,
+/// so a CI log can record what was actually validated.
+pub fn sync_all_locked(
+    externals: &BTreeMap<String, ExternalProject>,
+    project_dir: &Path,
+    lock: &Lockfile,
+    force: bool,
+) -> Result<Vec<(String, PathBuf, String)>, crate::error::Error> {
+    let cache_dir = project_dir.join(".rivet/repos");
+    let mut results = Vec::new();
+    for (name, ext) in externals {
+        let Some(entry) = lock.pins.get(name) else {
+            return Err(crate::error::Error::Io(format!(
+                "external '{name}' has no pin in rivet.lock — refusing to sync it at its \
+                 branch head under `--locked`, which is the float this flag exists to \
+                 prevent. Run `rivet lock` to record a pin, or drop `--locked`."
+            )));
+        };
+        let path = sync_external_pinned(
+            ext,
+            &cache_dir,
+            project_dir,
+            false,
+            force,
+            Some(&entry.commit),
+        )?;
+        results.push((name.clone(), path, entry.commit.clone()));
     }
     Ok(results)
 }
@@ -1875,10 +1938,21 @@ externals:
     fn git_clone_disables_hooks() {
         let source = include_str!("externals.rs");
 
-        // Find the sync_external function body
+        // The git commands live in `sync_external_pinned`; `sync_external` is a
+        // thin delegate to it (REQ-311 added the pinned variant so a `--locked`
+        // sync can check out an exact commit). Scan the function that actually
+        // runs git — and assert the delegation below, so the hooks property
+        // cannot be bypassed by calling the public wrapper.
+        assert!(
+            source.contains(
+                "sync_external_pinned(ext, cache_dir, project_dir, local_only, force, None)"
+            ),
+            "sync_external must delegate to sync_external_pinned, or this check \
+             is scanning a function that no longer runs git"
+        );
         let fn_start = source
-            .find("fn sync_external(")
-            .expect("sync_external function must exist");
+            .find("fn sync_external_pinned(")
+            .expect("sync_external_pinned function must exist");
         let fn_body = &source[fn_start..];
         // Approximate end: next top-level `pub fn` or `fn ` at column 0
         let fn_end = fn_body[1..]
@@ -1892,13 +1966,13 @@ externals:
 
         assert!(
             !git_commands.is_empty(),
-            "sync_external must contain git Command invocations"
+            "sync_external_pinned must contain git Command invocations"
         );
 
         // The no_hooks config must be defined and used
         assert!(
             fn_body.contains("core.hooksPath=/dev/null"),
-            "sync_external must disable git hooks via core.hooksPath=/dev/null"
+            "sync_external_pinned must disable git hooks via core.hooksPath=/dev/null"
         );
 
         assert!(
