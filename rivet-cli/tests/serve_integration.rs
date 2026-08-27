@@ -777,6 +777,56 @@ fn api_artifacts_pagination() {
     child.wait().ok();
 }
 
+/// #832 / REQ-303: silent truncation is a weak-green defect. The response
+/// must carry the data needed for a consumer to detect a partial view:
+/// `count` alongside `total`, and `truncated: true` when the page did not
+/// return the full set. Otherwise every consumer reading `artifacts` as the
+/// full set is silently wrong.
+///
+/// rivet: verifies REQ-303
+#[test]
+fn api_artifacts_truncation_signal() {
+    let (mut child, port) = start_server();
+
+    // Full window: not truncated. count == total, artifacts.len() == count.
+    let (status, body, _headers) = fetch(port, "/api/v1/artifacts?limit=100000", false);
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let total_full = json["total"].as_u64().unwrap();
+    let count_full = json["count"].as_u64().expect("count field required");
+    let truncated_full = json["truncated"].as_bool().expect("truncated field required");
+    assert_eq!(
+        count_full,
+        json["artifacts"].as_array().unwrap().len() as u64,
+        "count must equal artifacts.len()",
+    );
+    assert_eq!(count_full, total_full, "full window: count must equal total");
+    assert!(
+        !truncated_full,
+        "full window: truncated must be false when count == total"
+    );
+
+    // Small window: truncated. count < total, truncated: true.
+    let (status, body, _headers) = fetch(port, "/api/v1/artifacts?limit=1", false);
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let total_small = json["total"].as_u64().unwrap();
+    let count_small = json["count"].as_u64().expect("count field required");
+    let truncated_small = json["truncated"].as_bool().expect("truncated field required");
+    assert!(
+        total_small > 1,
+        "premise: fixture must hold more than one artifact"
+    );
+    assert_eq!(count_small, 1, "limit=1 must return exactly one artifact");
+    assert!(
+        truncated_small,
+        "limit=1 on a >1-artifact fixture must report truncated: true"
+    );
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
 #[test]
 fn api_artifacts_search() {
     let (mut child, port) = start_server();
@@ -837,6 +887,60 @@ fn api_diagnostics_response_shape() {
         assert!(first["severity"].is_string());
         assert!(first["rule"].is_string());
         assert!(first["message"].is_string());
+    }
+
+    child.kill().ok();
+    child.wait().ok();
+}
+
+/// #832 / REQ-303: the diagnostics endpoint has the same `.min(1000)` cap
+/// as the artifacts endpoint and needs the same truncation signal. The
+/// consequence a client cares about — "the array I got back may not be the
+/// full set" — is identical, so the response shape is aligned.
+///
+/// rivet: verifies REQ-303
+#[test]
+fn api_diagnostics_truncation_signal() {
+    let (mut child, port) = start_server();
+
+    // Full window: shape carries `count` and `truncated`, and truncated is
+    // false when the whole set fits. This must hold even when the fixture
+    // has no diagnostics (`count == total == 0`).
+    let (status, body, _headers) = fetch(port, "/api/v1/diagnostics?limit=100000", false);
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let total_full = json["total"].as_u64().unwrap();
+    let count_full = json["count"].as_u64().expect("count field required");
+    let truncated_full = json["truncated"].as_bool().expect("truncated field required");
+    assert_eq!(
+        count_full,
+        json["diagnostics"].as_array().unwrap().len() as u64,
+        "count must equal diagnostics.len()"
+    );
+    assert_eq!(count_full, total_full, "full window: count must equal total");
+    assert!(
+        !truncated_full,
+        "full window: truncated must be false when count == total"
+    );
+
+    // Small window: truncated iff there is more than one diagnostic; the
+    // fixture doesn't guarantee any, so guard the truncation assertion on
+    // total > 1 rather than presuming shape.
+    let (status, body, _headers) = fetch(port, "/api/v1/diagnostics?limit=1", false);
+    assert_eq!(status, 200);
+    let json: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let total_small = json["total"].as_u64().unwrap();
+    let count_small = json["count"].as_u64().unwrap();
+    let truncated_small = json["truncated"].as_bool().unwrap();
+    if total_small > 1 {
+        assert_eq!(count_small, 1, "limit=1 must return exactly one diagnostic");
+        assert!(
+            truncated_small,
+            "limit=1 with total > 1 must report truncated: true"
+        );
+    } else {
+        assert_eq!(count_small, total_small);
+        assert!(!truncated_small);
     }
 
     child.kill().ok();
