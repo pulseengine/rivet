@@ -448,6 +448,8 @@ fn default_limit() -> u32 {
 #[derive(Serialize)]
 struct ArtifactsResponse {
     total: usize,
+    count: usize,
+    truncated: bool,
     artifacts: Vec<ApiArtifact>,
 }
 
@@ -584,9 +586,13 @@ pub(crate) async fn artifacts(
 
     let total = results.len();
     let page: Vec<ApiArtifact> = results.into_iter().skip(offset).take(limit).collect();
+    let count = page.len();
+    let truncated = count < total;
 
     Json(ArtifactsResponse {
         total,
+        count,
+        truncated,
         artifacts: page,
     })
     .into_response()
@@ -619,6 +625,8 @@ struct ApiDiagnostic {
 #[derive(Serialize)]
 struct DiagnosticsResponse {
     total: usize,
+    count: usize,
+    truncated: bool,
     diagnostics: Vec<ApiDiagnostic>,
 }
 
@@ -686,9 +694,13 @@ pub(crate) async fn diagnostics(
 
     let total = results.len();
     let page: Vec<ApiDiagnostic> = results.into_iter().skip(offset).take(limit).collect();
+    let count = page.len();
+    let truncated = count < total;
 
     Json(DiagnosticsResponse {
         total,
+        count,
+        truncated,
         diagnostics: page,
     })
 }
