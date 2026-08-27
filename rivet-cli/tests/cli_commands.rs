@@ -9819,3 +9819,141 @@ sources:
          from one expected to pass; got:\n{feature}"
     );
 }
+
+/// REQ-310 / #852: `validate --explain` printed `from one of []` for a rule
+/// that omits `from-types`, which reads unambiguously as "no artifact type may
+/// source this link" — i.e. structurally unsatisfiable. The reporter concluded
+/// exactly that and was about to file a schema gap; `dev`'s `verification`
+/// type declares `verifies -> [requirement]` and adding one flips the line to
+/// satisfied immediately.
+///
+/// The two conditions must be distinguishable in the OUTPUT, not just in the
+/// reader's head: a rule that did not enumerate its sources, and a rule nothing
+/// can satisfy.
+///
+/// rivet: verifies REQ-310
+#[test]
+fn explain_derives_the_source_set_when_a_rule_omits_from_types() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        r#"project:
+  name: e
+  schemas: [common, dev]
+sources:
+  - path: artifacts
+    format: generic-yaml
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        r#"artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: draft
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate", "--explain", "REQ-001"])
+        .output()
+        .expect("explain");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Premise: the verifies rule really is reported as missing here, otherwise
+    // the assertion below could pass on output that never mentioned it.
+    assert!(
+        combined.contains("verifies"),
+        "fixture must exercise the verifies rule; combined:\n{combined}"
+    );
+    assert!(
+        !combined.contains("'verifies' from one of []"),
+        "an omitted from-types must not render as an empty set — it reads as \
+         'unsatisfiable', which is a different condition; combined:\n{combined}"
+    );
+    assert!(
+        combined.contains("verification"),
+        "the source set must be derived from types declaring the link; \
+         combined:\n{combined}"
+    );
+}
+
+/// The other half: a rule whose link genuinely nothing can source must SAY so,
+/// rather than being indistinguishable from a rule that merely omitted its
+/// from-types. Without this the fix could have replaced one silence with
+/// another.
+///
+/// rivet: verifies REQ-310
+#[test]
+fn explain_names_a_genuinely_unsatisfiable_rule_as_such() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("schemas")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        r#"project:
+  name: u
+  schemas: [common, dev, ghostrule]
+schemas-dir: schemas
+sources:
+  - path: artifacts
+    format: generic-yaml
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("schemas/ghostrule.yaml"),
+        r#"schema:
+  name: ghostrule
+  version: 0.1.0
+traceability-rules:
+  - name: impossible-rule
+    description: needs a link nothing can source
+    source-type: requirement
+    required-backlink: nonexistent-link-type
+    severity: warning
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        r#"artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: draft
+"#,
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate", "--explain", "REQ-001"])
+        .output()
+        .expect("explain");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        combined.contains("unsatisfiable"),
+        "a rule nothing can source must be named as unsatisfiable; \
+         combined:\n{combined}"
+    );
+    assert!(
+        !combined.contains("'nonexistent-link-type' from one of []"),
+        "it must not fall back to the empty-set rendering; combined:\n{combined}"
+    );
+}
