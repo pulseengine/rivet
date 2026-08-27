@@ -1980,4 +1980,75 @@ externals:
             "sync_external must use the no_hooks config for all git commands"
         );
     }
+
+    /// REQ-311: `sync_all_locked` must REFUSE when it cannot honour the lock,
+    /// rather than falling back to the branch head — that fallback is exactly
+    /// what made a committed lock decorative.
+    ///
+    /// Exercised directly rather than through a spawned `rivet sync --locked`:
+    /// a subprocess test proves the behaviour end to end but leaves the
+    /// function unattributed by llvm-cov, and codecov/patch flagged it. A unit
+    /// test is both the better test (no git, no process) and the honest way to
+    /// answer the coverage signal.
+    ///
+    /// rivet: verifies REQ-311
+    #[test]
+    fn sync_all_locked_refuses_an_external_with_no_pin() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let mut externals = BTreeMap::new();
+        externals.insert(
+            "up".to_string(),
+            ExternalProject {
+                git: Some("https://example.invalid/x.git".into()),
+                git_ref: Some("main".into()),
+                path: None,
+                prefix: "up".into(),
+            },
+        );
+
+        // The lock is NOT empty — it pins a DIFFERENT external. That matters:
+        // with an empty lock, a buggy "grab any pin" fallback is
+        // indistinguishable from a correct refusal, so the test would pass
+        // against both. A decoy pin makes the wrong behaviour observable.
+        let mut pins = BTreeMap::new();
+        pins.insert(
+            "somethingelse".to_string(),
+            LockEntry {
+                git: Some("https://example.invalid/other.git".into()),
+                commit: "0000000000000000000000000000000000000000".into(),
+                prefix: "somethingelse".into(),
+            },
+        );
+        let lock = Lockfile { pins };
+        let err = sync_all_locked(&externals, tmp.path(), &lock, false)
+            .expect_err("must refuse rather than float to the branch head");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("has no pin"),
+            "the error must name the missing pin, not fail obscurely: {msg}"
+        );
+        assert!(msg.contains("up"), "and it must name WHICH external: {msg}");
+        // It must not have attempted a network fetch to reach that conclusion.
+        assert!(
+            !tmp.path().join(".rivet/repos/up/.git").exists(),
+            "refusal must happen before any clone"
+        );
+    }
+
+    /// An empty externals map with an empty lock is a no-op success, not an
+    /// error — `--locked` in a project with no externals has nothing to pin and
+    /// must not fail the run.
+    ///
+    /// rivet: verifies REQ-311
+    #[test]
+    fn sync_all_locked_with_no_externals_is_a_no_op() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let externals: BTreeMap<String, ExternalProject> = BTreeMap::new();
+        let lock = Lockfile {
+            pins: BTreeMap::new(),
+        };
+        let got = sync_all_locked(&externals, tmp.path(), &lock, false)
+            .expect("no externals means nothing to pin");
+        assert!(got.is_empty());
+    }
 }
