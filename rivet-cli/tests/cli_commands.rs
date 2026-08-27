@@ -9957,3 +9957,198 @@ traceability-rules:
         "it must not fall back to the empty-set rendering; combined:\n{combined}"
     );
 }
+
+/// REQ-311 / #853: `rivet sync` always fetched each external's `ref:` head and
+/// never read `rivet.lock`, so a consumer's committed lock pinned for
+/// provenance while its federated CI validated against whatever the sibling
+/// repos' heads happened to be. A sibling force-push, artifact rename or bad
+/// commit silently changed what CI saw, and a run could not be reproduced.
+///
+/// The reporter's workaround was to make synth's federated job NON-required and
+/// document the coupling in a comment — the tell that the tool could not
+/// express what the workflow needed.
+///
+/// Builds a two-commit upstream and pins the lock to the OLDER one, so a pass
+/// cannot be an accident of the head happening to match.
+///
+/// rivet: verifies REQ-311
+#[test]
+fn sync_locked_checks_out_the_pinned_commit_not_the_ref_head() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let up = tmp.path().join("upstream");
+    std::fs::create_dir_all(up.join("artifacts")).unwrap();
+
+    let git = |args: &[&str], cwd: &std::path::Path| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    git(&["init", "-q", "-b", "main"], &up);
+    std::fs::write(
+        up.join("rivet.yaml"),
+        "project:\n  name: up\n  schemas: [common, dev]\nsources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        up.join("artifacts/a.yaml"),
+        "artifacts:\n  - id: UP-001\n    type: requirement\n    title: first\n    status: draft\n",
+    )
+    .unwrap();
+    git(&["add", "-A"], &up);
+    git(
+        &[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "first",
+        ],
+        &up,
+    );
+    let old = git(&["rev-parse", "HEAD"], &up);
+    std::fs::write(
+        up.join("artifacts/a.yaml"),
+        "artifacts:\n  - id: UP-001\n    type: requirement\n    title: second\n    status: draft\n",
+    )
+    .unwrap();
+    git(&["add", "-A"], &up);
+    git(
+        &[
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "second",
+        ],
+        &up,
+    );
+    let new = git(&["rev-parse", "HEAD"], &up);
+    assert_ne!(old, new, "fixture must have two distinct commits");
+
+    let consumer = tmp.path().join("consumer");
+    std::fs::create_dir_all(consumer.join("artifacts")).unwrap();
+    let url = format!("file://{}", up.display());
+    std::fs::write(
+        consumer.join("rivet.yaml"),
+        format!(
+            "project:\n  name: c\n  schemas: [common, dev]\nsources:\n  - path: artifacts\n    format: generic-yaml\nexternals:\n  up:\n    git: {url}\n    ref: main\n    prefix: up\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        consumer.join("artifacts/a.yaml"),
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: t\n    status: draft\n",
+    )
+    .unwrap();
+    // pinned deliberately to the OLDER commit
+    std::fs::write(
+        consumer.join("rivet.lock"),
+        format!("pins:\n  up:\n    git: {url}\n    commit: {old}\n    prefix: up\n"),
+    )
+    .unwrap();
+
+    let cdir = consumer.to_str().unwrap();
+    // Premise: a plain sync floats to the head, which is the reported defect.
+    let out = Command::new(rivet_bin())
+        .args(["--project", cdir, "sync"])
+        .output()
+        .expect("sync");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let head = git(&["rev-parse", "HEAD"], &consumer.join(".rivet/repos/up"));
+    assert_eq!(head, new, "a plain sync tracks the ref head");
+
+    // --locked must land on the pin instead.
+    let out = Command::new(rivet_bin())
+        .args(["--project", cdir, "sync", "--locked"])
+        .output()
+        .expect("sync --locked");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let head = git(&["rev-parse", "HEAD"], &consumer.join(".rivet/repos/up"));
+    assert_eq!(
+        head, old,
+        "--locked must check out the commit recorded in rivet.lock"
+    );
+}
+
+/// `--locked` fails rather than floating when it cannot honour the lock, which
+/// is the whole point: silently falling back to a branch head is the behaviour
+/// that made a committed lock decorative.
+///
+/// rivet: verifies REQ-311
+#[test]
+fn sync_locked_refuses_to_float_when_it_cannot_honour_the_lock() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: c\n  schemas: [common, dev]\nsources:\n  - path: artifacts\n    format: generic-yaml\nexternals:\n  up:\n    git: https://example.invalid/x.git\n    ref: main\n    prefix: up\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: t\n    status: draft\n",
+    )
+    .unwrap();
+
+    // no lockfile at all
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "sync", "--locked"])
+        .output()
+        .expect("sync");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success(), "combined:\n{combined}");
+    assert!(combined.contains("no rivet.lock"), "combined:\n{combined}");
+
+    // lockfile present but the external has no pin
+    std::fs::write(dir.join("rivet.lock"), "pins: {}\n").unwrap();
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "sync", "--locked"])
+        .output()
+        .expect("sync");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success(), "combined:\n{combined}");
+    assert!(combined.contains("has no pin"), "combined:\n{combined}");
+
+    // --locked and --local are contradictory
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "sync", "--locked", "--local"])
+        .output()
+        .expect("sync");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success(), "combined:\n{combined}");
+    assert!(combined.contains("contradictory"), "combined:\n{combined}");
+}

@@ -8318,7 +8318,7 @@ artifacts:
   - id: REQ-311
     type: requirement
     title: "rivet sync ignores rivet.lock — no --locked mode, so federated CI floats with sibling heads (#853)"
-    status: proposed
+    status: implemented
     description: "Reported from synth's federated CI (synth#1012). `rivet lock` writes and commits exact commit pins for each external, but `rivet sync` always fetches the external's `ref:` head and never reads the lockfile — confirmed at HEAD: `rivet-core/src/externals.rs` `sync_all`/`sync_external` never call `read_lockfile`, and `rivet sync --help` offers only `--local` / `--force`. The consequence is that a consumer's committed lock pins for provenance and impact tooling while the graph CI actually validates against whatever the sibling repos' heads are at that moment: a sibling force-push, artifact rename or bad commit silently changes what the consumer's CI sees, and a run cannot be reproduced later. It also means `rivet lock` followed by `rivet sync` on two machines can disagree about the same lock. This is a reproducibility gap in the cross-repo story rather than a cosmetic one — the reporter's workaround was to make synth's federated job deliberately NON-required and document the coupling in a job comment, which is the tell that the tool cannot express what the workflow needs. Fix shape: `rivet sync --locked` that resolves each external to the sha recorded in `rivet.lock` and fails rather than floating when the lock is absent or stale, mirroring `cargo --locked`; consider making it the default in CI-detected environments, and have `rivet sync` report which sha each external resolved to so a log makes the state auditable."
     release: v0.35.0
     provenance:

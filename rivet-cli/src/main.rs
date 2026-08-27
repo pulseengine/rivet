@@ -929,6 +929,15 @@ enum Command {
         /// (`.rivet/repos/<prefix>`) instead of refusing to sync over them
         #[arg(long)]
         force: bool,
+        /// Check out the exact commits recorded in rivet.lock instead of each
+        /// external's ref head
+        ///
+        /// Mirrors `cargo --locked`: it never updates the lock, and it fails
+        /// rather than floating when a pin is missing. Use this in CI so a
+        /// federated validation run is reproducible and a sibling repo's
+        /// force-push cannot silently change what was validated.
+        #[arg(long)]
+        locked: bool,
     },
 
     /// Pin external dependencies to exact commits in rivet.lock
@@ -2620,7 +2629,11 @@ fn run(cli: Cli) -> Result<bool> {
             rt.block_on(serve::run(app_state, bind, watch))?;
             Ok(true)
         }
-        Command::Sync { local, force } => cmd_sync(&cli, *local, *force),
+        Command::Sync {
+            local,
+            force,
+            locked,
+        } => cmd_sync(&cli, *local, *force, *locked),
         Command::Lock { update } => cmd_lock(&cli, *update),
         Command::Externals { action } => match action {
             ExternalsAction::Discover { path, format } => cmd_externals_discover(path, format),
@@ -14447,7 +14460,7 @@ fn resolve_schemas_dir(cli: &Cli) -> PathBuf {
     }
 }
 
-fn cmd_sync(cli: &Cli, local_only: bool, force: bool) -> Result<bool> {
+fn cmd_sync(cli: &Cli, local_only: bool, force: bool, locked: bool) -> Result<bool> {
     let config_path = cli.project.join("rivet.yaml");
     if !config_path.exists() {
         let project_dir =
@@ -14466,6 +14479,12 @@ fn cmd_sync(cli: &Cli, local_only: bool, force: bool) -> Result<bool> {
     }
     let externals = externals.unwrap();
 
+    if locked && local_only {
+        anyhow::bail!(
+            "--locked and --local are contradictory: --locked checks out the exact commits in \
+             rivet.lock, while --local skips git entirely and uses the working tree. Pick one."
+        );
+    }
     if local_only {
         eprintln!("Using --local: preferring path externals, skipping git fetch/clone");
     }
@@ -14477,6 +14496,25 @@ fn cmd_sync(cli: &Cli, local_only: bool, force: bool) -> Result<bool> {
     let added = rivet_core::externals::ensure_gitignore(&cli.project)?;
     if added {
         eprintln!("Added .rivet/ to .gitignore");
+    }
+
+    if locked {
+        // REQ-311 / #853: resolve from the lockfile, and say which commit each
+        // external landed on so a CI log records what was actually validated.
+        let Some(lock) = rivet_core::externals::read_lockfile(&cli.project)? else {
+            anyhow::bail!(
+                "--locked was requested but there is no rivet.lock. Run `rivet lock` to record \
+                 pins first; syncing at branch heads under --locked would be the float this \
+                 flag exists to prevent."
+            );
+        };
+        let results =
+            rivet_core::externals::sync_all_locked(externals, &cli.project, &lock, force)?;
+        for (name, path, commit) in &results {
+            eprintln!("  Synced {} → {} @ {}", name, path.display(), commit);
+        }
+        eprintln!("\n{} externals synced at locked commits.", results.len());
+        return Ok(true);
     }
 
     let results = rivet_core::externals::sync_all(externals, &cli.project, local_only, force)?;

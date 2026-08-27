@@ -302,8 +302,18 @@ fn test_git_clone_disables_hooks() {
     // existing test in externals.rs, but exercised here for STPA-Sec coverage).
     let source = include_str!("../src/externals.rs");
 
+    // REQ-311 moved the git invocations into `sync_external_pinned`, so that a
+    // `--locked` sync can check out an exact commit; `sync_external` is now a
+    // thin delegate. Scan the function that actually runs git, and assert the
+    // delegation so the property cannot be bypassed via the public wrapper.
+    assert!(
+        source
+            .contains("sync_external_pinned(ext, cache_dir, project_dir, local_only, force, None)"),
+        "sync_external must delegate to sync_external_pinned, or this check is \
+         scanning a function that no longer runs git"
+    );
     let fn_start = source
-        .find("fn sync_external(")
+        .find("fn sync_external_pinned(")
         .expect("sync_external function must exist in externals.rs");
     let fn_body = &source[fn_start..];
     let fn_end = fn_body[1..]
@@ -325,8 +335,18 @@ fn test_external_sync_logs_url_and_sha() {
     // We verify the source contains logging calls with relevant info.
     let source = include_str!("../src/externals.rs");
 
+    // REQ-311 moved the git invocations into `sync_external_pinned`, so that a
+    // `--locked` sync can check out an exact commit; `sync_external` is now a
+    // thin delegate. Scan the function that actually runs git, and assert the
+    // delegation so the property cannot be bypassed via the public wrapper.
+    assert!(
+        source
+            .contains("sync_external_pinned(ext, cache_dir, project_dir, local_only, force, None)"),
+        "sync_external must delegate to sync_external_pinned, or this check is \
+         scanning a function that no longer runs git"
+    );
     let fn_start = source
-        .find("fn sync_external(")
+        .find("fn sync_external_pinned(")
         .expect("sync_external function must exist");
     let fn_body = &source[fn_start..];
     let fn_end = fn_body[1..]
