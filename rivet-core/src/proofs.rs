@@ -221,6 +221,8 @@ mod proofs {
             direction: crate::coverage::CoverageDirection::Forward,
             target_types: vec![],
             covered,
+            exempt: 0,
+            exempt_ids: vec![],
             total,
             uncovered_ids: vec![],
             external_boundary: 0,
