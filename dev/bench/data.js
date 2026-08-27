@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787740396796,
+  "lastUpdate": 1787795934596,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "df780621fd6d4bb4f951a1d9b5376eb5df6bf094",
-          "message": "fix(mutate): modify --add-tag no longer drops the whole file when a tag needs quoting (REQ-287, P0 data loss) (#765)\n\nMutation-path stress test (user report: \"we very often get into failures\"\nmodifying artifacts) found a P0 silent data-loss bug. yaml_edit.rs re-emitted\nthe tag flow list via `current_tags.join(\", \")` WITHOUT quoting individual\ntags — unlike the hardened setters (title/status/field, #687) and the `add`\npath (mutate.rs). A tag carrying a YAML flow indicator breaks: a legitimately\nquoted `\"release: v1.0\"`, read back from the store, was re-emitted bare\n(`release: v1.0`), turning the flow list into a map so the WHOLE FILE failed to\nparse — silently dropping EVERY artifact in it — while `modify` exited 0\nreporting success.\n\nReproduced: 2 artifacts -> a benign, unrelated `--add-tag simpletag` -> 0\nartifacts loadable. Same tag-mutation fragility class as #625, on the quoting\naxis.\n\nFix: quote each tag via `yaml_quote_inline_scalar` before joining, mirroring\nthe hardened `add` path. Also closes a silent-split variant (`--add-tag \"a,b\"`\nstored two tags). Regression test asserts both artifacts survive an unrelated\n--add-tag and the pre-existing quoted tag stays quoted. All 38 yaml_edit unit\ntests still pass.\n\nFixes: REQ-287\nRefs: REQ-203",
-          "timestamp": "2026-08-05T11:50:13+02:00",
-          "tree_id": "e4c0fd7627f9bd0912bc2133e66adc30892020af",
-          "url": "https://github.com/pulseengine/rivet/commit/df780621fd6d4bb4f951a1d9b5376eb5df6bf094"
-        },
-        "date": 1785924189851,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 86579,
-            "range": "± 2144",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 912106,
-            "range": "± 8124",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 18437273,
-            "range": "± 2387805",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2213,
-            "range": "± 11",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27618,
-            "range": "± 304",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 347244,
-            "range": "± 7873",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1587383,
-            "range": "± 18351",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 161595,
-            "range": "± 638",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1976115,
-            "range": "± 23041",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 37157747,
-            "range": "± 6765600",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 489474,
-            "range": "± 3261",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16037128,
-            "range": "± 368138",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1256920603,
-            "range": "± 10556215",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4205,
-            "range": "± 12",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59292,
-            "range": "± 431",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 754146,
-            "range": "± 8629",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 61903,
-            "range": "± 992",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 696340,
-            "range": "± 6207",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9911525,
-            "range": "± 1252132",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1106,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14752,
-            "range": "± 102",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 318050,
-            "range": "± 5265",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24141,
-            "range": "± 152",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 169878,
-            "range": "± 934",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1590777,
-            "range": "± 18251",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1316238,
             "range": "± 33216",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99f3b8bda987513a4c22204c74460b0f879b3770",
+          "message": "fix(explain): derive the allowed-source set instead of printing [] (REQ-310, #852) (#859)\n\nfix(explain): derive the allowed-source set instead of printing [] (REQ-310, #852)\n\n`validate --explain REQ-001` printed:\n\n  needs an incoming 'verifies' from one of []\n\nwhich reads unambiguously as \"no artifact type may source this link\" — i.e. the\nrule is structurally unsatisfiable. The reporter concluded exactly that and was\nabout to file a schema gap before testing it. `dev`'s `verification` type\ndeclares `verifies -> [requirement]`, and adding one artifact flips the line to\nsatisfied immediately.\n\nThe cause is that `requirement-verification` omits `from-types`, and explain\nrendered that empty list literally. When the rule does not enumerate its\nsources, the set is now derived from the artifact types that DECLARE the\nability to source the link:\n\n  before   needs an incoming 'verifies' from one of []\n  after    needs an incoming 'verifies' from one of [\"verification\"]\n\nSchema::source_types_for_backlink is deliberately stricter than the existing\nfrom_type_can_link, which answers \"is this link permissible\" and returns true\nfor a type declaring no such field at all. Here the question is \"which types\ndeclare the ability to source it\", so a type with no matching link-field is not\na candidate — otherwise every type in the schema would be listed and the answer\nwould be useless.\n\nThe important half is that the two conditions are now distinguishable in the\nOUTPUT rather than only in the reader's head. A rule nothing can satisfy says\nso:\n\n  needs an incoming 'nonexistent-link-type', but NO type in the loaded schemas\n  declares a 'nonexistent-link-type' link targeting 'requirement' — this rule\n  is currently unsatisfiable; add a type that can source it, or drop the rule\n\nBoth oracles written first and negative-controlled: disabling the derivation\nreddens both, including the unsatisfiable one, so the fix cannot have replaced\none silence with another.\n\nAlso corrects status drift found while sweeping: REQ-309 shipped in #850 with 2\ntest markers and was still `proposed` — I flipped REQ-312 and REQ-313 that tick\nand missed it. Now `implemented`, not `verified`: its `--fail-under` policy\nclause is deliberately undischarged, and per REQ-308 a merged PR is not\nacceptance.\n\nConfirmed with cargo fmt --check, clippy --all-targets -D warnings on 1.97.0,\ncargo test --workspace (exit 0, 65 ok), rivet validate, rivet docs check — all\nexit 0.\n\nImplements: REQ-310\nRefs: REQ-309, REQ-308\ntest(schema): kill 4 surviving mutants in source_types_for_backlink\n\nThe rivet-core mutation gate found 4 survivors on this PR, all in the function\nit added, and all in one predicate:\n\n  lf.link_type == link_type                                  == -> !=\n    && (lf.target_types.is_empty()                           && -> ||\n        || lf.target_types.iter().any(|t| t == target_type)) || -> &&, == -> !=\n\nEvery operator survived, which means no test distinguished any of them. The\nonly coverage was a happy-path CLI test asserting the derived set appears in\n`--explain` output; it could not tell a correct predicate from four broken ones.\n\nAdded a unit test with a fixture chosen so each mutation flips a specific\nassertion: a type whose matching link points at a DIFFERENT target, a type with\na different link type entirely, a type with an unconstrained target list that\nmust match anything, and a type declaring no link fields at all that must never\nbe a candidate. Also pins that an unknown link type yields an EMPTY result,\nsince that emptiness is meaningful — it is what REQ-310 reports as genuinely\nunsatisfiable — and must not collapse to \"everything\".\n\nVerified by applying all four mutations and confirming each turns the test red:\n\n  KILLED  mutant 1 link_type == -> !=\n  KILLED  mutant 2 && -> ||\n  KILLED  mutant 3 || -> &&\n  KILLED  mutant 4 t == -> !=\n\nWorth recording that my first attempt at that verification was wrong: the\nanchor string `lf.link_type == link_type` occurs three times in schema.rs, so a\nfirst-occurrence replace mutated a DIFFERENT function and two mutants appeared\nto survive. Re-running the substitution scoped to the function body showed all\nfour killed. The experiment was faulty, not the test.\n\n`cargo test --workspace` failed once on api_artifacts_search\n(serve_integration.rs:102, \"server did not become healthy within 30 seconds\") —\nthe documented startup race, not an assertion about this code. It passes 3/3 in\nisolation and the full suite is clean on re-run (exit 0, 65 ok). Same class as\n#835.\n\nConfirmed with cargo fmt --check, clippy --all-targets -D warnings on 1.97.0,\ncargo test --workspace (exit 0), rivet validate, rivet docs check — all exit 0.\n\nVerifies: REQ-310",
+          "timestamp": "2026-08-27T03:06:53+02:00",
+          "tree_id": "0d826973c0c614461586759b7dea886156935b92",
+          "url": "https://github.com/pulseengine/rivet/commit/99f3b8bda987513a4c22204c74460b0f879b3770"
+        },
+        "date": 1787795933358,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84623,
+            "range": "± 484",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 895779,
+            "range": "± 8271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13231404,
+            "range": "± 552296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2246,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 28472,
+            "range": "± 422",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 378390,
+            "range": "± 1366",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1543609,
+            "range": "± 24610",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 161317,
+            "range": "± 1116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1959075,
+            "range": "± 11173",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25560542,
+            "range": "± 2166932",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 473740,
+            "range": "± 2298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15120803,
+            "range": "± 94026",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1179418967,
+            "range": "± 14188133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4357,
+            "range": "± 66",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 60261,
+            "range": "± 345",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 851902,
+            "range": "± 5041",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60873,
+            "range": "± 262",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 699257,
+            "range": "± 3427",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8081360,
+            "range": "± 286885",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1180,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15436,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 340064,
+            "range": "± 6046",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22593,
+            "range": "± 103",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 159954,
+            "range": "± 1186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1469614,
+            "range": "± 11446",
             "unit": "ns/iter"
           }
         ]
