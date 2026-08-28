@@ -8402,3 +8402,25 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-08-27T00:00:00Z
+
+  - id: REQ-319
+    type: requirement
+    title: "coverage --tests skips shell scripts, so a gate-verified requirement cannot close its V (#870)"
+    status: implemented
+    description: "`rivet coverage --tests` read `# rivet: verifies REQ-X` from a Python file but not the identical comment from a shell script — same convention, different extension. `detect_language` had no entry for `sh` at all, so `scan_file` returned before any pattern ran and the file was skipped silently. Reproduced: three files in one directory with one marker each; the .rs and .py markers were found, the .sh one reported `No test markers found`. This costs real evidence rather than tidiness. Not every falsifiable check is a unit test, and the ones that are not tend to guard the nastiest failures — the reporter's two examples are a gate that refuses any workflow redirecting key material into a file (proved by rejecting four shapes including one their own deposit workflow shipped) and one asserting the installer warns when a different binary wins the PATH lookup. Both run in CI, both have negative controls proving they can go red, and both are the sole evidence for their requirement, which therefore could not reach `verified` by any honest route. Fixed by giving shell its own language category rather than aliasing it to python — the comment pattern is the same but the enclosing-function regex differs (`name() {` and `function name` rather than `def`). Also added a shebang fallback for EXTENSIONLESS scripts, since a gate is frequently `tools/no-key-on-disk` rather than `tools/no-key-on-disk.sh`; the fallback is consulted only when a file has no extension, so a tree of images and binaries is not read looking for one, and a plain text file with no shebang is still correctly skipped."
+    release: v0.36.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-28T00:00:00Z
+
+  - id: REQ-320
+    type: requirement
+    title: "No way to subset an embedded preset's rules, so an unmodelled process level renders as an empty row forever (#871)"
+    status: proposed
+    description: "Reported from scry. Part (1) of #871 — an empty-population rule rendering as 100.0% — was ALREADY FIXED in v0.34.0 by REQ-294 and verified on current main: both the per-rule table and the V-closure lines render `n/a%`, and `coverage --format json` emits `percentage: null` alongside `empty_scope: true`, which is exactly the shape the issue asks for. The reporter is on scry's vendored copy, which predates that release. Part (2) is real and unaddressed: the `aspice` preset is embedded and there is no way to subset its rules, so a project adopting it for SWE.1/SWE.6 necessarily inherits SWE.2/SWE.3/SWE.4 rows it can never satisfy. scry deliberately does not model those levels — its design intent lives in a parallel dev spine, and authoring a unit-verification artifact per absent detail-design element would be fabricated traceability, which is the outcome a coverage gate exists to prevent. Their workaround is the tell: a checked-in file declaring the unmodelled levels, gated in CI to fail both when an empty population is undeclared and when a declaration goes stale. That is a mechanism rivet should own, and it is the same shape as REQ-309 (`exempt-when-field` gave a DECLARED exemption a machine-readable home so it stops reading as an oversight) and REQ-313 (a declared-undischargeable criterion). Shape to consider: let a project declare in `rivet.yaml` which preset rules it does not model, with the declaration itself validated — an unmodelled level that later acquires artifacts should fail, so the declaration cannot go stale silently. Deliberately grouped with those two rather than solved standalone: three near-identical mechanisms for `this is declared, not forgotten` would be worse than one."
+    release: v0.36.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-08-28T00:00:00Z

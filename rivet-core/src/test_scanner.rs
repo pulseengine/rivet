@@ -126,6 +126,14 @@ pub fn default_patterns() -> Vec<MarkerPattern> {
             link_type_group: 1,
             id_group: 2,
         },
+        // Shell comment: # rivet: verifies REQ-001
+        MarkerPattern {
+            language: "shell".into(),
+            pattern: Regex::new(r"#\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
+                .expect("valid regex"),
+            link_type_group: 1,
+            id_group: 2,
+        },
         // Python decorator: @rivet_verifies("REQ-001")
         MarkerPattern {
             language: "python".into(),
@@ -157,8 +165,41 @@ fn detect_language(path: &Path) -> Option<&'static str> {
         "go" => Some("generic"),
         "swift" => Some("generic"),
         "kt" | "kts" => Some("generic"),
+        // #870 / REQ-319: shell uses the same `#` comment convention as
+        // Python, but had no entry here at all — so `scan_file` returned
+        // before any pattern ran and a shell gate could never be evidence for
+        // a requirement. Its own category rather than an alias for "python",
+        // because the enclosing-function regex differs.
+        "sh" | "bash" | "zsh" | "ksh" => Some("shell"),
         _ => None,
     }
+}
+
+/// Detect a script language from a `#!` line.
+///
+/// #870 / REQ-319: a shell gate frequently has no extension at all —
+/// `tools/no-key-on-disk` rather than `tools/no-key-on-disk.sh`. Extension
+/// detection alone silently skips those.
+///
+/// Deliberately only consulted for EXTENSIONLESS files (see `scan_file`), so a
+/// tree full of images and binaries is not read looking for one.
+fn detect_language_from_shebang(content: &str) -> Option<&'static str> {
+    let first = content.lines().next()?;
+    if !first.starts_with("#!") {
+        return None;
+    }
+    if first.contains("bash") || first.contains("zsh") || first.contains("ksh") {
+        return Some("shell");
+    }
+    // `/bin/sh`, `/usr/bin/env sh` — match on a word boundary so `shellcheck`
+    // or a path containing "sh" does not qualify.
+    if first.split(['/', ' ']).any(|t| t == "sh") {
+        return Some("shell");
+    }
+    if first.contains("python") {
+        return Some("python");
+    }
+    None
 }
 
 /// Try to find the enclosing function/method name by scanning backwards
@@ -167,6 +208,8 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
     let fn_pattern = match language {
         "rust" => Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)").ok()?,
         "python" => Regex::new(r"def\s+(\w+)").ok()?,
+        // `name() {` and `function name {` are both POSIX-ish shell forms.
+        "shell" => Regex::new(r"(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\s*\)").ok()?,
         // Generic: covers C/C++/Java/Go-style function declarations
         _ => Regex::new(r"(?:pub\s+)?(?:fn|func|function|def|void|int|bool|auto)\s+(\w+)\s*\(")
             .ok()?,
@@ -235,14 +278,22 @@ fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<Test
 
 /// Scan a single file for test markers.
 fn scan_file(path: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMarker>) {
-    let language = match detect_language(path) {
-        Some(l) => l,
-        None => return,
-    };
+    // Extension first. Only when the file has NO extension do we read it to
+    // check for a shebang — that keeps the fallback from touching every
+    // unrecognised binary in the tree.
+    let by_ext = detect_language(path);
+    if by_ext.is_none() && path.extension().is_some() {
+        return;
+    }
 
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(_) => return,
+    };
+
+    let language = match by_ext.or_else(|| detect_language_from_shebang(&content)) {
+        Some(l) => l,
+        None => return,
     };
 
     let lines: Vec<&str> = content.lines().collect();
@@ -720,5 +771,101 @@ void test_safety() {
         assert_eq!(markers.len(), 1);
         assert_eq!(markers[0].target_id, "SYSREQ-005");
         assert_eq!(markers[0].link_type, "verifies");
+    }
+
+    /// #870 / REQ-319: `coverage --tests` read `# rivet: verifies REQ-X` from a
+    /// Python file but not from a shell script — same comment convention,
+    /// different extension. `detect_language` had no entry for `sh`, so the
+    /// file was skipped before any pattern ran.
+    ///
+    /// This costs real evidence: not every falsifiable check is a unit test,
+    /// and the ones that are not tend to guard the nastiest failures. The
+    /// reporter's two examples are a gate refusing any workflow that writes key
+    /// material to disk, and one asserting the installer warns when a different
+    /// binary wins the PATH lookup — both with negative controls proving they
+    /// can go red, both the sole evidence for their requirement.
+    ///
+    /// rivet: verifies REQ-319
+    #[test]
+    fn shell_scripts_are_scanned_for_markers() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let d = tmp.path();
+        std::fs::write(
+            d.join("a.rs"),
+            "// rivet: verifies REQ-RS-001
+fn x() {}
+",
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("b.py"),
+            "# rivet: verifies REQ-PY-001
+def y(): pass
+",
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("c.sh"),
+            "#!/bin/sh
+# rivet: verifies REQ-SH-001
+check() { :; }
+",
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("d.bash"),
+            "# rivet: verifies REQ-BASH-001
+",
+        )
+        .unwrap();
+
+        let found: std::collections::BTreeSet<String> =
+            scan_source_files(&[d.to_path_buf()], &default_patterns())
+                .into_iter()
+                .map(|m| m.target_id)
+                .collect();
+        for want in ["REQ-RS-001", "REQ-PY-001", "REQ-SH-001", "REQ-BASH-001"] {
+            assert!(found.contains(want), "{want} not found; got {found:?}");
+        }
+    }
+
+    /// A shell gate often has no extension at all — `tools/no-key-on-disk`
+    /// rather than `.sh`. Fall back to the shebang so those are not silently
+    /// skipped, and only for extensionless files so a tree full of images does
+    /// not get read looking for one.
+    ///
+    /// rivet: verifies REQ-319
+    #[test]
+    fn extensionless_scripts_are_detected_by_shebang() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let d = tmp.path();
+        std::fs::write(
+            d.join("no-key-on-disk"),
+            "#!/usr/bin/env bash
+# rivet: verifies REQ-GATE-001
+",
+        )
+        .unwrap();
+        // No shebang, no extension: must NOT be treated as a script.
+        std::fs::write(
+            d.join("NOTES"),
+            "# rivet: verifies REQ-NOTES-001
+",
+        )
+        .unwrap();
+
+        let found: std::collections::BTreeSet<String> =
+            scan_source_files(&[d.to_path_buf()], &default_patterns())
+                .into_iter()
+                .map(|m| m.target_id)
+                .collect();
+        assert!(
+            found.contains("REQ-GATE-001"),
+            "shebang script missed; got {found:?}"
+        );
+        assert!(
+            !found.contains("REQ-NOTES-001"),
+            "a plain text file must not be scanned as a script; got {found:?}"
+        );
     }
 }
