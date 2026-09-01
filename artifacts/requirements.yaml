@@ -8424,3 +8424,15 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-08-28T00:00:00Z
+  - id: REQ-321
+    type: requirement
+    title: "The rowan YAML parser silently drops every document after the first, while serde rejects the same input"
+    status: verified
+    description: "Found empirically by the `yaml_footguns` fuzz target on a push-to-main run, from a six-byte input. `yaml_cst::parse_root` skips one LEADING `---` document-start marker, parses the first document, then bumps every remaining token into the Root node as trivia. A second document therefore vanished with no diagnostic: `extract_generic_artifacts` on a source declaring two artifacts across two documents returned exactly one, with an empty diagnostics list. This is a two-parser disagreement, which is the specific thing rivet cannot afford. The serde path already rejects the same input with `deserializing from YAML containing more than one document is not supported`, so a reader consuming the rowan path (the incremental, LSP and span-aware surfaces) saw a different file than a reader consuming the serde path, and neither was told. The shipped CLI was NOT affected, because it reads through the serde path and correctly exits 1; the divergence was confined to rivet-core. Fixed by making the two parsers agree rather than by implementing multi-document support: a DirectiveMarker reached in the trailing consume loop is a document SEPARATOR rather than the document START already skipped, so it now raises an Error. Loading both documents would have been a feature, and would silently widen what validate accepts. The rowan path additionally reports a line number, which the serde path does not. Pinned by two tests: one asserting the multi-document case is diagnosed, and one asserting a leading `---` remains ordinary single-document YAML, which is what forces the guard to distinguish separator from start. Negative-controlled by removing the guard and confirming the first test reddens while the second stays green. Regression-checked against rivet's own tree: 1035 artifacts still load and validate passes."
+    release: v0.36.0
+    tags: [silent-accept, parser, fuzz-found]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-01T00:00:00Z
+

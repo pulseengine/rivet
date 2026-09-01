@@ -568,8 +568,25 @@ impl<'src> Parser<'src> {
                 self.parse_block_mapping(0);
             }
         }
-        // Consume any remaining trivia
+        // Consume any remaining tokens.
+        //
+        // A `DirectiveMarker` reached HERE is a document *separator*, not the
+        // document *start* skipped above: the first document has already been
+        // parsed. Everything past it used to be bumped into Root as trivia, so
+        // a second document's `artifacts:` block vanished with no diagnostic
+        // while the serde path rejected the same input. Report it once, and
+        // keep consuming so the CST still covers the full source text.
+        let mut reported_multi_doc = false;
         while !self.at_eof() {
+            if !reported_multi_doc && self.at(SyntaxKind::DirectiveMarker) {
+                reported_multi_doc = true;
+                self.errors.push(ParseError {
+                    offset: self.byte_offset,
+                    message: "YAML containing more than one document is not supported; \
+                              content after the `---` separator is ignored"
+                        .to_string(),
+                });
+            }
             self.bump();
         }
         self.builder.finish_node();
