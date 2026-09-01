@@ -110,8 +110,8 @@ quick-xml = { version = "0.41", features = ["serialize", "overlapped-lists"] }
 # `fd_renumber` resource leak), which 45.x also carries. The 44->45 bump is
 # source-compatible for our usage. rivet's only wasmtime user is
 # rivet-core/src/wasm_runtime.rs (the compose-witness component runner).
-wasmtime = { version = "47.0.3", features = ["component-model"] }
-wasmtime-wasi = "47.0.3"
+wasmtime = { version = "47.0.4", features = ["component-model"] }
+wasmtime-wasi = "47.0.4"
 
 # Lossless syntax trees — pinned to our fork's Miri-soundness branch v3.
 # Upstream will NOT take a patch: rust-analyzer/rowan #210/#211/#212 were all
