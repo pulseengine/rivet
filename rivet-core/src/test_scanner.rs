@@ -807,8 +807,10 @@ def y(): pass
         std::fs::write(
             d.join("c.sh"),
             "#!/bin/sh
-# rivet: verifies REQ-SH-001
-check() { :; }
+check_no_key_on_disk() {
+  # rivet: verifies REQ-SH-001
+  grep -q -- \"--key-out\" \"$1\"
+}
 ",
         )
         .unwrap();
@@ -819,14 +821,23 @@ check() { :; }
         )
         .unwrap();
 
-        let found: std::collections::BTreeSet<String> =
+        let found: std::collections::BTreeMap<String, String> =
             scan_source_files(&[d.to_path_buf()], &default_patterns())
                 .into_iter()
-                .map(|m| m.target_id)
+                .map(|m| (m.target_id, m.test_name))
                 .collect();
         for want in ["REQ-RS-001", "REQ-PY-001", "REQ-SH-001", "REQ-BASH-001"] {
-            assert!(found.contains(want), "{want} not found; got {found:?}");
+            assert!(found.contains_key(want), "{want} not found; got {found:?}");
         }
+        // Finding the marker is not enough: it must be attributed to the
+        // enclosing shell function. `name() {` carries none of the keywords the
+        // generic C/Java/Go-style pattern looks for, so without shell's own
+        // pattern this silently degrades to a bare "file:line" name.
+        assert_eq!(
+            found.get("REQ-SH-001").map(String::as_str),
+            Some("check_no_key_on_disk"),
+            "shell marker not attributed to its enclosing function; got {found:?}"
+        );
     }
 
     /// A shell gate often has no extension at all — `tools/no-key-on-disk`
@@ -846,10 +857,36 @@ check() { :; }
 ",
         )
         .unwrap();
+        // Every accepted spelling gets its own file: one `bash` fixture leaves
+        // the zsh/ksh and word-boundary `sh` branches unexercised.
+        std::fs::write(
+            d.join("posix-gate"),
+            "#!/bin/sh
+# rivet: verifies REQ-GATE-SH-001
+",
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("zsh-gate"),
+            "#!/bin/zsh
+# rivet: verifies REQ-GATE-ZSH-001
+",
+        )
+        .unwrap();
         // No shebang, no extension: must NOT be treated as a script.
         std::fs::write(
             d.join("NOTES"),
             "# rivet: verifies REQ-NOTES-001
+",
+        )
+        .unwrap();
+        // A shebang we do not claim: `#` is not a comment in JS at all, so a
+        // marker here is not a marker. This is what makes the `sh` test a word
+        // match rather than "some token is not sh".
+        std::fs::write(
+            d.join("js-tool"),
+            "#!/usr/bin/env node
+# rivet: verifies REQ-NODE-001
 ",
         )
         .unwrap();
@@ -859,13 +896,19 @@ check() { :; }
                 .into_iter()
                 .map(|m| m.target_id)
                 .collect();
-        assert!(
-            found.contains("REQ-GATE-001"),
-            "shebang script missed; got {found:?}"
-        );
+        for want in ["REQ-GATE-001", "REQ-GATE-SH-001", "REQ-GATE-ZSH-001"] {
+            assert!(
+                found.contains(want),
+                "shebang script missed {want}; got {found:?}"
+            );
+        }
         assert!(
             !found.contains("REQ-NOTES-001"),
             "a plain text file must not be scanned as a script; got {found:?}"
+        );
+        assert!(
+            !found.contains("REQ-NODE-001"),
+            "a non-shell shebang must not be scanned as shell; got {found:?}"
         );
     }
 }
