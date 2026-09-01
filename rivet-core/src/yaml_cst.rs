@@ -1106,6 +1106,56 @@ mod tests {
         root
     }
 
+    /// A document SEPARATOR must be diagnosed; a document START must not be.
+    ///
+    /// `parse_root` skips one leading `---` and then consumes the rest of the
+    /// token stream, so a second document used to be swallowed in silence.
+    /// Lives here rather than only in tests/yaml_edge_cases.rs because the
+    /// mutation gate runs `-- --lib`: an integration-only test leaves this
+    /// guard invisible to it.
+    ///
+    /// rivet: verifies REQ-321
+    #[test]
+    fn document_separator_is_reported_once() {
+        let (_g, errors) = parse("a: 1\n---\nb: 2\n");
+        // Exactly one, not merely at least one. Reporting per remaining token
+        // would bury the real diagnostic under a wall of duplicates.
+        assert_eq!(
+            errors.len(),
+            1,
+            "expected exactly one multi-doc error, got {errors:?}"
+        );
+        assert!(
+            errors[0].message.contains("more than one document"),
+            "wrong error: {:?}",
+            errors[0].message
+        );
+    }
+
+    /// Two separators are still one report, and the offset points at the FIRST
+    /// one — the place a reader has to edit.
+    ///
+    /// rivet: verifies REQ-321
+    #[test]
+    fn repeated_separators_report_once_at_the_first() {
+        let src = "a: 1\n---\nb: 2\n---\nc: 3\n";
+        let (_g, errors) = parse(src);
+        assert_eq!(errors.len(), 1, "expected one report, got {errors:?}");
+        assert_eq!(
+            errors[0].offset,
+            src.find("---").expect("separator present"),
+            "offset should point at the first separator"
+        );
+    }
+
+    /// A LEADING `---` is ordinary single-document YAML.
+    ///
+    /// rivet: verifies REQ-321
+    #[test]
+    fn leading_document_start_is_not_an_error() {
+        parse_and_check("---\na: 1\n");
+    }
+
     #[test]
     fn simple_mapping() {
         parse_and_check("key: value\n");
