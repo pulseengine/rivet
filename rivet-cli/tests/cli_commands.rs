@@ -10152,3 +10152,133 @@ fn sync_locked_refuses_to_float_when_it_cannot_honour_the_lock() {
     assert!(!out.status.success(), "combined:\n{combined}");
     assert!(combined.contains("contradictory"), "combined:\n{combined}");
 }
+
+/// `rivet schema validate` must resolve `required-backlink` against link-type
+/// INVERSES, not just forward names (#876).
+///
+/// The built-in `safety-case` preset declares `supports`/`inverse: supported-by`
+/// and rules that name the inverse. Checking those against the forward-name set
+/// reported two errors on a preset with no local customisation at all.
+///
+/// rivet: verifies REQ-322
+#[test]
+fn schema_validate_resolves_inverse_backlink_names() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("run rivet init");
+    assert!(init.status.success(), "init must exit 0");
+
+    let cfg = dir.join("rivet.yaml");
+    let text = std::fs::read_to_string(&cfg).expect("read rivet.yaml");
+    std::fs::write(
+        &cfg,
+        text.replace("    - dev\n", "    - dev\n    - safety-case\n"),
+    )
+    .expect("enable safety-case");
+
+    let out = Command::new(rivet_bin())
+        .args(["-p", dirs, "schema", "validate"])
+        .output()
+        .expect("run rivet schema validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert!(
+        !combined.contains("not a known link type"),
+        "a built-in preset must validate clean; got:\n{combined}"
+    );
+    assert!(
+        out.status.success(),
+        "schema validate must exit 0 on a clean built-in preset; got:\n{combined}"
+    );
+}
+
+/// The other half of #876: `rivet schema validate` printed `Result: N error(s)`
+/// and exited 0 regardless, so it could never gate anything.
+///
+/// This pins that a genuinely unknown backlink — neither a forward name nor a
+/// declared inverse — is still an error AND still fails the process. Without
+/// it, widening the accepted set could quietly turn the check into a no-op.
+///
+/// rivet: verifies REQ-322
+#[test]
+fn schema_validate_fails_the_process_on_a_real_error() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("run rivet init");
+    assert!(init.status.success(), "init must exit 0");
+
+    let schemas = dir.join("schemas");
+    std::fs::create_dir_all(&schemas).expect("create schemas dir");
+    std::fs::write(
+        schemas.join("bogus.yaml"),
+        "\
+schema:
+  name: bogus
+  version: \"0.1.0\"
+  description: Fixture naming a backlink that resolves nowhere
+artifact-types:
+  - name: widget
+    description: A widget
+link-types:
+  - name: uses
+    inverse: used-by
+    description: Widget uses widget
+    source-types: [widget]
+    target-types: [widget]
+traceability-rules:
+  - name: widget-needs-nonsense
+    description: Names a backlink that is neither a forward name nor an inverse
+    source-type: widget
+    required-backlink: no-such-inverse
+",
+    )
+    .expect("write bogus schema");
+
+    let cfg = dir.join("rivet.yaml");
+    let text = std::fs::read_to_string(&cfg).expect("read rivet.yaml");
+    std::fs::write(
+        &cfg,
+        text.replace("    - dev\n", "    - dev\n    - bogus\n"),
+    )
+    .expect("enable bogus schema");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "-p",
+            dirs,
+            "--schemas",
+            schemas.to_str().unwrap(),
+            "schema",
+            "validate",
+        ])
+        .output()
+        .expect("run rivet schema validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert!(
+        combined.contains("no-such-inverse"),
+        "an unknown backlink must still be reported; got:\n{combined}"
+    );
+    assert!(
+        !out.status.success(),
+        "schema validate must FAIL the process when it reports errors; got:\n{combined}"
+    );
+}

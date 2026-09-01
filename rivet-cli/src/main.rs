@@ -13043,7 +13043,14 @@ fn cmd_schema(cli: &Cli, action: &SchemaAction) -> Result<bool> {
             validate_format(format, &["text", "json"])?;
             schema_cmd::cmd_rules(&schema, format)
         }
-        SchemaAction::Validate => schema_cmd::cmd_validate(&schema),
+        SchemaAction::Validate => {
+            // Returns early rather than falling through to the shared
+            // `Ok(true)` below: every other schema subcommand is a report, but
+            // validate is a GATE and has to be able to fail (#876).
+            let (output, ok) = schema_cmd::cmd_validate(&schema);
+            print!("{output}");
+            return Ok(ok);
+        }
         SchemaAction::Info { name, format } => {
             let path = schemas_dir.join(format!("{name}.yaml"));
             // Track WHERE the schema resolved from: an on-disk file (pinned in
