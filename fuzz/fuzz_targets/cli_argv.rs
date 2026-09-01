@@ -135,6 +135,22 @@ fn build_argv(input: &ArgvInput) -> Vec<String> {
     argv
 }
 
+/// True if argv contains a clap short-circuit flag.
+///
+/// `--help` and `--version` are handled by clap BEFORE any subcommand runs and
+/// print human-readable text to stdout with exit 0. That is a documented,
+/// intentional non-JSON success path, so pairing it with `--format json` is not
+/// a contract violation and the JSON oracle must not fire on it.
+///
+/// This is deliberately narrow. Every OTHER path keeps the full contract, and
+/// rivet honours it further than the oracle demands: usage errors emit
+/// `{"error": ...}` on stdout with exit 2 rather than going quiet. The only
+/// case this exempts is the one where the user explicitly asked for help.
+fn is_clap_short_circuit(argv: &[String]) -> bool {
+    argv.iter()
+        .any(|a| a == "--help" || a == "-h" || a == "--version" || a == "-V")
+}
+
 /// Returns true if the argv requested JSON output.
 fn is_json_format(argv: &[String]) -> bool {
     let mut i = 0;
@@ -154,7 +170,7 @@ fuzz_target!(|input: ArgvInput| {
         return;
     };
     let argv = build_argv(&input);
-    let json_mode = is_json_format(&argv);
+    let json_mode = is_json_format(&argv) && !is_clap_short_circuit(&argv);
 
     let mut cmd = Command::new(&bin);
     cmd.args(&argv)

@@ -372,3 +372,89 @@ fn null_artifacts_returns_empty() {
         "null artifacts list should parse as empty"
     );
 }
+
+/// A second YAML document must not be swallowed in silence.
+///
+/// `parse_root` skips ONE leading `---` and then bumps every remaining token
+/// into Root as trivia, so a second document's `artifacts:` block was dropped
+/// with no diagnostic — the `yaml_cst.rs` multi-doc truncation class, found
+/// empirically by the `yaml_footguns` fuzz target.
+///
+/// The serde path already rejects this ("deserializing from YAML containing
+/// more than one document is not supported"). This pins that the rowan path
+/// agrees rather than silently keeping the first document.
+///
+/// rivet: verifies REQ-321
+#[test]
+fn second_document_is_not_silently_dropped() {
+    let yaml = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First document requirement
+    status: draft
+---
+artifacts:
+  - id: REQ-999
+    type: requirement
+    title: Second document requirement
+    status: draft
+";
+    let hir = rivet_core::yaml_hir::extract_generic_artifacts(yaml);
+    let ids: Vec<&str> = hir
+        .artifacts
+        .iter()
+        .map(|a| a.artifact.id.as_str())
+        .collect();
+
+    // Whatever we do with the artifacts, staying quiet is not an option: the
+    // source declares two and the reader must not believe it declared one.
+    assert!(
+        !hir.diagnostics.is_empty(),
+        "multi-document YAML produced NO diagnostic; ids={ids:?}"
+    );
+    assert!(
+        hir.diagnostics
+            .iter()
+            .any(|d| matches!(d.severity, rivet_core::schema::Severity::Error)),
+        "multi-document YAML must be an Error, got {:?}",
+        hir.diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
+    );
+}
+
+/// A LEADING `---` is ordinary single-document YAML and must stay accepted —
+/// the guard above has to tell a document *separator* from a document *start*.
+///
+/// rivet: verifies REQ-321
+#[test]
+fn leading_document_marker_is_still_accepted() {
+    let yaml = "\
+---
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Only document
+    status: draft
+";
+    let hir = rivet_core::yaml_hir::extract_generic_artifacts(yaml);
+    assert_eq!(
+        hir.artifacts.len(),
+        1,
+        "leading --- must parse as one document; diagnostics={:?}",
+        hir.diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        hir.diagnostics.is_empty(),
+        "leading --- must not warn; got {:?}",
+        hir.diagnostics
+            .iter()
+            .map(|d| &d.message)
+            .collect::<Vec<_>>()
+    );
+}
