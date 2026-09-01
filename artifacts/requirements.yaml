@@ -8435,3 +8435,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-01T00:00:00Z
+  - id: REQ-322
+    type: requirement
+    title: "schema validate reports false errors on a built-in preset, and cannot fail the process either way (#876)"
+    status: verified
+    description: "Reported against the built-in safety-case preset with no local customisation. Two defects, and the reported one is the smaller. FIRST, `required-backlink` was checked against the set of FORWARD link-type names, but a backlink names the INVERSE of a declared type — `supported-by` for `supports`, `scoped-by` for `scopes` — so two rules in a shipped preset were reported as naming unknown link types. The reporter's decisive observation is that the coverage engine resolves those same names and returns real counts, which is what rules out the schema being the wrong end; `inverse_map` is populated in both directions and is the index coverage already uses. `required-link` is left forward-only, because rules genuinely do name the forward type there. SECOND, and worse, `rivet schema validate` printed `Result: 2 error(s)` and exited 0: `cmd_validate` returned only a String, and its single caller printed it and returned Ok(true) unconditionally, so the command could never fail whatever it found. The report frames this as a check that cries wolf, but it could not gate anything at all — the same weak-green class as a check that never fires. Both halves are pinned by tests that redden independently: dropping the inverse lookup fails only the built-in-preset test, and restoring the always-succeed return fails only the process-exit test, which uses a backlink that is neither a forward name nor a declared inverse so widening the accepted set cannot quietly turn the check into a no-op. Warnings deliberately remain a pass, since an unknown target type can legitimately belong to a preset the project has not enabled. Confirmed no workflow invokes `schema validate`, so the exit-code change cannot break rivet's own gates, and rivet's own schemas report 0 errors. Cross-checked that `coverage --format json` still emits supported-by and scoped-by as backward rules, so the fix changed only what the validator ACCEPTS, not what a backlink resolves to. Out of scope and filed as observation only: `alternate-backlinks` link types are not validated at all, so that hole is a check that does not fire rather than one that fires wrongly."
+    release: v0.36.0
+    tags: [weak-green, validation, schema]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-02T00:00:00Z

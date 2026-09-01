@@ -468,7 +468,11 @@ pub fn cmd_info(schema_file: &SchemaFile, format: &str) -> String {
 }
 
 /// Validate that loaded schemas are well-formed.
-pub fn cmd_validate(schema: &Schema) -> String {
+///
+/// Returns the report and whether it is clean. #876: this previously returned
+/// only the report, so `rivet schema validate` printed `Result: N error(s)`
+/// and exited 0 anyway — it could not gate anything it was pointed at.
+pub fn cmd_validate(schema: &Schema) -> (String, bool) {
     let mut issues: Vec<(String, String)> = Vec::new();
     let type_names: HashSet<&str> = schema.artifact_types.keys().map(|s| s.as_str()).collect();
     let link_names: HashSet<&str> = schema.link_types.keys().map(|s| s.as_str()).collect();
@@ -496,7 +500,15 @@ pub fn cmd_validate(schema: &Schema) -> String {
             }
         }
         if let Some(ref link) = rule.required_backlink {
-            if !link_names.contains(link.as_str()) {
+            // #876: a `required-backlink` names the INVERSE of a declared link
+            // type (`supported-by` for `supports`), so checking it against the
+            // forward-name set reported two errors on the built-in safety-case
+            // preset with no local customisation. `inverse_map` is populated in
+            // BOTH directions, which is the index the coverage engine already
+            // resolves these same names against — hence `covered: 2` on rules
+            // this check called unknown. `required_link` above stays
+            // forward-only: rules genuinely name the forward type there.
+            if !link_names.contains(link.as_str()) && schema.inverse_of(link).is_none() {
                 issues.push((
                     "ERROR".into(),
                     format!(
@@ -560,11 +572,14 @@ pub fn cmd_validate(schema: &Schema) -> String {
     let warnings = issues.iter().filter(|(s, _)| s == "WARN").count();
 
     if issues.is_empty() {
-        return format!(
-            "Schema valid: {} artifact types, {} link types, {} rules\n",
-            schema.artifact_types.len(),
-            schema.link_types.len(),
-            schema.traceability_rules.len(),
+        return (
+            format!(
+                "Schema valid: {} artifact types, {} link types, {} rules\n",
+                schema.artifact_types.len(),
+                schema.link_types.len(),
+                schema.traceability_rules.len(),
+            ),
+            true,
         );
     }
 
@@ -575,5 +590,8 @@ pub fn cmd_validate(schema: &Schema) -> String {
     out.push_str(&format!(
         "\nResult: {errors} error(s), {warnings} warning(s)\n"
     ));
-    out
+    // WARN-only stays a pass: warnings are advisory here (an unknown target
+    // type can legitimately belong to a preset this project has not enabled).
+    // Only ERROR fails the process.
+    (out, errors == 0)
 }
