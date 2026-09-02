@@ -10416,3 +10416,96 @@ commits:
          got:\n{strict_text}"
     );
 }
+
+/// #807 Defect 2 / REQ-306: `check verification-evidence` asserted only that a
+/// function of that NAME existed somewhere in the scanned tree, never that the
+/// name belonged to a real test.
+///
+/// Two false passes follow, and the check is satisfiable by exactly the stub it
+/// exists to catch:
+///   * an EMPTY `#[test] fn <name>() {}` — the reporter's proof; dropping one
+///     into `tests/` made a finding disappear,
+///   * a plain non-test `fn <name>()` helper, since the extractor collected
+///     every `fn` in the file.
+///
+/// rivet: verifies REQ-306
+#[test]
+fn check_verification_evidence_rejects_hollow_and_non_test_names() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "#[test]\n\
+         fn genuine_test() { assert!(1 + 1 == 2); }\n\
+         \n\
+         // The stub the check exists to catch, offered as its own evidence.\n\
+         #[test]\n\
+         fn hollow_test() {}\n\
+         \n\
+         // Not a test at all — a helper that merely shares the name.\n\
+         fn helper_shaped_name() { let _ = 1; }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: FV-001\n    type: requirement\n    title: v\n    status: implemented\n    \
+             fields:\n      steps:\n        \
+             - run: \"cargo test -p p genuine_test\"\n        \
+             - run: \"cargo test -p p hollow_test\"\n        \
+             - run: \"cargo test -p p helper_shaped_name\"\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "check",
+            "verification-evidence",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("check");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+
+    // Vacuity guard: if the steps did not parse, every assertion below would
+    // hold for the wrong reason.
+    assert_eq!(
+        v["named_test_steps_checked"], 3,
+        "all three cargo-test steps must be parsed and checked; got {v}"
+    );
+
+    let missing: Vec<&str> = v["missing"]
+        .as_array()
+        .expect("missing array")
+        .iter()
+        .filter_map(|m| m["filter"].as_str())
+        .collect();
+    assert!(
+        missing.contains(&"hollow_test"),
+        "an empty #[test] body is not evidence; missing was {missing:?}"
+    );
+    assert!(
+        missing.contains(&"helper_shaped_name"),
+        "a non-test fn is not evidence; missing was {missing:?}"
+    );
+    assert!(
+        !missing.contains(&"genuine_test"),
+        "a real, non-empty #[test] must still count; missing was {missing:?}"
+    );
+    assert!(
+        !out.status.success(),
+        "must exit non-zero when a step's evidence is hollow"
+    );
+}

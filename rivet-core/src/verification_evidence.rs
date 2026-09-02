@@ -158,6 +158,132 @@ fn shell_tokens(command: &str) -> Vec<String> {
 /// direction for a drift check — we only error when a named filter matches NO
 /// function at all, so including non-test fns can only *suppress* a false
 /// error, never invent one.
+/// Extract names of functions that can actually serve as VERIFICATION
+/// EVIDENCE: annotated with a `#[test]`-family attribute AND carrying a
+/// non-empty body.
+///
+/// This deliberately reverses the over-approximation
+/// [`extract_rust_fn_names`] documents as "the SAFE direction". It is not the
+/// safe direction. That reasoning — including non-test fns can only suppress a
+/// false error, never invent one — is exactly what made the check satisfiable
+/// by the stub it exists to catch: an empty `#[test] fn <name>() {}` dropped
+/// into `tests/` made a real finding disappear (#807 Defect 2), and a plain
+/// helper sharing the name did the same. A gate that can only under-report is
+/// not a conservative gate, it is a gate you cannot fail. See REQ-306.
+///
+/// Heuristic, and honestly so: it reads attributes in the contiguous block
+/// above the `fn` and matches any attribute path ending in `test`, so
+/// `#[test]`, `#[tokio::test]` and `#[rstest]` all qualify. A body is "empty"
+/// when it contains nothing but whitespace and comments. Brace matching does
+/// not track string or char literals, so a `{` inside a string in an otherwise
+/// empty body reads as content — that direction is the safe one here, since it
+/// can only ACCEPT a test, never reject a real one.
+pub fn extract_test_fn_names(source: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let lines: Vec<&str> = source.lines().collect();
+
+    for (idx, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        // Find `fn <name>` at the start of a (possibly `pub`/`async`) item.
+        let Some(rel) = trimmed.find("fn ") else {
+            continue;
+        };
+        let before = &trimmed[..rel];
+        if !before
+            .split_whitespace()
+            .all(|w| matches!(w, "pub" | "async" | "const" | "unsafe" | "extern"))
+        {
+            continue;
+        }
+        let name: String = trimmed[rel + 3..]
+            .chars()
+            .skip_while(|c| c.is_whitespace())
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if name.is_empty() {
+            continue;
+        }
+
+        // Walk up over the contiguous attribute / doc-comment block.
+        let mut has_test_attr = false;
+        let mut k = idx;
+        while k > 0 {
+            let prev = lines[k - 1].trim();
+            if prev.starts_with("#[") {
+                let inner = prev.trim_start_matches("#[").trim_end_matches(']');
+                if inner
+                    .split(['(', ','])
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .rsplit("::")
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    == "test"
+                {
+                    has_test_attr = true;
+                }
+                k -= 1;
+            } else if prev.starts_with("//") || prev.is_empty() {
+                k -= 1;
+            } else {
+                break;
+            }
+        }
+        if !has_test_attr {
+            continue;
+        }
+
+        if body_has_content(&lines, idx) {
+            names.insert(name);
+        }
+    }
+    names
+}
+
+/// True when the `{ ... }` body starting at or after `start_line` holds
+/// anything but whitespace and comments.
+fn body_has_content(lines: &[&str], start_line: usize) -> bool {
+    let mut depth = 0usize;
+    let mut started = false;
+    let mut content = String::new();
+    for line in lines.iter().skip(start_line) {
+        for ch in line.chars() {
+            match ch {
+                '{' => {
+                    if started {
+                        content.push(ch);
+                    }
+                    depth += 1;
+                    started = true;
+                }
+                '}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 && started {
+                        let stripped: String = content
+                            .lines()
+                            .map(|l| l.split("//").next().unwrap_or("").trim())
+                            .collect();
+                        return !stripped.is_empty();
+                    }
+                    content.push(ch);
+                }
+                _ => {
+                    if started {
+                        content.push(ch);
+                    }
+                }
+            }
+        }
+        if started {
+            content.push('\n');
+        }
+    }
+    // Unterminated body: treat as content rather than reject a real test.
+    started
+}
+
 pub fn extract_rust_fn_names(source: &str) -> BTreeSet<String> {
     let mut names = BTreeSet::new();
     let bytes = source.as_bytes();
@@ -314,6 +440,66 @@ mod tests {
         assert_eq!(parse_cargo_test_filter("pytest -k something"), None);
         assert_eq!(parse_cargo_test_filter("make test"), None);
         assert_eq!(parse_cargo_test_filter("cargo build"), None);
+    }
+
+    /// An empty `#[test]` body is not evidence — it is the stub the check
+    /// exists to catch, offered as its own proof (#807 Defect 2 / REQ-306).
+    ///
+    /// Lives here rather than only in the CLI integration test because the
+    /// mutation gate runs `-- --lib` and cannot see `tests/*.rs`.
+    #[test]
+    fn test_fn_names_reject_hollow_and_non_test() {
+        let src = "\
+#[test]
+fn genuine() { assert!(true); }
+
+#[test]
+fn hollow() {}
+
+#[test]
+fn only_comments() {
+    // nothing but a comment
+}
+
+fn helper_not_a_test() { let _ = 1; }
+
+#[tokio::test]
+async fn async_flavoured() { let _ = 1; }
+";
+        let names = extract_test_fn_names(src);
+        assert!(names.contains("genuine"), "got {names:?}");
+        assert!(
+            names.contains("async_flavoured"),
+            "a #[tokio::test] is still a test; got {names:?}"
+        );
+        assert!(
+            !names.contains("hollow"),
+            "empty body is not evidence: {names:?}"
+        );
+        assert!(
+            !names.contains("only_comments"),
+            "a comment-only body is not evidence: {names:?}"
+        );
+        assert!(
+            !names.contains("helper_not_a_test"),
+            "a non-test fn is not evidence: {names:?}"
+        );
+        // Exactly the two real tests, so a mutant that widens acceptance shows.
+        assert_eq!(names.len(), 2, "got {names:?}");
+    }
+
+    /// The old extractor keeps its over-approximating contract; only the
+    /// evidence path moved. Pins that the two really do differ, so a mutant
+    /// collapsing one into the other is visible.
+    #[test]
+    fn rust_fn_names_still_over_approximates() {
+        let src = "#[test]\nfn hollow() {}\nfn helper() { let _ = 1; }\n";
+        let all = extract_rust_fn_names(src);
+        assert!(
+            all.contains("hollow") && all.contains("helper"),
+            "got {all:?}"
+        );
+        assert!(extract_test_fn_names(src).is_empty());
     }
 
     #[test]
