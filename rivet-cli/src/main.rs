@@ -13841,8 +13841,49 @@ fn cmd_commits(
         trailer_map,
     );
 
+    // REQ-315: a trailer is a LINK, not a state transition. `analyze_commits`
+    // checks that trailers name real artifacts; this checks the converse — an
+    // artifact a merged commit claims to implement should not still be sitting
+    // at `proposed`/`draft`. Release readiness is a query over `release:` plus
+    // `status`, so drift here reports shipped scope as unshipped.
+    //
+    // Only `implements`/`fixes` count. `verifies` and `traces-to` make no claim
+    // that the artifact is done, so advancing on those would be wrong.
+    // Deliberately does NOT auto-advance: whether shipped code discharges every
+    // acceptance clause is a judgement (REQ-308), and flipping status on a
+    // trailer would manufacture exactly the false confidence that requirement
+    // is about. Name the artifact and the commit; let a human decide.
+    let mut drift: Vec<(String, String, String, String)> = Vec::new();
+    {
+        let mut seen: HashSet<&str> = HashSet::new();
+        for commit in &analysis.linked {
+            for link_type in ["implements", "fixes"] {
+                let Some(ids) = commit.artifact_refs.get(link_type) else {
+                    continue;
+                };
+                for id in ids {
+                    if !seen.insert(id.as_str()) {
+                        continue;
+                    }
+                    let Some(a) = store.get(id) else { continue };
+                    let status = a.status.as_deref().unwrap_or("");
+                    if status == "proposed" || status == "draft" {
+                        let short = commit.hash.get(..8).unwrap_or(&commit.hash);
+                        drift.push((
+                            id.clone(),
+                            status.to_string(),
+                            short.to_string(),
+                            commit.subject.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+        drift.sort();
+    }
+
     if format == "json" {
-        return cmd_commits_json(&analysis, strict);
+        return cmd_commits_json(&analysis, strict, &drift);
     }
 
     // Text output
@@ -13901,6 +13942,14 @@ fn cmd_commits(
         }
     }
 
+    if !drift.is_empty() {
+        println!();
+        println!("Artifacts named by a commit but not advanced:");
+        for (id, status, short, subject) in &drift {
+            println!("  {id}  ({status})  {short} {subject}");
+        }
+    }
+
     // Coverage table
     if !known_ids.is_empty() {
         let covered = analysis.artifact_coverage.len();
@@ -13917,12 +13966,20 @@ fn cmd_commits(
 
     // Exit code
     let has_errors = !analysis.broken_refs.is_empty();
-    let has_warnings = !analysis.orphans.is_empty() || !analysis.unimplemented.is_empty();
+    // Drift is a WARNING, not an error: a genuinely partial implementation may
+    // legitimately carry a trailer while the artifact stays `proposed`. Under
+    // `--strict` it fails, so CI can enforce it.
+    let has_warnings =
+        !analysis.orphans.is_empty() || !analysis.unimplemented.is_empty() || !drift.is_empty();
     let fail = has_errors || (strict && has_warnings);
     Ok(!fail)
 }
 
-fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool) -> Result<bool> {
+fn cmd_commits_json(
+    analysis: &rivet_core::commits::CommitAnalysis,
+    strict: bool,
+    drift: &[(String, String, String, String)],
+) -> Result<bool> {
     let malformed_count = analysis
         .broken_refs
         .iter()
@@ -13955,6 +14012,16 @@ fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool
         }).collect::<Vec<_>>(),
         "unimplemented": analysis.unimplemented.iter().collect::<Vec<_>>(),
         "artifact_coverage": analysis.artifact_coverage.iter().collect::<Vec<_>>(),
+        // REQ-315: artifacts a commit claims to implement that are still
+        // `proposed`/`draft`. Advisory unless --strict.
+        "status_drift": drift.iter().map(|(id, status, hash, subject)| {
+            serde_json::json!({
+                "id": id,
+                "status": status,
+                "hash": hash,
+                "subject": subject,
+            })
+        }).collect::<Vec<_>>(),
     });
 
     println!(
@@ -13963,7 +14030,8 @@ fn cmd_commits_json(analysis: &rivet_core::commits::CommitAnalysis, strict: bool
     );
 
     let has_errors = !analysis.broken_refs.is_empty();
-    let has_warnings = !analysis.orphans.is_empty() || !analysis.unimplemented.is_empty();
+    let has_warnings =
+        !analysis.orphans.is_empty() || !analysis.unimplemented.is_empty() || !drift.is_empty();
     let fail = has_errors || (strict && has_warnings);
     Ok(!fail)
 }

@@ -10281,3 +10281,138 @@ traceability-rules:
         "schema validate must FAIL the process when it reports errors; got:\n{combined}"
     );
 }
+
+/// `rivet commits` must report an artifact that a merged commit claims to
+/// implement but which is still sitting at `proposed`/`draft` (REQ-315).
+///
+/// A trailer is a LINK, not a state transition. `rivet commits` already checks
+/// that trailers name real artifacts; nothing checked the converse, so shipped
+/// scope reported as unshipped and release readiness — a query over `release:`
+/// plus `status` — read as further away than it was.
+///
+/// rivet: verifies REQ-315
+#[test]
+fn commits_reports_trailer_named_artifacts_left_unadvanced() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("run rivet init");
+    assert!(init.status.success(), "init must exit 0");
+
+    // IDs must be `PREFIX-<number>`; a name like `REQ-SHIPPED` is not parsed
+    // out of a trailer at all, which would make this fixture exercise nothing.
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: Named by a commit trailer but never advanced
+    status: proposed
+  - id: REQ-002
+    type: requirement
+    title: No commit claims this one
+    status: proposed
+",
+    )
+    .expect("write artifacts");
+
+    // `rivet init` writes no `commits:` section, and the command requires one.
+    let cfg = dir.join("rivet.yaml");
+    let mut text = std::fs::read_to_string(&cfg).expect("read rivet.yaml");
+    text.push_str(
+        r#"
+commits:
+  format: trailers
+  trailers:
+    Implements: implements
+    Fixes: fixes
+  exempt-types:
+    - chore
+  skip-trailer: "Trace: skip"
+"#,
+    );
+    std::fs::write(&cfg, text).expect("add commits section");
+
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("run git");
+        assert!(out.status.success(), "git {args:?} failed");
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "t@example.com"]);
+    git(&["config", "user.name", "T"]);
+    git(&["add", "-A"]);
+    git(&[
+        "commit",
+        "-q",
+        "-m",
+        "feat(x): ship it\n\nImplements: REQ-001",
+    ]);
+
+    let run = |extra: &[&str]| {
+        let mut args = vec!["-p", dirs, "commits"];
+        args.extend_from_slice(extra);
+        let out = Command::new(rivet_bin())
+            .args(&args)
+            .output()
+            .expect("run rivet commits");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (out.status.success(), text)
+    };
+
+    let (ok, combined) = run(&[]);
+
+    // Guard against a vacuous run: if the trailer never linked, the drift
+    // section below could be absent for the wrong reason entirely.
+    assert!(
+        combined.contains("Linked:          1"),
+        "fixture must produce exactly one LINKED commit, else this test proves \
+         nothing; got:\n{combined}"
+    );
+
+    let section = combined
+        .split("Artifacts named by a commit but not advanced:")
+        .nth(1)
+        .unwrap_or("")
+        .split("\n\n")
+        .next()
+        .unwrap_or("")
+        .to_string();
+    assert!(
+        section.contains("REQ-001"),
+        "an artifact named by an Implements trailer but left at `proposed` must \
+         be reported; got:\n{combined}"
+    );
+    // Scoped to the section: REQ-002 legitimately appears elsewhere in the
+    // report (the no-commit-coverage list), so a whole-output check would be
+    // satisfied by the wrong text.
+    assert!(
+        !section.contains("REQ-002"),
+        "an artifact no commit claims must NOT be reported as drifted; \
+         section was:\n{section}"
+    );
+    assert!(
+        ok,
+        "drift alone must not fail the default run — a genuinely partial \
+         implementation may carry a trailer; got:\n{combined}"
+    );
+
+    let (strict_ok, strict_text) = run(&["--strict"]);
+    assert!(
+        !strict_ok,
+        "--strict must fail on trailer/status drift so CI can enforce it; \
+         got:\n{strict_text}"
+    );
+}
