@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788294775495,
+  "lastUpdate": 1788525778280,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f5592c6fba835f19bd98b20d1bf5509009eb6ab6",
-          "message": "plan(v0.33): gate potency — make every required check able to fail (#772)\n\nScope for v0.33.0, themed \"a gate that cannot fail is not a gate\". Four findings\nported from spar's recent gate audit (spar#381/#383/#384/#388), each reproduced\nagainst rivet with direct evidence, plus the two meta-fixes already filed.\n\nNew (from the spar cross-check):\n- REQ-288 mutation gate reads a path cargo-mutants never writes (#768) — the\n  rivet-cli HARD gate has never read its own results; one core shard's real\n  missed.txt lists 5 survivors while CI printed 0.\n- REQ-289 Format gate misses the fuzz/ workspace (#769) — live drift in 5\n  tracked files `cargo fmt --all` never opens.\n- REQ-290 check verification-evidence runs in no workflow (#770) — rivet built\n  the checker for spar#388's exact rot and nothing enforces it.\n- REQ-291 changes-filter under-scoped + fails open (#771) — embedded schemas\n  (include_str!) skip the whole compile matrix; an errored git diff skips too.\n\nPulled into v0.33 (same weak-green family):\n- REQ-285 docs check parses snippets / resolves topics\n- REQ-286 release status is loud about what blocks a cut\n\nScope moved DELIBERATELY (release-planning: deferral is a decision, logged, not\nsilent). These were still tagged to already-cut releases:\n- REQ-274/275/276 (customer UI: trace tree view, tag filter, colour contrast)\n  v0.31.0 -> v0.34.0 — they have now slipped one release while infra work landed\n- REQ-281 (evaluate nextest filtersets), REQ-282 (sql --schema) v0.31.0 -> v0.34.0\n\nNo artifact now points at a cut release.\n\nTrace: skip",
-          "timestamp": "2026-08-05T19:05:34+02:00",
-          "tree_id": "30db069fb756f3c7c18c3d8bdb84599d69780ddd",
-          "url": "https://github.com/pulseengine/rivet/commit/f5592c6fba835f19bd98b20d1bf5509009eb6ab6"
-        },
-        "date": 1785951395267,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 68694,
-            "range": "± 686",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 811635,
-            "range": "± 5668",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 10415676,
-            "range": "± 64780",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1358,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 16053,
-            "range": "± 31",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 250381,
-            "range": "± 828",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 63,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 63,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 63,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1194867,
-            "range": "± 53462",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 140612,
-            "range": "± 3752",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1585603,
-            "range": "± 12502",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 22830789,
-            "range": "± 60664",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 358370,
-            "range": "± 6806",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 12117931,
-            "range": "± 134405",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 832381931,
-            "range": "± 4927408",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3402,
-            "range": "± 76",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 36102,
-            "range": "± 312",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 787802,
-            "range": "± 3021",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 46483,
-            "range": "± 104",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 505939,
-            "range": "± 1611",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6164014,
-            "range": "± 224619",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 789,
-            "range": "± 30",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 9861,
-            "range": "± 168",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 286532,
-            "range": "± 6275",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 18405,
-            "range": "± 1460",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 129701,
-            "range": "± 326",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1154294,
-            "range": "± 6153",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1159888,
             "range": "± 65984",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3bffda8fcb2476d2e3f5a0d8d47ea82953292e76",
+          "message": "fix(test): resolve the rivet binary at compile time in all 28 tests (REQ-314) (#881)\n\n27 of 28 integration tests read CARGO_BIN_EXE_rivet at RUN time and fell back to\na hardcoded <workspace>/target/debug/rivet. Cargo leaves that variable in the\ntest process environment so `cargo test` works; nextest spawns test processes\nitself and does not, so all 27 used the hardcoded path and ignored\nCARGO_TARGET_DIR entirely.\n\nMeasured with CARGO_TARGET_DIR=/tmp/rivet-build, after confirming the fallback\npath did not exist — a stale binary there would have made the measurement\nvacuous:\n\n  before   2315 tests run: 1924 passed, 391 failed   exit 100\n  after    2316 tests run: 2316 passed               exit 0\n\nCI could never have caught this and, after the fix, still could not catch a\nregression: CI does not set CARGO_TARGET_DIR, so the binary lands at exactly the\npath the old fallback hardcoded and the wrong lookup resolves by luck. The same\nnextest command is green there and 391-red locally. Only an assertion about the\nsource text can hold the invariant, hence tests/binary_resolution.rs — which\nasserts it scanned at least 20 files BEFORE asserting the offender set is empty,\nsince an empty scan would pass vacuously. Negative-controlled by reintroducing\nthe run-time lookup in one file.\n\nAlso corrects the comment in mcp_integration.rs, which asserted the exact\ninverse of the truth (\"this file was the sole holdout (27 of 28)\"). It was the\nonly file that used env!. #834 fixed that one file under that false belief,\nwhich is why the other 27 survived.\n\nImplements: REQ-314\nVerifies: REQ-314",
+          "timestamp": "2026-09-04T14:27:59+02:00",
+          "tree_id": "6f4af71b83f6e7d4adc2e4e465cc4cf808e8a7dd",
+          "url": "https://github.com/pulseengine/rivet/commit/3bffda8fcb2476d2e3f5a0d8d47ea82953292e76"
+        },
+        "date": 1788525777440,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85359,
+            "range": "± 369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 905074,
+            "range": "± 11657",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13961345,
+            "range": "± 811408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2258,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27563,
+            "range": "± 996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 463088,
+            "range": "± 2124",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1522209,
+            "range": "± 22110",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 163151,
+            "range": "± 1844",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1906031,
+            "range": "± 23523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30470145,
+            "range": "± 720106",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 496039,
+            "range": "± 3619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17767558,
+            "range": "± 132764",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1450978388,
+            "range": "± 14409756",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4296,
+            "range": "± 24",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59944,
+            "range": "± 1156",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 808335,
+            "range": "± 13969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59448,
+            "range": "± 302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 692013,
+            "range": "± 3396",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8183390,
+            "range": "± 221019",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1137,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 13932,
+            "range": "± 57",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 327341,
+            "range": "± 2126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22489,
+            "range": "± 132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 164161,
+            "range": "± 2024",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1473648,
+            "range": "± 19124",
             "unit": "ns/iter"
           }
         ]
