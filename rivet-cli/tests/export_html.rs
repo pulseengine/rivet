@@ -32,14 +32,17 @@
 //! rivet: verifies REQ-088
 
 use std::process::Command;
-
+/// Absolute path to the `rivet` binary under test.
+///
+/// `env!` (compile time), NOT `std::env::var` (run time). Cargo sets
+/// `CARGO_BIN_EXE_<name>` for an integration test and substitutes the real
+/// path at build time. Reading it at RUN time works under `cargo test`,
+/// which happens to leave the variable in the test process environment, but
+/// nextest spawns test processes itself and does not — so the old code fell
+/// through to a hardcoded `<workspace>/target/debug/rivet` that ignores
+/// `CARGO_TARGET_DIR` entirely. See REQ-314.
 fn rivet_bin() -> std::path::PathBuf {
-    if let Ok(bin) = std::env::var("CARGO_BIN_EXE_rivet") {
-        return std::path::PathBuf::from(bin);
-    }
-    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest.parent().expect("workspace root");
-    workspace_root.join("target").join("debug").join("rivet")
+    std::path::PathBuf::from(env!("CARGO_BIN_EXE_rivet"))
 }
 
 fn project_root() -> std::path::PathBuf {

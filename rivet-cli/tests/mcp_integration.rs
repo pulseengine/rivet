@@ -61,9 +61,15 @@ use serde_json::Value;
 /// anticipate produces a wrong path, and `path.exists()` reports it as a
 /// missing binary rather than as a bad guess. `CARGO_BIN_EXE_<name>` removes
 /// the guess entirely — for an integration test, Cargo both builds the binary
-/// and substitutes its absolute path at compile time. Every other integration
-/// test in this directory already used it; this file was the sole holdout
-/// (27 of 28).
+/// and substitutes its absolute path at compile time.
+///
+/// This comment used to claim the opposite of the truth — that every other
+/// integration test already used `env!` and this file was "the sole holdout
+/// (27 of 28)". It was the only file that used it; the other 27 read the
+/// variable at RUN time and fell back to a hardcoded path. That inverted claim
+/// is why the defect survived #834: a reader had no reason to re-measure. See
+/// REQ-314, and `tests/binary_resolution.rs` for the check that now holds the
+/// invariant the sentence merely asserted.
 fn rivet_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_rivet"))
 }
