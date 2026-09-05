@@ -252,9 +252,9 @@ fn body_has_content(lines: &[&str], start_line: usize) -> bool {
         for ch in line.chars() {
             match ch {
                 '{' => {
-                    if started {
-                        content.push(ch);
-                    }
+                    // Braces are structure, not content: a body holding only
+                    // `{}` is still hollow. Excluding them also makes `depth`
+                    // load-bearing rather than decorative.
                     depth += 1;
                     started = true;
                 }
@@ -267,7 +267,6 @@ fn body_has_content(lines: &[&str], start_line: usize) -> bool {
                             .collect();
                         return !stripped.is_empty();
                     }
-                    content.push(ch);
                 }
                 _ => {
                     if started {
@@ -486,6 +485,48 @@ async fn async_flavoured() { let _ = 1; }
         );
         // Exactly the two real tests, so a mutant that widens acceptance shows.
         assert_eq!(names.len(), 2, "got {names:?}");
+    }
+
+    /// The attribute block above a `fn` is walked UPWARD past unrelated
+    /// attributes and comments. Each case here died to a surviving mutant:
+    /// walking the wrong direction, or refusing to step over a comment.
+    #[test]
+    fn test_attr_is_found_past_other_attributes_and_comments() {
+        // `#[test]` is NOT adjacent — the walk must continue past `#[ignore]`.
+        let ignored = "#[test]\n#[ignore]\nfn deferred() { let _ = 1; }\n";
+        assert!(
+            extract_test_fn_names(ignored).contains("deferred"),
+            "must step over a following attribute to find #[test]"
+        );
+
+        // A comment sits between the attribute and the fn.
+        let commented = "#[test]\n// why this test exists\nfn commented() { let _ = 1; }\n";
+        assert!(
+            extract_test_fn_names(commented).contains("commented"),
+            "must step over a comment between the attribute and the fn"
+        );
+
+        // A non-test attribute alone is still not a test.
+        let plain = "#[inline]\nfn not_a_test() { let _ = 1; }\n";
+        assert!(extract_test_fn_names(plain).is_empty());
+    }
+
+    /// Body emptiness is decided across the WHOLE body, so an empty nested
+    /// block early on must not end the scan. Braces are structure, not
+    /// content — a body holding only `{}` is hollow.
+    #[test]
+    fn body_content_is_judged_across_nested_blocks() {
+        let empty_block_then_work = "#[test]\nfn real() {\n    {}\n    assert!(1 + 1 == 2);\n}\n";
+        assert!(
+            extract_test_fn_names(empty_block_then_work).contains("real"),
+            "work after an empty nested block still counts"
+        );
+
+        let only_empty_block = "#[test]\nfn hollow_nested() {\n    {}\n}\n";
+        assert!(
+            extract_test_fn_names(only_empty_block).is_empty(),
+            "a body holding only an empty block is still hollow"
+        );
     }
 
     /// The old extractor keeps its over-approximating contract; only the
