@@ -8479,7 +8479,10 @@ fn collect_rust_fn_names(dir: &std::path::Path, out: &mut std::collections::BTre
             collect_rust_fn_names(&path, out);
         } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
             if let Ok(src) = std::fs::read_to_string(&path) {
-                out.extend(rivet_core::verification_evidence::extract_rust_fn_names(
+                // REQ-306: only real, non-empty `#[test]` fns count as
+                // evidence. The old extractor took every `fn`, so an empty
+                // stub or a same-named helper satisfied the gate.
+                out.extend(rivet_core::verification_evidence::extract_test_fn_names(
                     &src,
                 ));
             }
