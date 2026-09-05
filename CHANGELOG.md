@@ -5,6 +5,85 @@
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-05
+
+Every member of this release is a signal that lied. Not a wrong answer — a
+confident one, from a check that ran, reported, and measured less than its name
+claimed. Six were reported by people using rivet; three the tooling found on
+itself; one arrived from a fuzz run on a six-byte input.
+
+### Added
+- **`coverage.unmodelled-rules`** (REQ-320, #871) — a project may declare a
+  preset rule it does not model, with a **required** reason. Adopting `aspice`
+  for SWE.1/SWE.6 drags in SWE.2/3/4 rows a project may never intend to
+  satisfy, and an unmodelled level rendered as an empty row forever,
+  indistinguishable from one nobody got round to. The rule stays in the report,
+  annotated — hiding it is the failure this replaces. A declaration fails the
+  run when it goes **stale** (the rule acquires a population) or names a rule
+  that does not exist, because an exemption that outlives its reason is the
+  same defect as the 100% it replaced.
+- **`rivet commits` reports trailer/status drift** (REQ-315) — an artifact a
+  merged commit claims to implement, still sitting at `proposed`/`draft`. A
+  trailer is a link, not a state transition, so release readiness reported
+  shipped scope as unshipped; it happened five times in one cycle, caught only
+  by manual audit. Advisory by default, error under `--strict`, and
+  deliberately **not** auto-advancing: whether shipped code discharges every
+  acceptance clause is a judgement (REQ-308). On rivet's own history it found 30.
+
+### Fixed
+- **`check verification-evidence` was satisfiable by the stub it exists to
+  catch** (REQ-306 / REQ-295, #807) — it asserted only that a function of that
+  *name* existed somewhere, so an empty `#[test] fn x() {}` passed, and so did a
+  non-test helper sharing the name. The old extractor documented this
+  over-approximation as "the SAFE direction… can only suppress a false error,
+  never invent one". That is not the safe direction: a check that can only
+  under-report is a check you cannot fail. Evidence now requires a test-family
+  attribute **and** a non-empty body.
+- **`schema validate` reported false errors and could not fail** (REQ-322,
+  #876) — `required-backlink` was checked against forward link-type names, so
+  two rules in the shipped `safety-case` preset were reported as unknown. Worse,
+  the command printed `Result: 2 error(s)` and exited 0 regardless, so it could
+  not gate anything — very likely why the false positives survived to ship.
+- **The rowan YAML parser silently dropped every document after the first**
+  (REQ-321) — found by the `yaml_footguns` fuzz target from a six-byte input. A
+  source declaring two artifacts returned one with no diagnostic, while the
+  serde path rejected the same input: two parsers disagreeing, which is the one
+  thing rivet cannot afford. The CLI was unaffected. Fixed by making them agree,
+  not by adding multi-document support.
+- **`coverage --tests` skipped shell scripts entirely** (REQ-319, #870) — the
+  identical `# rivet: verifies REQ-X` comment was read from Python and not from
+  shell, because `detect_language` had no `sh` entry. Not every falsifiable
+  check is a unit test, and a requirement whose only evidence is a CI shell gate
+  could not reach `verified` by any honest route. Shell scripts and
+  shebang-detected extensionless gates are now scanned.
+- **27 of 28 integration tests resolved the rivet binary at run time**
+  (REQ-314) — falling back to a hardcoded `target/debug/rivet` that ignores
+  `CARGO_TARGET_DIR`. Under nextest with a custom target dir: 2315 tests run,
+  391 failed. CI could never have caught it and, after the fix, still could not
+  catch a regression — CI does not set `CARGO_TARGET_DIR`, so the wrong lookup
+  resolved by luck. A source-scanning guard holds the invariant instead.
+- **CI stalls and failures are classified rather than guessed** (REQ-317 /
+  REQ-316) — the liveness probe's own diagnose hint told readers to run a
+  **repo**-scope runner query that returns 0 on a healthy org-registered pool
+  and can never say otherwise. It reported a duration alone, so hosted
+  starvation and a dead pool produced identical alerts, and it counted queue age
+  on runs that had already completed. A job killed by a fleet restart reports
+  `failure` with no failed step, which renders identically to a broken test and
+  had already produced one published misattribution. Both are now classifiers
+  with fixtures, run in CI. A fifth failure mode is covered: label-partitioned
+  saturation, where the pool reads a third idle while every job for the label in
+  demand queues.
+
+### Known residuals
+- `alternate-backlinks` link types are not validated at all — a check that does
+  not fire rather than one that fires wrongly.
+- Full per-target command resolution for `verification-evidence` is not
+  implemented; matching is tighter but still not command-reachability.
+- The root cause of the self-hosted fleet restarts was found by the
+  infrastructure maintainer (`needrestart` under `unattended-upgrades`) and the
+  fix is deployed, but suppression of a real restart is not yet demonstrated —
+  tracked as REQ-323, scoped to the next release.
+
 ## [0.35.0] - 2026-08-27
 
 The friction round. Every issue a human reported this cycle is fixed here —

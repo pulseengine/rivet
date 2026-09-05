@@ -8458,3 +8458,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-05T00:00:00Z
+  - id: REQ-324
+    type: requirement
+    title: "The mutation gate reports mutants in #[cfg(kani)] code that no test it runs can ever kill"
+    status: proposed
+    description: "Found on PR #893 while shipping REQ-320. The PR-diff mutation gate reported one survivor: rivet-core/src/proofs.rs:209, replacing the proof harness proof_coverage_percentage_bounds with unit. That module is gated behind `#[cfg(kani)]` at line 9, so `cargo test` never compiles it, and the gate runs `cargo mutants -- --lib`. No test the gate executes can observe the mutation, so the finding is unkillable by construction — it appeared only because the PR touched the file to add a struct field. This is the same defect class as the release it was found in: a gate that reports something nothing can act on trains its readers to ignore it, and the next real survivor in that report costs nothing to dismiss. Two candidate fixes. Exclude cfg-gated modules from the mutants scope, either via an `--exclude` argument in the workflow or a mutants.toml, which is cheap and honest about what the gate covers. Or run a separate mutation pass under `cargo kani`, which is the thorough answer and almost certainly not worth its runtime for four proof harnesses. Prefer the first. Note that the same file has already caused one real incident in the other direction: a struct field added without updating the cfg(kani) literal broke the Kani proofs, and the resulting CI signal was written off as flake six times, so the file needs to stay visible to SOMETHING even if the mutation gate stops reporting on it."
+    release: v0.37.0
+    tags: [ci, weak-green, mutation-testing]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-05T00:00:00Z
