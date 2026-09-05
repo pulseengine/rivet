@@ -10509,3 +10509,95 @@ fn check_verification_evidence_rejects_hollow_and_non_test_names() {
         "must exit non-zero when a step's evidence is hollow"
     );
 }
+
+/// REQ-320 (#871 part 2): a project may declare a preset rule as one it does
+/// not model, and that declaration must FAIL when it stops being true.
+///
+/// Adopting `aspice` for SWE.1/SWE.6 drags in SWE.2/3/4 rows a project may
+/// never intend to satisfy. Before this there was nowhere to say so, and an
+/// unmodelled level rendered as an empty row forever — indistinguishable from
+/// one someone forgot.
+///
+/// The staleness half is the point. An exemption that outlives its reason is
+/// the same defect as the 100% it replaced: a number that stopped meaning what
+/// it says. So a declared-unmodelled rule that acquires a population is an
+/// ERROR, not a quiet re-inclusion.
+///
+/// rivet: verifies REQ-320
+#[test]
+fn coverage_declares_unmodelled_rules_and_fails_when_stale() {
+    let write_project = |dir: &std::path::Path, declared: &str| {
+        std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+        std::fs::write(
+            dir.join("rivet.yaml"),
+            format!(
+                "project:\n  name: p\n  schemas: [common, dev]\n\
+                 sources:\n  - path: artifacts\n    format: generic-yaml\n\
+                 coverage:\n  unmodelled-rules:\n    - rule: {declared}\n      \
+                 reason: modelled in a parallel spine, by design\n"
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("artifacts/a.yaml"),
+            "artifacts:\n  \
+             - id: REQ-001\n    type: requirement\n    title: t\n    status: draft\n",
+        )
+        .unwrap();
+    };
+    let run = |dir: &std::path::Path| {
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                dir.to_str().unwrap(),
+                "coverage",
+                "--format",
+                "json",
+            ])
+            .output()
+            .expect("coverage");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (out.status.success(), text)
+    };
+
+    // ── Happy path: `decision-justification` has an empty population in this
+    // fixture (no design-decision artifacts), which is exactly the case the
+    // requirement is about — an unmodelled level, not a forgotten one.
+    let tmp_ok = tempfile::tempdir().expect("temp dir");
+    write_project(tmp_ok.path(), "decision-justification");
+    let (ok, text) = run(tmp_ok.path());
+    assert!(
+        text.contains("decision-justification"),
+        "a declared rule must still be NAMED, not dropped — a hidden rule is \
+         the failure this replaces; got:\n{text}"
+    );
+    assert!(
+        text.contains("unmodelled"),
+        "the rule must be marked as declared-unmodelled so a reader can tell it \
+         from an empty population nobody claimed; got:\n{text}"
+    );
+    assert!(
+        ok,
+        "a truthful declaration must not fail the run; got:\n{text}"
+    );
+
+    // ── Stale: `requirement-verification` HAS a population here (REQ-001), so
+    // declaring it unmodelled is a claim contradicted by the artifacts.
+    let tmp_stale = tempfile::tempdir().expect("temp dir");
+    write_project(tmp_stale.path(), "requirement-verification");
+    let (stale_ok, stale_text) = run(tmp_stale.path());
+    assert!(
+        stale_text.contains("stale") || stale_text.contains("no longer"),
+        "a declaration contradicted by a real population must say so; \
+         got:\n{stale_text}"
+    );
+    assert!(
+        !stale_ok,
+        "a stale unmodelled declaration must FAIL — an exemption that outlives \
+         its reason is the defect it replaced; got:\n{stale_text}"
+    );
+}

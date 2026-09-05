@@ -77,6 +77,11 @@ pub struct CoverageEntry {
     /// declaration.
     #[serde(default)]
     pub exempt: usize,
+    /// Set when the project declares it does not model this rule (REQ-320).
+    /// Carries the declared reason. The entry stays in the report — a hidden
+    /// rule is the failure this replaces, not the fix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmodelled: Option<String>,
     /// Ids of the exempt sources, so a report can name them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exempt_ids: Vec<String>,
@@ -395,6 +400,7 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
         entries.push(CoverageEntry {
             exempt,
             exempt_ids,
+            unmodelled: None,
             rule_name: rule.name.clone(),
             description: rule.description.clone(),
             source_type: rule.source_type.clone(),
@@ -465,9 +471,145 @@ fn terminates_at_external_anchor(
 
 // ── Tests ────────────────────────────────────────────────────────────────
 
+/// A declaration in `coverage.unmodelled-rules` that does not hold.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnmodelledProblem {
+    /// The declared rule name.
+    pub rule: String,
+    /// What is wrong with the declaration.
+    pub kind: UnmodelledProblemKind,
+    /// Reader-facing explanation.
+    pub message: String,
+}
+
+/// Why a declaration fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UnmodelledProblemKind {
+    /// The rule now has source artifacts, so the project DOES model it.
+    Stale,
+    /// No such rule in the active schemas — a typo declares nothing.
+    UnknownRule,
+}
+
+/// Annotate `report` with the project's unmodelled-rule declarations and
+/// return every declaration that does not hold (REQ-320).
+///
+/// Additive rather than a parameter on [`compute_coverage`], whose signature is
+/// public.
+///
+/// Two failure kinds, and both matter for the same reason. A STALE declaration
+/// is one the artifacts now contradict: the project said it does not model this
+/// and then modelled it. An exemption that outlives its reason is the same
+/// defect as the 100% it replaced — a number that stopped meaning what it says.
+/// An UNKNOWN rule is a declaration that never applied to anything; silently
+/// ignoring a typo would let a project believe it had declared something.
+pub fn mark_unmodelled(
+    report: &mut CoverageReport,
+    declared: &[crate::model::UnmodelledRule],
+) -> Vec<UnmodelledProblem> {
+    let mut problems = Vec::new();
+    for d in declared {
+        match report.entries.iter_mut().find(|e| e.rule_name == d.rule) {
+            None => problems.push(UnmodelledProblem {
+                rule: d.rule.clone(),
+                kind: UnmodelledProblemKind::UnknownRule,
+                message: format!(
+                    "declared unmodelled but no rule named '{}' exists in the active schemas",
+                    d.rule
+                ),
+            }),
+            Some(entry) => {
+                if entry.total > 0 {
+                    problems.push(UnmodelledProblem {
+                        rule: d.rule.clone(),
+                        kind: UnmodelledProblemKind::Stale,
+                        message: format!(
+                            "declared unmodelled ({}) but {} source artifact(s) now match it — \
+                             the declaration is stale and no longer describes this project",
+                            d.reason, entry.total
+                        ),
+                    });
+                }
+                entry.unmodelled = Some(d.reason.clone());
+            }
+        }
+    }
+    problems
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry(name: &str, total: usize) -> CoverageEntry {
+        CoverageEntry {
+            rule_name: name.into(),
+            description: String::new(),
+            source_type: "requirement".into(),
+            link_type: "verifies".into(),
+            direction: CoverageDirection::Backward,
+            target_types: vec![],
+            covered: 0,
+            exempt: 0,
+            exempt_ids: vec![],
+            unmodelled: None,
+            external_boundary: 0,
+            external_boundary_ids: vec![],
+            total,
+            uncovered_ids: vec![],
+        }
+    }
+
+    fn decl(rule: &str) -> crate::model::UnmodelledRule {
+        crate::model::UnmodelledRule {
+            rule: rule.into(),
+            reason: "modelled in a parallel spine".into(),
+        }
+    }
+
+    /// A truthful declaration annotates the rule and keeps it in the report.
+    ///
+    /// rivet: verifies REQ-320
+    #[test]
+    fn unmodelled_declaration_annotates_without_hiding() {
+        let mut r = CoverageReport {
+            entries: vec![entry("unmodelled-one", 0), entry("other", 3)],
+        };
+        let problems = mark_unmodelled(&mut r, &[decl("unmodelled-one")]);
+        assert!(problems.is_empty(), "got {problems:?}");
+        assert_eq!(r.entries.len(), 2, "the rule must NOT be dropped");
+        assert!(r.entries[0].unmodelled.is_some());
+        assert!(r.entries[1].unmodelled.is_none(), "only the declared rule");
+    }
+
+    /// A declaration the artifacts contradict is stale and must be reported.
+    ///
+    /// rivet: verifies REQ-320
+    #[test]
+    fn unmodelled_declaration_goes_stale_when_population_appears() {
+        let mut r = CoverageReport {
+            entries: vec![entry("now-modelled", 4)],
+        };
+        let problems = mark_unmodelled(&mut r, &[decl("now-modelled")]);
+        assert_eq!(problems.len(), 1, "got {problems:?}");
+        assert_eq!(problems[0].kind, UnmodelledProblemKind::Stale);
+        assert!(problems[0].message.contains('4'), "name the count");
+    }
+
+    /// A typo declares nothing; silently ignoring it would let a project
+    /// believe it had declared something.
+    ///
+    /// rivet: verifies REQ-320
+    #[test]
+    fn unmodelled_declaration_naming_no_rule_is_reported() {
+        let mut r = CoverageReport {
+            entries: vec![entry("real-rule", 0)],
+        };
+        let problems = mark_unmodelled(&mut r, &[decl("typo-rule")]);
+        assert_eq!(problems.len(), 1, "got {problems:?}");
+        assert_eq!(problems[0].kind, UnmodelledProblemKind::UnknownRule);
+    }
     use crate::schema::{Severity, TraceabilityRule};
     use crate::test_helpers::{artifact_with_links, minimal_artifact, minimal_schema};
 
@@ -981,6 +1123,7 @@ mod tests {
         CoverageEntry {
             exempt: 0,
             exempt_ids: Vec::new(),
+            unmodelled: None,
             rule_name: rule.into(),
             description: String::new(),
             source_type: source.into(),
