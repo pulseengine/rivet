@@ -232,6 +232,11 @@ jobs:
       # cost) so a broken guard fails PRs early.
       - name: Compliance report size-guard tests (#671)
         run: bash .github/actions/compliance/verify_archive_size_test.sh
+      # REQ-316 / REQ-317: the CI-signal classifiers. They are shell, so they
+      # run here rather than in a compile job — and they must RUN somewhere, or
+      # they are documentation rather than a gate.
+      - name: CI-diagnose classifier tests (REQ-316, REQ-317)
+        run: bash tools/ci-diagnose/diagnose_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its

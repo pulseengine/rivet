@@ -43,6 +43,7 @@ jobs:
   liveness:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
       - name: Probe runner pool and queued runs
         id: probe
         env:
@@ -70,6 +71,10 @@ jobs:
           queued=$(gh api "repos/$REPO/actions/runs?status=queued&per_page=100" 2>/dev/null || echo '{}')
           oldest_age=0
           oldest_id=""
+          # REQ-317 defect 3: `status=queued` returns runs that have since
+          # COMPLETED, and #867 reported "queued 177m — runners are not picking
+          # up jobs" for a run that was cancelled and was never going to start.
+          # Filter on the run's own status, not on the query that produced it.
           while read -r id created; do
             [ -n "$id" ] || continue
             age=$(( (now - $(date -u -d "$created" +%s)) / 60 ))
@@ -77,10 +82,34 @@ jobs:
               oldest_age=$age
               oldest_id=$id
             fi
-          done < <(jq -r '.workflow_runs[]? | "\(.id) \(.created_at)"' <<<"$queued")
+          done < <(jq -r '.workflow_runs[]? | select(.status != "completed") | "\(.id) \(.created_at)"' <<<"$queued")
           echo "oldest queued run: id=${oldest_id:-none} age=${oldest_age}m (threshold ${threshold}m)"
           if [ "$oldest_age" -gt "$threshold" ]; then
-            problems+=("Run ${oldest_id} has been queued ${oldest_age}m (> ${threshold}m) — runners are not picking up jobs.")
+            # REQ-317 defects 1 and 2: a duration alone does not name a cause,
+            # and the guidance built on it sent readers to count self-hosted
+            # runners even when every queued job was `ubuntu-latest` — capacity
+            # the runners API cannot see at any scope. Classify from the LABELS
+            # of the still-queued jobs plus PER-LABEL idle counts.
+            . tools/ci-diagnose/diagnose.sh
+            qjobs=$(gh api "repos/$REPO/actions/runs/${oldest_id}/jobs" --paginate \
+                      --jq '[.jobs[] | select(.status == "queued") | {name, labels}]' 2>/dev/null || echo '[]')
+            allr=$(gh api "orgs/${REPO%%/*}/actions/runners" --paginate 2>/dev/null || echo '{"runners":[]}')
+            mode=$(classify_stall "$allr" "$qjobs")
+            echo "stall mode: $mode"
+            labels=$(jq -r '[.[] | "\(.name) [\(.labels | join(","))]"] | join("; ")' <<<"$qjobs")
+            case "$mode" in
+              hosted-starved)
+                problems+=("Run ${oldest_id} queued ${oldest_age}m — GITHUB-HOSTED starvation. Every queued job is \`ubuntu-latest\`; the self-hosted pool is irrelevant here and hosted capacity appears in the runners API at NO scope. Queued: ${labels}") ;;
+              pool-offline)
+                problems+=("Run ${oldest_id} queued ${oldest_age}m — the self-hosted pool is OFFLINE (0 runners online). Queued: ${labels}") ;;
+              label-saturated)
+                idle=$(jq -r '[.runners[] | select(.status=="online" and .busy==false) | [.labels[].name] | join(",")] | group_by(.) | map("\(length)x \(.[0])") | join("; ")' <<<"$allr")
+                problems+=("Run ${oldest_id} queued ${oldest_age}m — no IDLE runner carries the labels these jobs need. A global online/busy count does not show this. Queued: ${labels} | idle by label: ${idle:-none}") ;;
+              capacity-available)
+                problems+=("Run ${oldest_id} queued ${oldest_age}m although capable runners are idle — scheduling delay or a job-level dependency, NOT a capacity problem. Queued: ${labels}") ;;
+              *)
+                problems+=("Run ${oldest_id} queued ${oldest_age}m with no queued jobs left — likely already resolved.") ;;
+            esac
           fi
 
           # --- Result --------------------------------------------------------
@@ -112,7 +141,17 @@ jobs:
           ${SUMMARY}
 
           This issue auto-updates on each probe and auto-closes when the pool recovers.
-          Diagnose: \`gh api repos/${REPO}/actions/runners --jq .total_count\` (0 = pool offline).
+          Diagnose (the classification above already did this):
+          \`\`\`bash
+          # runners are registered at the ORG. Repo scope returns 0 on a
+          # perfectly healthy pool and can never say otherwise — the hint this
+          # alert used to print was itself the trap (REQ-317).
+          gh api orgs/${REPO%%/*}/actions/runners --paginate \\
+            --jq '[.runners[]|select(.status=="online" and .busy==false)|[.labels[].name]|join(",")]|group_by(.)|map("\(length)x \(.[0])")'
+          # ... and compare against the LABELS of what is still queued:
+          gh api repos/${REPO}/actions/runs/RUN_ID/jobs \\
+            --jq '.jobs[]|select(.status=="queued")|"\(.name) [\(.labels|join(","))]"'
+          \`\`\`
           Probe run: ${RUN_URL}
           EOF
           )
