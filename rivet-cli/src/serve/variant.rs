@@ -393,6 +393,7 @@ mod tests {
 
     fn empty_cfg() -> ProjectConfig {
         ProjectConfig {
+            coverage: None,
             project: ProjectMetadata {
                 name: "t".into(),
                 version: None,

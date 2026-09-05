@@ -1053,6 +1053,7 @@ mod tests {
             commits: None,
             release: None,
             externals: None,
+            coverage: None,
             baselines: None,
             docs_check: None,
         }

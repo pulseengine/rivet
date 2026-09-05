@@ -1127,6 +1127,28 @@ pub struct ReleaseConfig {
     pub require: Option<String>,
 }
 
+/// Project-level coverage configuration (REQ-320).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CoverageConfig {
+    /// Rules the project declares it does not model.
+    #[serde(default, rename = "unmodelled-rules")]
+    pub unmodelled_rules: Vec<UnmodelledRule>,
+}
+
+/// A rule a project declares out of scope, with the reason it is out of scope.
+///
+/// The reason is REQUIRED. A declaration without one is indistinguishable from
+/// suppressing an inconvenient row, which is the thing this must not become.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct UnmodelledRule {
+    /// Rule name, as it appears in `rivet coverage`.
+    pub rule: String,
+    /// Why this project does not model it.
+    pub reason: String,
+}
+
 /// Project configuration loaded from `rivet.yaml`.
 ///
 /// #808 uses a soft-warn (not `deny_unknown_fields`) for unknown
@@ -1159,6 +1181,14 @@ pub struct ProjectConfig {
     /// External project dependencies for cross-repo linking.
     #[serde(default)]
     pub externals: Option<BTreeMap<String, ExternalProject>>,
+    /// Rules this project deliberately does not model (REQ-320, #871).
+    ///
+    /// Adopting a preset for part of its scope drags in the rest of its rules,
+    /// and an unmodelled level then renders as an empty row forever —
+    /// indistinguishable from one nobody got round to. This is where a project
+    /// says which rows are absent BY INTENT.
+    #[serde(default)]
+    pub coverage: Option<CoverageConfig>,
     /// Named baselines for scoped validation and coverage.
     /// Order matters: earlier baselines are cumulatively included in later ones.
     #[serde(default)]

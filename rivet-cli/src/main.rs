@@ -8882,7 +8882,17 @@ fn cmd_coverage(
         graph = LinkGraph::build(&store, &schema);
     }
 
-    let report = coverage::compute_coverage(&store, &schema, &graph);
+    let mut report = coverage::compute_coverage(&store, &schema, &graph);
+
+    // REQ-320 (#871 part 2): apply the project's unmodelled-rule declarations.
+    // The rules STAY in the report — hiding them is the failure this replaces.
+    // A declaration that no longer holds is an error: an exemption that
+    // outlives its reason is the same defect as the 100% it replaced.
+    let unmodelled_problems = match ctx.config.coverage.as_ref() {
+        Some(cov_cfg) => coverage::mark_unmodelled(&mut report, &cov_cfg.unmodelled_rules),
+        None => Vec::new(),
+    };
+    let report = report;
 
     // #808: distinguish "no artifacts to score" (n/a) from "100%
     // coverage." A rule with total=0 emits `null` for both percentages;
@@ -8916,6 +8926,10 @@ fn cmd_coverage(
                     "percentage": pct_or_null(empty, e.percentage()),
                     "accounted_percentage": pct_or_null(empty, e.accounted_percentage()),
                     "uncovered_ids": e.uncovered_ids,
+                    // REQ-320: present only when the project declared it, so a
+                    // reader can tell an unmodelled level from an empty
+                    // population nobody claimed.
+                    "unmodelled": e.unmodelled,
                 })
             })
             .collect();
@@ -8971,6 +8985,11 @@ fn cmd_coverage(
                 "fail_under": threshold,
                 "passed": passed,
             });
+        }
+        // REQ-320: a declaration that no longer holds is reported, named, and
+        // fails the run.
+        if !unmodelled_problems.is_empty() {
+            output["unmodelled_problems"] = serde_json::json!(unmodelled_problems);
         }
         println!("{}", serde_json::to_string_pretty(&output).unwrap());
     } else {
@@ -9145,6 +9164,19 @@ fn cmd_coverage(
         eprintln!(
             "\nerror: coverage has no scoring artifacts — every rule scored n/a (0/0) (--strict-empty)"
         );
+        return Ok(false);
+    }
+
+    // REQ-320: a declaration in `coverage.unmodelled-rules` that no longer
+    // holds fails the run. Reported before --fail-under so the specific
+    // diagnostic is not masked by a generic threshold message, and always —
+    // not only under a flag — because a stale exemption silently shrinks the
+    // denominator every later number is computed against.
+    if !unmodelled_problems.is_empty() {
+        eprintln!("\nerror: unmodelled-rule declaration(s) no longer hold:");
+        for p in &unmodelled_problems {
+            eprintln!("  {}: {}", p.rule, p.message);
+        }
         return Ok(false);
     }
 

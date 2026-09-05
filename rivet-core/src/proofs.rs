@@ -223,6 +223,7 @@ mod proofs {
             covered,
             exempt: 0,
             exempt_ids: vec![],
+            unmodelled: None,
             total,
             uncovered_ids: vec![],
             external_boundary: 0,
