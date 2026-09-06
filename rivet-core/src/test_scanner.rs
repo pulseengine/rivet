@@ -247,15 +247,15 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
                 return Some(name.as_str().to_string());
             }
         }
-        // Only these may separate a marker from what it annotates.
-        let is_separator = t.is_empty()
-            || t.starts_with("#[")
-            || t.starts_with("#!")
-            || t.starts_with("//")
-            || t.starts_with('#')
-            || t.starts_with("@")
-            || t.starts_with("pub ")
-            || t.starts_with("async ");
+        // Only these may separate a marker from what it annotates. Kept
+        // deliberately small: `#` already covers Rust attributes (`#[test]`),
+        // inner attributes (`#!`) and shell/Python comments, so spelling those
+        // separately added disjuncts no test could distinguish. `pub` and
+        // `async` were also dropped — they sit on the `fn` line itself, which
+        // the pattern above already matches, so as separate lines they never
+        // occur.
+        let is_separator =
+            t.is_empty() || t.starts_with('#') || t.starts_with("//") || t.starts_with('@');
         if !is_separator {
             break;
         }
@@ -921,6 +921,63 @@ fn the_test_that_actually_verifies_it() { assert!(true); }
         assert_eq!(
             m.test_name, "the_test_that_actually_verifies_it",
             "marker must name the test BELOW it, not the one above"
+        );
+    }
+
+    /// Each kind of line allowed to sit between a marker and the item it
+    /// annotates gets its own case. One fixture using `#[test]` left every
+    /// other disjunct untestable, which the mutation gate found as five
+    /// surviving `||`-to-`&&` mutants.
+    ///
+    /// rivet: verifies REQ-326
+    #[test]
+    fn every_separator_kind_is_crossed() {
+        let cases: &[(&str, &str, &str)] = &[
+            (
+                "blank line",
+                "// rivet: verifies REQ-S-001\n\n#[test]\nfn after_blank() {}\n",
+                "after_blank",
+            ),
+            (
+                "// comment",
+                "// rivet: verifies REQ-S-002\n// explanatory note\n#[test]\nfn after_slash_comment() {}\n",
+                "after_slash_comment",
+            ),
+            (
+                "# attribute",
+                "// rivet: verifies REQ-S-003\n#[allow(dead_code)]\n#[test]\nfn after_attribute() {}\n",
+                "after_attribute",
+            ),
+            (
+                "@ decorator",
+                "// rivet: verifies REQ-S-004\n@decorator\nfn after_decorator() {}\n",
+                "after_decorator",
+            ),
+        ];
+        for (what, src, want) in cases {
+            let tmp = tempfile::tempdir().expect("temp dir");
+            let d = tmp.path();
+            std::fs::write(d.join("t.rs"), src).unwrap();
+            let found = scan_source_files(&[d.to_path_buf()], &default_patterns());
+            let m = found.first().unwrap_or_else(|| panic!("{what}: no marker"));
+            assert_eq!(&m.test_name.as_str(), want, "{what}: wrong attribution");
+        }
+
+        // And a line that is NOT a separator must stop the walk, so the
+        // backward scan wins. Without this the cases above would pass with an
+        // unbounded walk.
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let d = tmp.path();
+        std::fs::write(
+            d.join("t.rs"),
+            "#[test]\nfn enclosing() {\n    // rivet: verifies REQ-S-005\n    let x = 1;\n}\n#[test]\nfn later() {}\n",
+        )
+        .unwrap();
+        let found = scan_source_files(&[d.to_path_buf()], &default_patterns());
+        assert_eq!(
+            found.first().map(|m| m.test_name.as_str()),
+            Some("enclosing"),
+            "real code must stop the forward walk"
         );
     }
 
