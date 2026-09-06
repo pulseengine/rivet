@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788623735541,
+  "lastUpdate": 1788687718850,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "c8eb44fa3dfcf6412a7cc6a145979020bd41e055",
-          "message": "ci(fmt): check every workspace in the Format gate, not just the root (#769) (#774)\n\n`cargo fmt --all -- --check` at the repo root formats every member of\nTHE root workspace, not every crate in the repo. rivet has two\n[workspace] manifests (root + fuzz/) plus the standalone\ncompose-witness/ package (its own Cargo.lock, excluded from root), so\nthe Format gate has been vacuous for the fuzz workspace since it was\nadded. Live on HEAD before this change:\n\n    $ cargo fmt --all -- --check                            ; echo $?\n    0\n    $ cargo fmt --manifest-path fuzz/Cargo.toml --all -- --check ; echo $?\n    1\n    Diff in fuzz/examples/oracle_smoke.rs:44\n    Diff in fuzz/examples/oracle_smoke.rs:258\n    Diff in fuzz/fuzz_targets/artifact_ids.rs:38\n    Diff in fuzz/fuzz_targets/artifact_ids.rs:66\n    Diff in fuzz/fuzz_targets/cli_argv.rs:188\n    Diff in fuzz/fuzz_targets/yaml_footguns.rs (bonus — not in issue)\n\nFix: derive the workspace list from\n`grep -rl '^\\[workspace\\]' --include=Cargo.toml` and check each, so a\nnewly added nested workspace can't silently escape the gate. Also\ncovers the same-shape bug in scripts/pre-commit and scripts/install-hooks.sh\n(local convenience hooks — CI is still the real gate per REQ-051).\n\ncompose-witness/ is a standalone Wasm-component package that cargo fmt\ncan't traverse (its `bindings` module is generated at build time by\ncargo-component); rustfmt with skip_children handles it without a\nbuild.\n\nNegative control against a synthetic drift in fuzz/:\n- old gate: exit 0 (vacuous green)\n- new gate: exit 1 (drift caught)\n\nFixes: REQ-289\nRefs: #769\n\n\nClaude-Session: https://claude.ai/code/session_014NmwwtE8WWfcTLsfNNKfLC\n\nCo-authored-by: Claude <noreply@anthropic.com>",
-          "timestamp": "2026-08-06T08:59:14+02:00",
-          "tree_id": "891dc98b00d0c470f09fb284180ea22ec8fd080c",
-          "url": "https://github.com/pulseengine/rivet/commit/c8eb44fa3dfcf6412a7cc6a145979020bd41e055"
-        },
-        "date": 1786000455656,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 86253,
-            "range": "± 526",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 912480,
-            "range": "± 6561",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14060165,
-            "range": "± 1238650",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2197,
-            "range": "± 52",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26496,
-            "range": "± 112",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 384890,
-            "range": "± 1766",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1531452,
-            "range": "± 22725",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 162187,
-            "range": "± 1764",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1959544,
-            "range": "± 16518",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28821433,
-            "range": "± 1949665",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 470055,
-            "range": "± 6796",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15284579,
-            "range": "± 342669",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1242674615,
-            "range": "± 15555472",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4484,
-            "range": "± 31",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59434,
-            "range": "± 311",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 789056,
-            "range": "± 7851",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 59905,
-            "range": "± 288",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 704685,
-            "range": "± 4336",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 10664234,
-            "range": "± 882698",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1155,
-            "range": "± 21",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14478,
-            "range": "± 120",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 327546,
-            "range": "± 2462",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24411,
-            "range": "± 314",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 171485,
-            "range": "± 2538",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1580745,
-            "range": "± 19631",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1342903,
             "range": "± 21462",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d811babd6755dd89e87a1f7be2cb9bcff7bdbd6",
+          "message": "plan(v0.37): file REQ-325 — the stall classifier names the wrong cause (#896)\n\nArtifact only. Found while watching the v0.36.0 release run, in the code REQ-317\nshipped a day earlier: `create-release` sat queued behind its `needs` while the\ncompliance build ran, and `classify_stall` returned `hosted-starved` because\nevery queued job carried `ubuntu-latest` and the classifier reasons only about\nlabels and capacity. The fleet was almost entirely idle (online=12, busy=1) with\nspare capacity under every label. Nothing was starved; the job was waiting its\nturn.\n\nThat is the same defect REQ-317 exists to fix, in its own fix — a diagnostic\nconfidently naming a cause it cannot observe — and it is reachable rather than\ntheoretical, since the probe fires past thirty minutes and this release's builds\nlegitimately take that long.\n\nRefs: REQ-325, REQ-317\nTrace: skip",
+          "timestamp": "2026-09-06T10:26:43+02:00",
+          "tree_id": "744c3af9bbb3df9b9aed6c87a96cd46445b544f5",
+          "url": "https://github.com/pulseengine/rivet/commit/4d811babd6755dd89e87a1f7be2cb9bcff7bdbd6"
+        },
+        "date": 1788687717923,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85559,
+            "range": "± 869",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 899004,
+            "range": "± 3884",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12832572,
+            "range": "± 554784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2283,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 23533,
+            "range": "± 67",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 348560,
+            "range": "± 7316",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1515309,
+            "range": "± 37920",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 161347,
+            "range": "± 913",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1896005,
+            "range": "± 13916",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 24466706,
+            "range": "± 828132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 489689,
+            "range": "± 2033",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 15578478,
+            "range": "± 268863",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1242988284,
+            "range": "± 15046290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4236,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 63407,
+            "range": "± 345",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 790741,
+            "range": "± 1416",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 57850,
+            "range": "± 230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 691618,
+            "range": "± 2619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7837241,
+            "range": "± 607959",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1195,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15418,
+            "range": "± 155",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 360169,
+            "range": "± 6628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23335,
+            "range": "± 115",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 159010,
+            "range": "± 1026",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1484035,
+            "range": "± 19500",
             "unit": "ns/iter"
           }
         ]
