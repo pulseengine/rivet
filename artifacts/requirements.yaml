@@ -8480,3 +8480,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-06T00:00:00Z
+  - id: REQ-326
+    type: requirement
+    title: "coverage --tests attributed every marker to the PRECEDING function, so each evidence line named the wrong test (#892, #787)"
+    status: verified
+    description: "Reported twice, from meld (#892) and earlier as #787. `find_enclosing_function` only ever scanned BACKWARDS from the marker line, so a marker written in the conventional place — on the line above the `#[test]` it annotates — was attributed to the function before it. Reproduced in three lines: a marker above `the_test_that_actually_verifies_it` reported `first_unrelated_test`. The damage is narrow and bad. The requirement mapping stays correct, so `rivet verify` still advances and coverage percentages are unaffected; what is wrong is the EVIDENCE LINE, which names a different test than the one that verifies the requirement. For a reader auditing the right-hand side of the V that line is the entire product — following it leads to a test that does not test the thing. Fixed by walking FORWARD first, but only across lines that may legitimately separate a marker from the item it annotates: attributes, comments and blank lines. The bound is what makes it correct rather than merely different — a marker INSIDE a function body has real code on the next line, so the walk stops and the existing backward scan returns the enclosing function, which is the shell convention REQ-319 relies on. Negative-controlled both ways at --lib scope: removing the forward walk reddens one test (the reported bug returns) and making the walk unbounded reddens two (the in-body case and the shell case), so the boundedness is load-bearing rather than decorative. Found while fixing it: the insertion of these tests spliced a doc comment into the middle of REQ-319 own doc comment, orphaning its marker onto the wrong function. cargo test and clippy both passed — doc comments concatenate harmlessly — and only `rivet coverage --tests` caught it, by reporting REQ-319 against the wrong test. The tool found a defect the compiler could not see."
+    release: v0.37.0
+    tags: [traceability, evidence, coverage]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-06T00:00:00Z
