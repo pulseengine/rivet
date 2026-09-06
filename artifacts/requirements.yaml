@@ -8469,3 +8469,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-05T00:00:00Z
+  - id: REQ-325
+    type: requirement
+    title: "classify_stall reports a dependency-blocked job as a capacity stall, naming the wrong cause"
+    status: proposed
+    description: "Found on 2026-09-06 while watching the v0.36.0 release run, in the code REQ-317 shipped one day earlier. `create-release` sat queued behind its `needs` while `build-compliance` was still running, and `classify_stall` returned `hosted-starved` — because every queued job carried the `ubuntu-latest` label and the classifier reasons only about labels and runner capacity. The fleet was almost entirely idle at the time: online=12, busy=1, with spare capacity under every label. Nothing was starved; the job was simply waiting its turn. This is the same defect REQ-317 exists to fix, in its own fix: a diagnostic that confidently names a cause it cannot actually observe. It is reachable in production rather than theoretical, because the probe fires on a run queued longer than thirty minutes and this release's builds legitimately take that long — a slow release would have auto-filed an issue blaming GitHub-hosted capacity for a dependency wait. The fixture set had no dependency-blocked case, which is why it passed. Fix: a queued job whose `needs` are not all complete is not a stall at all and must be excluded before any capacity reasoning runs; the GitHub jobs API does not expose `needs`, so the workflow definition has to be read, or the classifier must take the set of still-incomplete job names and treat a queued job as blocked when the run has any incomplete job that is not itself queued for capacity. Prefer reading the workflow. Add `dependency-blocked` as an outcome so the distinction is visible rather than folded into `capacity-available`."
+    release: v0.37.0
+    tags: [ci, weak-green, self-inflicted]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-06T00:00:00Z
