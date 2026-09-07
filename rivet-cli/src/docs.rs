@@ -351,6 +351,63 @@ const TOPICS: &[DocTopic] = &[
         category: "Reference",
         content: TOOL_QUALIFICATION_DOC,
     },
+    // ── Bridge schemas (#895) ──────────────────────────────────────────
+    //
+    // A bridge fires coverage rules whose definitions were previously
+    // unreachable via `rivet docs schema/<name>`, so a user could see
+    // (for example) `constraint-has-requirement 0/11` fail and had no way
+    // to learn what link + target types would satisfy it. Each bridge
+    // ships as its own topic; the raw YAML is the source of truth for the
+    // `source-type` / `required-link` / `target-types` / severity that
+    // `rivet coverage` reports.
+    DocTopic {
+        slug: "schema/bridges",
+        title: "Bridge schemas — cross-domain traceability rules (overview)",
+        category: "Bridges",
+        content: BRIDGES_OVERVIEW_DOC,
+    },
+    DocTopic {
+        slug: "schema/eu-ai-act-aspice.bridge",
+        title: "Bridge: EU AI Act ↔ Automotive SPICE",
+        category: "Bridges",
+        content: embedded::BRIDGE_EU_AI_ACT_ASPICE,
+    },
+    DocTopic {
+        slug: "schema/eu-ai-act-stpa.bridge",
+        title: "Bridge: EU AI Act ↔ STPA",
+        category: "Bridges",
+        content: embedded::BRIDGE_EU_AI_ACT_STPA,
+    },
+    DocTopic {
+        slug: "schema/iso-8800-stpa.bridge",
+        title: "Bridge: ISO/PAS 8800 ↔ STPA / STPA-for-AI",
+        category: "Bridges",
+        content: embedded::BRIDGE_ISO_8800_STPA,
+    },
+    DocTopic {
+        slug: "schema/safety-case-eu-ai-act.bridge",
+        title: "Bridge: GSN Safety Case ↔ EU AI Act",
+        category: "Bridges",
+        content: embedded::BRIDGE_SAFETY_CASE_EU_AI_ACT,
+    },
+    DocTopic {
+        slug: "schema/safety-case-stpa.bridge",
+        title: "Bridge: GSN Safety Case ↔ STPA",
+        category: "Bridges",
+        content: embedded::BRIDGE_SAFETY_CASE_STPA,
+    },
+    DocTopic {
+        slug: "schema/sotif-stpa.bridge",
+        title: "Bridge: SOTIF (ISO 21448) ↔ STPA",
+        category: "Bridges",
+        content: embedded::BRIDGE_SOTIF_STPA,
+    },
+    DocTopic {
+        slug: "schema/stpa-dev.bridge",
+        title: "Bridge: STPA ↔ Development (dev schema)",
+        category: "Bridges",
+        content: embedded::BRIDGE_STPA_DEV,
+    },
 ];
 
 const ORDEAL_CERTIFICATE_DOC: &str = concat!(
@@ -366,6 +423,72 @@ const ORDEAL_CERTIFICATE_DOC: &str = concat!(
 
 const TOOL_QUALIFICATION_DOC: &str =
     include_str!("../../docs/design/tool-qualification-dossier.md");
+
+// Registered bridge topics — the source of truth for the overview and
+// for the `all_registered_bridges_have_a_topic` test. Kept in sync with
+// `rivet_core::embedded::BRIDGE_SCHEMAS`.
+#[cfg(test)]
+const BRIDGE_TOPIC_SLUGS: &[&str] = &[
+    "schema/eu-ai-act-aspice.bridge",
+    "schema/eu-ai-act-stpa.bridge",
+    "schema/iso-8800-stpa.bridge",
+    "schema/safety-case-eu-ai-act.bridge",
+    "schema/safety-case-stpa.bridge",
+    "schema/sotif-stpa.bridge",
+    "schema/stpa-dev.bridge",
+];
+
+const BRIDGES_OVERVIEW_DOC: &str = r#"# Bridge schemas
+
+Bridge schemas add **cross-domain traceability rules** that fire when two
+or more base schemas are loaded together. They are auto-discovered: when
+every schema in a bridge's `extends` list is present, the bridge is
+loaded and its rules run under `rivet coverage` and `rivet validate`.
+
+Each bridge is documented on its own topic — open the one whose failing
+rule you're chasing to see the `source-type`, `required-link`, and
+`target-types` the rule needs.
+
+## Built-in bridges
+
+| Topic | Extends | Purpose |
+|-------|---------|---------|
+| `schema/eu-ai-act-aspice.bridge`    | `eu-ai-act` + `aspice`         | EU AI Act obligations ↔ ASPICE processes |
+| `schema/eu-ai-act-stpa.bridge`      | `eu-ai-act` + `stpa`           | EU AI Act risks ↔ STPA hazards/losses |
+| `schema/iso-8800-stpa.bridge`       | `iso-pas-8800` + `stpa` + `stpa-ai` | ISO/PAS 8800 AI safety ↔ STPA |
+| `schema/safety-case-eu-ai-act.bridge` | `safety-case` + `eu-ai-act`   | GSN safety case ↔ EU AI Act evidence |
+| `schema/safety-case-stpa.bridge`    | `safety-case` + `stpa`         | GSN safety case ↔ STPA hazards & constraints |
+| `schema/sotif-stpa.bridge`          | `sotif` + `stpa`               | SOTIF (ISO 21448) ↔ STPA |
+| `schema/stpa-dev.bridge`            | `stpa` + `dev`                 | STPA constraints ↔ dev requirements |
+
+## Reading a failing coverage row
+
+If `rivet coverage` shows a row like:
+
+```
+constraint-has-requirement             system-constraint      0/11
+```
+
+that rule comes from a bridge whose extends list matches your loaded
+schemas — most commonly `schema/stpa-dev.bridge` (which declares
+`constraint-has-requirement` on `system-constraint`). Open the bridge
+topic to see the exact link type it wants and which target types satisfy
+it:
+
+```
+rivet docs schema/stpa-dev.bridge
+```
+
+The default `rivet coverage` text output also prints the required-link
+inline under each failing row, so `grep <rule-name>` on the output
+returns both the failing tally and its remediation info.
+
+## See also
+
+- `rivet docs coverage` — coverage output format and flags.
+- `rivet docs schema/common` — how link types, backlinks, and
+  `required-link` / `required-backlink` semantics work.
+"#;
 
 /// Return all registered topic slugs in declaration order.
 ///
@@ -3864,3 +3987,82 @@ aggregator (sub-issue 3) where policy lives.
   ignored.
 - `--matrix` and `--tests` are mutually exclusive.
 "#;
+
+#[cfg(test)]
+mod bridge_topic_tests {
+    // #895: bridge-schema coverage rules were reachable via `rivet coverage`
+    // long before their definitions were reachable via `rivet docs`. These
+    // tests pin the bridge topic set to the embedded bridge registry so a
+    // new bridge cannot ship without a discoverable topic — the failure
+    // mode that made this issue.
+    use super::*;
+    use rivet_core::embedded::BRIDGE_SCHEMAS;
+
+    #[test]
+    fn every_embedded_bridge_has_a_docs_topic() {
+        let slugs: Vec<&str> = topic_slugs();
+        for bridge in BRIDGE_SCHEMAS {
+            let expected = format!("schema/{}", bridge.filename);
+            assert!(
+                slugs.contains(&expected.as_str()),
+                "bridge `{}` has no `rivet docs` topic (expected slug `{}`). \
+                 Add a DocTopic entry in TOPICS under the `Bridges` category \
+                 (see #895).",
+                bridge.filename,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn bridge_topic_slug_registry_matches_topics() {
+        // Cross-check the local slug list against actual TOPICS registration
+        // so a topic added but forgotten in the overview stays visible.
+        let slugs: Vec<&str> = topic_slugs();
+        for slug in BRIDGE_TOPIC_SLUGS {
+            assert!(
+                slugs.contains(slug),
+                "BRIDGE_TOPIC_SLUGS lists `{slug}` but TOPICS does not",
+            );
+        }
+    }
+
+    #[test]
+    fn bridge_topics_are_categorized_as_bridges() {
+        // The AC asks bridges appear under a `bridges/` group in the topic
+        // list. Categories drive that grouping, so every bridge topic must
+        // carry the `Bridges` category — not `Schemas`.
+        for topic in TOPICS {
+            if topic.slug.starts_with("schema/") && topic.slug.ends_with(".bridge") {
+                assert_eq!(
+                    topic.category, "Bridges",
+                    "bridge topic `{}` must live under the `Bridges` category, got `{}`",
+                    topic.slug, topic.category
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bridge_topic_content_carries_the_coverage_rule_shape() {
+        // The user-visible payload of a bridge topic is the coverage-rule
+        // definitions — a failing `rivet coverage` row needs the rule's
+        // source-type / required-link / target-types to be actionable. This
+        // pins that the topic body exposes those keys verbatim, so
+        // `rivet docs schema/<bridge>` cannot regress into a title-only page.
+        let stpa_dev = topic_content("schema/stpa-dev.bridge")
+            .expect("schema/stpa-dev.bridge topic must be registered");
+        assert!(
+            stpa_dev.contains("traceability-rules:"),
+            "stpa-dev bridge topic must expose traceability-rules; got:\n{stpa_dev}"
+        );
+        assert!(
+            stpa_dev.contains("source-type"),
+            "stpa-dev bridge topic must name source-type; got:\n{stpa_dev}"
+        );
+        assert!(
+            stpa_dev.contains("required-backlink") || stpa_dev.contains("required-link"),
+            "stpa-dev bridge topic must name the required link; got:\n{stpa_dev}"
+        );
+    }
+}

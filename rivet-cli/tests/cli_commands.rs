@@ -163,6 +163,71 @@ fn docs_list_json() {
     );
 }
 
+/// `rivet docs --list` groups the bridge schemas under a "Bridges" heading
+/// so a user chasing a failing coverage rule can find its bridge without
+/// knowing the bridge filename in advance (#895).
+#[test]
+fn docs_list_groups_bridges() {
+    let output = Command::new(rivet_bin())
+        .args(["docs", "--list"])
+        .output()
+        .expect("failed to execute rivet docs --list");
+
+    assert!(output.status.success(), "rivet docs --list must exit 0");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Bridges"),
+        "topic list must include a 'Bridges' group, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("schema/stpa-dev.bridge"),
+        "topic list must include 'schema/stpa-dev.bridge', got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("schema/safety-case-stpa.bridge"),
+        "topic list must include 'schema/safety-case-stpa.bridge', got:\n{stdout}"
+    );
+}
+
+/// `rivet docs schema/stpa-dev.bridge` shows the bridge's coverage-rule
+/// definitions so a failing rule row is actionable (#895).
+#[test]
+fn docs_show_bridge_topic() {
+    let output = Command::new(rivet_bin())
+        .args(["docs", "schema/stpa-dev.bridge"])
+        .output()
+        .expect("failed to execute rivet docs schema/stpa-dev.bridge");
+
+    assert!(
+        output.status.success(),
+        "rivet docs schema/stpa-dev.bridge must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // The topic must expose the shape a user needs to satisfy a failing
+    // rule: name + source-type + required-link + target-types. Match on
+    // the YAML keys the bridge file uses, not on a rendered format that
+    // could be reshuffled without notice.
+    assert!(
+        stdout.contains("traceability-rules:"),
+        "bridge topic must include traceability-rules block; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("constraint-has-requirement"),
+        "bridge topic must name the constraint-has-requirement rule; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("source-type") && stdout.contains("system-constraint"),
+        "bridge topic must expose the rule's source-type; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("required-backlink") || stdout.contains("required-link"),
+        "bridge topic must expose the required link; got:\n{stdout}"
+    );
+}
+
 /// `rivet docs --grep verification --format json` produces valid JSON with matches.
 #[test]
 fn docs_grep_json() {
@@ -3103,6 +3168,84 @@ fn get_yaml_produces_valid_output() {
 }
 
 // ── rivet coverage ─────────────────────────────────────────────────────
+
+/// `rivet coverage` text output renders each failing (non-100%) rule with
+/// its `required-link` + `target-types` immediately under the row, so a
+/// user chasing a red row can see how to satisfy it without opening the
+/// schema. The remediation line repeats the rule name so a plain
+/// `rivet coverage 2>&1 | grep <rule>` returns both the tally and the
+/// link definition (#895).
+#[test]
+fn coverage_text_prints_required_link_for_failing_rules() {
+    let output = Command::new(rivet_bin())
+        .args(["--project", project_root().to_str().unwrap(), "coverage"])
+        .output()
+        .expect("failed to execute rivet coverage");
+
+    assert!(
+        output.status.success(),
+        "rivet coverage must exit 0. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Find at least one failing (non-100%) rule row and confirm a
+    // remediation line follows it. Skip empty-scope rules (`n/a`) — the
+    // AC exempts those.
+    let lines: Vec<&str> = stdout.lines().collect();
+    let mut found_failing_row_with_hint = false;
+    for i in 0..lines.len() {
+        let row = lines[i];
+        // A rule row starts with two spaces, then the rule name column.
+        // It's a "failing" row when it contains a percentage line ending
+        // in `%` that is neither `100.0%` nor `n/a`. The remediation
+        // line starts with four spaces followed by the rule name.
+        if !row.starts_with("  ") || row.starts_with("    ") {
+            continue;
+        }
+        if !row.contains('%') || row.contains("100.0%") || row.contains("n/a") {
+            continue;
+        }
+        let rule_name_col = row.split_whitespace().next().unwrap_or("");
+        if rule_name_col.is_empty() {
+            continue;
+        }
+        // Look for a follow-up line of the shape `    <rule-name> needs:`.
+        if let Some(next) = lines.get(i + 1) {
+            if next.starts_with("    ") && next.contains(rule_name_col) && next.contains("needs:") {
+                found_failing_row_with_hint = true;
+                break;
+            }
+        }
+    }
+    assert!(
+        found_failing_row_with_hint,
+        "no failing rule row was followed by a `<rule> needs: …` \
+         remediation line. Coverage output was:\n{stdout}"
+    );
+
+    // Regression pin: grepping on the rule name must return the
+    // remediation info (either on the same line or a directly-adjacent
+    // one that also carries the rule name).
+    let requirement_coverage_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.contains("requirement-coverage"))
+        .collect();
+    if requirement_coverage_lines
+        .iter()
+        .any(|l| l.contains('%') && !l.contains("100.0%") && !l.contains("n/a"))
+    {
+        assert!(
+            requirement_coverage_lines
+                .iter()
+                .any(|l| l.contains("needs:")),
+            "a failing `requirement-coverage` row is present but no adjacent \
+             `needs:` remediation line was found in the grep view: \n{}",
+            requirement_coverage_lines.join("\n")
+        );
+    }
+}
 
 /// `rivet coverage --format json` produces valid JSON with overall and rules.
 #[test]
