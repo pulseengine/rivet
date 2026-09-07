@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788687718850,
+  "lastUpdate": 1788766541468,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "0d42ce1cf8024c63b83ca4e95045a661123ce6fd",
-          "message": "ci(traceability): wire rivet check verification-evidence + kill weak-green empty scan (#770) (#776)\n\nCloses #770. Second implementation slice of v0.33 \"gate potency\" (after #773\nmutation-gate). Two fixes for a single defect: the anti-rot check for stale\n`cargo test <filter>` names existed but was unenforced.\n\n## The unenforced anti-rot check\n\n`rivet check verification-evidence` (REQ-236, hardened again in REQ-280 for\nnextest filtersets) catches the class spar#388 found — verification steps whose\n`fields.steps[].run: \"cargo test … <filter>\"` names a test that no longer\nexists. `cargo test <renamed_or_typod>` exits 0 with \"0 passed\", so the\nrequirement keeps its `verified` status. rivet BUILT the checker for exactly\nthat shape, and `grep verification-evidence .github/workflows/*.yml` returned\nnothing — no workflow ran it. Protection was opt-in-by-memory.\n\n## The weak-green empty-scan case\n\nOn a project whose steps carry no `cargo test <filter>` runs (or has no steps\nat all), the pre-fix text was:\n\n    ✓ verification-evidence: 0 named-test step(s) all reference an existing test.\n\nA checkmark over nothing checked — the same weak-green shape the check exists\nto kill.\n\n## Fixes\n\n- `.github/workflows/ci.yml`: add `rivet check verification-evidence` to the\n  Traceability job (REQ-051 dogfooding gate) and to `traceability-hosted-fallback`\n  (REQ-272 / #509 SPOF mitigation), so a self-hosted-pool outage still leaves\n  main gated on the anti-rot check. Reuses the release binary the neighboring\n  `validate` step already built — no extra compile cost.\n- `rivet-cli/src/main.rs cmd_check_verification_evidence`: an `empty_scan`\n  branch renders as `⚠ verification-evidence: no named-test step(s) found to\n  check — nothing was verified.` (with a plain sentence explaining what the\n  check would look for), instead of the ✓ / \"all reference an existing test\"\n  shape. JSON output gains `empty_scan: true` in that branch so a machine can\n  distinguish the vacuous case from a genuine pass. Exit code stays 0 (nothing\n  was violated) — this preserves the pre-fix contract used by callers and by\n  the new CI step.\n\nTwo regression tests in `rivet-cli/tests/cli_commands.rs` pin both directions:\n\n- `check_verification_evidence_empty_scan_reads_as_vacuous_not_pass` — a\n  project whose only steps are `make lint` / `pytest -k` (parsed by neither\n  the cargo nor the nextest branch) produces stdout that does NOT contain the\n  ✓ / \"all reference an existing test\" shape and JSON with `empty_scan: true`.\n- `check_verification_evidence_non_empty_scan_still_reads_as_pass` — a real\n  `cargo test -p p a_real_test` step still renders as ✓ /\n  \"all reference an existing test\" and JSON `empty_scan: false`. Guards the\n  new branch against shadowing the genuine-pass shape.\n\n## Acceptance criteria (from the issue body → how satisfied)\n\n- [x] **Add `rivet check verification-evidence` to the Traceability job in\n  `ci.yml` (it is fast and needs no compile beyond the binary already built\n  there).** Added as `Gate 1c` in the `traceability` job, after `validate`\n  and `variant + binding validation`, before `commits`. Mirrored on\n  `traceability-hosted-fallback` so the SPOF mitigation (REQ-272 / #509)\n  covers it too.\n- [x] **Reword the zero-steps case so an empty scan does not render as a\n  pass.** New `empty_scan` branch in `cmd_check_verification_evidence`:\n  distinct `⚠` prefix, explicit \"nothing was verified\" wording, `empty_scan:\n  true` in JSON. Pinned by regression tests in both directions.\n\nREQ-290 flipped `proposed → implemented`. CHANGELOG entry added under\n`[Unreleased]`. No behavior change to callers depending on missing-test\ndetection (exit code / JSON shape preserved except for the added\n`empty_scan` field).\n\n## Test plan\n\n- [x] `cargo test -p rivet-cli --test cli_commands check_verification_evidence`\n      — 4/4 pass (2 pre-existing + 2 new)\n- [x] `cargo test -p rivet-cli --test cli_commands` — 162/162 pass\n- [x] `cargo fmt --all -- --check` clean\n- [x] `cargo clippy -p rivet-cli --tests -- -D warnings` clean (only the\n      pre-existing MSRV note from `clippy.toml`)\n- [x] `./target/release/rivet check verification-evidence` on this repo —\n      renders as `⚠ … no named-test step(s) found to check` (this repo has no\n      such steps today), exits 0 → the new CI step is green on HEAD\n- [x] `./target/release/rivet validate` on this repo — PASS (635 warnings,\n      unchanged; REQ-290 now shows in the \"no downstream artifacts\" set,\n      same shape as its neighbors)\n\n## What this PR is NOT\n\n- Not a change to the `missing` detection path — the same fn-name scanner runs\n  over the same artifact walk. Only the empty-scan render + the CI wiring\n  changed.\n- Not a change to the exit-code contract. An empty scan still exits 0. If a\n  future policy decision wants an empty scan to be RED (e.g. \"a project\n  claiming verification coverage MUST have at least one named-test step\"),\n  that is a separate REQ.\n- Not a fix for #771 (`changes` filter under-scoped) or #557 (crates.io\n  publishing). Same v0.33 slice, separate PRs.\n\nImplements: REQ-290\nFixes: REQ-290\nRefs: #770, REQ-236, REQ-280, REQ-272, REQ-051\n\n\nClaude-Session: https://claude.ai/code/session_01UD5As6pYghNkKHHZkiLyCG\n\nCo-authored-by: Claude <noreply@anthropic.com>",
-          "timestamp": "2026-08-06T08:59:20+02:00",
-          "tree_id": "5e054ed60e823d3b9da0e0b26fbb7984de1b979d",
-          "url": "https://github.com/pulseengine/rivet/commit/0d42ce1cf8024c63b83ca4e95045a661123ce6fd"
-        },
-        "date": 1786000517627,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85695,
-            "range": "± 3340",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 912524,
-            "range": "± 4411",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14716071,
-            "range": "± 994388",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2183,
-            "range": "± 37",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 27237,
-            "range": "± 395",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 378903,
-            "range": "± 5588",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 96,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1527604,
-            "range": "± 30494",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164069,
-            "range": "± 4893",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1965903,
-            "range": "± 12147",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 30628120,
-            "range": "± 2279443",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 469848,
-            "range": "± 4967",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15456198,
-            "range": "± 201540",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1240216114,
-            "range": "± 13116767",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4678,
-            "range": "± 57",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 64077,
-            "range": "± 397",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 804162,
-            "range": "± 13721",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60625,
-            "range": "± 325",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 686899,
-            "range": "± 21852",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8058852,
-            "range": "± 740843",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1147,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14139,
-            "range": "± 136",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 326351,
-            "range": "± 9521",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23784,
-            "range": "± 95",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 172541,
-            "range": "± 3997",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1592859,
-            "range": "± 19960",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1484035,
             "range": "± 19500",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "db10b7269ea0be69be44c221ac7e3b0595a0d51b",
+          "message": "fix(scanner): attribute a marker to the test it annotates (REQ-326, #892, #787) (#897)\n\n`find_enclosing_function` only ever scanned BACKWARDS, so a marker written in\nthe conventional place — on the line above the `#[test]` it annotates — was\nattributed to the function before it. Reported twice, from meld (#892) and\nearlier as #787.\n\nThe damage is narrow and bad: the requirement MAPPING stays correct, so verify\nstill advances and coverage percentages are unaffected. What is wrong is the\nEVIDENCE LINE, which names a different test than the one that verifies the\nrequirement — and for a reader auditing the right-hand side of the V, that line\nis the entire product. Following it leads to a test that does not test the thing.\n\nFixed by walking forward first, but only across lines that may legitimately\nseparate a marker from what it annotates. The bound is what makes it correct: a\nmarker inside a body has real code on the next line, so the walk stops and the\nbackward scan returns the enclosing function, which is the shell convention\nREQ-319 depends on.\n\nThe mutation gate then found five survivors in the separator predicate, and the\nhonest fix was deletion rather than more fixtures: three of eight disjuncts\ncould never change an outcome (`#[`, `#!` and `#` all start with '#') and two\ncould never be reached (`pub`, `async` sit on the fn line the pattern already\nmatches). Eight became four, each now individually killable.\n\nA mistake in the first commit is worth recording: inserting the tests spliced a\ndoc comment into the middle of REQ-319's, orphaning its marker onto the wrong\nfunction. cargo test and clippy both passed — doc comments concatenate\nharmlessly — and only `rivet coverage --tests` caught it. The tool found a defect\nthe compiler could not see.\n\nCloses #892. Closes #787.\n\nImplements: REQ-326\nVerifies: REQ-326",
+          "timestamp": "2026-09-07T08:56:54+02:00",
+          "tree_id": "f3095a2b6f60d29d0bd35d44eeebdae2bee51266",
+          "url": "https://github.com/pulseengine/rivet/commit/db10b7269ea0be69be44c221ac7e3b0595a0d51b"
+        },
+        "date": 1788766539917,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 87075,
+            "range": "± 1300",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 928673,
+            "range": "± 4383",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14738885,
+            "range": "± 457447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2216,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25505,
+            "range": "± 144",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 374204,
+            "range": "± 6639",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1533619,
+            "range": "± 12353",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 160230,
+            "range": "± 940",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1932016,
+            "range": "± 19973",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 38752041,
+            "range": "± 1704431",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 516886,
+            "range": "± 3487",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 18287714,
+            "range": "± 1357271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1389592507,
+            "range": "± 13204092",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4378,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59005,
+            "range": "± 418",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 779250,
+            "range": "± 8857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 63414,
+            "range": "± 154",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 696900,
+            "range": "± 3762",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 11072002,
+            "range": "± 492529",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1082,
+            "range": "± 54",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14863,
+            "range": "± 180",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 336251,
+            "range": "± 3612",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22819,
+            "range": "± 270",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 158436,
+            "range": "± 696",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1492701,
+            "range": "± 22765",
             "unit": "ns/iter"
           }
         ]
