@@ -215,7 +215,54 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
             .ok()?,
     };
 
-    // Scan backwards from the marker line to find the nearest function declaration.
+    // #892 / #787: look FORWARD first, but only across lines that can
+    // legitimately sit between a marker and the item it annotates —
+    // attributes, comments and blank lines. A marker written in the
+    // conventional place
+    //
+    //     // rivet: verifies REQ-1
+    //     #[test]
+    //     fn the_test_it_annotates() { ... }
+    //
+    // used to be attributed to the function ABOVE it, because this function
+    // only ever scanned backwards. The requirement mapping stayed right, so
+    // `verify` still worked; the EVIDENCE LINE named the wrong test, which is
+    // the part a reader auditing the V actually depends on.
+    //
+    // The walk must be bounded rather than unconditional. A marker inside a
+    // body —
+    //
+    //     fn foo() {
+    //         // rivet: verifies REQ-1
+    //         assert!(...);
+    //     }
+    //
+    // has real code on the next line, so the forward walk stops there and the
+    // backward scan below correctly returns `foo`. Scanning forward without
+    // that stop would attribute it to whatever `fn` came next.
+    for line in lines.iter().skip(marker_line) {
+        let t = line.trim();
+        if let Some(caps) = fn_pattern.captures(line) {
+            if let Some(name) = caps.get(1) {
+                return Some(name.as_str().to_string());
+            }
+        }
+        // Only these may separate a marker from what it annotates. Kept
+        // deliberately small: `#` already covers Rust attributes (`#[test]`),
+        // inner attributes (`#!`) and shell/Python comments, so spelling those
+        // separately added disjuncts no test could distinguish. `pub` and
+        // `async` were also dropped — they sit on the `fn` line itself, which
+        // the pattern above already matches, so as separate lines they never
+        // occur.
+        let is_separator =
+            t.is_empty() || t.starts_with('#') || t.starts_with("//") || t.starts_with('@');
+        if !is_separator {
+            break;
+        }
+    }
+
+    // Scan backwards from the marker line to find the nearest function
+    // declaration — the marker-inside-a-body case.
     for i in (0..marker_line).rev() {
         if let Some(caps) = fn_pattern.captures(lines[i]) {
             if let Some(name) = caps.get(1) {
@@ -837,6 +884,136 @@ check_no_key_on_disk() {
             found.get("REQ-SH-001").map(String::as_str),
             Some("check_no_key_on_disk"),
             "shell marker not attributed to its enclosing function; got {found:?}"
+        );
+    }
+
+    /// A marker placed directly ABOVE a test must name that test, not the one
+    /// before it (#892, #787).
+    ///
+    /// `find_enclosing_function` only ever scanned backwards, so every marker
+    /// written in the conventional place — on the line above the `#[test]` it
+    /// annotates — was attributed to the PRECEDING function. The requirement
+    /// mapping stayed correct, so `verify` still worked; what was wrong is the
+    /// evidence line, which named a different test than the one that verifies
+    /// the requirement. For a reader auditing the V that is the whole value.
+    ///
+    /// rivet: verifies REQ-326
+    #[test]
+    fn marker_above_a_test_names_that_test() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let d = tmp.path();
+        std::fs::write(
+            d.join("t.rs"),
+            "#[test]
+fn first_unrelated_test() { assert!(true); }
+
+// rivet: verifies REQ-FWD-001
+#[test]
+fn the_test_that_actually_verifies_it() { assert!(true); }
+",
+        )
+        .unwrap();
+        let found = scan_source_files(&[d.to_path_buf()], &default_patterns());
+        let m = found
+            .iter()
+            .find(|m| m.target_id == "REQ-FWD-001")
+            .expect("marker found");
+        assert_eq!(
+            m.test_name, "the_test_that_actually_verifies_it",
+            "marker must name the test BELOW it, not the one above"
+        );
+    }
+
+    /// Each kind of line allowed to sit between a marker and the item it
+    /// annotates gets its own case. One fixture using `#[test]` left every
+    /// other disjunct untestable, which the mutation gate found as five
+    /// surviving `||`-to-`&&` mutants.
+    ///
+    /// rivet: verifies REQ-326
+    #[test]
+    fn every_separator_kind_is_crossed() {
+        let cases: &[(&str, &str, &str)] = &[
+            (
+                "blank line",
+                "// rivet: verifies REQ-S-001\n\n#[test]\nfn after_blank() {}\n",
+                "after_blank",
+            ),
+            (
+                "// comment",
+                "// rivet: verifies REQ-S-002\n// explanatory note\n#[test]\nfn after_slash_comment() {}\n",
+                "after_slash_comment",
+            ),
+            (
+                "# attribute",
+                "// rivet: verifies REQ-S-003\n#[allow(dead_code)]\n#[test]\nfn after_attribute() {}\n",
+                "after_attribute",
+            ),
+            (
+                "@ decorator",
+                "// rivet: verifies REQ-S-004\n@decorator\nfn after_decorator() {}\n",
+                "after_decorator",
+            ),
+        ];
+        for (what, src, want) in cases {
+            let tmp = tempfile::tempdir().expect("temp dir");
+            let d = tmp.path();
+            std::fs::write(d.join("t.rs"), src).unwrap();
+            let found = scan_source_files(&[d.to_path_buf()], &default_patterns());
+            let m = found.first().unwrap_or_else(|| panic!("{what}: no marker"));
+            assert_eq!(&m.test_name.as_str(), want, "{what}: wrong attribution");
+        }
+
+        // And a line that is NOT a separator must stop the walk, so the
+        // backward scan wins. Without this the cases above would pass with an
+        // unbounded walk.
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let d = tmp.path();
+        std::fs::write(
+            d.join("t.rs"),
+            "#[test]\nfn enclosing() {\n    // rivet: verifies REQ-S-005\n    let x = 1;\n}\n#[test]\nfn later() {}\n",
+        )
+        .unwrap();
+        let found = scan_source_files(&[d.to_path_buf()], &default_patterns());
+        assert_eq!(
+            found.first().map(|m| m.test_name.as_str()),
+            Some("enclosing"),
+            "real code must stop the forward walk"
+        );
+    }
+
+    /// A marker INSIDE a function body still names its enclosing function.
+    ///
+    /// This is what stops the fix from being "just look forward": scanning
+    /// forward unconditionally would attribute a marker inside `foo` to
+    /// whatever `fn` comes next. The forward walk may only cross attributes,
+    /// comments and blank lines.
+    ///
+    /// rivet: verifies REQ-326
+    #[test]
+    fn marker_inside_a_body_still_names_its_enclosing_fn() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let d = tmp.path();
+        std::fs::write(
+            d.join("t.rs"),
+            "#[test]
+fn the_enclosing_test() {
+    // rivet: verifies REQ-IN-001
+    assert!(true);
+}
+
+#[test]
+fn a_later_test() { assert!(true); }
+",
+        )
+        .unwrap();
+        let found = scan_source_files(&[d.to_path_buf()], &default_patterns());
+        let m = found
+            .iter()
+            .find(|m| m.target_id == "REQ-IN-001")
+            .expect("marker found");
+        assert_eq!(
+            m.test_name, "the_enclosing_test",
+            "a marker inside a body must not be attributed to the NEXT fn"
         );
     }
 
