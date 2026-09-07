@@ -10601,3 +10601,205 @@ fn coverage_declares_unmodelled_rules_and_fails_when_stale() {
          its reason is the defect it replaced; got:\n{stale_text}"
     );
 }
+
+// ── #880: rivet add --id — the caller names the artifact ────────────────
+//
+// Without --id, `rivet add` picks the next number in some pre-existing series,
+// and title/tags/target-file/--field id= all fail to influence it. The issue
+// documents the workaround (hand-edit the id: line) as the exact thing the
+// project's own guidance forbids. --id closes the workaround: the caller
+// asserts the ID, and the tool validates shape and uniqueness before writing.
+
+fn write_min_project(dir: &std::path::Path) {
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: t\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("artifacts").join("r.yaml"),
+        "artifacts:\n  \
+         - id: REQ-PIN-001\n    type: requirement\n    title: seed\n    status: draft\n",
+    )
+    .unwrap();
+}
+
+/// #880 happy path: `--id REQ-DRV-GRAPH-001` is honored verbatim on a repo
+/// whose existing series is REQ-PIN-*, defeating the derived-ID surprise the
+/// issue documents.
+#[test]
+fn add_id_flag_honors_explicit_id() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    write_min_project(dir);
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "add",
+            "--type",
+            "requirement",
+            "--title",
+            "The assembler is released, or a layers repository has nothing to consume",
+            "--status",
+            "draft",
+            "--id",
+            "REQ-DRV-GRAPH-001",
+        ])
+        .output()
+        .expect("rivet add");
+    assert!(
+        out.status.success(),
+        "add --id must succeed on a well-formed unique id; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("REQ-DRV-GRAPH-001"),
+        "the printed id must be the caller's; got: {stdout}"
+    );
+    let yaml = std::fs::read_to_string(dir.join("artifacts").join("r.yaml")).unwrap();
+    assert!(
+        yaml.contains("id: REQ-DRV-GRAPH-001"),
+        "the file must carry the caller's id, not a derived one; got:\n{yaml}"
+    );
+    assert!(
+        !yaml.contains("REQ-PIN-002"),
+        "no next-in-series id must be picked when --id is given; got:\n{yaml}"
+    );
+}
+
+/// #880 uniqueness: --id collides with an existing artifact -> hard error,
+/// nothing written. Piggybacks on the existing validate_add uniqueness check
+/// so behavior stays consistent with a hand-edited duplicate.
+#[test]
+fn add_id_flag_rejects_duplicate_id() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    write_min_project(dir);
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "add",
+            "--type",
+            "requirement",
+            "--title",
+            "collides with the seed",
+            "--status",
+            "draft",
+            "--id",
+            "REQ-PIN-001",
+        ])
+        .output()
+        .expect("rivet add");
+    assert!(
+        !out.status.success(),
+        "duplicate --id must fail; stdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("already exists"),
+        "the error must name the uniqueness failure; got: {stderr}"
+    );
+    let yaml = std::fs::read_to_string(dir.join("artifacts").join("r.yaml")).unwrap();
+    let count = yaml.matches("REQ-PIN-001").count();
+    assert_eq!(
+        count, 1,
+        "no second block may be appended on rejection; got:\n{yaml}"
+    );
+}
+
+/// #880 shape: a lowercase, whitespace-containing, or ill-shaped id is refused
+/// up-front with a message a caller can act on. Bad-id inputs are grouped in
+/// one test so the shape contract is discoverable in one place.
+///
+/// Values are passed as `--id=VALUE` (equals form) because bare `--id -REQ-001`
+/// would be consumed by clap as an unknown short flag before our validator saw
+/// it. The equals form is the shape a caller reaches for once they hit that,
+/// so testing it is closer to the real recovery path anyway.
+#[test]
+fn add_id_flag_rejects_malformed_ids() {
+    let cases: &[(&str, &str)] = &[
+        ("REQ-drv-001", "invalid character"),
+        ("REQ 001", "invalid character"),
+        ("-REQ-001", "must not start or end with"),
+        ("REQ-001-", "must not start or end with"),
+        ("REQ--001", "must not"),
+        ("REQ", "numeric suffix"),
+        ("REQ-", "must not start or end with"),
+        ("-001", "must not start"),
+        ("001-002", "uppercase letter"),
+    ];
+    for (bad, needle) in cases {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let dir = tmp.path();
+        write_min_project(dir);
+
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                dir.to_str().unwrap(),
+                "add",
+                "--type",
+                "requirement",
+                "--title",
+                "shape check",
+                "--status",
+                "draft",
+                &format!("--id={bad}"),
+            ])
+            .output()
+            .expect("rivet add");
+        assert!(
+            !out.status.success(),
+            "malformed --id '{bad}' must fail; stdout: {}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(needle),
+            "malformed --id '{bad}' error must mention '{needle}'; got: {stderr}"
+        );
+    }
+}
+
+/// #880 default preserved: without --id, the derived-next-in-series behavior is
+/// unchanged. The regression guard here is that the shape check does not fire
+/// on the derived id — otherwise the flag would break every existing caller.
+#[test]
+fn add_without_id_still_derives_next_in_series() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    write_min_project(dir);
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "add",
+            "--type",
+            "requirement",
+            "--title",
+            "second seed",
+            "--status",
+            "draft",
+        ])
+        .output()
+        .expect("rivet add");
+    assert!(
+        out.status.success(),
+        "default add must still succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    assert_eq!(
+        stdout, "REQ-PIN-002",
+        "derived id must continue the existing series"
+    );
+}

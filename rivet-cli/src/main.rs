@@ -1140,6 +1140,16 @@ enum Command {
         #[arg(long)]
         title: String,
 
+        /// Choose the artifact ID explicitly (e.g. `REQ-DRV-GRAPH-001`). Must
+        /// match `PREFIX-NNN` shape (uppercase letters/digits, dash-separated
+        /// segments, ending with a numeric suffix) and be unique in the store.
+        /// When omitted, `rivet add` picks the next ID for the type — that
+        /// derivation ignores tags, title and target file, so a name that a
+        /// later reader would need to un-learn is one of the cases this flag
+        /// exists for (#880).
+        #[arg(long)]
+        id: Option<String>,
+
         /// Artifact description
         #[arg(long)]
         description: Option<String>,
@@ -2885,6 +2895,7 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Add {
             r#type,
             title,
+            id,
             description,
             status,
             tags,
@@ -2897,6 +2908,7 @@ fn run(cli: Cli) -> Result<bool> {
             &cli,
             r#type,
             title,
+            id.as_deref(),
             description.as_deref(),
             status,
             tags,
@@ -17277,12 +17289,59 @@ fn cmd_next_id(
     Ok(true)
 }
 
+/// #880: shape check for an explicitly-chosen artifact ID (`rivet add --id`).
+///
+/// Every ID in a rivet store is `PREFIX-NNN` — one or more uppercase
+/// alphanumeric segments separated by single dashes, ending with a purely
+/// numeric suffix (e.g. `REQ-001`, `REQ-DRV-GRAPH-001`, `FIND-DMA-SHM-CANONICAL-001`).
+/// Uniqueness is not checked here — `validate_add` does that against the store.
+fn validate_explicit_id(id: &str) -> Result<()> {
+    if id.is_empty() {
+        anyhow::bail!("--id must not be empty");
+    }
+    for c in id.chars() {
+        if !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-') {
+            anyhow::bail!(
+                "--id '{id}' has invalid character '{c}'. Use uppercase letters, digits, and dashes only (e.g. REQ-DRV-GRAPH-001)"
+            );
+        }
+    }
+    if id.starts_with('-') || id.ends_with('-') || id.contains("--") {
+        anyhow::bail!(
+            "--id '{id}' must not start or end with '-', or contain '--' (e.g. REQ-DRV-GRAPH-001)"
+        );
+    }
+    let Some(dash_pos) = id.rfind('-') else {
+        anyhow::bail!(
+            "--id '{id}' must have a PREFIX-NNN shape with a numeric suffix (e.g. REQ-DRV-GRAPH-001)"
+        );
+    };
+    let (prefix, suffix) = (&id[..dash_pos], &id[dash_pos + 1..]);
+    if prefix.is_empty() {
+        anyhow::bail!("--id '{id}' has an empty prefix; use PREFIX-NNN (e.g. REQ-DRV-GRAPH-001)");
+    }
+    if suffix.is_empty() || !suffix.chars().all(|c| c.is_ascii_digit()) {
+        anyhow::bail!(
+            "--id '{id}' must end with a numeric suffix after the last '-' (e.g. REQ-DRV-GRAPH-001)"
+        );
+    }
+    // A prefix must itself contain a letter so a caller cannot register a
+    // whole-digit "prefix" like "1-2" that would confuse next-id later.
+    if !prefix.chars().any(|c| c.is_ascii_uppercase()) {
+        anyhow::bail!(
+            "--id '{id}' prefix '{prefix}' must contain at least one uppercase letter (e.g. REQ-DRV-GRAPH-001)"
+        );
+    }
+    Ok(())
+}
+
 /// Add a new artifact to the project.
 #[allow(clippy::too_many_arguments)]
 fn cmd_add(
     cli: &Cli,
     artifact_type: &str,
     title: &str,
+    explicit_id: Option<&str>,
     description: Option<&str>,
     status: &str,
     tags: &[String],
@@ -17328,12 +17387,18 @@ fn cmd_add(
     ctx.ensure_no_parse_skips(cli, "add an artifact")?;
     let (store, schema) = (ctx.store, ctx.schema);
 
-    // Resolve prefix for the type
-    let prefix = mutate::prefix_for_type(artifact_type, &store);
-
-    // Generate ID (git-aware: never reissue an ID burned by an open branch or
-    // a reverted commit — #479).
-    let id = next_id_git_aware(&cli.project, &store, &prefix);
+    // #880: `--id` lets the caller name the artifact directly. Shape-validated
+    // here; uniqueness is validated below by `validate_add`. Without `--id`, we
+    // resolve the prefix for the type and pick the next number (git-aware:
+    // never reissue an ID burned by an open branch or a reverted commit —
+    // #479).
+    let id = if let Some(explicit) = explicit_id {
+        validate_explicit_id(explicit)?;
+        explicit.to_string()
+    } else {
+        let prefix = mutate::prefix_for_type(artifact_type, &store);
+        next_id_git_aware(&cli.project, &store, &prefix)
+    };
 
     // Build fields map
     let mut fields_map: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
