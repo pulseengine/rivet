@@ -9065,6 +9065,27 @@ fn cmd_coverage(
                     fmt_pct(empty, entry.percentage())
                 );
             }
+            // #895: for a failing (non-100%) rule, print the link the rule
+            // requires directly under the tally so the reader can act on
+            // it without opening the schema. The line repeats the rule
+            // name so a plain `grep <rule>` on the report also returns
+            // the remediation info. Empty-scope rules (0/0) and 100%
+            // rules are skipped — remediation isn't the question there.
+            if !empty && entry.percentage() < 100.0 {
+                let arrow = match entry.direction {
+                    rivet_core::coverage::CoverageDirection::Forward => "→",
+                    rivet_core::coverage::CoverageDirection::Backward => "←",
+                };
+                let targets = if entry.target_types.is_empty() {
+                    "(any)".to_string()
+                } else {
+                    format!("[{}]", entry.target_types.join(", "))
+                };
+                println!(
+                    "    {} needs: {} {} {}",
+                    entry.rule_name, entry.link_type, arrow, targets
+                );
+            }
         }
 
         // #848: name the declared exemptions rather than leaving them implicit.
