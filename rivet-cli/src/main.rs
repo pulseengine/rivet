@@ -9188,6 +9188,63 @@ fn cmd_coverage(
         }
     }
 
+    // #788 / REQ-329: plain coverage counts graph-level `verifies` backlinks.
+    // A marker-driven project has none, so this view reports 0% for the very
+    // requirements `coverage --tests` reports at 100% — and `rivet verify`
+    // accepts exactly those markers as sufficient evidence to advance a
+    // requirement. Two views of one evidence set, up to 100 points apart, with
+    // nothing telling a release gate it is reading the narrower one.
+    //
+    // Deliberately does NOT fold markers into the rule: that would silently
+    // move a number `--fail-under` gates on. It makes the gap visible instead,
+    // which is what this tool already does for empty scopes (#808), unchecked
+    // cross-refs (#854) and unmodelled rules (REQ-320).
+    if format != "json" {
+        // Only rules that want `verifies` evidence. A marker IS a `verifies`
+        // claim and says nothing about, say, a `satisfies` backlink — scoping
+        // this to every rule would announce marker evidence for rules a marker
+        // can never satisfy, which is the wrong-cause failure this note exists
+        // to prevent. Caught by a test, after a negative control failed to
+        // redden: an unscoped filter reported 2 where the rule reported 1.
+        let uncovered: std::collections::BTreeSet<&str> = report
+            .entries
+            .iter()
+            .filter(|e| e.link_type == "verifies")
+            .flat_map(|e| e.uncovered_ids.iter().map(String::as_str))
+            .collect();
+        if !uncovered.is_empty() {
+            let paths = default_marker_scan_paths(&cli.project);
+            let markers = rivet_core::test_scanner::scan_source_files(
+                &paths,
+                &rivet_core::test_scanner::default_patterns(),
+            );
+            let with_marker: std::collections::BTreeSet<&str> = markers
+                .iter()
+                .map(|m| m.target_id.as_str())
+                .filter(|id| uncovered.contains(id))
+                .collect();
+            if !with_marker.is_empty() {
+                println!();
+                println!(
+                    "  i  {} requirement(s) counted as uncovered here DO carry source-marker",
+                    with_marker.len()
+                );
+                println!(
+                    "     evidence, which these link rules cannot see. `rivet verify` accepts it."
+                );
+                println!("     Run `rivet coverage --tests` for the marker view.");
+                let mut shown: Vec<&str> = with_marker.into_iter().collect();
+                shown.sort_unstable();
+                for id in shown.iter().take(5) {
+                    println!("       {id}");
+                }
+                if shown.len() > 5 {
+                    println!("       … and {} more", shown.len() - 5);
+                }
+            }
+        }
+    }
+
     // #808: `--strict-empty` fails the run when the project loaded
     // zero scoring artifacts — the state where the legacy overall_coverage
     // would report 100% and slip the gate. Runs BEFORE --fail-under so
