@@ -371,6 +371,24 @@ const TOOL_QUALIFICATION_DOC: &str =
 ///
 /// Used by the subcommand-coverage gate to cross-reference clap subcommand
 /// paths against documented topics.
+/// Bridge schemas as doc topics, derived from the embedded registry (#895).
+///
+/// `rivet coverage` reports bridge traceability rules, so a user can watch one
+/// fail; before this they could not look it up, and nothing told them which
+/// link type or target types would satisfy it. Derived from
+/// `BRIDGE_SCHEMAS` rather than listed by hand so a bridge added later cannot
+/// ship undocumented.
+///
+/// Deliberately NOT folded into [`topic_bodies`]: that feeds the embedded-doc
+/// invariants in `rivet docs check`, which scan markdown prose. Bridge content
+/// is schema YAML and would be judged against rules written for prose.
+fn bridge_topics() -> Vec<(String, &'static str)> {
+    rivet_core::embedded::BRIDGE_SCHEMAS
+        .iter()
+        .map(|b| (format!("schema/{}", b.filename), b.content))
+        .collect()
+}
+
 pub fn topic_slugs() -> Vec<&'static str> {
     TOPICS.iter().map(|t| t.slug).collect()
 }
@@ -388,7 +406,7 @@ pub fn topic_bodies() -> Vec<(&'static str, &'static str)> {
 /// True iff a topic with this slug is registered.
 #[allow(dead_code)]
 pub fn has_topic(slug: &str) -> bool {
-    TOPICS.iter().any(|t| t.slug == slug)
+    TOPICS.iter().any(|t| t.slug == slug) || bridge_topics().iter().any(|(s, _)| s == slug)
 }
 
 /// Return the raw content body of a topic, or `None` if no topic with
@@ -397,7 +415,16 @@ pub fn has_topic(slug: &str) -> bool {
 /// Used by the subcommand-coverage gate's umbrella rule to verify that a
 /// parent topic actually mentions the child subcommand by name.
 pub fn topic_content(slug: &str) -> Option<&'static str> {
-    TOPICS.iter().find(|t| t.slug == slug).map(|t| t.content)
+    TOPICS
+        .iter()
+        .find(|t| t.slug == slug)
+        .map(|t| t.content)
+        .or_else(|| {
+            bridge_topics()
+                .into_iter()
+                .find(|(s, _)| s == slug)
+                .map(|(_, c)| c)
+        })
 }
 
 // ── Embedded documentation ──────────────────────────────────────────────
@@ -1440,7 +1467,7 @@ const CYBERSECURITY_DOC: &str = concat!(
 /// List all available documentation topics.
 pub fn list_topics(format: &str) -> String {
     if format == "json" {
-        let items: Vec<serde_json::Value> = TOPICS
+        let mut items: Vec<serde_json::Value> = TOPICS
             .iter()
             .map(|t| {
                 serde_json::json!({
@@ -1450,6 +1477,13 @@ pub fn list_topics(format: &str) -> String {
                 })
             })
             .collect();
+        items.extend(bridge_topics().into_iter().map(|(slug, _)| {
+            serde_json::json!({
+                "slug": slug,
+                "title": "Bridge schema",
+                "category": "Schemas",
+            })
+        }));
         return serde_json::to_string_pretty(&serde_json::json!({
             "command": "docs-list",
             "topics": items,
@@ -1476,6 +1510,16 @@ pub fn list_topics(format: &str) -> String {
     out.push_str("  rivet docs <topic>          Show a topic\n");
     out.push_str("  rivet docs --grep <pat>     Search across all docs\n");
     out.push_str("  rivet docs <topic> -f json  Machine-readable output\n");
+    // #895: bridge schemas are reported by `coverage` but were absent here,
+    // so nobody could find the topic even once it was servable.
+    let bridges = bridge_topics();
+    if !bridges.is_empty() {
+        out.push_str("\n  Schemas (bridges)\n");
+        for (slug, _) in &bridges {
+            out.push_str(&format!("    {slug:<38} cross-domain traceability rules\n"));
+        }
+    }
+
     out
 }
 
@@ -1543,6 +1587,19 @@ pub fn list_embeds(format: &str) -> String {
 
 /// Show a specific topic.
 pub fn show_topic(slug: &str, format: &str) -> String {
+    if let Some((bslug, content)) = bridge_topics().into_iter().find(|(s, _)| s == slug) {
+        if format == "json" {
+            return serde_json::to_string_pretty(&serde_json::json!({
+                "command": "docs-show",
+                "topic": bslug,
+                "title": "Bridge schema",
+                "category": "Schemas",
+                "content": content,
+            }))
+            .unwrap_or_default();
+        }
+        return format!("# {bslug} — Bridge schema\n\n{content}");
+    }
     let Some(topic) = TOPICS.iter().find(|t| t.slug == slug) else {
         let mut out = format!("Unknown topic: {slug}\n\nAvailable topics:\n");
         for t in TOPICS {

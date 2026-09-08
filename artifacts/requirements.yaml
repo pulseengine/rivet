@@ -8502,3 +8502,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-06T00:00:00Z
+  - id: REQ-328
+    type: requirement
+    title: "Bridge-schema coverage rules are reported but their definitions are not discoverable, so a failing rule cannot be acted on (#895)"
+    status: verified
+    description: "Reported from jess (#895). `rivet coverage` reports traceability rules that come from the embedded bridge schemas — the reporter saw constraint-has-requirement, controller-constraint-has-requirement and stpa-constraints-provide-evidence all at 0.0 percent — while `rivet docs schema/<bridge>` answered Unknown topic for every one of them. Reproduced exactly on current main: the reporter's own command returned 0 hits for all four spellings they tried, and `rivet docs schema/dev` served its schema normally by contrast. A rule you can watch fail and cannot look up is a rule you cannot act on, because nothing tells you which link type or target types would satisfy it — the same shape as a gate whose output a reader cannot turn into an action. The bridges were embedded all along as BRIDGE_SCHEMAS with filename, extends and content; they were simply never registered as documentation topics. Fixed by deriving the topics from that registry rather than listing them by hand, so a bridge added later cannot ship undocumented. Lookup, `docs --list` in both text and JSON, and `docs <slug>` all consult it. Deliberately NOT folded into topic_bodies, which feeds the embedded-doc invariants in `rivet docs check`: those scan markdown prose and bridge content is schema YAML, so it would be judged against rules written for something else. The oracle asserts over the registry rather than a fixed list — every entry must be both servable and present in the listing — so the next bridge cannot be added without docs. Negative-controlled: disabling the fallback reddens it with all seven bridges named."
+    release: v0.37.0
+    tags: [discoverability, schema, coverage]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-08T00:00:00Z

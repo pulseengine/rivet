@@ -10803,3 +10803,58 @@ fn add_without_id_still_derives_next_in_series() {
         "derived id must continue the existing series"
     );
 }
+
+/// Every embedded bridge schema must be discoverable through `rivet docs`
+/// (#895, REQ-328).
+///
+/// `rivet coverage` reports bridge traceability rules — jess saw
+/// `constraint-has-requirement` and two others — while `rivet docs
+/// schema/<bridge>` answered "Unknown topic". A rule you can watch fail and
+/// cannot look up is a rule you cannot act on: nothing tells you which link
+/// type or target types would satisfy it.
+///
+/// Asserted over the registry rather than a hardcoded list, so a bridge added
+/// later cannot ship without docs.
+///
+/// rivet: verifies REQ-328
+#[test]
+fn every_embedded_bridge_schema_is_documented() {
+    let bridges = rivet_core::embedded::BRIDGE_SCHEMAS;
+    assert!(
+        bridges.len() >= 5,
+        "expected the bridge registry to be populated, saw {}",
+        bridges.len()
+    );
+
+    let listed = Command::new(rivet_bin())
+        .args(["docs", "--list"])
+        .output()
+        .expect("docs --list");
+    let listed = String::from_utf8_lossy(&listed.stdout).to_string();
+
+    let mut missing_topic = Vec::new();
+    let mut missing_listing = Vec::new();
+    for b in bridges {
+        let slug = format!("schema/{}", b.filename);
+        let out = Command::new(rivet_bin())
+            .args(["docs", &slug])
+            .output()
+            .expect("docs <slug>");
+        let body = String::from_utf8_lossy(&out.stdout).to_string();
+        if body.contains("Unknown topic") || !out.status.success() {
+            missing_topic.push(slug.clone());
+        }
+        if !listed.contains(&slug) {
+            missing_listing.push(slug);
+        }
+    }
+    assert!(
+        missing_topic.is_empty(),
+        "these bridge schemas are reported by coverage but cannot be looked up: {missing_topic:?}"
+    );
+    assert!(
+        missing_listing.is_empty(),
+        "these bridge schemas are servable but absent from `docs --list`, so nobody \
+         will find them: {missing_listing:?}"
+    );
+}
