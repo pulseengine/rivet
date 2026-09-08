@@ -8524,3 +8524,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-08T00:00:00Z
+  - id: REQ-331
+    type: requirement
+    title: "A dead externals path poisons all cross-repo resolution instead of falling back to git (#854)"
+    status: verified
+    description: "Reported from synth (#854), second half. The first half — a summary line reading 0 broken cross-refs beside dozens of unresolved-target errors — shipped as REQ-312 in v0.35.0 and now reads cross-refs NOT CHECKED, externals failed to load. This is the underlying friction: a dead `path:` poisoned resolution instead of falling back to `git:`. One nonexistent path was enough to stop every external loading, so every cross-repo ref — including ones whose repos had synced fine — degraded into a local target-does-not-exist error. The reporter's case was a path pointing at a volume that no longer existed. resolve_external_dir used ext.path unconditionally and never consulted the cache. It now falls back to the git cache when the path does not exist AND a git url is declared, and says so rather than substituting silently — this issue began with a reader unable to tell which source had been used. Only when git is declared: with no git url the dead path is left as-is so the resulting error still names the path the author wrote rather than a cache directory they never configured. Three negative controls, each reddening a different over- or under-reach: removing the fallback, falling back without a git url, and falling back even when the path is live. Verified end to end against the reporter's shape — the project moves from cross-refs NOT CHECKED to externals loaded and cross-refs actually checked. A control with a LIVE path pointing at identical content produces the identical result, which is what establishes that the fallback reaches parity with a working path rather than merely changing the symptom; the one cross-ref that still does not resolve in that fixture is a separate cross-ref validation question, unrelated to this fix, and present with a live path too. Known rough edge, not fixed here: the warning fires once per resolution call, so a single dead path emits it several times in one run."
+    release: v0.37.0
+    tags: [externals, resilience, cross-repo]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-08T00:00:00Z
