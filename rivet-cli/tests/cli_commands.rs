@@ -10946,3 +10946,168 @@ fn add_without_id_still_derives_next_in_series() {
         "derived id must continue the existing series"
     );
 }
+
+/// Plain `rivet coverage` must say when source-marker evidence exists that its
+/// link rules do not count (#788, REQ-329).
+///
+/// A marker-driven project sees `coverage --tests` report 100% and plain
+/// `coverage` report 0% for the same requirement, from the same evidence. The
+/// link rule counts graph-level `verifies` backlinks from test artifacts;
+/// markers are not backlinks, so they are invisible to it — while `rivet verify`
+/// accepts exactly those markers as sufficient evidence to advance a
+/// requirement. Two views of one evidence set, 100 points apart, and a release
+/// gate reading the wrong one has no way to tell.
+///
+/// This does NOT fold markers into the rule — that would silently move a number
+/// `--fail-under` gates on. It makes the gap visible, which is what the rest of
+/// this tool does with empty scopes, unchecked cross-refs and unmodelled rules.
+///
+/// rivet: verifies REQ-329
+#[test]
+fn coverage_reports_marker_evidence_its_link_rules_cannot_see() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(init.status.success());
+
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: verified by a marker only\n    \
+         status: verified\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("tests").join("t.rs"),
+        "// rivet: verifies REQ-001\n#[test]\nfn the_marker_test() { assert!(true); }\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "coverage"])
+        .output()
+        .expect("coverage");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Guard against a vacuous pass: the rule must really be reporting 0%.
+    assert!(
+        text.contains("requirement-verification"),
+        "fixture must exercise the verification link rule; got:\n{text}"
+    );
+    assert!(
+        text.contains("--tests"),
+        "plain coverage must point at the marker view when markers exist that \
+         its link rules cannot count; got:\n{text}"
+    );
+    assert!(
+        text.to_lowercase().contains("marker"),
+        "the note must name marker evidence explicitly, not just cross-reference \
+         a flag; got:\n{text}"
+    );
+}
+
+/// A requirement the link rule ALREADY counts as covered must not appear in the
+/// note, even when it also carries a marker. Without this the note would list
+/// every marker in the project and tell the reader nothing about the gap.
+///
+/// Added after a negative control failed to redden: dropping the
+/// already-covered filter changed no test, which meant the filter was untested
+/// rather than correct.
+///
+/// rivet: verifies REQ-329
+#[test]
+fn coverage_note_excludes_requirements_the_rule_already_covers() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(init.status.success());
+
+    // REQ-COVERED has a real `verifies` backlink AND a marker.
+    // REQ-MARKED has only a marker.
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: covered by a real backlink\n    status: verified\n  \
+         - id: REQ-002\n    type: requirement\n    title: marker only\n    status: verified\n  \
+         - id: VER-001\n    type: verification\n    title: a real verification artifact\n    status: verified\n    \
+         links:\n      - type: verifies\n        target: REQ-001\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("tests").join("t.rs"),
+        "// rivet: verifies REQ-001\n#[test]\nfn a() { assert!(true); }\n\n\
+         // rivet: verifies REQ-002\n#[test]\nfn b() { assert!(true); }\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "coverage"])
+        .output()
+        .expect("coverage");
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let note = text
+        .split("DO carry source-marker")
+        .nth(1)
+        .unwrap_or("")
+        .to_string();
+    assert!(
+        !note.is_empty(),
+        "fixture must produce the note at all; got:\n{text}"
+    );
+    assert!(
+        note.contains("REQ-002"),
+        "the marker-only requirement must be named; note was:\n{note}"
+    );
+    assert!(
+        !note.contains("REQ-001"),
+        "a requirement the rule ALREADY covers must not be listed as an unseen \
+         gap; note was:\n{note}"
+    );
+}
+
+/// And it must stay quiet when there is nothing to say — a project with no
+/// markers must not be told to go look at a view that would show it nothing.
+///
+/// rivet: verifies REQ-329
+#[test]
+fn coverage_stays_quiet_when_no_marker_evidence_exists() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(init.status.success());
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: no marker anywhere\n    \
+         status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "coverage"])
+        .output()
+        .expect("coverage");
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(
+        !text.to_lowercase().contains("marker evidence"),
+        "must not advertise marker evidence when there is none; got:\n{text}"
+    );
+}
