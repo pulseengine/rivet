@@ -10,6 +10,35 @@
 # so they are not what makes a runner capable of taking a given job.
 _CI_GENERIC_LABELS="self-hosted linux x64"
 
+# normalize_runner_fetch <exit_code> <body>
+#
+# Emits the value to pass as classify_stall's <runners_json>: the body when the
+# fetch genuinely produced a runner list, and an EMPTY STRING otherwise — which
+# classify_stall answers as `runners-unknown` rather than `pool-offline`.
+#
+# Discarding on exit code alone is not enough. `gh api` can exit 0 while
+# returning {"message":"Bad credentials","status":"401"}, which is non-empty and
+# survives a `-z` check; jq then finds no `.runners` and reports online=0, so
+# the probe announces the pool is down for what is actually an auth failure.
+# That is the same false alarm REQ-342 removed, reached by a different route,
+# so the payload's SHAPE is checked and not merely its presence.
+#
+# A successful lookup returning `{"runners":[]}` passes through unchanged: that
+# is a genuinely empty pool and must still classify as offline.
+normalize_runner_fetch() {
+  local rc="$1" body="${2:-}"
+  if [ "${rc:-1}" -ne 0 ] || [ -z "$body" ]; then
+    echo ""
+    return
+  fi
+  # Must parse, and must actually be a runner list.
+  if ! jq -e 'type == "object" and (.runners | type) == "array"' >/dev/null 2>&1 <<<"$body"; then
+    echo ""
+    return
+  fi
+  printf '%s' "$body"
+}
+
 # classify_stall <runners_json> <queued_jobs_json> [<all_jobs_json>] [<needs_json>]
 #
 # Emits one of: no-queue | dependency-blocked | hosted-starved | runners-unknown |
