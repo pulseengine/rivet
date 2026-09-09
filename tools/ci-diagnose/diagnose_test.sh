@@ -144,6 +144,72 @@ test_classify_stall() {
     "$(classify_stall "$runners_nearly_idle" "$jobs_release_queued")"
 }
 
+# ── workflow-needs.py ─────────────────────────────────────────────────────
+# The needs graph feeds classify_stall's dependency-blocked branch, and two of
+# its behaviours are load-bearing in ways that fail SILENTLY: if needs are not
+# resolved from job KEYS to DISPLAY names the graph matches nothing and every
+# dependency wait reads as a capacity stall, and if a matrix job's templated
+# name is not turned into a prefix it matches nothing either. Both leave the
+# fix looking correct while doing nothing, so they are asserted here rather
+# than trusted (REQ-325).
+# rivet: verifies REQ-325
+test_workflow_needs() {
+  echo "workflow-needs.py:"
+  local fixture; fixture=$(mktemp -d)
+  cat > "$fixture/wf.yml" <<'YAML'
+name: CI
+on: [push]
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    steps: [{run: 'true'}]
+  compliance:
+    name: Build compliance report
+    runs-on: ubuntu-latest
+    steps: [{run: 'true'}]
+  plain:
+    runs-on: ubuntu-latest
+    steps: [{run: 'true'}]
+  release:
+    name: Create GitHub Release
+    needs: [build, compliance, plain]
+    runs-on: ubuntu-latest
+    steps: [{run: 'true'}]
+YAML
+  local out; out=$(python3 "$HERE/workflow-needs.py" "$fixture/wf.yml")
+
+  # Keyed by the DEPENDENT's display name.
+  check "keyed by display name" "true" \
+    "$(jq -r 'has("Create GitHub Release")' <<<"$out")"
+
+  # A need naming a job with a `name:` resolves to that display name, because
+  # that is what the jobs API reports. Comparing raw keys matches nothing.
+  check "need resolved key -> display name" "true" \
+    "$(jq -r '.["Create GitHub Release"] | index("Build compliance report") != null' <<<"$out")"
+
+  # A matrix job becomes a prefix glob; left templated it matches no job.
+  check "matrix need becomes a prefix glob" "true" \
+    "$(jq -r '.["Create GitHub Release"] | index("Build *") != null' <<<"$out")"
+
+  # A job with no `name:` keeps its key.
+  check "unnamed job keeps its key" "true" \
+    "$(jq -r '.["Create GitHub Release"] | index("plain") != null' <<<"$out")"
+
+  # Jobs without `needs` do not appear at all.
+  check "job without needs is absent" "false" \
+    "$(jq -r 'has("Build compliance report")' <<<"$out")"
+
+  # A missing file degrades to an empty graph, never an error — an absent
+  # graph must cost the dependency-blocked answer, not break the probe.
+  check "missing file degrades to {}" "{}" \
+    "$(python3 "$HERE/workflow-needs.py" "$fixture/does-not-exist.yml")"
+  check "no argument degrades to {}" "{}" \
+    "$(python3 "$HERE/workflow-needs.py")"
+
+  rm -rf "$fixture"
+}
+
 # ── classify_failure ──────────────────────────────────────────────────────
 # rivet: verifies REQ-316
 test_classify_failure() {
@@ -178,6 +244,7 @@ test_classify_failure() {
 }
 
 test_classify_stall
+test_workflow_needs
 test_classify_failure
 echo
 if [ "$fails" -eq 0 ]; then echo "ci-diagnose: all cases pass"; else echo "ci-diagnose: $fails case(s) FAILED"; fi

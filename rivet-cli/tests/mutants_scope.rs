@@ -90,6 +90,35 @@ fn cfg_kani_modules(dir: &Path, root: &Path, out: &mut Vec<String>) {
     }
 }
 
+/// The config must live where cargo-mutants actually reads it.
+///
+/// cargo-mutants 27.0.0 reads `.cargo/mutants.toml` and IGNORES a root-level
+/// `mutants.toml` with no warning. That is not hypothetical: the first version
+/// of REQ-324 put the file at the root, the scope test below passed, and
+/// `cargo mutants -p rivet-core --list` still enumerated 236 mutants in
+/// proofs.rs. A config in the wrong place is worse than none, because it reads
+/// as a solved problem.
+///
+/// Both assertions are unconditional. A `if exists { assert }` guard here would
+/// pass on a repository with no config at all.
+///
+// rivet: verifies REQ-324
+#[test]
+fn the_mutants_config_is_where_cargo_mutants_reads_it() {
+    let root = workspace_root();
+    assert!(
+        root.join(".cargo").join("mutants.toml").is_file(),
+        "the cargo-mutants config must be at .cargo/mutants.toml — that is the \
+         path the tool reads"
+    );
+    assert!(
+        !root.join("mutants.toml").exists(),
+        "a root-level mutants.toml must NOT exist: cargo-mutants ignores it \
+         silently, so its presence would suggest a scope is configured when \
+         none is in effect"
+    );
+}
+
 // rivet: verifies REQ-324
 #[test]
 fn every_cfg_kani_module_is_excluded_from_the_mutation_scope() {
