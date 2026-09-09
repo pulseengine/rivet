@@ -1589,6 +1589,29 @@ enum BaselineAction {
 
 #[derive(Debug, Subcommand)]
 enum ReleaseAction {
+    /// Generate the release note for a release from the trace.
+    ///
+    /// Implements Automotive SPICE PAM v4.1 information item 11-03
+    /// "Release note", which SPL.2.BP6 requires accompany each release.
+    /// Sections are computed from the artifact store and the commit
+    /// trailers, never hand-written, so the note cannot drift from the
+    /// release-scope query the way hand-typed notes have twice before.
+    ///
+    /// The note ENDS with the 11-03 elements rivet does not yet compute,
+    /// named individually. A release note that silently omits an element
+    /// the standard requires is worse than one that declares the gap.
+    Notes {
+        /// Release version, e.g. v0.37.0
+        version: String,
+        /// Output format: "markdown" (default), "text", or "json"
+        #[arg(short, long, default_value = "markdown")]
+        format: String,
+        /// Git ref the release builds on (e.g. v0.36.0). When given, the
+        /// note includes the commits since it that reference this
+        /// release's artifacts, and the issues they close.
+        #[arg(long)]
+        since: Option<String>,
+    },
     /// Readiness burn-down for a release: per-status counts and the not-yet-ready set.
     ///
     /// Reports each status count for artifacts scoped to `release:
@@ -2662,6 +2685,11 @@ fn run(cli: Cli) -> Result<bool> {
             BaselineAction::List => cmd_baseline_list(&cli),
         },
         Command::Release { action } => match action {
+            ReleaseAction::Notes {
+                version,
+                format,
+                since,
+            } => cmd_release_notes(&cli, version, format, since.as_deref()),
             ReleaseAction::Status { version, format } => cmd_release_status(&cli, version, format),
             ReleaseAction::Move { id, version } => cmd_release_move(&cli, id, version),
             ReleaseAction::Check {
@@ -7619,6 +7647,303 @@ impl ReadinessCtx {
 /// artifacts scoped to `release: <version>`, plus the not-yet-`verified` set.
 /// The release is cuttable when that set is empty; returns `Ok(false)` (process
 /// exits non-zero) when it is not, so CI can gate a release on it.
+/// The 11-03 elements rivet does not yet compute, each with the evidence it
+/// would have to come from. Printed in every note so an omission is a
+/// declared gap rather than a silent one (REQ-327).
+const RELEASE_NOTE_GAPS: &[(&str, &str)] = &[
+    ("application parameters", "not modelled"),
+    (
+        "configurations and variants",
+        "the variant subsystem exists but is not wired in here",
+    ),
+    ("intended area and environment of usage", "not modelled"),
+    (
+        "impact to other components linked to the release",
+        "needs the cross-repo externals graph",
+    ),
+    ("upstream or downstream compatibility", "not modelled"),
+    (
+        "copyright and license information",
+        "the cargo-deny licenses gate produces this but it is not read here",
+    ),
+    (
+        "approval for delivery by responsible roles",
+        "`rivet check review-signoff` enforces it but emits no record (REQ-333)",
+    ),
+    ("dependencies to other linked products", "not modelled"),
+];
+
+/// Generate a release note from the trace (REQ-327, ASPICE 11-03).
+fn cmd_release_notes(cli: &Cli, version: &str, format: &str, since: Option<&str>) -> Result<bool> {
+    validate_format(format, &["markdown", "text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    ctx.warn_parse_error_skips(cli);
+
+    let mut scoped: Vec<&rivet_core::model::Artifact> = ctx
+        .store
+        .iter()
+        .filter(|a| a.release.as_deref() == Some(version))
+        .collect();
+    scoped.sort_by(|a, b| a.id.cmp(&b.id));
+
+    if scoped.is_empty() {
+        anyhow::bail!(
+            "release '{version}' has no artifacts scoped to it — a note over an \
+             empty scope would describe nothing. Assign with \
+             `rivet modify <ID> --set-release {version}`."
+        );
+    }
+
+    let readiness = ReadinessCtx::compute(&ctx);
+    let schema = ctx.schema.clone();
+    let graph = LinkGraph::build(&ctx.store, &schema);
+
+    // Delivered vs withheld — 11-03's "set of functionalities provided" and
+    // "limitations in relation to the committed scope" are the same partition
+    // seen from two sides, which is why they are computed together.
+    type ArtRef<'a> = &'a rivet_core::model::Artifact;
+    let (delivered, withheld): (Vec<ArtRef<'_>>, Vec<ArtRef<'_>>) =
+        scoped.iter().copied().partition(|a| readiness.is_ready(a));
+
+    // "Result of verification and validation measures". Evidence is the UNION
+    // of `verifies` backlinks and `// rivet: verifies <ID>` source markers.
+    // Counting only links reproduces #788 (REQ-329), where the same evidence
+    // read 0% through the link rules and 100% through the marker scan — this
+    // surface would have reported every verified artifact as unverified.
+    let markers = rivet_core::test_scanner::scan_source_files(
+        &default_marker_scan_paths(&cli.project),
+        &rivet_core::test_scanner::default_patterns(),
+    );
+    let evidence_for = |id: &str| -> (usize, usize) {
+        let links = graph.backlinks_of_type(id, "verifies").len();
+        let marks = markers
+            .iter()
+            .filter(|m| m.target_id == id && m.link_type == "verifies")
+            .count();
+        (links, marks)
+    };
+    let unverified: Vec<&str> = delivered
+        .iter()
+        .filter(|a| evidence_for(&a.id) == (0, 0))
+        .map(|a| a.id.as_str())
+        .collect();
+
+    // Changes since the previous release, restricted to commits that name an
+    // artifact in THIS release. Issue numbers are read from the subject only
+    // where git itself put them, never regexed out of free prose.
+    let mut changes: Vec<(String, String, Vec<String>)> = Vec::new();
+    let mut changes_error: Option<String> = None;
+    if let Some(base) = since {
+        let scoped_ids: std::collections::BTreeSet<&str> =
+            scoped.iter().map(|a| a.id.as_str()).collect();
+        match collect_release_changes(cli, base, &scoped_ids) {
+            Ok(c) => changes = c,
+            Err(e) => changes_error = Some(e.to_string()),
+        }
+    }
+
+    let by_type = |set: &[ArtRef<'_>]| {
+        let mut m: std::collections::BTreeMap<String, Vec<(String, String, String)>> =
+            std::collections::BTreeMap::new();
+        for a in set {
+            m.entry(a.artifact_type.clone()).or_default().push((
+                a.id.clone(),
+                a.title.clone(),
+                a.status.as_deref().unwrap_or("(none)").to_string(),
+            ));
+        }
+        m
+    };
+    let delivered_by_type = by_type(&delivered);
+
+    if format == "json" {
+        let obj = serde_json::json!({
+            "release": version,
+            "delivered": delivered.iter().map(|a| serde_json::json!({
+                "id": a.id, "type": a.artifact_type, "title": a.title,
+                "status": a.status.as_deref().unwrap_or("(none)"),
+                "verifies_links": evidence_for(&a.id).0,
+                "verifies_markers": evidence_for(&a.id).1,
+                "has_verification_evidence": evidence_for(&a.id) != (0, 0),
+            })).collect::<Vec<_>>(),
+            "withheld": withheld.iter().map(|a| serde_json::json!({
+                "id": a.id, "title": a.title,
+                "status": a.status.as_deref().unwrap_or("(none)"),
+            })).collect::<Vec<_>>(),
+            "without_verification_evidence": unverified,
+            "changes": changes.iter().map(|(h, s, i)| serde_json::json!({
+                "hash": h, "subject": s, "refs": i,
+            })).collect::<Vec<_>>(),
+            "changes_error": changes_error,
+            "not_covered": RELEASE_NOTE_GAPS.iter()
+                .map(|(e, w)| serde_json::json!({"element": e, "why": w}))
+                .collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&obj)?);
+        return Ok(withheld.is_empty());
+    }
+
+    let md = format == "markdown";
+    let h1 = if md { "# " } else { "" };
+    let h2 = if md { "## " } else { "" };
+    let bullet = if md { "- " } else { "  " };
+
+    println!("{h1}Release note — {version}");
+    println!();
+    println!(
+        "{} artifact(s) in scope: {} delivered, {} withheld.",
+        scoped.len(),
+        delivered.len(),
+        withheld.len()
+    );
+    println!();
+
+    println!("{h2}Functionalities provided");
+    println!();
+    for (ty, items) in &delivered_by_type {
+        println!("{}{ty}", if md { "### " } else { "" });
+        println!();
+        for (id, title, status) in items {
+            println!("{bullet}`{id}` ({status}) — {title}");
+        }
+        println!();
+    }
+
+    println!("{h2}Limitations in relation to the committed scope");
+    println!();
+    if withheld.is_empty() {
+        println!("None — every artifact committed to {version} is release-ready.");
+    } else {
+        println!(
+            "{} artifact(s) were committed to {version} but are NOT release-ready. \
+             They ship unverified or not at all:",
+            withheld.len()
+        );
+        println!();
+        for a in &withheld {
+            println!(
+                "{bullet}`{}` ({}) — {}",
+                a.id,
+                a.status.as_deref().unwrap_or("(none)"),
+                a.title
+            );
+        }
+    }
+    println!();
+
+    println!("{h2}Result of verification measures");
+    println!();
+    if unverified.is_empty() {
+        println!("Every delivered artifact carries verification evidence:");
+        println!();
+        for a in &delivered {
+            let (links, marks) = evidence_for(&a.id);
+            println!(
+                "{bullet}`{}` — {links} link(s), {marks} source marker(s)",
+                a.id
+            );
+        }
+    } else {
+        println!(
+            "{} of {} delivered artifact(s) have NO verification evidence \
+             (neither a `verifies` link nor a source marker):",
+            unverified.len(),
+            delivered.len()
+        );
+        println!();
+        for id in &unverified {
+            println!("{bullet}`{id}`");
+        }
+    }
+    println!();
+
+    if let Some(base) = since {
+        println!("{h2}Changes since {base}");
+        println!();
+        if let Some(err) = &changes_error {
+            println!("Could not read the commit range: {err}");
+        } else if changes.is_empty() {
+            println!("No commits between {base} and HEAD reference an artifact in this release.");
+        } else {
+            for (hash, subject, issues) in &changes {
+                let short: String = hash.chars().take(8).collect();
+                if issues.is_empty() {
+                    println!("{bullet}`{short}` {subject}");
+                } else {
+                    println!("{bullet}`{short}` {subject} — refs {}", issues.join(", "));
+                }
+            }
+        }
+        println!();
+    }
+
+    println!("{h2}Not covered by this note");
+    println!();
+    println!(
+        "Automotive SPICE 11-03 names these release-note elements. rivet does \
+         not yet compute them, so they are declared rather than omitted:"
+    );
+    println!();
+    for (element, why) in RELEASE_NOTE_GAPS {
+        println!("{bullet}**{element}** — {why}");
+    }
+
+    Ok(withheld.is_empty())
+}
+
+/// Commits between `base` and HEAD whose trailers name an artifact in `scoped`.
+///
+/// Returns `(hash, subject, refs)`. The `#N` tokens come from the subject
+/// where git itself put them. They are reported as REFERENCES, never as
+/// "closes": a `#N` in a squash-merge subject is usually the pull request,
+/// not an issue, and the two are indistinguishable from the text alone.
+/// Asserting closure here would fabricate a claim in a release record.
+fn collect_release_changes(
+    cli: &Cli,
+    base: &str,
+    scoped: &std::collections::BTreeSet<&str>,
+) -> Result<Vec<(String, String, Vec<String>)>> {
+    let config_path = cli.project.join("rivet.yaml");
+    let config = rivet_core::load_project_config(&config_path)
+        .with_context(|| format!("loading {}", config_path.display()))?;
+    let commits_cfg = config
+        .commits
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("no 'commits' section in rivet.yaml"))?;
+    let project_path = std::fs::canonicalize(&cli.project).unwrap_or_else(|_| cli.project.clone());
+
+    let commits = rivet_core::commits::git_log_commits(
+        &project_path,
+        &format!("{base}..HEAD"),
+        &commits_cfg.trailers,
+        &commits_cfg.skip_trailer,
+    )
+    .context("running git log")?;
+
+    let mut out = Vec::new();
+    for c in commits {
+        let touches = c
+            .artifact_refs
+            .values()
+            .flatten()
+            .any(|id| scoped.contains(id.as_str()));
+        if !touches {
+            continue;
+        }
+        let issues: Vec<String> = c
+            .subject
+            .split(|ch: char| !ch.is_ascii_digit() && ch != '#')
+            .filter_map(|tok| {
+                tok.strip_prefix('#')
+                    .filter(|d| !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()))
+                    .map(|d| format!("#{d}"))
+            })
+            .collect();
+        out.push((c.hash.clone(), c.subject.clone(), issues));
+    }
+    Ok(out)
+}
+
 fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;

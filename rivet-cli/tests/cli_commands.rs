@@ -11387,3 +11387,144 @@ fn stamp_sets_timestamp_when_the_artifact_has_no_provenance() {
         "an artifact with no provenance must receive created-by. Got:\n{after}"
     );
 }
+
+// ── rivet release notes (REQ-327) ───────────────────────────────────────
+
+/// A project with one release-ready artifact carrying a source marker, and
+/// one that is scoped but not ready.
+fn release_notes_fixture() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: shipped\n    \
+             status: verified\n    release: v1.0.0\n  \
+         - id: REQ-002\n    type: requirement\n    title: not ready\n    \
+             status: proposed\n    release: v1.0.0\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "// rivet: verifies REQ-001\n#[test]\nfn covers_req_001() { assert!(true); }\n",
+    )
+    .unwrap();
+    tmp
+}
+
+/// Verification evidence must be the UNION of `verifies` links and source
+/// markers.
+///
+/// Counting only links reproduces #788 / REQ-329, where the same evidence read
+/// 0% through the link rules and 100% through the marker scan. This repository
+/// verifies almost entirely by marker, so a link-only release note would report
+/// every verified artifact as unverified — in a document meant as release
+/// evidence.
+///
+// rivet: verifies REQ-327
+#[test]
+fn release_notes_counts_source_markers_as_verification_evidence() {
+    let tmp = release_notes_fixture();
+    let out = Command::new(rivet_bin())
+        .args(["release", "notes", "v1.0.0"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to execute rivet release notes");
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    // Assert the POSITIVE outcome. An earlier version of this test asserted
+    // `text.contains("source marker")` and the absence of a no-evidence
+    // string — both of which a links-only implementation also satisfies,
+    // because its failure message reads "neither a `verifies` link nor a
+    // source marker" and it routes the artifact down a different branch
+    // entirely. The negative control (reverting to links-only) did not
+    // redden, which is how the vacuity was found.
+    assert!(
+        text.contains("Every delivered artifact carries verification evidence"),
+        "REQ-001's `// rivet: verifies` marker is its only evidence, so a \
+         marker-aware note must find the delivered scope fully evidenced. \
+         Got:\n{text}"
+    );
+    assert!(
+        text.contains("`REQ-001` — 0 link(s), 1 source marker(s)"),
+        "the note must report the evidence kinds separately, and REQ-001 has \
+         exactly one marker and no links. Got:\n{text}"
+    );
+}
+
+/// `#N` tokens in a subject are references, never asserted closures — a `#N`
+/// in a squash-merge subject is usually the PR, not an issue.
+///
+// rivet: verifies REQ-327
+#[test]
+fn release_notes_never_claims_an_issue_was_closed() {
+    let tmp = release_notes_fixture();
+    let out = Command::new(rivet_bin())
+        .args(["release", "notes", "v1.0.0"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to execute rivet release notes");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !text.contains("closes #"),
+        "a release note must not assert closure it cannot verify. Got:\n{text}"
+    );
+}
+
+/// Artifacts committed to the release but not release-ready are named, not
+/// dropped — ASPICE 11-03 "limitations in relation to the committed scope".
+///
+// rivet: verifies REQ-327
+#[test]
+fn release_notes_names_the_withheld_scope() {
+    let tmp = release_notes_fixture();
+    let out = Command::new(rivet_bin())
+        .args(["release", "notes", "v1.0.0"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to execute rivet release notes");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("Limitations in relation to the committed scope"),
+        "11-03 requires this section. Got:\n{text}"
+    );
+    assert!(
+        text.contains("REQ-002"),
+        "a scoped-but-unready artifact must be named. Got:\n{text}"
+    );
+    assert!(
+        text.contains("Not covered by this note"),
+        "the note must declare the 11-03 elements it does not compute. Got:\n{text}"
+    );
+}
+
+/// A note over an empty scope describes nothing and must not be produced —
+/// the same reasoning as `release status` refusing to green an empty scope.
+///
+// rivet: verifies REQ-327
+#[test]
+fn release_notes_refuses_an_empty_scope() {
+    let tmp = release_notes_fixture();
+    let out = Command::new(rivet_bin())
+        .args(["release", "notes", "v9.9.9"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to execute rivet release notes");
+    assert!(
+        !out.status.success(),
+        "an empty release scope must not yield a note"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("no artifacts scoped"),
+        "the error must say why. Got:\n{err}"
+    );
+}

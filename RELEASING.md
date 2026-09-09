@@ -7,6 +7,13 @@ land a release commit and push a signed tag.
 ## TL;DR
 
 ```bash
+# 0. Generate the release note from the trace — do NOT hand-write the scope.
+#    Implements ASPICE 11-03 (SPL.2.BP6 requires a note per release). The
+#    output names what is delivered, what was committed but withheld, the
+#    verification evidence per artifact, and the 11-03 elements rivet does
+#    not yet compute. Paste the relevant sections into CHANGELOG.md.
+rivet release notes vX.Y.Z --since v<PREV> > /tmp/release-note.md
+
 # 1. Land a release-prep PR with the version bump + CHANGELOG update.
 #    (Workspace version lives in Cargo.toml [workspace.package].)
 gh pr merge <PR#> --squash
@@ -33,6 +40,30 @@ git push origin vX.Y.Z
   doesn't *look* abandoned (a stale `0.4.x` here previously caused exactly
   that confusion); a drift between releases is harmless. The published
   channel is `npm view @pulseengine/rivet version`, not these files.
+
+## The release note is generated, not written
+
+`rivet release notes <version> --since <prev>` computes the note from the
+artifact store and the commit trailers. The scope section is the same
+release-readiness query `rivet release status` runs, which is the point: the
+hand-written notes drifted from that query twice, and the drift was caught only
+by diffing them by hand.
+
+Two properties worth knowing before you paste it into `CHANGELOG.md`:
+
+- **Verification evidence is the union of `verifies` links and
+  `// rivet: verifies` source markers**, reported as separate counts. rivet
+  verifies almost entirely by marker, so a link-only count would report every
+  verified artifact as unverified (this is #788 / REQ-329).
+- **`#N` tokens are reported as `refs`, never as `closes`.** Under squash-merge
+  a subject's `#N` is usually the pull request rather than an issue, and the two
+  cannot be told apart from the text. Asserting closure would fabricate a claim
+  in a release record — if you want closure stated, verify it and write it.
+
+The note ends with the 11-03 elements rivet does not compute (application
+parameters, variants, licence information, delivery approval, and four others).
+That section is deliberate: an omitted required element is worse than a declared
+gap. Wiring the note into `release.yml` as a release asset is tracked separately.
 
 ## Why signed tags
 
