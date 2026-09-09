@@ -144,6 +144,51 @@ test_classify_stall() {
     "$(classify_stall "$runners_nearly_idle" "$jobs_release_queued")"
 }
 
+# ── normalize_runner_fetch ────────────────────────────────────────────────
+# REQ-342 closed the "failed lookup became an empty pool" route by capturing the
+# exit code. It did not close the SECOND route: a response that is non-empty but
+# not a runner list. `gh api` can exit 0 while returning
+# {"message":"Bad credentials","status":"401"}, which is non-empty, passes an
+# `-z` check, and makes classify_stall answer `pool-offline` — the same false
+# alarm by a different path. Verified directly: that body classifies as
+# pool-offline. So the payload's SHAPE has to be checked, not just its presence.
+# rivet: verifies REQ-342
+test_normalize_runner_fetch() {
+  echo "normalize_runner_fetch:"
+  local good='{"runners":[{"status":"online","busy":false,"labels":[{"name":"rust-cpu"}]}]}'
+
+  check "successful fetch passes through" "$good" \
+    "$(normalize_runner_fetch 0 "$good")"
+
+  # A SUCCESSFUL lookup that genuinely returns no runners must survive — that
+  # is a real offline pool and must still classify as one.
+  check "genuinely empty pool passes through" '{"runners":[]}' \
+    "$(normalize_runner_fetch 0 '{"runners":[]}')"
+
+  check "non-zero exit is discarded" "" \
+    "$(normalize_runner_fetch 1 "$good")"
+  check "empty body is discarded" "" \
+    "$(normalize_runner_fetch 0 '')"
+
+  # The two shapes that motivated this.
+  check "github error object is discarded" "" \
+    "$(normalize_runner_fetch 0 '{"message":"Bad credentials","status":"401"}')"
+  check "malformed body is discarded" "" \
+    "$(normalize_runner_fetch 0 '<html>not json</html>')"
+
+  # An object whose `runners` is not an array is not a runner list either.
+  check "wrong runners type is discarded" "" \
+    "$(normalize_runner_fetch 0 '{"runners":"nope"}')"
+
+  # End to end: the discarded shapes must reach `runners-unknown`, not
+  # `pool-offline` — that is the behaviour this exists to produce.
+  local qjobs='[{"name":"Test","labels":["self-hosted","linux","x64","rust-cpu"]}]'
+  check "error object classifies as unknown, not offline" "runners-unknown" \
+    "$(classify_stall "$(normalize_runner_fetch 0 '{"message":"Bad credentials"}')" "$qjobs")"
+  check "genuinely empty still classifies as offline" "pool-offline" \
+    "$(classify_stall "$(normalize_runner_fetch 0 '{"runners":[]}')" "$qjobs")"
+}
+
 # ── workflow-needs.py ─────────────────────────────────────────────────────
 # The needs graph feeds classify_stall's dependency-blocked branch, and two of
 # its behaviours are load-bearing in ways that fail SILENTLY: if needs are not
@@ -244,6 +289,7 @@ test_classify_failure() {
 }
 
 test_classify_stall
+test_normalize_runner_fetch
 test_workflow_needs
 test_classify_failure
 echo

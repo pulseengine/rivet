@@ -112,12 +112,17 @@ jobs:
             # `administration` scope, which is NOT grantable to GITHUB_TOKEN,
             # so this fails on every scheduled probe.
             set +e
-            allr=$(gh api "orgs/${REPO%%/*}/actions/runners" --paginate 2>/dev/null)
+            runners_raw=$(gh api "orgs/${REPO%%/*}/actions/runners" --paginate 2>/dev/null)
             runners_rc=$?
             set -e
-            if [ "$runners_rc" -ne 0 ] || [ -z "$allr" ]; then
-              echo "::notice::runner list unavailable (exit ${runners_rc}); capacity will NOT be assessed"
-              allr=""
+            # Checking the exit code and emptiness is not enough: `gh api` can
+            # exit 0 while returning {"message":"Bad credentials"}, which is
+            # non-empty, survives a -z test, and yields online=0 — the same
+            # false "pool is OFFLINE" by a different route. normalize_runner_fetch
+            # also requires the payload to BE a runner list.
+            allr=$(normalize_runner_fetch "$runners_rc" "$runners_raw")
+            if [ -z "$allr" ]; then
+              echo "::notice::runner list unavailable or not a runner list (exit ${runners_rc}); capacity will NOT be assessed"
             fi
             # REQ-325: a job waiting on its `needs` is not stalled, and every
             # capacity answer given about it names a cause we cannot observe.
