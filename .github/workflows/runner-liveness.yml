@@ -15,9 +15,17 @@ name: Runner Liveness
 #   2. Runner list — best-effort. `GET /repos/{repo}/actions/runners` needs the
 #      `administration` permission, which is NOT a grantable `GITHUB_TOKEN`
 #      scope, so the default token gets 403 (and an org-level pool returns empty
-#      anyway). A failed/empty lookup is logged and SKIPPED rather than raised as
-#      a false alarm; wire a PAT into `GH_TOKEN` later if a hard runner count is
-#      wanted. The queued-age signal above is the real alarm.
+#      anyway). A failed lookup yields the `runners-unknown` classification: the
+#      queued-age alarm still fires, but NO cause is named, because none can be
+#      observed without the runner list. Wire a PAT into `GH_TOKEN` if a hard
+#      runner count is wanted. The queued-age signal above is the real alarm.
+#
+#      This paragraph used to claim a failed/empty lookup was "logged and
+#      SKIPPED rather than raised as a false alarm". It was not: the code
+#      substituted an empty pool, which the classifier read as every runner
+#      being down, so EVERY self-hosted stall reported `pool-offline` whatever
+#      its cause (#919, REQ-342). Keep this description and the code in step — a
+#      comment describing behaviour the code does not have is worse than none.
 
 on:
   schedule:
@@ -93,7 +101,24 @@ jobs:
             . tools/ci-diagnose/diagnose.sh
             qjobs=$(gh api "repos/$REPO/actions/runs/${oldest_id}/jobs" --paginate \
                       --jq '[.jobs[] | select(.status == "queued") | {name, labels}]' 2>/dev/null || echo '[]')
-            allr=$(gh api "orgs/${REPO%%/*}/actions/runners" --paginate 2>/dev/null || echo '{"runners":[]}')
+            # REQ-342: tell "could not read the runner list" apart from "the
+            # pool is empty". They are indistinguishable from the response
+            # body, so the EXIT CODE is the only discriminator — and the old
+            # `|| echo '{"runners":[]}'` discarded it, reporting `pool-offline`
+            # for every self-hosted stall whatever the real cause. #919
+            # announced "0 runners online" while the org reported
+            # online=12 busy=7 and four `lean-mem` shards were simply queued
+            # behind four busy `lean-mem` runners. The lookup needs the
+            # `administration` scope, which is NOT grantable to GITHUB_TOKEN,
+            # so this fails on every scheduled probe.
+            set +e
+            allr=$(gh api "orgs/${REPO%%/*}/actions/runners" --paginate 2>/dev/null)
+            runners_rc=$?
+            set -e
+            if [ "$runners_rc" -ne 0 ] || [ -z "$allr" ]; then
+              echo "::notice::runner list unavailable (exit ${runners_rc}); capacity will NOT be assessed"
+              allr=""
+            fi
             # REQ-325: a job waiting on its `needs` is not stalled, and every
             # capacity answer given about it names a cause we cannot observe.
             # The jobs API does not expose `needs`, so read it from the
@@ -108,6 +133,11 @@ jobs:
             echo "stall mode: $mode"
             labels=$(jq -r '[.[] | "\(.name) [\(.labels | join(","))]"] | join("; ")' <<<"$qjobs")
             case "$mode" in
+              runners-unknown)
+                # Still an alarm — the queued-age symptom is authoritative and
+                # is what this probe exists to measure — but it names NO cause,
+                # because none can be observed without the runner list.
+                problems+=("Run ${oldest_id} queued ${oldest_age}m. The runner list could NOT be read (it needs the \`administration\` scope, which is not grantable to GITHUB_TOKEN), so capacity was NOT assessed and no cause is claimed here. Diagnose by hand with the org-scope query below. Queued: ${labels}") ;;
               dependency-blocked)
                 # Deliberately NOT appended to `problems`: this is not a
                 # stall. Every queued job is waiting on a `needs` that has
