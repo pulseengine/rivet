@@ -11710,3 +11710,76 @@ fn release_notes_does_not_claim_external_artifacts_as_withheld_scope() {
         .expect("delivered array");
     assert_eq!(delivered.len(), 1, "only the local artifact ships: {v}");
 }
+
+// ── dev schema: verification measures need real fields (#748) ───────────
+
+/// The `dev` schema's `verification` type must support the fields a project
+/// actually records, and must be able to verify dev's own types.
+///
+/// #721 added the type, which made `requirement-verification` satisfiable.
+/// But `verifies` accepted only `requirement`, and `test-name`,
+/// `test-location` and `steps` were undeclared — so spar (142 artifacts with
+/// `steps`, 64 each with `test-name`/`test-location`) would have swapped
+/// undeclared-field warnings on `feature` for the same warnings on
+/// `verification`, relocating the workaround rather than removing it.
+///
+// rivet: verifies REQ-339
+#[test]
+fn dev_verification_declares_test_fields_and_verifies_dev_types() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    let out = Command::new(rivet_bin())
+        .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+        .output()
+        .expect("init dev project");
+    assert!(
+        out.status.success(),
+        "init: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    std::fs::write(
+        dir.join("artifacts").join("probe.yaml"),
+        "artifacts:\n  \
+         - id: REQ-900\n    type: requirement\n    title: a requirement\n    \
+             status: implemented\n  \
+         - id: FEAT-900\n    type: feature\n    title: a feature\n    \
+             status: implemented\n    links:\n      - type: satisfies\n        \
+             target: REQ-900\n  \
+         - id: VER-900\n    type: verification\n    title: a test suite\n    \
+             status: verified\n    method: automated-test\n    fields:\n      \
+             test-name: my_test\n      test-location: 'tests/foo.rs:42'\n      \
+             steps:\n        - run it\n    links:\n      - type: verifies\n        \
+             target: REQ-900\n  \
+         - id: VER-901\n    type: verification\n    title: acceptance test\n    \
+             status: verified\n    links:\n      - type: verifies\n        \
+             target: FEAT-900\n",
+    )
+    .expect("write probe");
+
+    let v = Command::new(rivet_bin())
+        .args(["--project", dir.to_str().unwrap(), "validate"])
+        .output()
+        .expect("rivet validate");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&v.stdout),
+        String::from_utf8_lossy(&v.stderr)
+    );
+
+    for field in ["test-name", "test-location", "steps"] {
+        assert!(
+            !text.contains(&format!("field '{field}' is not defined in schema")),
+            "`{field}` must be declared on the dev `verification` type. Got:\n{text}"
+        );
+    }
+    assert!(
+        !text.contains("allowed target types: [\"requirement\"]"),
+        "a verification must be able to verify a feature, not only a \
+         requirement. Got:\n{text}"
+    );
+    assert!(
+        v.status.success(),
+        "the probe project must validate cleanly. Got:\n{text}"
+    );
+}
