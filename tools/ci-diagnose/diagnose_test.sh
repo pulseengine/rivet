@@ -22,6 +22,7 @@ check() { # check <name> <expected> <actual>
 # ── classify_stall ────────────────────────────────────────────────────────
 # rivet: verifies REQ-317
 # rivet: verifies REQ-325
+# rivet: verifies REQ-342
 test_classify_stall() {
   echo "classify_stall:"
 
@@ -110,6 +111,32 @@ test_classify_stall() {
   check "unknown need does not invent a block" "hosted-starved" \
     "$(classify_stall "$runners_nearly_idle" "$jobs_release_queued" \
                       "$all_jobs_release" "$needs_unknown")"
+
+  # ── REQ-342 ────────────────────────────────────────────────────────────
+  # The runner lookup needs the `administration` scope, which is NOT grantable
+  # to GITHUB_TOKEN, so it 403s on every scheduled run. The probe replaced the
+  # failure with an EMPTY POOL, and this returned `pool-offline` — the loudest
+  # possible alarm — for a fleet that was entirely healthy. Measured on #919:
+  # the alert said "0 runners online" while the org reported online=12 busy=7,
+  # and the real cause was four `lean-mem` shards queued behind four busy
+  # `lean-mem` runners.
+  #
+  # An API failure and a genuinely empty pool are indistinguishable from the
+  # response BODY. Only the exit code separates them, so the caller passes an
+  # empty string for "could not read it" and the classifier must refuse to name
+  # a capacity cause rather than invent one.
+  check "runner data unavailable is not an offline pool" "runners-unknown" \
+    "$(classify_stall "" "$jobs_selfhosted")"
+
+  # A SUCCESSFUL lookup that genuinely returns no runners is still offline —
+  # the new branch must not swallow the mode it sits in front of.
+  check "genuinely empty pool is still offline" "pool-offline" \
+    "$(classify_stall '{"runners":[]}' "$jobs_selfhosted")"
+
+  # Hosted starvation is decided from the queued jobs' labels alone, so it must
+  # still answer even with no runner data at all.
+  check "hosted starvation needs no runner data" "hosted-starved" \
+    "$(classify_stall "" "$jobs_hosted")"
 
   # Two args must behave exactly as before: callers that cannot supply the
   # needs graph still get the old answer rather than a silent reclassification.

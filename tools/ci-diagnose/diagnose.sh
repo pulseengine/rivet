@@ -12,8 +12,8 @@ _CI_GENERIC_LABELS="self-hosted linux x64"
 
 # classify_stall <runners_json> <queued_jobs_json> [<all_jobs_json>] [<needs_json>]
 #
-# Emits one of: no-queue | dependency-blocked | hosted-starved | pool-offline |
-#               label-saturated | capacity-available
+# Emits one of: no-queue | dependency-blocked | hosted-starved | runners-unknown |
+#               pool-offline | label-saturated | capacity-available
 #
 # The ordering matters. Dependency waits are removed FIRST because a job
 # waiting on its `needs` is not stalled at all, and every capacity answer
@@ -66,6 +66,22 @@ classify_stall() {
   selfhosted_count=$(jq -r '[.[] | select(any(.labels[]; . == "self-hosted"))] | length' <<<"$jobs_json")
   if [ "${selfhosted_count:-0}" -eq 0 ]; then
     echo "hosted-starved"
+    return
+  fi
+
+  # An EMPTY `runners_json` means the caller could not read the runner list, as
+  # distinct from a successful lookup that returned none. The two are
+  # indistinguishable from the response body, so the caller signals the failure
+  # by passing an empty string and the classifier refuses to name a capacity
+  # cause rather than invent one (REQ-342).
+  #
+  # This matters because the lookup needs the `administration` scope, which is
+  # not grantable to GITHUB_TOKEN, so it 403s on EVERY scheduled probe. The old
+  # empty-pool fallback therefore reported `pool-offline` for every self-hosted
+  # stall whatever the real cause — #919 announced "0 runners online" while the
+  # org reported online=12 busy=7.
+  if [ -z "$runners_json" ]; then
+    echo "runners-unknown"
     return
   fi
 
