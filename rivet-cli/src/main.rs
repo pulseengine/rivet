@@ -7679,10 +7679,14 @@ fn cmd_release_notes(cli: &Cli, version: &str, format: &str, since: Option<&str>
     let ctx = ProjectContext::load(cli)?;
     ctx.warn_parse_error_skips(cli);
 
+    // Local artifacts only (#907). A note that listed an external project's
+    // unverified requirement as THIS release's withheld scope would state a
+    // falsehood about another project's work in a compliance record.
     let mut scoped: Vec<&rivet_core::model::Artifact> = ctx
         .store
         .iter()
         .filter(|a| a.release.as_deref() == Some(version))
+        .filter(|a| !a.id.contains(':'))
         .collect();
     scoped.sort_by(|a, b| a.id.cmp(&b.id));
 
@@ -7949,12 +7953,26 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
     let ctx = ProjectContext::load(cli)?;
     ctx.warn_parse_error_skips(cli);
 
+    // An external artifact carries a `prefix:ID` id. It must NOT feed the
+    // verdict: version labels collide across a multi-repo toolchain, and a
+    // release that can only go green when ANOTHER project verifies its own
+    // work is a gate nobody can pass (#907 — kiln's v0.5.0 was permanently
+    // not cuttable because gale used the same label). Cross-repo visibility
+    // is genuinely useful, so they are reported, just separately.
     let mut scoped: Vec<&rivet_core::model::Artifact> = ctx
         .store
         .iter()
         .filter(|a| a.release.as_deref() == Some(version))
+        .filter(|a| !a.id.contains(':'))
         .collect();
     scoped.sort_by(|a, b| a.id.cmp(&b.id));
+    let mut external: Vec<&rivet_core::model::Artifact> = ctx
+        .store
+        .iter()
+        .filter(|a| a.release.as_deref() == Some(version))
+        .filter(|a| a.id.contains(':'))
+        .collect();
+    external.sort_by(|a, b| a.id.cmp(&b.id));
 
     let readiness = ReadinessCtx::compute(&ctx);
     let coverage_mode = readiness.coverage_mode;
@@ -7985,6 +8003,11 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
                 "title": a.title,
             })).collect::<Vec<_>>(),
             "cuttable": cuttable,
+            "external": external.iter().map(|a| serde_json::json!({
+                "id": a.id,
+                "status": a.status.as_deref().unwrap_or("(none)"),
+                "title": a.title,
+            })).collect::<Vec<_>>(),
         });
         println!("{}", serde_json::to_string_pretty(&obj)?);
     } else if scoped.is_empty() {
@@ -8018,6 +8041,21 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
                 "\n\u{2717} NOT cuttable — {} artifact(s) not yet verified.",
                 not_done.len()
             );
+        }
+        if !external.is_empty() {
+            println!(
+                "\nExternal, informational ({}) — tagged {version} by another \
+                 project and NOT part of this verdict:",
+                external.len()
+            );
+            for a in &external {
+                println!(
+                    "  {:<28} {:<12} {}",
+                    a.id,
+                    a.status.as_deref().unwrap_or("(none)"),
+                    a.title
+                );
+            }
         }
     }
 
