@@ -18088,7 +18088,14 @@ fn cmd_stamp(
             // instead of bailing the whole batch — the caller usually
             // wants "stamp everything I can" not "stamp everything or
             // nothing".
-            match editor.set_provenance(
+            // MERGE, not replace (#912). `set_provenance` overwrites the
+            // whole block, so the documented hook form — `--created-by`
+            // alone — erased `model` on 270 artifacts and `session-id` on 4
+            // in this repository's own tree and advanced `timestamp` on 575.
+            // `timestamp` is create-only: `model.rs` documents it as the time
+            // of creation and the Polarion export maps it to
+            // `WorkItem.created`, so advancing it falsifies a creation date.
+            match editor.merge_provenance(
                 aid,
                 created_by,
                 model,
