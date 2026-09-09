@@ -11528,3 +11528,185 @@ fn release_notes_refuses_an_empty_scope() {
         "the error must say why. Got:\n{err}"
     );
 }
+
+// ── release status / notes: externals must not gate the local verdict (#907)
+
+/// Consumer project with an external whose artifact shares the release label.
+///
+/// This is #907's shape: kiln's v0.5.0 was permanently NOT cuttable because
+/// gale happened to use the same version string, and gale's `proposed`
+/// requirements landed in kiln's readiness query. External artifacts carry a
+/// `prefix:ID` id, which is how they are told apart.
+fn shared_release_label_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let supplier = tmp.path().join("supplier");
+    let consumer = tmp.path().join("consumer");
+
+    for (dir, name) in [(&supplier, "supplier"), (&consumer, "consumer")] {
+        let out = Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+            .output()
+            .expect("init");
+        assert!(
+            out.status.success(),
+            "init {name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    // The supplier ships an UNVERIFIED artifact under the same release label.
+    std::fs::write(
+        supplier.join("artifacts").join("reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-EXT-1\n    type: requirement\n    title: someone else's work\n    \
+             status: proposed\n    release: v0.5.0\n",
+    )
+    .expect("write supplier reqs");
+
+    std::fs::write(
+        consumer.join("rivet.yaml"),
+        format!(
+            "project:\n  name: consumer\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+             externals:\n  sup:\n    path: {}\n    prefix: sup\n\
+             sources:\n  - path: artifacts\n    format: generic-yaml\n",
+            supplier.display()
+        ),
+    )
+    .expect("write consumer rivet.yaml");
+
+    // Every LOCAL artifact is release-ready.
+    std::fs::write(
+        consumer.join("artifacts").join("reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-LOCAL-1\n    type: requirement\n    title: my work\n    \
+             status: verified\n    release: v0.5.0\n",
+    )
+    .expect("write consumer reqs");
+
+    let sync = Command::new(rivet_bin())
+        .args(["--project", consumer.to_str().unwrap(), "sync"])
+        .output()
+        .expect("rivet sync");
+    assert!(
+        sync.status.success(),
+        "sync: {}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+
+    (tmp, consumer)
+}
+
+/// A local release whose own artifacts are all verified must be CUTTABLE, even
+/// when an external project uses the same version label for unverified work.
+///
+/// Before #907 was fixed the verdict depended on another project's schedule, so
+/// it could never go green no matter what this project did.
+///
+// rivet: verifies REQ-338
+#[test]
+fn release_status_verdict_ignores_external_artifacts() {
+    let (_tmp, consumer) = shared_release_label_fixture();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            consumer.to_str().unwrap(),
+            "release",
+            "status",
+            "v0.5.0",
+        ])
+        .output()
+        .expect("rivet release status");
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        out.status.success(),
+        "every LOCAL artifact is verified, so the release must be cuttable. \
+         stdout:\n{text}"
+    );
+    assert!(
+        text.contains("Cuttable"),
+        "the verdict must read cuttable. Got:\n{text}"
+    );
+}
+
+/// The external work stays VISIBLE — cross-repo sight is a feature. It just
+/// must not feed the verdict (#907 option 3, the reporter's preference).
+///
+// rivet: verifies REQ-338
+#[test]
+fn release_status_still_reports_external_artifacts_separately() {
+    let (_tmp, consumer) = shared_release_label_fixture();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            consumer.to_str().unwrap(),
+            "release",
+            "status",
+            "v0.5.0",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet release status");
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("release status JSON must parse");
+
+    assert_eq!(
+        v.get("cuttable").and_then(serde_json::Value::as_bool),
+        Some(true),
+        "external artifacts must not block the verdict: {v}"
+    );
+    let ext = v
+        .get("external")
+        .and_then(serde_json::Value::as_array)
+        .expect("an `external` array must be reported");
+    assert_eq!(
+        ext.len(),
+        1,
+        "the external artifact must still be visible, just not gating: {v}"
+    );
+    assert!(
+        v.get("not_verified")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|a| a.is_empty()),
+        "not_verified must hold LOCAL artifacts only: {v}"
+    );
+}
+
+/// `release notes` inherits the same scoping and must not describe another
+/// project's artifacts as this release's withheld scope.
+///
+// rivet: verifies REQ-338
+#[test]
+fn release_notes_does_not_claim_external_artifacts_as_withheld_scope() {
+    let (_tmp, consumer) = shared_release_label_fixture();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            consumer.to_str().unwrap(),
+            "release",
+            "notes",
+            "v0.5.0",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet release notes");
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("release notes JSON must parse");
+
+    let withheld = v
+        .get("withheld")
+        .and_then(serde_json::Value::as_array)
+        .expect("withheld array");
+    assert!(
+        withheld.is_empty(),
+        "an external project's unverified artifact is not this release's \
+         withheld scope — a release note must not claim it: {v}"
+    );
+    let delivered = v
+        .get("delivered")
+        .and_then(serde_json::Value::as_array)
+        .expect("delivered array");
+    assert_eq!(delivered.len(), 1, "only the local artifact ships: {v}");
+}
