@@ -10,20 +10,57 @@
 # so they are not what makes a runner capable of taking a given job.
 _CI_GENERIC_LABELS="self-hosted linux x64"
 
-# classify_stall <runners_json> <queued_jobs_json>
+# classify_stall <runners_json> <queued_jobs_json> [<all_jobs_json>] [<needs_json>]
 #
-# Emits one of: no-queue | hosted-starved | pool-offline | label-saturated |
-#               capacity-available
+# Emits one of: no-queue | dependency-blocked | hosted-starved | pool-offline |
+#               label-saturated | capacity-available
 #
-# The ordering matters. Hosted starvation is checked FIRST because the
-# self-hosted numbers are irrelevant when every queued job is `ubuntu-latest`,
-# and reporting them is what made the old alert misleading: hosted capacity
-# appears in the runners API at no scope, so no runner count can see it.
+# The ordering matters. Dependency waits are removed FIRST because a job
+# waiting on its `needs` is not stalled at all, and every capacity answer
+# given about it is a cause the classifier cannot observe (REQ-325). Hosted
+# starvation is checked next because the self-hosted numbers are irrelevant
+# when every queued job is `ubuntu-latest`, and reporting them is what made
+# the old alert misleading: hosted capacity appears in the runners API at no
+# scope, so no runner count can see it.
+#
+# `all_jobs_json` is the run's jobs with their `status`; `needs_json` maps a
+# job name to its `needs` list, read from the workflow definition — the jobs
+# API does not expose `needs`. Both are optional: with two arguments the
+# function answers exactly as it did before, so a caller that cannot supply
+# the graph gets the old answer rather than a silent reclassification.
 classify_stall() {
-  local runners_json="$1" jobs_json="$2"
+  local runners_json="$1" jobs_json="$2" all_jobs_json="${3:-}" needs_json="${4:-}"
   local queued_count
   queued_count=$(jq -r 'length' <<<"$jobs_json")
   [ "${queued_count:-0}" -eq 0 ] && { echo "no-queue"; return; }
+
+  # Drop jobs that are merely waiting their turn. On 2026-09-06 `create-release`
+  # sat queued behind `build-compliance` while the fleet was idle (online=12,
+  # busy=1) and this returned `hosted-starved`, which would have auto-filed an
+  # issue blaming GitHub capacity for a dependency wait.
+  if [ -n "$all_jobs_json" ] && [ -n "$needs_json" ]; then
+    local waiting
+    # A need ending in `*` is a matrix job, declared once and reported by the
+    # API under many concrete names; it is matched by prefix. A need matching
+    # NO job is treated as complete, so an unknown or stale name can only cost
+    # the dependency-blocked answer, never invent one.
+    waiting=$(jq -c --argjson all "$all_jobs_json" --argjson needs "$needs_json" '
+        def incomplete($n):
+          [ $all[]
+            | select(if ($n | endswith("*"))
+                     then (.name | startswith($n[:-1]))
+                     else .name == $n end)
+            | select(.status != "completed") ] | length > 0;
+        [ .[]
+          | . as $job
+          | select([ ($needs[$job.name] // [])[] | select(incomplete(.)) ] | length == 0)
+        ]' <<<"$jobs_json")
+    if [ "$(jq -r 'length' <<<"$waiting")" -eq 0 ]; then
+      echo "dependency-blocked"
+      return
+    fi
+    jobs_json="$waiting"
+  fi
 
   local selfhosted_count
   selfhosted_count=$(jq -r '[.[] | select(any(.labels[]; . == "self-hosted"))] | length' <<<"$jobs_json")

@@ -94,10 +94,28 @@ jobs:
             qjobs=$(gh api "repos/$REPO/actions/runs/${oldest_id}/jobs" --paginate \
                       --jq '[.jobs[] | select(.status == "queued") | {name, labels}]' 2>/dev/null || echo '[]')
             allr=$(gh api "orgs/${REPO%%/*}/actions/runners" --paginate 2>/dev/null || echo '{"runners":[]}')
-            mode=$(classify_stall "$allr" "$qjobs")
+            # REQ-325: a job waiting on its `needs` is not stalled, and every
+            # capacity answer given about it names a cause we cannot observe.
+            # The jobs API does not expose `needs`, so read it from the
+            # workflow definition at the checked-out ref. Best-effort: a
+            # missing file or parser yields `{}`, and classify_stall then
+            # answers exactly as it did before rather than reclassifying.
+            alljobs=$(gh api "repos/$REPO/actions/runs/${oldest_id}/jobs" --paginate \
+                        --jq '[.jobs[] | {name, status}]' 2>/dev/null || echo '[]')
+            wfpath=$(gh api "repos/$REPO/actions/runs/${oldest_id}" --jq '.path' 2>/dev/null || echo '')
+            needs=$(python3 tools/ci-diagnose/workflow-needs.py "$wfpath" 2>/dev/null || echo '{}')
+            mode=$(classify_stall "$allr" "$qjobs" "$alljobs" "$needs")
             echo "stall mode: $mode"
             labels=$(jq -r '[.[] | "\(.name) [\(.labels | join(","))]"] | join("; ")' <<<"$qjobs")
             case "$mode" in
+              dependency-blocked)
+                # Deliberately NOT appended to `problems`: this is not a
+                # stall. Every queued job is waiting on a `needs` that has
+                # not finished. Filing an issue here is what REQ-325 exists
+                # to stop — on 2026-09-06 this exact shape was reported as
+                # GitHub-hosted starvation while the fleet sat at online=12,
+                # busy=1.
+                echo "::notice::Run ${oldest_id} queued ${oldest_age}m waiting on job dependencies, not capacity. Queued: ${labels}" ;;
               hosted-starved)
                 problems+=("Run ${oldest_id} queued ${oldest_age}m — GITHUB-HOSTED starvation. Every queued job is \`ubuntu-latest\`; the self-hosted pool is irrelevant here and hosted capacity appears in the runners API at NO scope. Queued: ${labels}") ;;
               pool-offline)
