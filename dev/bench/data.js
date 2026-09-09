@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788928385870,
+  "lastUpdate": 1788944217230,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "7ceddefef107c4cf4bbd7ea59402cb5302bbabba",
-          "message": "fix(ci): mutation gate must not fail on an empty diff or a shallow base (REQ-288 follow-up) (#784)\n\nMy REQ-288 change (#773) made the rivet-cli mutation gate able to fail — and it\npromptly failed on #779 for the wrong reason, blocking the queue. Three defects,\nall mine:\n\n1. SHALLOW CHECKOUT. `--in-diff` needs the PR base commit present locally, but\n   the job checks out without `fetch-depth: 0`, so `git diff <base>...HEAD`\n   could not resolve the base.\n\n2. THE FAILURE WAS SWALLOWED. That diff ran as `... > pr.diff || true`, so the\n   error became an empty pr.diff instead of a stop — the exact silent-swallow\n   anti-pattern this whole v0.33 line of work exists to remove, committed by me\n   while removing it elsewhere.\n\n3. EMPTY DIFF READ AS MISSING EVIDENCE. cargo-mutants writes no report when\n   there is nothing to mutate, so the \"absent outcomes.json is RED\" guard fired\n   on the legitimate no-Rust-changes case.\n\nFixes:\n- `fetch-depth: 0` on the mutants-cli checkout\n- the diff step now fails loudly (`::error::` + exit 1) when the base cannot be\n  resolved, rather than proceeding over an unknown diff\n- an empty diff short-circuits to PASS in both the run and the check steps\n\nConfirmed with a negative control over the check logic:\n  empty diff              -> PASS (nothing to mutate)\n  diff + report, 2 missed -> FAIL (gate bites)\n  diff + no report        -> FAIL (missing evidence)\nyamllint clean.\n\nRefs: REQ-288",
-          "timestamp": "2026-08-07T06:54:30+02:00",
-          "tree_id": "1494bb37e236beb674faecd958b92350e2697255",
-          "url": "https://github.com/pulseengine/rivet/commit/7ceddefef107c4cf4bbd7ea59402cb5302bbabba"
-        },
-        "date": 1786080639343,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85196,
-            "range": "± 965",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 915633,
-            "range": "± 10315",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16784577,
-            "range": "± 1079233",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1967,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24563,
-            "range": "± 81",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 362237,
-            "range": "± 5530",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1528477,
-            "range": "± 23345",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166862,
-            "range": "± 558",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 2003276,
-            "range": "± 32033",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 36831033,
-            "range": "± 3552170",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 447427,
-            "range": "± 3365",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15418593,
-            "range": "± 195796",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1086538058,
-            "range": "± 22802567",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4212,
-            "range": "± 33",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46393,
-            "range": "± 285",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 814132,
-            "range": "± 41268",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62227,
-            "range": "± 216",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 724401,
-            "range": "± 4488",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9194817,
-            "range": "± 394252",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1233,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 13946,
-            "range": "± 80",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 228814,
-            "range": "± 1741",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22384,
-            "range": "± 856",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 156883,
-            "range": "± 1349",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1466209,
-            "range": "± 25242",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1509133,
             "range": "± 25062",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c8a2529125ad672a1375eebe163d9bc5d4cf67dd",
+          "message": "fix(mutants): exclude cfg(kani) code from the mutation scope (REQ-324) (#918)\n\nFound on PR #893 while shipping REQ-320. The PR-diff mutation gate reported one\nsurvivor — rivet-core/src/proofs.rs:209, replacing the proof harness\n`proof_coverage_percentage_bounds` with `unit`. That module sits behind\n`#[cfg(kani)]`, so `cargo test` never compiles it and the gate runs\n`cargo mutants -- --lib`. No test the gate executes can observe the mutation:\nthe finding is unkillable by construction, and appeared only because the PR\ntouched the file to add a struct field.\n\nThat is the same defect class as the release it was found in. A gate reporting\nsomething nothing can act on trains its readers to ignore it, and the next real\nsurvivor then costs nothing to dismiss.\n\nFixed by the route the requirement preferred: a cargo-mutants config, which\nscopes all three `cargo mutants` call sites in ci.yml from one place.\n\nThe config PATH is the whole trap. cargo-mutants 27.0.0 reads\n`.cargo/mutants.toml` and silently ignores a root-level `mutants.toml`. The\nfirst version of this put the file at the root, the accompanying test passed,\nand `cargo mutants -p rivet-core --list` still enumerated 236 mutants in\nproofs.rs. A test asserting a config exists says nothing about whether the tool\nreads it, so this was verified by listing mutants instead: 236 to 0 in\nproofs.rs, total still 5610, and rivet-core/src/lib.rs keeping its 61 — that\nlast number being what shows the exclusion did not quietly drop live code.\n\nThe oracle needed narrowing twice. Scanning for files CONTAINING the string\n`#[cfg(kani)]` matches three, and two are false positives whose exclusion would\nbe actively harmful: lib.rs merely DECLARES the module and is ordinary code\nthat must stay in scope, and rivet-cli/src/docs.rs contains the string inside a\ndocumentation topic. The invariant is therefore a file named by a\n`#[cfg(kani)] mod X;` declaration, and the test also asserts those two files are\nNOT excluded so a future broadening cannot silently remove real code.\n\nThen the exclusion assertion itself proved vacuous: it substring-matched the\nwhole config and so matched the rationale comment naming proofs.rs rather than\nthe exclude_globs entry, leaving the test green with the real exclusion\ndeleted. Found because the negative control failed to redden. It now parses the\narray.\n\nResidual, recorded rather than closed. This requirement warned that proofs.rs\nmust stay visible to SOMETHING, because a struct field added without updating a\ncfg(kani) literal once broke the proofs and the signal was written off as flake\nsix times. The only thing compiling it now is `cargo kani`, which fails at its\ninstall action about half the time (#839: measured 5 success, 6 failure, 11\nabsent across 22 CI runs on main, every failure at\nmodel-checking/kani-github-action@v1 with `cargo kani` skipped). A cheap\ntype-check guard does not exist — `RUSTFLAGS='--cfg kani' cargo check -p\nrivet-core` fails with unresolved import `kani`, the crate being injected by the\nKani compiler rather than resolvable from the registry. So the drift guard is\ngenuinely weaker after this change, not merely relocated; closing #839 is what\nwould restore it.\n\nConfirmed with fmt 0, clippy 1.97.0 --all-targets -D warnings 0, cargo test\n--workspace 0 (2366 passed), cargo test -p rivet-cli --test cli_commands 0\n(212 passed), rivet validate 0, rivet docs check 0, yamllint 0,\ndiagnose_test.sh 0. `rivet coverage --tests` reports REQ-324 with 1 test marker.\n\nFixes: REQ-324\nVerifies: REQ-324",
+          "timestamp": "2026-09-09T10:18:13+02:00",
+          "tree_id": "f20410d9e8a3574dc81489593219e7fe44454788",
+          "url": "https://github.com/pulseengine/rivet/commit/c8a2529125ad672a1375eebe163d9bc5d4cf67dd"
+        },
+        "date": 1788944216120,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85635,
+            "range": "± 2743",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 919898,
+            "range": "± 9545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 17068632,
+            "range": "± 1322826",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1994,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 23984,
+            "range": "± 886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 348630,
+            "range": "± 4051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1532518,
+            "range": "± 62183",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 166491,
+            "range": "± 11268",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2014947,
+            "range": "± 88025",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 41022268,
+            "range": "± 2300486",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 476248,
+            "range": "± 2707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17436718,
+            "range": "± 233253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1241902391,
+            "range": "± 94384657",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4262,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 45565,
+            "range": "± 195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 812080,
+            "range": "± 34274",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60302,
+            "range": "± 319",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 728752,
+            "range": "± 22270",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9689598,
+            "range": "± 781392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1181,
+            "range": "± 97",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14374,
+            "range": "± 142",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 230954,
+            "range": "± 3191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21230,
+            "range": "± 297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 145570,
+            "range": "± 1317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1343368,
+            "range": "± 7195",
             "unit": "ns/iter"
           }
         ]
