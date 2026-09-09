@@ -5,7 +5,7 @@
 
 schema:
   name: dev
-  version: "0.3.0"
+  version: "0.4.0"
   extends: [common]
   description: >
     Software development tracking types. Used to manage requirements,
@@ -174,6 +174,27 @@ artifact-types:
         type: string
         required: false
         description: Version baseline this verification belongs to
+      - name: test-name
+        type: string
+        required: false
+        description: >
+          Name of the test function or case that performs this verification
+          (e.g. a `cargo test` name). Declared so a project can record which
+          test IS the measure without an undeclared-field warning (#748).
+      - name: test-location
+        type: string
+        required: false
+        description: >
+          Path to the file containing the test, optionally with a line
+          (e.g. `tests/schema.rs:42`). For a hash-pinned reference to the
+          evidence, prefer `cited-source`.
+      - name: steps
+        type: structured
+        required: false
+        description: >
+          Ordered steps the verification performs. Spelled the same as
+          ASPICE `unit-verification.steps` so the two schemas agree on the
+          field's shape and a project can move between them (#748).
       - name: cited-source
         type: cited-source
         required: false
@@ -183,7 +204,13 @@ artifact-types:
     link-fields:
       - name: verifies
         link-type: verifies
-        target-types: [requirement]
+        # dev's own three types, listed explicitly rather than left open.
+        # A verification measure legitimately checks a feature (acceptance
+        # test) or a design decision (a test asserting the decision holds),
+        # not only a requirement — spar hit this migrating off a `feature`
+        # workaround (#748). Enumerated rather than omitted so the rule still
+        # says something: a `verifies` link into a verification is still wrong.
+        target-types: [requirement, feature, design-decision]
         required: true
         cardinality: one-or-many
     common-mistakes:
