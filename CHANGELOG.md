@@ -17,6 +17,30 @@ diagnostic is not exempt from the discipline it enforces.
 One addition, and it is the one that makes this note itself checkable: rivet can
 now state what a release contains, instead of the scope being retyped by hand.
 
+### Closed issues
+
+15 report(s) answered since `v0.36.0`.
+
+- **#748** — dev schema has no verification-measure type — the only ones shipped drag in ASPICE's SWE.3 chain
+- **#787** — coverage --tests: rivet-marker attribution binds to the wrong fn (preceding helper instead of the following #[test])
+- **#788** — coverage: requirement-verification link rule reports 0% while --tests markers show 100% and statuses are verified
+- **#807** — `check verification-evidence` is useless as a gate: blind to nested workspaces (false fail) + satisfied by an empty stub (false pass)
+- **#854** — friction: a dead externals path: poisons all cross-repo resolution (no git: fallback), and validate then reports '0 broken cross-refs' beside dozens of unresolved-target errors
+- **#862** — ci: the self-hosted fleet restarts mid-run, killing all in-flight jobs and reporting them as failures
+- **#880** — add assigns an ID that ignores the repo's own prefix convention, and there is no --id
+- **#885** — The same allowed-values constraint is a hard ERROR in 'rivet add' and a WARNING in 'rivet validate' — a repo's artifacts can sit in a state its own tool refuses to create, with CI green (60% of jess's AFDs do)
+- **#887** — rivet add: no way to choose an artifact ID, and the derived one can be actively misleading
+- **#892** — coverage --tests attributes every source marker to the PRECEDING function, so each traceability link names the wrong test
+- **#895** — bridge-schema coverage rules are reported but their definitions are not discoverable — a failing rule cannot be acted on
+- **#901** — rivet add cannot create an artifact with the ID that rivet next-id -p just named
+- **#907** — release status can't be scoped to the local project — externals sharing a version label make it permanently NOT cuttable
+- **#910** — rivet coverage --tests attributes each marker to the PRECEDING function, not the test it sits on
+- **#912** — rivet stamp replaces the provenance block entirely: deletes model on 270 artifacts, session-id on 4, and rewrites timestamp on 575
+
+_(4 auto-filed runner-liveness tracking issue(s) closed in this
+window and are excluded — they are opened and closed by the probe itself,
+not release content.)_
+
 ### Added
 - **`rivet release notes <version>`** (REQ-327, #900) — generates the release
   note from the artifact store and the commit trailers, implementing Automotive
