@@ -1,0 +1,18 @@
+# cargo-mutants scope for this repository.
+#
+# `#[cfg(kani)]` code is compiled only by `cargo kani`. The mutation gates run
+# `cargo mutants ... -- --lib`, so nothing they execute can observe a mutation
+# inside such a module: every mutant there survives BY CONSTRUCTION, not
+# because a test is missing.
+#
+# PR #893 surfaced one — rivet-core/src/proofs.rs:209, replacing
+# `proof_coverage_percentage_bounds` with `unit` — reported only because the PR
+# happened to touch the file. A gate that reports something nothing can act on
+# trains its readers to ignore it, and the next REAL survivor in that report
+# then costs nothing to dismiss (REQ-324).
+#
+# Keep this list in step with the `#[cfg(kani)]` modules in the workspace;
+# `mutants_scope.rs` fails if a cfg(kani) file is not listed here.
+exclude_globs = [
+    "rivet-core/src/proofs.rs",
+]
