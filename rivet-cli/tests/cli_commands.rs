@@ -11111,3 +11111,131 @@ fn coverage_stays_quiet_when_no_marker_evidence_exists() {
         "must not advertise marker evidence when there is none; got:\n{text}"
     );
 }
+/// `next-id` given a hyphenated PREFIX must keep the hyphens (#887, REQ-330).
+///
+/// The positional argument routes through `prefix_for_type`, whose fallback
+/// flattens hyphens — correct for a type name (`sw-req` -> `SWREQ`), wrong for
+/// a prefix. `next-id REQ-DRV` returned `REQDRV-001`, which matches no existing
+/// id in a project whose convention is `REQ-DRV-COMPONENT-NNN`. The `--prefix`
+/// flag was already correct, so the tool could name the series — just not by the
+/// route the reporter took.
+///
+/// rivet: verifies REQ-330
+#[test]
+fn next_id_preserves_hyphens_in_a_literal_prefix() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(init.status.success());
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  \
+         - id: REQ-DRV-GPIO-001\n    type: requirement\n    title: t\n    status: draft\n",
+    )
+    .unwrap();
+
+    let next = |arg: &str| -> String {
+        let out = Command::new(rivet_bin())
+            .args(["--project", dirs, "next-id", arg])
+            .output()
+            .expect("next-id");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    assert_eq!(next("REQ-DRV"), "REQ-DRV-001", "hyphens must survive");
+    assert_eq!(
+        next("REQ-DRV-GRAPH"),
+        "REQ-DRV-GRAPH-001",
+        "a multi-segment series must be nameable"
+    );
+    // Regression guard: a lowercase TYPE name must still resolve via the type,
+    // which is what `prefix_for_type` is for. `requirement` has an existing
+    // artifact, so the learned prefix wins.
+    assert_eq!(
+        next("requirement"),
+        "REQ-DRV-GPIO-002",
+        "a type name must still learn the project's convention"
+    );
+}
+
+/// `add --field <base-field>=` must not silently misfile a first-class field
+/// (#887, REQ-330).
+///
+/// `--field release=v0.7.1` landed under custom `fields:` rather than the
+/// top-level `release:`, so `rivet list --release v0.7.1` returned 0 artifacts
+/// while `rivet get` displayed the value as set. For this project that is
+/// severe: release readiness IS a query over `release:`, so the artifact was
+/// invisible to the thing the field exists for, and looked fine.
+///
+/// The reporter's own judgement: "A rejection would have been fine. Silence was
+/// not."
+///
+/// rivet: verifies REQ-330
+#[test]
+fn add_rejects_a_base_field_passed_as_a_custom_field() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(init.status.success());
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "add",
+            "--type",
+            "requirement",
+            "--title",
+            "t",
+            "--field",
+            "release=v0.7.1",
+        ])
+        .output()
+        .expect("add");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "a base field passed via --field must be rejected, not misfiled; got:\n{text}"
+    );
+    assert!(
+        text.contains("release"),
+        "the message must name the offending field; got:\n{text}"
+    );
+    assert!(
+        text.contains("--release") || text.contains("set-release"),
+        "the message must point at the flag that works; got:\n{text}"
+    );
+
+    // A genuinely custom field must still be accepted.
+    let ok = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "add",
+            "--type",
+            "requirement",
+            "--title",
+            "t2",
+            "--field",
+            "priority=must",
+        ])
+        .output()
+        .expect("add custom");
+    assert!(
+        ok.status.success(),
+        "a real custom field must still work: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+}
