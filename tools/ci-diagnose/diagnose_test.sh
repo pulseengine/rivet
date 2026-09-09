@@ -21,6 +21,7 @@ check() { # check <name> <expected> <actual>
 
 # ── classify_stall ────────────────────────────────────────────────────────
 # rivet: verifies REQ-317
+# rivet: verifies REQ-325
 test_classify_stall() {
   echo "classify_stall:"
 
@@ -60,6 +61,60 @@ test_classify_stall() {
   # Nothing queued is not a stall.
   check "nothing queued" "no-queue" \
     "$(classify_stall "$runners_idle" '[]')"
+
+  # ── REQ-325 ────────────────────────────────────────────────────────────
+  # A job waiting on its `needs` is not stalled at all, and the old
+  # classifier called this one `hosted-starved` — a cause it cannot observe.
+  # Reduced from the v0.36.0 release run on 2026-09-06: `create-release` sat
+  # queued behind `build-compliance`, which was still running, while the
+  # fleet was almost entirely idle (online=12, busy=1). Every queued job
+  # carried `ubuntu-latest`, so the hosted-starvation branch fired first and
+  # would have auto-filed an issue blaming GitHub capacity for a dependency
+  # wait. Nothing was starved.
+  local runners_nearly_idle='{"runners":[
+      {"status":"online","busy":true,"labels":[{"name":"rust-cpu"}]},
+      {"status":"online","busy":false,"labels":[{"name":"rust-cpu"}]},
+      {"status":"online","busy":false,"labels":[{"name":"lean-mem"}]}]}'
+  local jobs_release_queued='[{"name":"create-release","labels":["ubuntu-latest"]}]'
+  local all_jobs_release='[
+      {"name":"build-compliance","status":"in_progress"},
+      {"name":"create-release","status":"queued"}]'
+  local needs_release='{"create-release":["build-compliance"]}'
+  check "dependency-blocked (not hosted starvation)" "dependency-blocked" \
+    "$(classify_stall "$runners_nearly_idle" "$jobs_release_queued" \
+                      "$all_jobs_release" "$needs_release")"
+
+  # The same shape once the dependency HAS completed is a real hosted stall
+  # again — the new branch must not swallow the mode it sits in front of.
+  local all_jobs_done='[
+      {"name":"build-compliance","status":"completed"},
+      {"name":"create-release","status":"queued"}]'
+  check "hosted starvation once needs are complete" "hosted-starved" \
+    "$(classify_stall "$runners_nearly_idle" "$jobs_release_queued" \
+                      "$all_jobs_done" "$needs_release")"
+
+  # A matrix dependency: declared once as `Build ${{ matrix.target }}`,
+  # reported by the API under many concrete names. Left unmatched it would
+  # read as a capacity stall, which is the defect one level down.
+  local all_jobs_matrix='[
+      {"name":"Build x86_64-unknown-linux-gnu","status":"completed"},
+      {"name":"Build aarch64-apple-darwin","status":"in_progress"},
+      {"name":"create-release","status":"queued"}]'
+  local needs_matrix='{"create-release":["Build *"]}'
+  check "matrix dependency matched by prefix" "dependency-blocked" \
+    "$(classify_stall "$runners_nearly_idle" "$jobs_release_queued" \
+                      "$all_jobs_matrix" "$needs_matrix")"
+
+  # A need naming no job at all must NOT invent a dependency wait.
+  local needs_unknown='{"create-release":["a job that does not exist"]}'
+  check "unknown need does not invent a block" "hosted-starved" \
+    "$(classify_stall "$runners_nearly_idle" "$jobs_release_queued" \
+                      "$all_jobs_release" "$needs_unknown")"
+
+  # Two args must behave exactly as before: callers that cannot supply the
+  # needs graph still get the old answer rather than a silent reclassification.
+  check "no needs graph supplied falls back" "hosted-starved" \
+    "$(classify_stall "$runners_nearly_idle" "$jobs_release_queued")"
 }
 
 # ── classify_failure ──────────────────────────────────────────────────────
