@@ -17343,7 +17343,25 @@ fn cmd_next_id(
     // fallback — so `next-id requirement` and `next-id FEAT` both work). The
     // explicit flags win if both are given.
     let effective_type = artifact_type.or(target);
+    // #887: the positional routes through `prefix_for_type`, whose fallback
+    // flattens hyphens — right for a TYPE name (`sw-req` -> `SWREQ`), wrong for
+    // a PREFIX. `next-id REQ-DRV` returned `REQDRV-001`, matching no id in a
+    // project whose convention is `REQ-DRV-COMPONENT-NNN`, so the command whose
+    // job is "tell me the next id" could not name a new hyphenated series.
+    // `--prefix` was already verbatim and correct; this makes the positional
+    // agree rather than adding a third spelling.
+    //
+    // An argument that is already prefix-shaped — uppercase alphanumerics and
+    // hyphens — is taken literally. A type name is lowercase by convention, so
+    // `requirement` still resolves through the type and learns the project's
+    // convention, and a single-segment `FEAT` resolves identically either way.
+    let looks_like_literal_prefix = |t: &str| {
+        !t.is_empty()
+            && t.chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-')
+    };
     let resolved_prefix = match (effective_type, prefix) {
+        (Some(t), _) if looks_like_literal_prefix(t) => t.to_string(),
         (Some(t), _) => mutate::prefix_for_type(t, &store),
         (_, Some(p)) => p.to_string(),
         (None, None) => anyhow::bail!(
@@ -17477,6 +17495,36 @@ fn cmd_add(
         let prefix = mutate::prefix_for_type(artifact_type, &store);
         next_id_git_aware(&cli.project, &store, &prefix)
     };
+
+    // #887 / REQ-330: a first-class base field passed via `--field` used to be
+    // misfiled into custom `fields:` instead of the top-level key. The value
+    // was not lost — `rivet get` displayed it — but `rivet list --release`
+    // returned nothing, because release readiness is a query over the top-level
+    // `release:`. An artifact invisible to the thing the field exists for, that
+    // looks correct on inspection, is the worst of the three outcomes.
+    //
+    // Rejected rather than silently rerouted, which is the reporter's own
+    // judgement: "A rejection would have been fine. Silence was not." Rerouting
+    // would also make `--field x=` mean two different things depending on the
+    // name, which is harder to explain than a refusal.
+    const BASE_FIELDS: &[(&str, &str)] = &[
+        ("release", "--release"),
+        ("status", "--status"),
+        ("title", "--title"),
+        ("description", "--description"),
+        ("id", "--id"),
+        ("type", "--type"),
+        ("tags", "--tags"),
+    ];
+    for (key, _) in fields {
+        if let Some((name, flag)) = BASE_FIELDS.iter().find(|(n, _)| *n == key.as_str()) {
+            anyhow::bail!(
+                "`--field {name}=…` sets a CUSTOM field, but `{name}` is a top-level \
+                 base field — it would be written under `fields:` and stay invisible \
+                 to `rivet list --{name}` and the release queries. Use `{flag} …` instead."
+            );
+        }
+    }
 
     // Build fields map
     let mut fields_map: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
