@@ -362,6 +362,28 @@ pub fn resolve_external_dir(
         } else {
             PathBuf::from(local_path)
         };
+        // #854: a dead `path:` used to take out the whole external, and one
+        // nonexistent path was enough to degrade EVERY cross-repo ref —
+        // including externals whose repos had synced fine — into a local
+        // "target does not exist" error. Where a `git:` is also declared there
+        // is a perfectly good second source, so use it.
+        //
+        // Only when `git:` exists. With no git url the dead path is left as-is
+        // so the resulting error still names the path the author actually
+        // wrote, rather than a cache directory they never configured.
+        if !p.exists() && ext.git.is_some() {
+            let cached = cache_dir.join(&ext.prefix);
+            // Said out loud, not silently substituted: this issue began with a
+            // reader unable to tell which source had been used.
+            log::warn!(
+                "external '{}': path '{}' does not exist — falling back to the \
+                 git cache at {}. Run `rivet sync` if that is empty.",
+                ext.prefix,
+                p.display(),
+                cached.display()
+            );
+            return cached;
+        }
         p.canonicalize().unwrap_or(p)
     } else {
         cache_dir.join(&ext.prefix)
@@ -1093,6 +1115,82 @@ pub fn detect_circular_deps(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A dead `path:` must fall back to the git cache when `git:` is declared
+    /// (#854, REQ-331).
+    ///
+    /// One nonexistent path was enough to stop every external loading, so every
+    /// cross-repo ref — including ones whose repos synced fine — degraded into a
+    /// local "target does not exist" error. The reporter's case was a `path:`
+    /// pointing at a volume that no longer existed.
+    ///
+    /// rivet: verifies REQ-331
+    #[test]
+    fn dead_path_falls_back_to_the_git_cache() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let project = tmp.path();
+        let cache = project.join(".rivet/repos");
+        std::fs::create_dir_all(cache.join("dead")).expect("cache dir");
+
+        let ext = ExternalProject {
+            git: Some("https://example.invalid/x.git".into()),
+            path: Some("/definitely/not/here".into()),
+            git_ref: None,
+            prefix: "dead".into(),
+        };
+        let resolved = resolve_external_dir(&ext, &cache, project);
+        assert_eq!(
+            resolved,
+            cache.join("dead"),
+            "a dead path with a git url must resolve to the git cache"
+        );
+    }
+
+    /// A LIVE path still wins — the fallback must not steal precedence.
+    ///
+    /// rivet: verifies REQ-331
+    #[test]
+    fn live_path_still_wins_over_the_git_cache() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let project = tmp.path();
+        let cache = project.join(".rivet/repos");
+        std::fs::create_dir_all(cache.join("live")).expect("cache dir");
+        let real = project.join("sibling");
+        std::fs::create_dir_all(&real).expect("sibling");
+
+        let ext = ExternalProject {
+            git: Some("https://example.invalid/x.git".into()),
+            path: Some("sibling".into()),
+            git_ref: None,
+            prefix: "live".into(),
+        };
+        let resolved = resolve_external_dir(&ext, &cache, project);
+        assert_eq!(
+            resolved,
+            real.canonicalize().unwrap_or(real),
+            "a working path must still be preferred"
+        );
+    }
+
+    /// A dead path with NO git url must stay as-is, so the error still names
+    /// the path the author actually wrote rather than a cache dir they never
+    /// configured.
+    ///
+    /// rivet: verifies REQ-331
+    #[test]
+    fn dead_path_without_git_is_left_alone() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let project = tmp.path();
+        let cache = project.join(".rivet/repos");
+        let ext = ExternalProject {
+            git: None,
+            path: Some("/definitely/not/here".into()),
+            git_ref: None,
+            prefix: "nogit".into(),
+        };
+        let resolved = resolve_external_dir(&ext, &cache, project);
+        assert_eq!(resolved, PathBuf::from("/definitely/not/here"));
+    }
     use serial_test::serial;
 
     // rivet: verifies REQ-020
