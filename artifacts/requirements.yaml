@@ -8535,3 +8535,14 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-08T00:00:00Z
+  - id: REQ-332
+    type: requirement
+    title: "strict-mode merge serialization turns a throughput cost into a correctness risk on the two files that always collide"
+    status: proposed
+    description: "Branch protection sets strict: true, so every merge marks every other open PR out of date and forces a rebase plus a full CI re-run. N queued PRs therefore cost N SEQUENTIAL CI cycles rather than one parallel pass. Measured over the 2026-09-06 to 09 drain: five PRs (#897, #903, #906, #908, #909) were landed one at a time, each requiring a rebase and a fresh cycle, and a single cycle has run past 75 minutes under label-partitioned saturation (REQ-317). The wall-clock cost is the smaller half. The real cost is that serialization MANUFACTURES conflict-resolution events, and this repository's two hottest files collide at the tail on every concurrent branch — requirements.yaml and rivet-cli/tests/cli_commands.rs. Three of those rebases hit mid-statement splits. Two were two artifacts sharing one provenance block, where the naive keep-both resolution produces VALID YAML that rivet validate passes while one artifact silently loses its provenance — no gate in the chain would catch it, and it was found only by checking for the field by name. One was a FALSE overlap where git aligned two different test function bodies because both open with the same line; surgery there yields code that COMPILES and is wrong, and the branch had to be rebuilt from main instead. So the policy converts a throughput problem into a correctness risk, at a rate proportional to how many PRs are in flight. Candidate fix: a GitHub merge queue, which batches candidates and tests them against the prospective merge result without forcing a manual rebase per PR — keeping the guarantee strict mode exists to provide while removing the per-merge rebase. Alternatives worth weighing: relaxing strict and relying on the required CI Gate alone; or keeping the current policy and formalising the one-PR-at-a-time discipline the autonomous loop already follows, which is the status quo made explicit and costs the same time. Whichever is chosen, the mid-statement conflict shapes deserve their own guard independently, since they are latent whenever two branches touch those files."
+    release: v0.37.0
+    tags: [ci, process, merge-queue]
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-09T00:00:00Z
