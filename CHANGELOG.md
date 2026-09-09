@@ -5,6 +5,84 @@
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-09-09
+
+v0.36.0 collected signals that lied about the code. This release collects
+signals that lied about **themselves** — and three of them were defects in the
+very checks shipped to fix the previous ones. `classify_stall` named a cause it
+could not observe, in the code REQ-317 shipped one day earlier to stop exactly
+that. Its replacement then did it again, twice, by two different routes. A
+diagnostic is not exempt from the discipline it enforces.
+
+One addition, and it is the one that makes this note itself checkable: rivet can
+now state what a release contains, instead of the scope being retyped by hand.
+
+### Added
+- **`rivet release notes <version>`** (REQ-327, #900) — generates the release
+  note from the artifact store and the commit trailers, implementing Automotive
+  SPICE PAM v4.1 information item 11-03, which SPL.2.BP6 requires accompany each
+  release. Until now the scope was re-typed by hand into CHANGELOG prose and had
+  drifted from the release-scope query twice, caught only by diffing the two
+  manually. Sections: identification, functionalities provided, limitations in
+  relation to the committed scope, result of verification measures, and the
+  commits since a base ref whose trailers name an artifact in this release.
+  The note **ends by naming the eight 11-03 elements rivet does not compute**,
+  each with the evidence it would need — a note that silently omits a required
+  element is worse than one declaring the gap. `#N` tokens are reported as
+  **refs, never as closures**: under squash-merge a subject's `#N` is usually
+  the pull request, and the two are indistinguishable from the text.
+
+### Fixed
+- **`rivet stamp` destroyed provenance** (REQ-337, #912) — `set_provenance`
+  replaced the whole block, so every sub-field the caller did not pass was
+  dropped. Measured on this repository with the documented hook invocation
+  across 1026 artifacts: `model` **deleted on 270**, `session-id` on 4,
+  `timestamp` rewritten on 575. The model field is the worse loss — the
+  documented automatic invocation erased the field the documented manual one
+  exists to set, and for a project shipping EU AI Act artifacts, which model
+  generated an artifact *is* the provenance. Now merges; `timestamp` is
+  create-only, matching its own definition as the time of creation.
+- **Release readiness counted other projects** (REQ-338, #907) — a version
+  label shared with a linked external project made a release permanently
+  uncuttable, because the verdict depended on another project's schedule.
+  Externals are now excluded from the verdict and reported separately.
+  `release notes` had shipped with the same scoping and was listing another
+  project's unverified work as *this* release's withheld scope.
+- **The liveness probe reported an outage that was not happening** (REQ-342,
+  #919) — a failed runner lookup was substituted with an empty pool, which the
+  classifier read as every runner being down. The lookup needs the
+  `administration` scope, not grantable to `GITHUB_TOKEN`, so it failed on every
+  probe: **every self-hosted stall reported `pool-offline` whatever its cause**.
+  A second route remained after the first fix — a non-empty error body survives
+  an emptiness check — so the payload must now *be* a runner list.
+- **A dependency wait was reported as a capacity stall** (REQ-325) — a job
+  queued behind its `needs` returned `hosted-starved` while the fleet sat at
+  `online=12 busy=1`. Now classified `dependency-blocked`, and the probe does
+  not file an issue for it.
+- **The mutation gate reported unkillable mutants** (REQ-324) — mutants inside
+  `#[cfg(kani)]` code cannot be killed by construction, since `cargo test` never
+  compiles those modules. Reporting them trains readers to dismiss the report,
+  which is what makes the next real survivor cheap to ignore.
+- **`coverage --tests` named the wrong test** (REQ-326, #892, #787) — each
+  marker was attributed to the PRECEDING function, so every evidence line named
+  a different test than the one that ran.
+- **The same evidence read 0% and 100%** (REQ-329, #788) — coverage link rules
+  cannot see source markers, so two views of one project disagreed by a hundred
+  points with nothing telling a release gate it was reading the narrower one.
+- **`next-id` stripped hyphens; `add --field` misfiled base fields** (REQ-330,
+  #887) — a hyphenated prefix came back with its hyphens removed, so a project
+  whose convention is a multi-segment prefix got an id series that did not match
+  it. Separately, `--field release=…` wrote a first-class field into custom
+  fields, leaving the artifact invisible to the very query the field exists for.
+- **A dead externals path poisoned all cross-repo resolution** (REQ-331, #854) —
+  one nonexistent `path:` stopped every external loading. Now falls back to the
+  git cache when one is declared, and says so.
+- **The `dev` schema could not record a real verification measure** (REQ-339,
+  #748) — `verifies` accepted only `requirement`, and `test-name`,
+  `test-location` and `steps` were undeclared, so migrating off a hand-rolled
+  workaround would have relocated the undeclared-field warnings rather than
+  removing them.
+
 ## [0.36.0] - 2026-09-05
 
 Every member of this release is a signal that lied. Not a wrong answer — a
