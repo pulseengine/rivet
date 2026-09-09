@@ -11460,25 +11460,6 @@ fn release_notes_counts_source_markers_as_verification_evidence() {
     );
 }
 
-/// `#N` tokens in a subject are references, never asserted closures — a `#N`
-/// in a squash-merge subject is usually the PR, not an issue.
-///
-// rivet: verifies REQ-327
-#[test]
-fn release_notes_never_claims_an_issue_was_closed() {
-    let tmp = release_notes_fixture();
-    let out = Command::new(rivet_bin())
-        .args(["release", "notes", "v1.0.0"])
-        .current_dir(tmp.path())
-        .output()
-        .expect("failed to execute rivet release notes");
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        !text.contains("closes #"),
-        "a release note must not assert closure it cannot verify. Got:\n{text}"
-    );
-}
-
 /// Artifacts committed to the release but not release-ready are named, not
 /// dropped — ASPICE 11-03 "limitations in relation to the committed scope".
 ///
@@ -11781,5 +11762,140 @@ fn dev_verification_declares_test_fields_and_verifies_dev_types() {
     assert!(
         v.status.success(),
         "the probe project must validate cleanly. Got:\n{text}"
+    );
+}
+
+/// A project with real git history, so the `--since` changes section actually
+/// renders.
+///
+/// Without git history the changes section is never produced, so every
+/// assertion about it passes on empty output. An earlier test asserting the
+/// no-false-closure guarantee did exactly that: it ran `release notes` with no
+/// `--since`, and passed against a build that still printed "closes #N".
+/// It was removed rather than kept, because a test that greenlights the defect
+/// it names is a worse signal than no test. Found by negative control.
+fn release_notes_git_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path().to_path_buf();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n\
+         commits:\n  format: trailers\n  trailers:\n    Fixes: fixes\n\
+         \x20 exempt-types: [chore]\n  skip-trailer: \"Trace: skip\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts").join("a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: shipped thing\n    \
+             status: verified\n    release: v1.0.0\n",
+    )
+    .unwrap();
+
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .expect("git");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "t@example.com"]);
+    git(&["config", "user.name", "T"]);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "chore: base\n\nTrace: skip"]);
+
+    // A squash-merge-shaped subject: the (#77) is the PULL REQUEST, and #42 is
+    // the issue. From the subject alone they are indistinguishable, which is
+    // why the note must report both as refs and assert closure of neither.
+    std::fs::write(dir.join("artifacts").join("b.yaml"), "artifacts: []\n").unwrap();
+    git(&["add", "."]);
+    git(&[
+        "commit",
+        "-q",
+        "-m",
+        "fix(thing): repair the thing (#42) (#77)\n\nFixes: REQ-001",
+    ]);
+
+    (tmp, dir)
+}
+
+/// The `--since` changes section must render, list the commit, and report its
+/// `#N` tokens as REFERENCES — never as an asserted closure.
+///
+// rivet: verifies REQ-327
+#[test]
+fn release_notes_changes_section_lists_commits_as_refs_not_closures() {
+    let (_tmp, dir) = release_notes_git_fixture();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "release",
+            "notes",
+            "v1.0.0",
+            "--since",
+            "HEAD~1",
+        ])
+        .current_dir(&dir)
+        .output()
+        .expect("rivet release notes --since");
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    // Assert the section RENDERED. Without this the rest is vacuous — the
+    // original version of this guarantee passed on a note that produced no
+    // changes section at all.
+    assert!(
+        text.contains("Changes since HEAD~1"),
+        "the --since section must render. Got:\n{text}"
+    );
+    assert!(
+        text.contains("repair the thing"),
+        "a commit whose trailer names an artifact in this release must be \
+         listed. Got:\n{text}"
+    );
+    assert!(
+        text.contains("refs #42") || text.contains("refs #42, #77"),
+        "`#N` tokens must be reported as refs. Got:\n{text}"
+    );
+    assert!(
+        !text.contains("closes #"),
+        "a release note must never assert a closure it cannot verify: under \
+         squash-merge a subject's `#N` is usually the PR, not an issue. \
+         Got:\n{text}"
+    );
+}
+
+/// A commit whose trailers name no artifact in this release must not appear.
+///
+// rivet: verifies REQ-327
+#[test]
+fn release_notes_changes_section_excludes_unrelated_commits() {
+    let (_tmp, dir) = release_notes_git_fixture();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dir.to_str().unwrap(),
+            "release",
+            "notes",
+            "v1.0.0",
+            "--since",
+            "HEAD~1",
+        ])
+        .current_dir(&dir)
+        .output()
+        .expect("rivet release notes --since");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !text.contains("chore: base"),
+        "the base commit names no artifact in this release and must be \
+         excluded from the changes section. Got:\n{text}"
     );
 }
