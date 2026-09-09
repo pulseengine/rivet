@@ -7,7 +7,12 @@ land a release commit and push a signed tag.
 ## TL;DR
 
 ```bash
-# 0. Generate the release note from the trace — do NOT hand-write the scope.
+# 0a. List the issues this release closed — these belong IN the CHANGELOG.
+#     A note naming only requirements does not tell a reader which REPORTS were
+#     answered, which is what someone waiting on a fix looks for.
+tools/release/closed-issues.sh v<PREV> >> /tmp/closed.md
+
+# 0b. Generate the release note from the trace — do NOT hand-write the scope.
 #    Implements ASPICE 11-03 (SPL.2.BP6 requires a note per release). The
 #    output names what is delivered, what was committed but withheld, the
 #    verification evidence per artifact, and the 11-03 elements rivet does
@@ -40,6 +45,20 @@ git push origin vX.Y.Z
   doesn't *look* abandoned (a stale `0.4.x` here previously caused exactly
   that confusion); a drift between releases is harmless. The published
   channel is `npm view @pulseengine/rivet version`, not these files.
+
+## Closed issues belong in the CHANGELOG
+
+`tools/release/closed-issues.sh v<PREV>` emits the section. Two things it gets
+right that a hand-written list does not:
+
+- **It refuses to truncate.** `gh issue list --limit N` silently returns the
+  first N. A limit of 60 dropped three real closures from v0.37.0's own list
+  while looking complete; the script now fails if the row count reaches the
+  limit, because a truncated release note is worse than none.
+- **It excludes auto-filed noise, visibly.** The runner-liveness probe opens and
+  auto-closes its own tracking issue — four closed inside the v0.37.0 window.
+  They are excluded by title and the excluded count is printed, so the filtering
+  is stated rather than silent.
 
 ## The release note is generated, not written
 
