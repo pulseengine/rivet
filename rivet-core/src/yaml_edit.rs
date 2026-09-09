@@ -562,6 +562,185 @@ impl YamlEditor {
         Ok(())
     }
 
+    /// Merge into an artifact's `provenance:` block, preserving every
+    /// sub-field the caller does not supply.
+    ///
+    /// This is the counterpart to [`Self::set_provenance`], which replaces the
+    /// block wholesale. Replacement is the wrong default for `rivet stamp`:
+    /// the documented hook invocation passes `--created-by` alone, so a
+    /// replace erased `provenance.model` on 270 artifacts and `session-id` on
+    /// 4 in this repository's own tree, and advanced `timestamp` on 575 (#912).
+    ///
+    /// Rules:
+    /// - `created-by` is always written (it is a required argument).
+    /// - `model`, `session-id`, `reviewed-by`: the caller's value wins when
+    ///   supplied; the existing value survives when not.
+    /// - `timestamp` is CREATE-ONLY. `model.rs` documents it as the timestamp
+    ///   *of creation* and the Polarion export maps it to `WorkItem.created`,
+    ///   so an existing value is preserved even when the caller supplies one.
+    ///   Use [`Self::set_provenance`] to deliberately re-stamp.
+    /// - Any other sub-field — notably the nested `federation:` block from
+    ///   `rivet supplier pull`, for which there is no parameter — is carried
+    ///   over verbatim, including its continuation lines.
+    pub fn merge_provenance(
+        &mut self,
+        id: &str,
+        created_by: &str,
+        model: Option<&str>,
+        session_id: Option<&str>,
+        timestamp: Option<&str>,
+        reviewed_by: Option<&str>,
+    ) -> Result<(), String> {
+        let (block_start, block_end) = self
+            .find_artifact_block(id)
+            .ok_or_else(|| format!("artifact '{id}' not found"))?;
+
+        let field_indent = self.field_indent(block_start);
+        let sub_indent = " ".repeat(field_indent.saturating_add(2));
+
+        // Read the existing block, if any, before mutating anything.
+        let existing = self.find_field_in_block(block_start, block_end, "provenance");
+        let mut old_scalars: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        let mut carried: Vec<String> = Vec::new();
+
+        if let Some(prov_line) = existing {
+            let mut prov_end = prov_line.saturating_add(1);
+            while prov_end < block_end {
+                let line = &self.lines[prov_end];
+                if !line.trim().is_empty() {
+                    let this_indent = line.len().saturating_sub(line.trim_start().len());
+                    if this_indent <= field_indent {
+                        break;
+                    }
+                }
+                prov_end = prov_end.saturating_add(1);
+            }
+
+            // Flow style — `provenance: {created-by: x, model: y}` — keeps
+            // everything on the `provenance:` line itself, so the block-style
+            // walk below sees an empty body and would drop every sub-field.
+            // 18 artifacts in this repository are written this way (#912).
+            let head = self.lines[prov_line]
+                .trim()
+                .strip_prefix("provenance:")
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if head.starts_with('{') {
+                let inner = head.strip_suffix('}').ok_or_else(|| {
+                    format!(
+                        "artifact '{id}': provenance is a multi-line flow mapping, which \
+                         cannot be merged without reformatting it. Rewrite it as a block \
+                         mapping, or use set_provenance to replace it deliberately."
+                    )
+                })?;
+                for pair in inner.trim_start_matches('{').split(',') {
+                    if let Some((k, v)) = pair.split_once(':') {
+                        old_scalars.insert(k.trim().to_string(), v.trim().to_string());
+                    }
+                }
+            }
+
+            // Segment the body: a line at exactly sub_indent opens a
+            // sub-field; deeper lines continue whichever one is open.
+            let known = [
+                "created-by",
+                "model",
+                "session-id",
+                "timestamp",
+                "reviewed-by",
+            ];
+            let mut carrying = false;
+            for line in &self.lines[prov_line.saturating_add(1)..prov_end] {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let this_indent = line.len().saturating_sub(line.trim_start().len());
+                if this_indent == sub_indent.len() {
+                    let key = trimmed.split(':').next().unwrap_or("").trim();
+                    if known.contains(&key) {
+                        carrying = false;
+                        let value = trimmed
+                            .split_once(':')
+                            .map(|(_, v)| v.trim())
+                            .unwrap_or("")
+                            .to_string();
+                        old_scalars.insert(key.to_string(), value);
+                    } else {
+                        // Unknown sub-field (e.g. `federation:`) — carry it
+                        // and everything nested beneath it.
+                        carrying = true;
+                        carried.push(line.clone());
+                    }
+                } else if carrying {
+                    carried.push(line.clone());
+                }
+            }
+        }
+
+        // Caller wins where supplied; the stored value survives where not.
+        let pick = |supplied: Option<&str>, key: &str| -> Option<String> {
+            supplied
+                .map(str::to_string)
+                .or_else(|| old_scalars.get(key).cloned())
+        };
+        // Create-only: an existing creation timestamp is never advanced.
+        let effective_timestamp = old_scalars
+            .get("timestamp")
+            .cloned()
+            .or_else(|| timestamp.map(str::to_string));
+
+        let mut prov_lines = vec![
+            format!("{}provenance:", " ".repeat(field_indent)),
+            format!("{sub_indent}created-by: {created_by}"),
+        ];
+        if let Some(m) = pick(model, "model") {
+            prov_lines.push(format!("{sub_indent}model: {m}"));
+        }
+        if let Some(sid) = pick(session_id, "session-id") {
+            prov_lines.push(format!("{sub_indent}session-id: {sid}"));
+        }
+        if let Some(ts) = effective_timestamp {
+            prov_lines.push(format!("{sub_indent}timestamp: {ts}"));
+        }
+        if let Some(rb) = pick(reviewed_by, "reviewed-by") {
+            prov_lines.push(format!("{sub_indent}reviewed-by: {rb}"));
+        }
+        prov_lines.extend(carried);
+
+        if let Some(prov_line) = existing {
+            let mut prov_end = prov_line.saturating_add(1);
+            while prov_end < block_end {
+                let line = &self.lines[prov_end];
+                if !line.trim().is_empty() {
+                    let this_indent = line.len().saturating_sub(line.trim_start().len());
+                    if this_indent <= field_indent {
+                        break;
+                    }
+                }
+                prov_end = prov_end.saturating_add(1);
+            }
+            self.lines.splice(prov_line..prov_end, prov_lines);
+        } else {
+            let mut insert_at = block_end;
+            while insert_at > block_start.saturating_add(1)
+                && self
+                    .lines
+                    .get(insert_at.saturating_sub(1))
+                    .is_some_and(|l| l.trim().is_empty())
+            {
+                insert_at = insert_at.saturating_sub(1);
+            }
+            for (i, line) in prov_lines.into_iter().enumerate() {
+                self.lines.insert(insert_at.saturating_add(i), line);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Serialize the editor contents back to a string.
     ///
     /// The output preserves the exact original formatting for any lines that
@@ -1515,6 +1694,115 @@ artifacts:
         // Old model should be gone
         assert!(!output.contains("old-model"));
         assert!(!output.contains("model:"));
+    }
+
+    /// `federation:` has no `merge_provenance` parameter, so the only way it
+    /// survives a stamp is the carry-over path. No artifact carries one today,
+    /// which is exactly why this is a test rather than an observation (#912).
+    // rivet: verifies REQ-337
+    #[test]
+    fn test_merge_provenance_carries_unknown_nested_blocks() {
+        let yaml = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      federation:
+        source-org: acme
+        received-at: 2026-01-01T00:00:00Z";
+
+        let mut editor = YamlEditor::parse(yaml);
+        editor
+            .merge_provenance(
+                "REQ-001",
+                "ai-assisted",
+                None,
+                None,
+                Some("2026-09-09T00:00:00Z"),
+                None,
+            )
+            .unwrap();
+        let out = editor.to_string();
+        assert!(
+            out.contains("federation:"),
+            "federation block must survive: {out}"
+        );
+        assert!(
+            out.contains("source-org: acme"),
+            "nested lines must survive: {out}"
+        );
+        assert!(
+            out.contains("received-at: 2026-01-01T00:00:00Z"),
+            "nested lines must survive: {out}"
+        );
+        assert!(
+            out.contains("model: claude-opus-5"),
+            "model must survive: {out}"
+        );
+    }
+
+    /// Flow-style provenance keeps every sub-field on the `provenance:` line,
+    /// so the block-style walk sees an empty body. 18 artifacts in this
+    /// repository are written this way and lost `model` until this was handled.
+    // rivet: verifies REQ-337
+    #[test]
+    fn test_merge_provenance_reads_flow_style() {
+        let yaml = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First
+    provenance: {created-by: ai-assisted, model: claude-opus-4-8, timestamp: 2026-07-15T00:00:00Z}";
+
+        let mut editor = YamlEditor::parse(yaml);
+        editor
+            .merge_provenance(
+                "REQ-001",
+                "ai-assisted",
+                None,
+                None,
+                Some("2026-09-09T00:00:00Z"),
+                None,
+            )
+            .unwrap();
+        let out = editor.to_string();
+        assert!(
+            out.contains("model: claude-opus-4-8"),
+            "flow-style model must survive: {out}"
+        );
+        assert!(
+            out.contains("timestamp: 2026-07-15T00:00:00Z"),
+            "flow-style creation timestamp must not advance: {out}"
+        );
+    }
+
+    /// The create-only rule must not degrade into never-set.
+    // rivet: verifies REQ-337
+    #[test]
+    fn test_merge_provenance_sets_timestamp_when_absent() {
+        let yaml = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: First";
+
+        let mut editor = YamlEditor::parse(yaml);
+        editor
+            .merge_provenance(
+                "REQ-001",
+                "ai",
+                None,
+                None,
+                Some("2026-09-09T00:00:00Z"),
+                None,
+            )
+            .unwrap();
+        let out = editor.to_string();
+        assert!(out.contains("timestamp: 2026-09-09T00:00:00Z"), "{out}");
+        assert!(out.contains("created-by: ai"), "{out}");
     }
 
     // rivet: verifies REQ-034

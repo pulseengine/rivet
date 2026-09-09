@@ -11239,3 +11239,151 @@ fn add_rejects_a_base_field_passed_as_a_custom_field() {
         String::from_utf8_lossy(&ok.stderr)
     );
 }
+
+// ── rivet stamp: provenance is merged, not replaced (#912) ──────────────
+
+/// Build a temp project holding one fully-stamped artifact.
+///
+/// The provenance block carries every sub-field `stamp` knows about, so a
+/// test can assert on whichever one it cares about.
+fn stamp_fixture() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: t\n    status: draft\n    \
+             provenance:\n      created-by: ai-assisted\n      \
+             model: claude-opus-5\n      session-id: sess-42\n      \
+             timestamp: 2026-04-07T03:40:26Z\n",
+    )
+    .unwrap();
+    tmp
+}
+
+/// `rivet stamp` must MERGE into an existing provenance block, not replace it.
+///
+/// This is the exact invocation `.claude/settings.json` runs on every artifact
+/// edit — `--created-by` only, no `--model`. Against the replace-entirely
+/// behaviour it erased `model` on 270 artifacts and `session-id` on 4 in this
+/// repository's own tree, and advanced `timestamp` on 575. `model.rs` documents
+/// the field as "ISO 8601 timestamp of creation" and the Polarion export maps
+/// it to `WorkItem.created`, so advancing it falsifies a creation date rather
+/// than updating a modification one.
+///
+// rivet: verifies REQ-337
+#[test]
+fn stamp_preserves_provenance_fields_the_caller_did_not_supply() {
+    let tmp = stamp_fixture();
+    let dir = tmp.path();
+
+    let out = Command::new(rivet_bin())
+        .args(["stamp", "REQ-001", "--created-by", "ai-assisted"])
+        .current_dir(dir)
+        .output()
+        .expect("failed to execute rivet stamp");
+    assert!(
+        out.status.success(),
+        "rivet stamp must exit 0. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let after = std::fs::read_to_string(dir.join("artifacts/a.yaml")).unwrap();
+    assert!(
+        after.contains("model: claude-opus-5"),
+        "stamp must not erase provenance.model when no --model is given \
+         (EU AI Act: which model generated this IS the provenance). Got:\n{after}"
+    );
+    assert!(
+        after.contains("session-id: sess-42"),
+        "stamp must not erase provenance.session-id. Got:\n{after}"
+    );
+    assert!(
+        after.contains("timestamp: 2026-04-07T03:40:26Z"),
+        "stamp must preserve an existing creation timestamp rather than \
+         advancing it to now. Got:\n{after}"
+    );
+}
+
+/// An explicitly supplied field still wins — merge must not become read-only.
+///
+// rivet: verifies REQ-337
+#[test]
+fn stamp_overwrites_provenance_fields_that_are_supplied() {
+    let tmp = stamp_fixture();
+    let dir = tmp.path();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "stamp",
+            "REQ-001",
+            "--created-by",
+            "human",
+            "--model",
+            "claude-sonnet-5",
+        ])
+        .current_dir(dir)
+        .output()
+        .expect("failed to execute rivet stamp");
+    assert!(out.status.success(), "rivet stamp must exit 0");
+
+    let after = std::fs::read_to_string(dir.join("artifacts/a.yaml")).unwrap();
+    assert!(
+        after.contains("model: claude-sonnet-5"),
+        "an explicit --model must overwrite. Got:\n{after}"
+    );
+    assert!(
+        after.contains("created-by: human"),
+        "an explicit --created-by must overwrite. Got:\n{after}"
+    );
+    assert!(
+        after.contains("session-id: sess-42"),
+        "an unsupplied field must still survive an overwrite of a sibling. Got:\n{after}"
+    );
+}
+
+/// A previously unstamped artifact still gets a fresh timestamp — the
+/// create-only rule must not degrade into never-set.
+///
+// rivet: verifies REQ-337
+#[test]
+fn stamp_sets_timestamp_when_the_artifact_has_no_provenance() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  - id: REQ-002\n    type: requirement\n    title: t\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["stamp", "REQ-002", "--created-by", "ai-assisted"])
+        .current_dir(dir)
+        .output()
+        .expect("failed to execute rivet stamp");
+    assert!(out.status.success(), "rivet stamp must exit 0");
+
+    let after = std::fs::read_to_string(dir.join("artifacts/a.yaml")).unwrap();
+    assert!(
+        after.contains("timestamp:"),
+        "an artifact with no provenance must receive a timestamp. Got:\n{after}"
+    );
+    assert!(
+        after.contains("created-by: ai-assisted"),
+        "an artifact with no provenance must receive created-by. Got:\n{after}"
+    );
+}
