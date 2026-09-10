@@ -49,9 +49,56 @@ env:
 
 jobs:
   liveness:
-    runs-on: ubuntu-latest
+    # SELF-HOSTED, deliberately (REQ-343). A probe cannot report a stall of the
+    # runner class it runs on, so the choice is which blindness to accept — and
+    # the two modes are not equally silent:
+    #
+    #   * A self-hosted outage is LOUD. #855 moved `CI Gate` and all eleven of
+    #     its needs to self-hosted, so an outage blocks every merge and a
+    #     maintainer finds out within one pull request.
+    #   * Hosted starvation is SILENT. It blocks only advisory jobs and the
+    #     release workflows, which are ubuntu-latest only — invisible until a
+    #     release is attempted, and then it blocks that.
+    #
+    # An alarm should watch the mode that does not announce itself. Observed
+    # 2026-09-09T22:30Z on the old placement: the probe itself sat queued ten
+    # minutes on ubuntu-latest while twelve self-hosted runners were idle
+    # (online=12 busy=0), i.e. blind during exactly the condition it exists to
+    # report.
+    #
+    # A `needs`-based fallback cannot express "run on the other class if this
+    # one is starved": a starved job stays QUEUED rather than failing, so a
+    # dependent job waits on it forever instead of falling through.
+    runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6
+      - name: Ensure gh is available
+        # `gh` ships preinstalled on GitHub-hosted images but NOT on this
+        # fleet — before REQ-343 no self-hosted job in this repository used it,
+        # so its presence cannot be assumed. Installed into the runner temp
+        # dir: no sudo, no apt, nothing persisted on the host.
+        run: |
+          set -euo pipefail
+          if command -v gh >/dev/null 2>&1; then
+            echo "gh already present: $(gh --version | head -1)"
+            exit 0
+          fi
+          ver=2.63.2
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${ver}/gh_${ver}_linux_amd64.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gh_${ver}_linux_amd64/bin" >> "$GITHUB_PATH"
+      - name: Assert gh is on PATH
+        # Mirrors the zola guard in ci.yml. Without this, a failed install
+        # leaves every `gh` call erroring and the probe reports nothing — an
+        # alarm that is silently dead is worse than one that is merely wrong.
+        run: |
+          command -v gh >/dev/null 2>&1 || {
+            echo "::error::gh is not on PATH — the install step did not take \
+          effect, so this probe would report nothing and the alarm would be \
+          silently dead"
+            exit 1
+          }
+          gh --version | head -1
       - name: Probe runner pool and queued runs
         id: probe
         env:
