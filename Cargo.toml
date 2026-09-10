@@ -114,10 +114,34 @@ wasmtime = { version = "47.0.4", features = ["component-model"] }
 wasmtime-wasi = "47.0.4"
 
 # Lossless syntax trees — pinned to our fork's Miri-soundness branch v3.
-# Upstream will NOT take a patch: rust-analyzer/rowan #210/#211/#212 were all
-# closed UNMERGED — the maintainer intends a full rowan rewrite (rust-analyzer
-# #15710/#18285, "Future Rowan" GSoC). So this is a permanent maintenance fork
-# until that rewrite lands.
+# Upstream closed #210/#211/#212 UNMERGED. The reason is NOT disagreement about
+# the fix: closing our #211 on 2026-09-07 the maintainer wrote "We're about to
+# rewrite rowan anyway and the new code should pass Miri (and is also a change
+# of pretty much all code)" — so a patch against today's implementation is
+# wasted effort by construction, and upstreaming is closed as a path.
+# That gives the fork a DEFINED EXPIRY rather than making it permanent: when the
+# rewrite lands and ships, re-run both Miri jobs against unforked upstream and
+# compare before retiring this. "Should pass Miri" is the maintainer's
+# expectation, not a verified claim about our CST surface — test, do not assume.
+# Tracked as REQ-350. The UB is real meanwhile: phall1 reproduced it
+# deterministically (GreenTokenData::text, green/token.rs:104) and noted a
+# separate pre-existing hit in GreenNodeData::to_owned -> ThinArc::clone that
+# the token DST fix does not cover.
+#
+# CORRECTION 2026-09-10: an earlier version of this comment cited a
+# "Future Rowan" GSoC project. No such project exists. GSoC 2026's
+# rust-analyzer project was "Migrating rust-analyzer assists to SyntaxEditor"
+# (Shourya Sharma) — the stated PREREQUISITE for the rewrite, closed completed
+# 2026-06-20 as rust-analyzer#18285. rust-analyzer#15710 (the rewrite issue)
+# has been open and untouched since 2024-09-02. The rewrite is landing as
+# incremental breaking changes on rowan master (#213 tree-top, #217 mutable-API
+# removal, 0.17.0 on 2026-08-02, #219 trivia, #220 open) — not on a branch,
+# and with no announced date. Do not infer one.
+#
+# NOTE: the tree contains TWO rowans. rivet-core/rivet-cli use this fork
+# (0.16.2); spar 0.10.0 pulls UNFORKED rowan 0.16.1 from the registry, and the
+# Miri jobs only cover rivet-core's yaml_cst/sexpr tests. The fork therefore
+# covers rivet's CST surface and not spar's, in the same binary.
 # v3 = v2 (GreenNode DST + cursor parent-provenance) PLUS phall1's unmerged
 # #212: GreenToken made a DST (`token.rs`/`arc.rs`) to widen the retag past the
 # slice tail, and an SB fix in `cursor.rs` free()/to_next_sibling. With v3 the
