@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788967066601,
+  "lastUpdate": 1789039873688,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "bb2d0aa8f6ae1bbb2378b1ff1ea77fd5eaf2fe12",
-          "message": "ci(changes): fail closed and derive embedded-asset build inputs (REQ-291) (#781)\n\nThe `changes` job's filter has three under-scoping bugs that let a real\nbuild-affecting edit skip the entire compile matrix (Clippy, Test, MSRV,\nSemver, Miri, Proptest, Coverage, wasm-seam). On GitHub, a SKIPPED\nrequired context is indistinguishable from a passed one.\n\n## The three misses\n\n1. **`schemas/*.yaml` are compiled INTO the binary**\n   `rivet-core/src/embedded.rs` pulls every shipped schema in with\n   `include_str!(\"../../schemas/…\")` (40+ entries). The old filter matched\n   only `(\\.rs$)|(Cargo\\.(toml|lock)$)|(^\\.github/workflows/)`, so a\n   schema-only PR — which changes compiled binary content and can break\n   the test suite — landed on `rust=false` and skipped the compile matrix.\n2. **`.github/actions/**` composite actions**\n   Only `.github/workflows/` was matched, so an edit to\n   `.github/actions/free-space/action.yml` (used BY the compile jobs)\n   didn't trigger them.\n3. **`git diff` errors → skip everything**\n   `changed=\"$(git diff --name-only \"$base\"...HEAD)\"` — a bad/absent\n   base sha or a shallow fetch left `changed` empty, nothing matched,\n   and the step exited 0 with rust=false. The error path was the\n   permissive path.\n\n## Fix — derive, don't retype; fail closed\n\n- **Derive** the embedded-asset file set from the source at gate time.\n  `grep` for every `include_str!`/`include_bytes!`/`include_dir!` in\n  `rivet-core` / `rivet-cli` / `etch`, resolve the path arg against the\n  containing file, and match changed files exactly. That auto-covers a\n  new `include_str!(\"…\")` a future PR adds — no filter-list drift.\n- **Add `.github/actions/`** to both the rust and wasm regexes.\n- **Fail closed.** An erroring or empty `git diff` now sets rust=true\n  AND wasm=true (running the full matrix) instead of silently skipping\n  every gate.\n\n## Verified locally\n\nSimulated the classifier against 9 representative paths — every result\nmatches expectation:\n\n  schema-only edit (schemas/dev.yaml)                 → rust=true\n  composite action (.github/actions/free-space/…)     → rust=true\n  embedded doc (docs/artifact-types/…-certificate.md) → rust=true\n  embedded quickstart (rivet-cli/src/quickstart.md)   → rust=true\n  regular .rs source                                  → rust=true\n  non-embedded design doc (…/status-gate-rules.md)    → rust=false\n  docs README, artifacts YAML                         → rust=false\n  empty diff                                          → rust=true (fail closed)\n\nPorted from spar#384.\n\nFixes: REQ-291\nRefs: #771\n\n\nClaude-Session: https://claude.ai/code/session_01Mjd85UePLRJVHtb8haBGF8\n\nCo-authored-by: Claude <noreply@anthropic.com>",
-          "timestamp": "2026-08-11T21:37:42+02:00",
-          "tree_id": "53f22ebcb4e9758bc8030ec97ef5d9bfb1019858",
-          "url": "https://github.com/pulseengine/rivet/commit/bb2d0aa8f6ae1bbb2378b1ff1ea77fd5eaf2fe12"
-        },
-        "date": 1786478157756,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 86080,
-            "range": "± 1550",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 905736,
-            "range": "± 15739",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16691436,
-            "range": "± 1262502",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2148,
-            "range": "± 30",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26372,
-            "range": "± 929",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 354969,
-            "range": "± 1422",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1523938,
-            "range": "± 40108",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 166560,
-            "range": "± 779",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1973355,
-            "range": "± 47327",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 31268155,
-            "range": "± 2378750",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 479272,
-            "range": "± 6965",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15426580,
-            "range": "± 279801",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1233269657,
-            "range": "± 14615521",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4389,
-            "range": "± 26",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 59394,
-            "range": "± 581",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 800791,
-            "range": "± 7936",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62140,
-            "range": "± 1393",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 729190,
-            "range": "± 5540",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 11633412,
-            "range": "± 780836",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1008,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14870,
-            "range": "± 162",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 333778,
-            "range": "± 1771",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 25028,
-            "range": "± 330",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 175724,
-            "range": "± 2978",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1610773,
-            "range": "± 12212",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1040670,
             "range": "± 7995",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "32bf29e08a6be61ddbba5e5af3c17364feda77f4",
+          "message": "plan(v0.39): the rowan fork has a measured expiry, not a permanent one (REQ-350) (#932)\n\nThe maintainer closed our rust-analyzer/rowan#211 on 2026-09-07 with \"We're\nabout to rewrite rowan anyway and the new code should pass Miri (and is also a\nchange of pretty much all code)\". That turns the fork from a permanent\nmaintenance burden into one with a defined expiry, and changes the posture from\nmaintaining to watching.\n\nTWO OF OUR OWN NOTES WERE FACTUALLY WRONG and are corrected in Cargo.toml.\nThere is no \"Future Rowan\" GSoC project: GSoC 2026's rust-analyzer project was\n\"Migrating rust-analyzer assists to SyntaxEditor\", the stated PREREQUISITE,\nclosed completed 2026-06-20 as rust-analyzer#18285. The rewrite issue itself,\nrust-analyzer#15710, has been open and untouched since 2024-09-02. The rewrite\nis landing as incremental breaking changes on rowan master — #213 tree-top,\n#217 mutable-API removal, 0.17.0 on 2026-08-02, #219 trivia, #220 open — not on\na branch and with no announced date.\n\nMEASURED ON OUR OWN SURFACE rather than on rowan's internals. An isolated\nworktree pinned to crates.io rowan 0.17.0 instead of the fork:\n\n  cargo check -p rivet-core   exit 0   compiles clean, no code changes\n  SB_EXIT=1   rowan-0.17.0/src/arc.rs:264      retag for SharedReadOnly,\n                                               tag absent from borrow stack\n  TB_EXIT=1   rowan-0.17.0/src/cursor.rs:136   deallocation forbidden\n\nBoth reached through yaml_cst::parse -> parse_root -> parse_block_mapping, so\nthis is a real consumer failing on ordinary construction and traversal rather\nthan a synthetic exercise of rowan's own tests. The SB site is the same\nheader-fattening cast reported upstream as #108 in 2021; the TB site is #192's.\n\nTwo consequences. The fork earns its keep — dropping it today turns the Miri\ngate red under BOTH aliasing models, not merely the stricter one. And the\nrationale #211 was closed under, that rowan should pass Tree Borrows, does not\nhold for our usage on the current release.\n\nThe clean compile matters separately: rivet touches only the immutable core and\nnone of the mutable API #217 removed, so the fork is NOT what keeps this project\non 0.16.x.\n\nCONTEXT FROM AN ECOSYSTEM SURVEY: of 30 rowan consumers, zero carry a fork or\npatch and zero execute rowan under Miri. rowan's own CI has no Miri job;\nrust-analyzer's covers only the intern crate, which has no rowan dependency. So\nthis gate is a standard we hold rather than shared pain we are fixing — which is\ndefensible for a compliance tool, and worth stating rather than assuming.\ncstree, a declared fork of rowan with the same unsafe core, does run Miri under\nStacked Borrows across three platforms and passes.\n\nA SECOND ROWAN PROBLEM, raised cross-repo as pulseengine/spar#446: rivet's\ndefault-on aadl feature pulls spar, and the lock carries two rowans — rivet on\nthe forked 0.16.2, five spar crates on unforked 0.16.1. Our Miri gate covers\nyaml_cst and sexpr only, so spar's rowan is never interpreted. That issue is\nframed as a coordination request, not a bug report, because we have NOT tested\nwhether spar's usage reaches the failing paths.\n\nCaveats recorded on the artifact: toolchain is miri on nightly 2026-04-19,\nroughly five months stale, and Tree Borrows is experimental and moves. Re-run\nbefore citing upstream.\n\nConfirmed with fmt 0, clippy 1.97.0 --all-targets -D warnings 0, cargo test\n--workspace 0 (2368 passed), cargo test -p rivet-cli --test cli_commands 0\n(213 passed), rivet validate 0, rivet docs check 0, yamllint 0,\ndiagnose_test.sh 0, cargo metadata 0. 319 artifacts, no duplicate ids.\n\nRefs: FEAT-001\nTrace: skip",
+          "timestamp": "2026-09-10T12:40:20+02:00",
+          "tree_id": "7c895c8f877c3d352d879f43e1e82c38c3c3db10",
+          "url": "https://github.com/pulseengine/rivet/commit/32bf29e08a6be61ddbba5e5af3c17364feda77f4"
+        },
+        "date": 1789039872665,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86155,
+            "range": "± 674",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 898551,
+            "range": "± 17192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15803313,
+            "range": "± 664373",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2168,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26767,
+            "range": "± 134",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 347938,
+            "range": "± 1492",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1502280,
+            "range": "± 25346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 167706,
+            "range": "± 1478",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1948893,
+            "range": "± 15292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30661394,
+            "range": "± 1107198",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 508364,
+            "range": "± 3150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17122488,
+            "range": "± 184620",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1397310919,
+            "range": "± 11771182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4383,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59390,
+            "range": "± 526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 856076,
+            "range": "± 16362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 64308,
+            "range": "± 582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 705963,
+            "range": "± 3219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 12446918,
+            "range": "± 618325",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1162,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 16535,
+            "range": "± 295",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 322748,
+            "range": "± 9136",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23172,
+            "range": "± 137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 159336,
+            "range": "± 1429",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1498795,
+            "range": "± 22297",
             "unit": "ns/iter"
           }
         ]
