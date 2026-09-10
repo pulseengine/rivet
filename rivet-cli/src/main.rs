@@ -7974,6 +7974,26 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
         .collect();
     external.sort_by(|a, b| a.id.cmp(&b.id));
 
+    // REQ-345: work that carries NO `release:` at all is invisible to every
+    // readiness query, because every such query filters on one. 601 of this
+    // repository's 706 artifacts had no release field, and 165 of those were
+    // draft/proposed — real unstarted work nothing ever asked about. #104 sat
+    // five months for exactly that reason. Counted and reported beside the
+    // scoped set so the number is in front of whoever is already asking about
+    // a release, which is when it matters.
+    //
+    // Only draft/proposed count. An approved or implemented artifact without a
+    // release is finished work from before scoping existed, and a release field
+    // on it would mean nothing — including those would report a number nobody
+    // can act on, which is the defect this exists to avoid rather than repeat.
+    let unscoped_unstarted = ctx
+        .store
+        .iter()
+        .filter(|a| !a.id.contains(':'))
+        .filter(|a| a.release.is_none())
+        .filter(|a| matches!(a.status.as_deref(), Some("draft" | "proposed")))
+        .count();
+
     let readiness = ReadinessCtx::compute(&ctx);
     let coverage_mode = readiness.coverage_mode;
     let is_ready = |a: &rivet_core::model::Artifact| -> bool { readiness.is_ready(a) };
@@ -8008,6 +8028,7 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
                 "status": a.status.as_deref().unwrap_or("(none)"),
                 "title": a.title,
             })).collect::<Vec<_>>(),
+            "unscoped_unstarted": unscoped_unstarted,
         });
         println!("{}", serde_json::to_string_pretty(&obj)?);
     } else if scoped.is_empty() {
@@ -8040,6 +8061,15 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
             println!(
                 "\n\u{2717} NOT cuttable — {} artifact(s) not yet verified.",
                 not_done.len()
+            );
+        }
+        if unscoped_unstarted > 0 {
+            println!(
+                "\nUnscoped, informational — {unscoped_unstarted} artifact(s) at \
+                 draft/proposed carry NO `release:` and therefore appear in no \
+                 readiness query. Not part of this verdict. Assign one, or \
+                 `rivet release move <ID> backlog` to state that it is not \
+                 scheduled."
             );
         }
         if !external.is_empty() {

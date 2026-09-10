@@ -11899,3 +11899,131 @@ fn release_notes_changes_section_excludes_unrelated_commits() {
          excluded from the changes section. Got:\n{text}"
     );
 }
+
+// ── release status: unscoped work must be visible (REQ-345) ─────────────
+
+/// A project with scoped and UNSCOPED artifacts.
+///
+/// The unscoped ones carry no `release:` at all, which is the state that makes
+/// them invisible: a readiness query filters on `release: <version>`, so an
+/// artifact without one appears in no query and is never decided about.
+fn unscoped_fixture() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts").join("a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-SCOPED-1\n    type: requirement\n    title: in the release\n    \
+             status: verified\n    release: v1.0.0\n  \
+         - id: REQ-UNSCOPED-1\n    type: requirement\n    title: no release field\n    \
+             status: draft\n  \
+         - id: REQ-UNSCOPED-2\n    type: requirement\n    title: also no release\n    \
+             status: proposed\n  \
+         - id: REQ-DONE-1\n    type: requirement\n    title: approved, no release\n    \
+             status: approved\n",
+    )
+    .unwrap();
+    tmp
+}
+
+/// `release status` must report how much unstarted work carries no `release:`.
+///
+/// 601 of 706 artifacts in this repository have no release field, and 165 of
+/// those are draft/proposed — real unstarted work that no readiness query can
+/// surface. #104 sat five months for exactly this reason: it was tracked by
+/// REQ-059, which had no release, so nothing ever asked about it. Absence of a
+/// `release:` resembles a decision from a distance; `backlog` is one.
+///
+// rivet: verifies REQ-345
+#[test]
+fn release_status_reports_unscoped_unstarted_work() {
+    let tmp = unscoped_fixture();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "release",
+            "status",
+            "v1.0.0",
+        ])
+        .output()
+        .expect("rivet release status");
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        text.contains("Unscoped"),
+        "release status must surface unscoped work. Got:\n{text}"
+    );
+    // Exactly the two draft/proposed ones — NOT the approved one, which is a
+    // finished artifact for which a release field is meaningless.
+    assert!(
+        text.contains("2 artifact(s)"),
+        "exactly the two draft/proposed unscoped artifacts must be counted, \
+         not the approved one. Got:\n{text}"
+    );
+}
+
+/// The count must be in the JSON too — a release query consumed by tooling
+/// should not have to scrape text for it.
+///
+// rivet: verifies REQ-345
+#[test]
+fn release_status_json_carries_the_unscoped_count() {
+    let tmp = unscoped_fixture();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "release",
+            "status",
+            "v1.0.0",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet release status --format json");
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("release status JSON must parse");
+    assert_eq!(
+        v.get("unscoped_unstarted")
+            .and_then(serde_json::Value::as_u64),
+        Some(2),
+        "JSON must carry the unscoped draft/proposed count: {v}"
+    );
+}
+
+/// Unscoped work must NOT change the cuttable verdict — it is information,
+/// not a gate. A release whose own scope is ready stays ready.
+///
+// rivet: verifies REQ-345
+#[test]
+fn unscoped_work_does_not_block_the_verdict() {
+    let tmp = unscoped_fixture();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "release",
+            "status",
+            "v1.0.0",
+        ])
+        .output()
+        .expect("rivet release status");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "the scoped artifact is verified, so the release is cuttable regardless \
+         of unscoped work elsewhere. Got:\n{text}"
+    );
+    assert!(
+        text.contains("Cuttable"),
+        "verdict must still read cuttable. Got:\n{text}"
+    );
+}
