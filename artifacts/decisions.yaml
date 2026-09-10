@@ -1598,6 +1598,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-10T00:00:00Z
+    release: backlog
 
   - id: DD-075
     type: design-decision
