@@ -632,7 +632,7 @@ jobs:
   deny:
     # Renamed: skipping advisories until smithy ships an upgraded
     # rustsec parser (see audit job comment). Same workaround as spar.
-    name: Cargo Deny (licenses, bans, sources)
+    name: Cargo Deny (advisories, licenses, bans, sources)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, light]
@@ -645,13 +645,23 @@ jobs:
       # same version is already present. Kept here so the workflow
       # still works on hosted if the runner pool changes.
       - name: Install cargo-deny (no-op when smithy version matches)
-        run: cargo install cargo-deny --locked --version 0.16.4 || true
+        # 0.20.2, not 0.16.4: the `advisories` check below was verified on
+        # 0.20.2, which treats `unmaintained` as an ERROR by default. Pinning a
+        # version whose behaviour differs from the one the policy was tested
+        # against is how a gate passes vacuously (REQ-347).
+        run: cargo install cargo-deny --locked --version 0.20.2 || true
       # Skip `advisories` because the rustsec parser shared with
       # cargo-audit rejects CVSS 4.0 advisories (RUSTSEC-2026-0037).
       # bans / licenses / sources still gate. The audit job (on
       # ubuntu-latest) covers vulnerability matching meanwhile.
-      - name: Run cargo-deny (bans + licenses + sources)
-        run: cargo deny check bans licenses sources
+      - name: Run cargo-deny (advisories + bans + licenses + sources)
+        # `advisories` was NOT run here before REQ-347, so deny.toml's entire
+        # [advisories] section — including every reasoned RUSTSEC ignore — was
+        # configuration this job never consulted. The job name said
+        # "licenses, bans, sources" and was honest; the gap was that nothing
+        # else gated advisories either (cargo-audit runs outside CI Gate's
+        # needs), so a tree failing `cargo deny check advisories` merged clean.
+        run: cargo deny check advisories bans licenses sources
 
   # ── Public API stability (semver drift gate) ────────────────────────
   # Runs only on pull_request so main can move freely between tags.

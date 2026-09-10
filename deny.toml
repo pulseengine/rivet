@@ -8,25 +8,21 @@ ignore = [
     # `instant` is unmaintained (RUSTSEC-2024-0384) but pulled in transitively
     # by notify 7.0.0 → notify-types. No fix available upstream yet.
     "RUSTSEC-2024-0384",
-    # wasmtime 42.0.1 advisories — all behind the optional `wasm` feature gate.
-    # Tracked: upgrade to wasmtime >=43 when available with component-model fixes.
-    "RUSTSEC-2026-0085",
-    "RUSTSEC-2026-0086",
-    "RUSTSEC-2026-0087",
-    "RUSTSEC-2026-0088",
-    "RUSTSEC-2026-0089",
-    "RUSTSEC-2026-0091",
-    "RUSTSEC-2026-0092",
-    "RUSTSEC-2026-0093",
-    "RUSTSEC-2026-0094",
-    "RUSTSEC-2026-0095",
-    "RUSTSEC-2026-0096",
-    # thin-vec 0.2.14 Double-Free / UAF in IntoIter::drop / ThinVec::clear.
-    # Pulled in transitively by salsa 0.26.0. No rivet call site directly
-    # constructs or iterates thin_vec::ThinVec. Upstream: wait for salsa to
-    # bump its thin-vec dependency, or upstream fix in thin-vec >= 0.2.15.
-    # TODO: remove when salsa >= 0.27 lands or thin-vec fix is released.
-    "RUSTSEC-2026-0103",
+    # (wasmtime 42.x advisories removed 2026-09-10: resolved by the 44->45 bump;
+    # cargo-deny reported them as advisory-not-encountered, i.e. matching nothing.)
+    # (thin-vec RUSTSEC-2026-0103 removed 2026-09-10: no longer matches the tree.)
+    # The gluesql-core chain: gluesql-core -> im -> sized-chunks -> bitmaps.
+    # All three are unmaintained (bmwill/im-rs archived). gluesql-core is the
+    # `sql` feature's engine, default-on so `rivet sql` ships; the minimal
+    # `--no-default-features` build (REQ-202) excludes the whole chain.
+    # Accepted rather than fixed: there is no upstream im replacement gluesql
+    # has moved to, and swapping the SQL engine is a far larger change than the
+    # exposure warrants. Revisit if gluesql bumps, or if an advisory upgrades
+    # from unmaintained to a vulnerability. Recorded as a DECISION rather than
+    # left as an absence (REQ-347).
+    "RUSTSEC-2026-0247",  # bitmaps
+    "RUSTSEC-2026-0248",  # im
+    "RUSTSEC-2026-0251",  # sized-chunks
 ]
 
 [licenses]
