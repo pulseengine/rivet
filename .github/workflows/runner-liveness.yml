@@ -69,6 +69,7 @@ jobs:
     # A `needs`-based fallback cannot express "run on the other class if this
     # one is starved": a starved job stays QUEUED rather than failing, so a
     # dependent job waits on it forever instead of falling through.
+    # rivet: verifies REQ-343
     runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6

@@ -654,6 +654,7 @@ jobs:
       # cargo-audit rejects CVSS 4.0 advisories (RUSTSEC-2026-0037).
       # bans / licenses / sources still gate. The audit job (on
       # ubuntu-latest) covers vulnerability matching meanwhile.
+      # rivet: verifies REQ-347
       - name: Run cargo-deny (advisories + bans + licenses + sources)
         # `advisories` was NOT run here before REQ-347, so deny.toml's entire
         # [advisories] section — including every reasoned RUSTSEC ignore — was
