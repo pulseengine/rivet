@@ -30,6 +30,14 @@
 //!
 //! This is the rivet equivalent of gale's FFI model equivalence testing:
 //! the rowan parser is our "implementation" and serde_yaml is the "reference model."
+//!
+//! REQ-348 note: until 2026-09-11 the generator emitted only block-style
+//! `id`/`type`/`title`/`status` and compared only those four fields — the
+//! subset both parsers already agree on. A differential test confined to the
+//! shared subset agrees by construction and cannot fail, which is why the
+//! flow-mapping gap survived underneath a green "differential" test. The
+//! generator now emits nested mapping values in BOTH flow and block style and
+//! the comparison covers them.
 
 use proptest::prelude::*;
 use rivet_core::yaml_hir::extract_generic_artifacts;
@@ -70,23 +78,47 @@ fn arb_status() -> impl Strategy<Value = Option<String>> {
 }
 
 /// Generate a single artifact as YAML text and its expected field values.
+/// Which YAML style to write a nested mapping value in.
+///
+/// The generator used to emit block style only, which confined it to the
+/// subset both parsers already agree on — see the module note above. Flow
+/// style is the shape rivet's own corpus writes `provenance:` in eighteen
+/// times, and the one the CST has to handle for REQ-346's migration.
+fn arb_mapping_style() -> impl Strategy<Value = bool> {
+    prop::bool::ANY
+}
+
 fn arb_artifact_yaml() -> impl Strategy<Value = (String, ExpectedArtifact)> {
     (
         arb_artifact_id(),
         arb_artifact_type(),
         arb_safe_value(),
         arb_status(),
+        prop::option::of((arb_safe_value(), arb_mapping_style())),
     )
-        .prop_map(|(id, atype, title, status)| {
+        .prop_map(|(id, atype, title, status, prov)| {
             let mut yaml = format!("  - id: {id}\n    type: {atype}\n    title: {title}\n");
             if let Some(ref s) = status {
                 yaml.push_str(&format!("    status: {s}\n"));
+            }
+            let provenance_model = prov.as_ref().map(|(m, _)| m.clone());
+            if let Some((ref model, flow)) = prov {
+                if flow {
+                    yaml.push_str(&format!(
+                        "    provenance: {{created-by: ai-assisted, model: {model}}}\n"
+                    ));
+                } else {
+                    yaml.push_str(&format!(
+                        "    provenance:\n      created-by: ai-assisted\n      model: {model}\n"
+                    ));
+                }
             }
             let expected = ExpectedArtifact {
                 id,
                 artifact_type: atype,
                 title,
                 status,
+                provenance_model,
             };
             (yaml, expected)
         })
@@ -99,6 +131,10 @@ struct ExpectedArtifact {
     artifact_type: String,
     title: String,
     status: Option<String>,
+    /// `provenance.model`, whichever style it was written in. `None` when the
+    /// artifact carries no provenance at all. Comparing this is what makes the
+    /// flow/block distinction visible to the test.
+    provenance_model: Option<String>,
 }
 
 /// Generate a complete YAML document with N artifacts.
@@ -189,6 +225,17 @@ proptest! {
                 rowan_art.artifact.status == exp.status,
                 "artifact {}: status mismatch: rowan={:?}, expected={:?}",
                 i, rowan_art.artifact.status, exp.status,
+            );
+            // Nested mapping values, in BOTH styles. A generator that only
+            // emits block style agrees by construction and cannot detect the
+            // flow-mapping gap (REQ-348); this is the assertion that sees it.
+            let rowan_model = rowan_art.artifact.provenance
+                .as_ref()
+                .and_then(|p| p.model.clone());
+            prop_assert!(
+                rowan_model == exp.provenance_model,
+                "artifact {}: provenance.model mismatch: rowan={:?}, expected={:?} \n{}",
+                i, rowan_model, exp.provenance_model, yaml,
             );
 
             // Also compare against serde_yaml extraction

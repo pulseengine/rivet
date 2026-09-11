@@ -128,6 +128,63 @@ fn via_rowan(content: &str, schema: &rivet_core::schema::Schema, f: &Path) -> Ve
         .collect()
 }
 
+/// The fingerprint must actually carry every component it claims to compare.
+///
+/// This is the guard that is easy to lose. While the corpus diverged on 18
+/// artifacts, narrowing the fingerprint moved that count and `differential_survey`
+/// reddened on its own. Once the divergence closed and the expected count became
+/// 0, narrowing it moved nothing — dropping provenance from the comparison, the
+/// precise move that would hide the next divergence, passed silently. Verified
+/// by re-running that negative control across the refactor: it went from
+/// reddening to a clean pass.
+///
+/// So the shape is asserted here directly, on a synthetic artifact with every
+/// component populated, where it holds regardless of what the corpus contains
+/// or how many differences there are.
+#[test]
+fn fingerprint_carries_every_component_it_claims() {
+    let a = rivet_core::model::Artifact {
+        id: "REQ-001".into(),
+        artifact_type: "requirement".into(),
+        title: "a distinctive title".into(),
+        status: Some("implemented".into()),
+        release: Some("v9.9.9".into()),
+        tags: vec!["alpha".into(), "beta".into()],
+        links: vec![rivet_core::model::Link {
+            link_type: "verifies".into(),
+            target: "REQ-002".into(),
+            ..Default::default()
+        }],
+        provenance: Some(rivet_core::model::Provenance {
+            created_by: "ai-assisted".into(),
+            model: Some("a-model-name".into()),
+            session_id: None,
+            timestamp: None,
+            reviewed_by: None,
+            federation: None,
+        }),
+        ..Default::default()
+    };
+    let f = fingerprint(&a);
+    for (component, needle) in [
+        ("id", "REQ-001"),
+        ("type", "requirement"),
+        ("title", "a distinctive title"),
+        ("status", "implemented"),
+        ("release", "v9.9.9"),
+        ("tags", "alpha"),
+        ("links", "verifies->REQ-002"),
+        ("provenance.created-by", "ai-assisted"),
+        ("provenance.model", "a-model-name"),
+    ] {
+        assert!(
+            f.contains(needle),
+            "the fingerprint dropped `{component}`, so the survey would no longer \
+             compare it and a divergence there would pass unnoticed: {f}"
+        );
+    }
+}
+
 /// Which fingerprint COMPONENT differs, so a failure names the defect rather
 /// than the file. The order matches `fingerprint`.
 fn first_differing_component(a: &str, b: &str) -> &'static str {
@@ -161,14 +218,19 @@ fn has_artifacts_key(content: &str) -> bool {
         .is_some()
 }
 
-/// The corpus's known, characterized divergence: eighteen artifacts write
-/// `provenance:` as a FLOW mapping (`{created-by: …, model: …}`). serde reads
-/// them; the CST has no `FlowMapping` node, so rowan yields no provenance at
-/// all — silently, with no parse error. Pinned as an exact number so that a
-/// nineteenth reddens this gate, and so that closing the CST gap (REQ-346)
-/// reddens it too and forces the record to be updated rather than
-/// re-baselined. See `divergence_probe` for the construct in isolation.
-const KNOWN_FLOW_PROVENANCE_DIVERGENCES: usize = 18;
+/// The corpus's known divergence count. **Zero since REQ-346 landed
+/// `FlowMapping` in `yaml_cst`.**
+///
+/// It was 18: that many artifacts write `provenance:` as a flow mapping
+/// (`{created-by: …, model: …}`), serde read them, and the CST — which had a
+/// `FlowSequence` node and no `FlowMapping` — yielded no provenance at all,
+/// silently and with no parse error. This gate is what found that, by pinning
+/// the number rather than asserting a comfortable zero; closing the gap
+/// reddened it and forced this constant to be updated instead of quietly
+/// agreeing. It is kept as a named constant rather than folded into a bare
+/// `differ == 0` so the same forcing function applies to whatever the next
+/// divergence turns out to be.
+const KNOWN_DIVERGENCES: usize = 0;
 
 // rivet: verifies REQ-348
 #[test]
@@ -192,7 +254,7 @@ fn differential_survey() {
 
     let (mut compared, mut agree, mut differ) = (0, 0, 0);
     let (mut rowan_only_shape, mut neither_shape) = (0, 0);
-    let (mut total_serde, mut total_rowan) = (0usize, 0usize);
+    let (mut total_serde, mut total_rowan, mut provenance_seen) = (0usize, 0usize, 0usize);
     let mut by_component: std::collections::BTreeMap<&str, usize> =
         std::collections::BTreeMap::new();
     let mut count_mismatch: Vec<String> = Vec::new();
@@ -222,6 +284,10 @@ fn differential_survey() {
         let rowan_ids = via_rowan(&content, &schema, f);
         total_serde += serde_ids.len();
         total_rowan += rowan_ids.len();
+        provenance_seen += serde_ids
+            .iter()
+            .filter(|f| f.contains("created-by"))
+            .count();
 
         if serde_ids.len() != rowan_ids.len() {
             count_mismatch.push(format!(
@@ -257,7 +323,7 @@ fn differential_survey() {
          no `artifacts:` — serde's GenericFile cannot address these at all)  \
          neither={neither_shape} (config documents under a source path)"
     );
-    println!("  TOTALS serde={total_serde} rowan={total_rowan}");
+    println!("  TOTALS serde={total_serde} rowan={total_rowan} with-provenance={provenance_seen}");
     for (k, v) in &by_component {
         println!("  DIVERGENCE component={k} artifacts={v}");
     }
@@ -277,6 +343,15 @@ fn differential_survey() {
         "the stpa-yaml sources must land in the rowan-only partition; if this is 0 the \
          shape partition has silently swallowed them"
     );
+    // Companion to `fingerprint_carries_every_component_it_claims`: that test
+    // proves the fingerprint CAN carry provenance, this one proves the corpus
+    // comparison is actually exercising it. Both paths quietly ceasing to read
+    // provenance would otherwise leave the survey green over an unchecked field.
+    assert!(
+        provenance_seen > 0,
+        "no compared artifact contributed provenance to its fingerprint, so the \
+         corpus is no longer exercising the field the 18-artifact divergence lived in"
+    );
     // Losing or gaining an ARTIFACT is a different, worse failure than losing a
     // field on one, so it gets its own assertion and its own message.
     assert!(
@@ -285,26 +360,27 @@ fn differential_survey() {
          `artifacts:`-shaped file:\n  {}",
         count_mismatch.join("\n  ")
     );
-    // The corpus does NOT fully agree, and this gate says so with a number
-    // rather than dropping the field that disagrees. Every divergence must be
-    // the one known, characterized case.
-    let provenance_divergences = by_component.get("provenance").copied().unwrap_or(0);
-    let other: Vec<String> = by_component
+    // Report the divergence by CLASS, so a failure names the defect rather than
+    // the file, and pin the total. Not a bare `differ == 0`: the point of the
+    // number is that moving it in EITHER direction forces the record to be
+    // updated rather than re-baselined.
+    let classes: Vec<String> = by_component
         .iter()
-        .filter(|(k, _)| **k != "provenance")
         .map(|(k, v)| format!("{k}={v}"))
         .collect();
-    assert!(
-        other.is_empty(),
-        "a NEW divergence class appeared between the two parsers: {}",
-        other.join(", ")
-    );
+    let total_divergences: usize = by_component.values().sum();
     assert_eq!(
-        provenance_divergences, KNOWN_FLOW_PROVENANCE_DIVERGENCES,
-        "the flow-style-provenance divergence count changed. Fewer means the CST \
-         gained FlowMapping support (REQ-346) or the corpus was normalized — update \
-         the record, do not re-baseline. More means a new artifact was written with \
-         flow-style provenance that rivet's own CST cannot read."
+        total_divergences,
+        KNOWN_DIVERGENCES,
+        "the divergence count between rivet's two YAML paths changed \
+         ({}). More means something was written that one path cannot read; \
+         fewer means a gap was closed. Either way update the record and \
+         KNOWN_DIVERGENCES — do not re-baseline the number silently.",
+        if classes.is_empty() {
+            "none".to_owned()
+        } else {
+            classes.join(", ")
+        }
     );
 }
 
@@ -340,14 +416,15 @@ fn divergence_probe() {
             1,
             1,
         ),
-        // The dangerous one. serde finds the artifact; rowan returns NOTHING
-        // and raises no error, so the artifact simply vanishes. REQ-346's
-        // migration onto the CST cannot land while this holds.
+        // Was the dangerous one: serde found the artifact, rowan returned
+        // NOTHING and raised no error, so the artifact simply vanished.
+        // `yaml_cst` gained a `FlowMapping` parse for REQ-346 and the two now
+        // agree. Kept as an asserted case so a regression reddens here.
         (
             "flow-mapping",
             "artifacts:\n  - {id: R-1, type: requirement, title: t, status: draft}\n".to_owned(),
             1,
-            0,
+            1,
         ),
         // Both fail, differently: serde rejects the merge key outright, rowan
         // yields nothing.
@@ -397,21 +474,22 @@ fn divergence_probe() {
     );
 }
 
-/// The corpus divergence in isolation, at the FIELD level rather than the
-/// artifact level.
+/// Flow mappings at the FIELD level rather than the artifact level — the shape
+/// rivet's own corpus actually contains, in eighteen places: a block-mapped
+/// artifact whose `provenance:` VALUE is a flow mapping.
 ///
-/// `divergence_probe`'s `flow-mapping` case is an artifact written as a flow
-/// mapping — rowan loses the whole artifact. This is the shape rivet's own
-/// corpus actually contains: a block-mapped artifact whose `provenance:` VALUE
-/// is a flow mapping. The artifact survives on both paths; the provenance does
-/// not. That is why the survey reports 321 == 321 artifacts and still differs
-/// on eighteen of them.
+/// This was the divergence. The artifact survived on both paths and the
+/// provenance did not, which is why the survey reported 321 == 321 artifacts
+/// and still differed on eighteen of them — a loss invisible to anything
+/// counting artifacts. An earlier version of REQ-348 asserted the opposite,
+/// that flow-style field values "both paths handle", on no evidence; this test
+/// is that claim's oracle and it failed it until `FlowMapping` landed.
 ///
-/// An earlier version of REQ-348 asserted the opposite — that flow-style field
-/// values "both paths handle" — on no evidence. This test is that claim's
-/// oracle.
+/// The block-style control is load-bearing: without it this test would pass on
+/// a build where rowan never read provenance at all, which is a different
+/// defect with a different fix.
 #[test]
-fn flow_style_field_value_silently_loses_provenance() {
+fn flow_style_field_value_reaches_both_paths() {
     let root = workspace_root();
     let (schema_names, _) = project_config(&root);
     let schema = rivet_core::load_schemas(&schema_names, &root.join("schemas"))
@@ -447,20 +525,33 @@ fn flow_style_field_value_silently_loses_provenance() {
         "rowan must read block-style provenance"
     );
 
-    // The defect: the artifact survives on both paths, the provenance does not.
+    // The case that used to diverge.
     assert_eq!(prov_serde(flow), 1, "serde reads flow-style provenance");
     assert_eq!(
         prov_rowan(flow),
-        0,
-        "recorded state: the CST has no FlowMapping node, so rowan drops \
-         flow-style provenance with no error. If this is now 1 the gap is \
-         closed — update REQ-348's record and REQ-346's migration risk."
-    );
-    // And it is silent: no parse error accompanies the loss.
-    let parsed = rivet_core::yaml_hir::extract_schema_driven(flow, &schema, None);
-    assert_eq!(
-        parsed.artifacts.len(),
         1,
-        "the artifact itself survives — which is what makes the loss silent"
+        "rowan must read flow-style provenance too — this asserted 0 until \
+         REQ-346 added FlowMapping to yaml_cst"
     );
+
+    // Same VALUES, not merely the same presence. A FlowMapping that parsed into
+    // an empty Provenance would satisfy `is_some()` and still have lost the data.
+    let model_of = |doc: &str| {
+        rivet_core::yaml_hir::extract_schema_driven(doc, &schema, None)
+            .artifacts
+            .first()
+            .and_then(|sa| sa.artifact.provenance.as_ref())
+            .and_then(|p| p.model.clone())
+    };
+    assert_eq!(model_of(flow).as_deref(), Some("m"));
+    assert_eq!(
+        model_of(flow),
+        model_of(block),
+        "flow and block style must produce the same provenance, not merely both \
+         produce one"
+    );
+
+    // And the artifact is still there — the flow parse must not consume it.
+    let parsed = rivet_core::yaml_hir::extract_schema_driven(flow, &schema, None);
+    assert_eq!(parsed.artifacts.len(), 1);
 }

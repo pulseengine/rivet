@@ -1,10 +1,10 @@
 //! Rowan-based lossless YAML CST parser.
 //!
 //! Parses the subset of YAML used by rivet artifact files: block mappings,
-//! block sequences, flow sequences, scalars (plain, quoted, block), and
+//! block sequences, flow sequences, flow mappings, scalars (plain, quoted, block), and
 //! comments. Preserves all whitespace and comments for round-tripping.
 //!
-//! Does NOT handle: anchors/aliases, tags, flow mappings, complex keys,
+//! Does NOT handle: anchors/aliases, tags, complex keys,
 //! multi-document streams, or merge keys. These produce Error nodes.
 
 // SAFETY-REVIEW (SCRC Phase 1, DD-058): File-scope blanket allow for
@@ -70,6 +70,10 @@ pub enum SyntaxKind {
     LBracket,
     /// `]`
     RBracket,
+    /// `{`
+    LBrace,
+    /// `}`
+    RBrace,
     /// `|` (literal block scalar indicator).
     Pipe,
     /// `>` (folded block scalar indicator).
@@ -281,6 +285,26 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                     text: &source[start..pos],
                 });
             }
+            // `{` and `}` mirror `[` and `]` exactly: unconditional single-byte
+            // tokens. `}` already terminated a plain scalar before this and so
+            // arrived as a one-byte PlainScalar; giving it a kind changes its
+            // label, not where it splits. `{` did not terminate one, so
+            // `lex_plain_scalar` gains it as a break byte below — that is the
+            // only lexing boundary this change moves.
+            b'{' => {
+                pos += 1;
+                tokens.push(Token {
+                    kind: SyntaxKind::LBrace,
+                    text: &source[start..pos],
+                });
+            }
+            b'}' => {
+                pos += 1;
+                tokens.push(Token {
+                    kind: SyntaxKind::RBrace,
+                    text: &source[start..pos],
+                });
+            }
             b'|' => {
                 pos += 1;
                 tokens.push(Token {
@@ -398,6 +422,14 @@ fn lex_plain_scalar(_source: &str, bytes: &[u8], start: usize) -> usize {
                 break;
             }
             b':' if pos + 1 >= bytes.len() => break,
+            // `{` is deliberately NOT a break byte, though `}` is. `{` only
+            // opens a flow mapping in node position, where the main lexer
+            // already tokenizes it; mid-scalar it is ordinary text. Breaking
+            // on it made `a{b: c}` — a block mapping whose KEY contains a
+            // brace — lex as `a` `{` `b` `:` and produce two spurious errors,
+            // "expected ':' after mapping key" and "expected mapping key,
+            // found Some(LBrace)". Verified by probing both variants; see
+            // `braces_inside_a_key_do_not_create_structure`.
             b',' | b']' | b'}' => break,
             _ => pos += 1,
         }
@@ -679,6 +711,10 @@ impl<'src> Parser<'src> {
             Some(SyntaxKind::LBracket) => {
                 self.parse_flow_sequence();
             }
+            // Flow mapping: {...}
+            Some(SyntaxKind::LBrace) => {
+                self.parse_flow_mapping();
+            }
             // Inline scalar value on the same line — consume everything until newline.
             // This handles values containing colons like "title: This is: complex"
             Some(
@@ -785,6 +821,12 @@ impl<'src> Parser<'src> {
                 Some(SyntaxKind::LBracket) => {
                     self.parse_flow_sequence();
                 }
+                // `- {id: R-1, type: requirement}` — an artifact written as a
+                // flow mapping. Before this arm existed the item fell through
+                // to the scalar path and the artifact vanished with no error.
+                Some(SyntaxKind::LBrace) => {
+                    self.parse_flow_mapping();
+                }
                 Some(SyntaxKind::Pipe | SyntaxKind::Gt) => {
                     self.parse_block_scalar(indent);
                 }
@@ -887,6 +929,9 @@ impl<'src> Parser<'src> {
                 Some(SyntaxKind::LBracket) => {
                     self.parse_flow_sequence(); // nested
                 }
+                Some(SyntaxKind::LBrace) => {
+                    self.parse_flow_mapping(); // `[a, {b: c}, d]`
+                }
                 _ => {
                     // Error: unexpected token in flow sequence
                     self.builder.start_node(SyntaxKind::Error.into());
@@ -913,6 +958,111 @@ impl<'src> Parser<'src> {
             });
         }
         self.builder.finish_node();
+    }
+
+    /// Parse a flow mapping `{a: 1, b: 2}`.
+    ///
+    /// Deliberately emits a **`Mapping`** node — the same kind a block mapping
+    /// produces — with `MappingEntry`/`Key`/`Value` children, rather than a
+    /// distinct `FlowMapping` kind. Two reasons. Every HIR walker
+    /// (`extract_provenance`, the generic and schema-driven extractors) already
+    /// looks for `Mapping`, so they gain flow support without knowing flow
+    /// exists; and a separate kind would mean each consumer that forgot to
+    /// handle it silently reads nothing, which is exactly the failure this is
+    /// fixing (REQ-348: rowan dropped flow-style provenance with no error).
+    /// The tree stays lossless: `{`, `}` and `,` are kept as tokens, so the
+    /// style is recoverable and the text round-trips.
+    ///
+    /// Values are wrapped in their own `Value` node so that `scalar_text`'s
+    /// sibling-collection stops at the entry boundary instead of swallowing
+    /// `, model: …}` into the first value.
+    fn parse_flow_mapping(&mut self) {
+        self.builder.start_node(SyntaxKind::Mapping.into());
+        self.bump(); // consume `{`
+
+        loop {
+            self.eat_trivia();
+            if self.at_eof() || self.at(SyntaxKind::RBrace) {
+                break;
+            }
+            if self.at(SyntaxKind::Comma) {
+                self.bump();
+                continue;
+            }
+
+            match self.current_kind() {
+                Some(
+                    SyntaxKind::PlainScalar
+                    | SyntaxKind::SingleQuotedScalar
+                    | SyntaxKind::DoubleQuotedScalar,
+                ) => self.parse_flow_mapping_entry(),
+                _ => {
+                    self.builder.start_node(SyntaxKind::Error.into());
+                    self.errors.push(ParseError {
+                        offset: self.byte_offset,
+                        message: "unexpected token in flow mapping".into(),
+                    });
+                    self.bump();
+                    self.builder.finish_node();
+                }
+            }
+        }
+
+        if self.at(SyntaxKind::RBrace) {
+            self.bump();
+        } else {
+            self.errors.push(ParseError {
+                offset: self.byte_offset,
+                message: "expected '}' to close flow mapping".into(),
+            });
+        }
+        self.builder.finish_node();
+    }
+
+    /// One `key: value` pair inside a flow mapping. The value ends at the next
+    /// `,` or the closing `}` rather than at end of line, which is the whole
+    /// difference from the block form.
+    fn parse_flow_mapping_entry(&mut self) {
+        self.builder.start_node(SyntaxKind::MappingEntry.into());
+
+        self.builder.start_node(SyntaxKind::Key.into());
+        self.bump();
+        self.builder.finish_node();
+
+        self.eat_spaces();
+        if self.at(SyntaxKind::Colon) {
+            self.bump();
+        } else {
+            self.errors.push(ParseError {
+                offset: self.byte_offset,
+                message: "expected ':' after flow mapping key".into(),
+            });
+            self.builder.finish_node();
+            return;
+        }
+        self.eat_spaces();
+
+        self.builder.start_node(SyntaxKind::Value.into());
+        match self.current_kind() {
+            Some(SyntaxKind::LBrace) => self.parse_flow_mapping(),
+            Some(SyntaxKind::LBracket) => self.parse_flow_sequence(),
+            _ => {
+                // Everything up to the entry boundary. Nested braces/brackets
+                // are handled above, so a bare `}` or `,` here really does end
+                // the entry.
+                while !self.at_eof()
+                    && !self.at(SyntaxKind::Comma)
+                    && !self.at(SyntaxKind::RBrace)
+                    && !self.at(SyntaxKind::Newline)
+                    && !self.at(SyntaxKind::Comment)
+                {
+                    self.bump();
+                }
+            }
+        }
+        self.builder.finish_node(); // Value
+
+        self.builder.finish_node(); // MappingEntry
     }
 
     fn parse_block_scalar(&mut self, parent_indent: usize) {
@@ -1404,6 +1554,175 @@ artifacts:
              \x20\x20\x20\x20title: Concurrent modification\n\
              \x20\x20\x20\x20losses: [L-1, L-3, L-6]\n",
         );
+    }
+
+    // ── Flow mappings (REQ-346) ─────────────────────────────────────
+    //
+    // `yaml_cst` had a `FlowSequence` node and no `FlowMapping`, so a flow
+    // mapping produced neither a mapping nor an error — the data simply was
+    // not there. On rivet's own corpus that silently cost the provenance of
+    // eighteen artifacts (REQ-348's differential gate found it). These live in
+    // the module rather than in `tests/` because the mutation gate runs
+    // `--lib` and cannot see integration tests.
+
+    /// Walk `node` and collect every `Key: Value` pair, so a test can assert
+    /// the SHAPE the parser built rather than only that it round-tripped.
+    /// Round-tripping proves nothing here: the pre-fix parser round-tripped
+    /// flow mappings perfectly while extracting nothing from them.
+    fn collect_entries(node: &SyntaxNode) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        for d in node.descendants() {
+            if d.kind() != SyntaxKind::MappingEntry {
+                continue;
+            }
+            let key = d
+                .children()
+                .find(|c| c.kind() == SyntaxKind::Key)
+                .map(|k| k.text().to_string().trim().to_string());
+            let value = d
+                .children()
+                .find(|c| c.kind() == SyntaxKind::Value)
+                .map(|v| v.text().to_string().trim().to_string());
+            if let (Some(k), Some(v)) = (key, value) {
+                out.push((k, v));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn flow_mapping_as_value() {
+        let root = parse_and_check("provenance: {created-by: ai-assisted, model: m}\n");
+        let entries = collect_entries(&root);
+        assert!(
+            entries.contains(&("created-by".to_owned(), "ai-assisted".to_owned())),
+            "flow entries not extracted: {entries:?}"
+        );
+        assert!(
+            entries.contains(&("model".to_owned(), "m".to_owned())),
+            "the LAST entry is the one a value-terminator bug drops: {entries:?}"
+        );
+    }
+
+    /// The value of a flow entry must stop at `,` / `}`. If it ran to end of
+    /// line as the block form does, the first value would swallow the rest of
+    /// the mapping and the later keys would vanish.
+    #[test]
+    fn flow_mapping_value_stops_at_entry_boundary() {
+        let root = parse_and_check("p: {a: one, b: two}\n");
+        let entries = collect_entries(&root);
+        assert!(
+            entries.contains(&("a".to_owned(), "one".to_owned())),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&("b".to_owned(), "two".to_owned())),
+            "{entries:?}"
+        );
+    }
+
+    #[test]
+    fn flow_mapping_as_sequence_item() {
+        let root = parse_and_check("artifacts:\n  - {id: R-1, type: requirement}\n");
+        let entries = collect_entries(&root);
+        assert!(
+            entries.contains(&("id".to_owned(), "R-1".to_owned())),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&("type".to_owned(), "requirement".to_owned())),
+            "{entries:?}"
+        );
+    }
+
+    #[test]
+    fn flow_mapping_emits_a_mapping_node() {
+        // Deliberate design choice, not an accident: reusing `Mapping` is what
+        // lets every existing HIR walker read flow mappings without knowing
+        // flow exists. A distinct kind would mean each consumer that forgot to
+        // handle it reads nothing — the failure being fixed here.
+        let root = parse_and_check("p: {a: 1}\n");
+        assert!(
+            root.descendants().any(|d| d.kind() == SyntaxKind::Mapping),
+            "a flow mapping must produce a Mapping node"
+        );
+    }
+
+    #[test]
+    fn flow_mapping_nested_in_flow_mapping() {
+        let root = parse_and_check("p: {outer: {inner: v}, after: x}\n");
+        let entries = collect_entries(&root);
+        assert!(
+            entries.contains(&("inner".to_owned(), "v".to_owned())),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&("after".to_owned(), "x".to_owned())),
+            "the entry AFTER a nested mapping is what a mis-counted brace drops: {entries:?}"
+        );
+    }
+
+    #[test]
+    fn flow_sequence_inside_flow_mapping() {
+        let root = parse_and_check("p: {losses: [L-1, L-3], after: x}\n");
+        let entries = collect_entries(&root);
+        assert!(
+            entries.contains(&("after".to_owned(), "x".to_owned())),
+            "a flow sequence must not swallow the rest of the mapping: {entries:?}"
+        );
+    }
+
+    /// `a{b: c}` is a block mapping whose key happens to contain a brace, not
+    /// a flow mapping. Making `{` a plain-scalar break byte broke exactly this
+    /// and emitted two spurious diagnostics; the probe that found it compared
+    /// both lexer variants side by side.
+    #[test]
+    fn braces_inside_a_key_do_not_create_structure() {
+        parse_and_check("a{b: c}\n");
+    }
+
+    /// A flow mapping as an element of a flow sequence. `parse_flow_sequence`
+    /// already recursed for a nested `[`; `{` fell to the error arm and
+    /// produced three "unexpected token in flow sequence" diagnostics.
+    #[test]
+    fn flow_mapping_inside_flow_sequence() {
+        let root = parse_and_check("x: [a, {b: c}, d]\n");
+        let entries = collect_entries(&root);
+        assert!(
+            entries.contains(&("b".to_owned(), "c".to_owned())),
+            "{entries:?}"
+        );
+    }
+
+    #[test]
+    fn flow_mapping_empty() {
+        let root = parse_and_check("p: {}\n");
+        assert!(root.descendants().any(|d| d.kind() == SyntaxKind::Mapping));
+    }
+
+    #[test]
+    fn flow_mapping_unclosed_is_an_error_not_a_silent_drop() {
+        let source = "p: {a: 1\n";
+        let (green, errors) = parse(source);
+        let root = SyntaxNode::new_root(green);
+        assert_eq!(root.text().to_string(), source, "round-trip");
+        assert!(
+            errors.iter().any(|e| e.message.contains("flow mapping")),
+            "an unclosed flow mapping must be diagnosed: {errors:?}"
+        );
+    }
+
+    /// `{` became a lexer token and a plain-scalar break byte. A brace INSIDE a
+    /// block-style value must still reassemble into the value, the way commas
+    /// and brackets already do.
+    #[test]
+    fn braces_inside_a_block_value_are_not_a_flow_mapping() {
+        let root = parse_and_check("title: use {braces} inline here\n");
+        let value = root
+            .descendants()
+            .find(|d| d.kind() == SyntaxKind::Value)
+            .expect("value node");
+        assert_eq!(value.text().to_string().trim(), "use {braces} inline here");
     }
 
     #[test]
