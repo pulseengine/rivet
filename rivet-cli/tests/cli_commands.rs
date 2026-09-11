@@ -7971,6 +7971,206 @@ fn release_move_retargets_and_logs_scope_change() {
 /// refuses.
 ///
 /// rivet: verifies REQ-235
+/// `rivet consolidate` is the inverse of `rivet shard` (REQ-334).
+///
+/// Per-id layout removes write conflicts by giving every artifact its own
+/// file, but nothing brings them back, so a long-lived source accumulates
+/// files without bound. This is git's loose-objects-then-packfiles shape:
+/// pack what is cold, keep what is hot loose.
+///
+/// The grouping key is a SHIPPED RELEASE, and that is the load-bearing choice.
+/// Artifacts scoped to a cut release are settled — nobody edits v0.36.0's
+/// requirements concurrently after the tag — so packing them reintroduces no
+/// conflict risk, while the open release stays per-id where the concurrent
+/// writes actually happen. Grouping by type would restore the original
+/// problem; grouping by status is weaker because status still moves.
+///
+/// The fixture therefore holds BOTH a shipped and an open release, because a
+/// fixture with only one cannot tell "packed the right ones" from "packed
+/// everything".
+/// rivet: verifies REQ-334
+#[test]
+fn consolidate_packs_a_shipped_release_and_leaves_the_open_one_loose() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-9\n    type: requirement\n    title: shipped one\n    status: verified\n    release: v0.1.0\n    tags: [safety]\n    fields:\n      priority: must\n  \
+         - id: REQ-8\n    type: requirement\n    title: shipped two\n    status: verified\n    release: v0.1.0\n  \
+         - id: REQ-7\n    type: requirement\n    title: still open\n    status: draft\n    release: v0.2.0\n  \
+         - id: REQ-6\n    type: requirement\n    title: unscoped backlog\n    status: draft\n",
+    )
+    .unwrap();
+
+    let ids = |d: &str| -> Vec<String> {
+        let out = Command::new(rivet_bin())
+            .args(["--project", d, "list", "--format", "json"])
+            .output()
+            .expect("list");
+        let v: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("list --format json must be valid JSON");
+        let arts = v
+            .get("artifacts")
+            .and_then(|a| a.as_array())
+            .cloned()
+            .unwrap_or_else(|| v.as_array().cloned().unwrap_or_default());
+        let mut out: Vec<String> = arts
+            .iter()
+            .filter_map(|a| a.get("id").and_then(|i| i.as_str()).map(str::to_owned))
+            .collect();
+        out.sort();
+        out
+    };
+
+    // Shard first — consolidate's input is a per-id directory.
+    assert!(
+        Command::new(rivet_bin())
+            .args(["--project", dirs, "shard", "artifacts/reqs.yaml"])
+            .output()
+            .expect("shard")
+            .status
+            .success()
+    );
+    let before = ids(dirs);
+    // `init --preset dev` seeds its own artifacts, so assert the FIXTURE's four
+    // are present rather than a total — a total would break whenever the preset
+    // changes and would say nothing about this test.
+    for id in ["REQ-6", "REQ-7", "REQ-8", "REQ-9"] {
+        assert!(
+            before.contains(&id.to_owned()),
+            "fixture artifact {id} must load before consolidating; got {before:?}"
+        );
+    }
+
+    let co = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "consolidate",
+            "artifacts/reqs",
+            "--release",
+            "v0.1.0",
+        ])
+        .output()
+        .expect("consolidate");
+    assert!(
+        co.status.success(),
+        "consolidate must succeed; stderr: {}",
+        String::from_utf8_lossy(&co.stderr)
+    );
+
+    // The shipped release is packed into ONE file.
+    assert!(
+        dir.join("artifacts/reqs/v0.1.0.yaml").exists(),
+        "the shipped release must be packed into a single file"
+    );
+    assert!(
+        !dir.join("artifacts/reqs/REQ-9.yaml").exists()
+            && !dir.join("artifacts/reqs/REQ-8.yaml").exists(),
+        "the packed artifacts' per-id files must be removed"
+    );
+    // The OPEN release and unscoped backlog stay loose — this is the assertion
+    // that separates "packed the right ones" from "packed everything".
+    assert!(
+        dir.join("artifacts/reqs/REQ-7.yaml").exists(),
+        "the open release must stay per-id, where concurrent writes happen"
+    );
+    assert!(
+        dir.join("artifacts/reqs/REQ-6.yaml").exists(),
+        "unscoped backlog must stay per-id — it is not a settled release"
+    );
+
+    // Nothing lost, nothing invented.
+    assert_eq!(before, ids(dirs), "consolidate must be artifact-preserving");
+
+    // Field fidelity through the pack, not merely the id set.
+    let packed = std::fs::read_to_string(dir.join("artifacts/reqs/v0.1.0.yaml")).unwrap();
+    assert!(
+        packed.contains("safety") && packed.contains("priority") && packed.contains("must"),
+        "tags and domain fields must survive the pack; got:\n{packed}"
+    );
+
+    // The measurement must be REPORTED, not implied. REQ-334 is explicit that a
+    // count-based threshold at an invented number is the defect class this
+    // project spent a release removing, so whatever is used has to be stated.
+    let stdout = String::from_utf8_lossy(&co.stdout);
+    assert!(
+        stdout.contains("ms"),
+        "consolidate must report the measured load time it based its advice on. Got:\n{stdout}"
+    );
+
+    // Refuses to overwrite an existing pack.
+    let again = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "consolidate",
+            "artifacts/reqs",
+            "--release",
+            "v0.1.0",
+        ])
+        .output()
+        .expect("consolidate twice");
+    assert!(
+        !again.status.success(),
+        "consolidating onto an existing pack must refuse, not overwrite"
+    );
+
+    // --dry-run reports and writes nothing.
+    let dry = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "consolidate",
+            "artifacts/reqs",
+            "--release",
+            "v0.2.0",
+            "--dry-run",
+        ])
+        .output()
+        .expect("consolidate --dry-run");
+    assert!(dry.status.success(), "--dry-run must succeed");
+    assert!(
+        !dir.join("artifacts/reqs/v0.2.0.yaml").exists(),
+        "--dry-run must not write a pack"
+    );
+    assert!(
+        dir.join("artifacts/reqs/REQ-7.yaml").exists(),
+        "--dry-run must not remove per-id files"
+    );
+
+    // Refuses a release that does not exist, rather than writing an empty pack.
+    let empty = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "consolidate",
+            "artifacts/reqs",
+            "--release",
+            "v9.9.9",
+        ])
+        .output()
+        .expect("consolidate v9.9.9");
+    assert!(
+        !empty.status.success(),
+        "consolidating a release with no artifacts must fail, not write an empty pack"
+    );
+    assert!(
+        !dir.join("artifacts/reqs/v9.9.9.yaml").exists(),
+        "no pack file may be left behind by the refused run"
+    );
+}
+
 #[test]
 fn shard_splits_source_into_per_id_files_reversibly() {
     // --- Happy path: a directory source shards cleanly, losslessly. ---
