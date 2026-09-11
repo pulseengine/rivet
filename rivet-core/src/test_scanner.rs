@@ -118,6 +118,14 @@ pub fn default_patterns() -> Vec<MarkerPattern> {
             link_type_group: 1,
             id_group: 2,
         },
+        // Config comment (YAML/TOML): # rivet: verifies REQ-001 (REQ-352)
+        MarkerPattern {
+            language: "config".into(),
+            pattern: Regex::new(r"#\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
+                .expect("valid regex"),
+            link_type_group: 1,
+            id_group: 2,
+        },
         // Python comment: # rivet: verifies REQ-001
         MarkerPattern {
             language: "python".into(),
@@ -171,6 +179,13 @@ fn detect_language(path: &Path) -> Option<&'static str> {
         // a requirement. Its own category rather than an alias for "python",
         // because the enclosing-function regex differs.
         "sh" | "bash" | "zsh" | "ksh" => Some("shell"),
+        // REQ-352: a CI gate IS evidence, and CI gates live in YAML and TOML.
+        // Without an entry here `scan_file` returns before any pattern runs, so
+        // a workflow or a deny.toml policy could never be evidence for a
+        // requirement — the identical gap #870/REQ-319 fixed for shell.
+        // REQ-343 (the probe's runs-on) and REQ-347 (the advisories check) are
+        // both CI-config changes with no test to carry a marker.
+        "yml" | "yaml" | "toml" => Some("config"),
         _ => None,
     }
 }
@@ -205,6 +220,15 @@ fn detect_language_from_shebang(content: &str) -> Option<&'static str> {
 /// Try to find the enclosing function/method name by scanning backwards
 /// from the marker line.
 fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -> Option<String> {
+    // Config files have no enclosing function. Returning None here rather than
+    // falling through to the catch-all is deliberate: that regex matches
+    // `function name(`, which appears inside a YAML `run: |` shell block, so
+    // the catch-all would attribute a workflow marker to a shell helper several
+    // steps away. The caller falls back to `file:line`, which is unambiguous —
+    // and guessing a plausible-but-wrong name is exactly how REQ-326 happened.
+    if language == "config" {
+        return None;
+    }
     let fn_pattern = match language {
         "rust" => Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)").ok()?,
         "python" => Regex::new(r"def\s+(\w+)").ok()?,
@@ -312,7 +336,12 @@ fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<Test
         if path.is_dir() {
             // Skip hidden directories and common non-source dirs.
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') || name == "target" || name == "node_modules" {
+                // `.github` is a real source directory — workflows are where CI
+                // gates live, and a CI gate IS evidence (REQ-352). Every other
+                // dot-dir stays skipped; `.git` in particular is not source and
+                // is enormous.
+                let skip_dot = name.starts_with('.') && name != ".github";
+                if skip_dot || name == "target" || name == "node_modules" {
                     continue;
                 }
             }
@@ -1086,6 +1115,151 @@ fn a_later_test() { assert!(true); }
         assert!(
             !found.contains("REQ-NODE-001"),
             "a non-shell shebang must not be scanned as shell; got {found:?}"
+        );
+    }
+    /// A CI gate is evidence, and CI gates live in YAML and TOML.
+    ///
+    /// `detect_language` had no entry for them, so `scan_file` returned before
+    /// any pattern ran — exactly the shape #870/REQ-319 fixed for shell, whose
+    /// own comment records that a shell gate "could never be evidence for a
+    /// requirement". REQ-343 (the liveness probe's runs-on) and REQ-347 (the
+    /// cargo-deny advisories check) are both CI-config changes with no test to
+    /// carry a marker, so neither could reach `verified` without this.
+    // rivet: verifies REQ-352
+    #[test]
+    fn markers_are_found_in_yaml_and_toml_config() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join("ci.yml"),
+            "jobs:\n  deny:\n    name: Cargo Deny\n    steps:\n      \
+             # rivet: verifies REQ-347\n      - run: cargo deny check advisories\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("deny.toml"),
+            "[advisories]\n# rivet: verifies REQ-347\nignore = []\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        let found: Vec<&str> = markers.iter().map(|m| m.target_id.as_str()).collect();
+        assert_eq!(
+            markers.len(),
+            2,
+            "both the YAML and the TOML marker must be found; got {found:?}"
+        );
+        assert!(
+            markers.iter().all(|m| m.target_id == "REQ-347"),
+            "target id must parse from config comments; got {found:?}"
+        );
+        assert!(
+            markers.iter().all(|m| m.link_type == "verifies"),
+            "link type must parse; got {:?}",
+            markers.iter().map(|m| &m.link_type).collect::<Vec<_>>()
+        );
+    }
+
+    /// Config files have no enclosing function, so the marker falls back to
+    /// `file:line`. That fallback is deliberate: a YAML document has many
+    /// `name:` keys and guessing which one encloses a marker is how REQ-326's
+    /// misattribution bug happened. An unambiguous `ci.yml:5` beats a plausible
+    /// wrong job name.
+    // rivet: verifies REQ-352
+    #[test]
+    fn config_markers_fall_back_to_file_and_line_not_a_guessed_name() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join("wf.yaml"),
+            "jobs:\n  a:\n    steps:\n      - run: |\n          function helper() {\n\
+             \x20           echo hi\n          }\n          helper\n      \
+             # rivet: verifies REQ-352\n      - run: cargo test\n",
+        )
+        .unwrap();
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        assert_eq!(markers.len(), 1, "one marker expected");
+        // Without the config early-return the catch-all regex matches
+        // `function helper(` four lines above and attributes the marker to a
+        // shell helper that has nothing to do with it.
+        assert_ne!(
+            markers[0].test_name, "helper",
+            "marker must NOT be attributed to a shell function inside a run: block"
+        );
+        assert_eq!(
+            markers[0].test_name, "wf.yaml:9",
+            "must be file:line, not a guessed enclosing name"
+        );
+    }
+
+    /// `.github/` is a real source directory, and skipping every dot-dir hid it.
+    ///
+    /// Config-language support alone was not enough: `scan_directory` skips any
+    /// name starting with `.`, so a marker in `.github/workflows/ci.yml` was
+    /// never reached. Found by placing real markers and watching
+    /// `coverage --tests` still report "No test markers found".
+    // rivet: verifies REQ-352
+    #[test]
+    fn markers_are_found_under_dot_github() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let wf = dir.path().join(".github").join("workflows");
+        std::fs::create_dir_all(&wf).unwrap();
+        std::fs::write(
+            wf.join("ci.yml"),
+            "jobs:\n  gate:\n    # rivet: verifies REQ-352\n    runs-on: ubuntu-latest\n",
+        )
+        .unwrap();
+        // `.git` must STAY skipped — it is not source and is enormous.
+        let git = dir.path().join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        std::fs::write(git.join("config.yml"), "# rivet: verifies REQ-999\n").unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        let ids: Vec<&str> = markers.iter().map(|m| m.target_id.as_str()).collect();
+        assert!(
+            ids.contains(&"REQ-352"),
+            "a marker under .github/workflows must be found; got {ids:?}"
+        );
+        assert!(
+            !ids.contains(&"REQ-999"),
+            ".git must remain skipped — it is not source; got {ids:?}"
+        );
+    }
+    /// `target/` and `node_modules/` must stay skipped.
+    ///
+    /// REQ-352 turned the dot-dir skip into `skip_dot || name == "target" ||
+    /// name == "node_modules"`, and the PR-diff mutation gate showed a mutant
+    /// surviving at that `||`: the `.github` and `.git` tests cover the dot
+    /// branch, and nothing exercised the other two. Scanning `target/` would
+    /// walk build artefacts and could surface markers from vendored source.
+    // rivet: verifies REQ-352
+    #[test]
+    fn build_and_dependency_dirs_stay_skipped() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        for skipped in ["target", "node_modules"] {
+            let d = dir.path().join(skipped);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(
+                d.join("x.rs"),
+                "// rivet: verifies REQ-SKIPPED\nfn f() {}\n",
+            )
+            .unwrap();
+        }
+        // A real source file, so the scan is demonstrably working — without
+        // this the assertions below would pass on a scanner that found nothing.
+        std::fs::write(
+            dir.path().join("real.rs"),
+            "// rivet: verifies REQ-REAL\nfn f() {}\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        let ids: Vec<&str> = markers.iter().map(|m| m.target_id.as_str()).collect();
+        assert!(
+            ids.contains(&"REQ-REAL"),
+            "the scan must find the real source file, or this test proves nothing; got {ids:?}"
+        );
+        assert!(
+            !ids.contains(&"REQ-SKIPPED"),
+            "target/ and node_modules/ must stay skipped; got {ids:?}"
         );
     }
 }
