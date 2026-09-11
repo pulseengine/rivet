@@ -255,6 +255,69 @@ YAML
   rm -rf "$fixture"
 }
 
+# ── classify_stall: liveness vs latency (REQ-354) ─────────────────────────
+# rivet: verifies REQ-354
+#
+# The probe is named "Runner Liveness" and its authoritative signal is queued
+# AGE, which is latency. Those differ, and the difference is the whole alarm:
+# a saturated pool and a dead pool both show jobs stuck in `queued`, and they
+# need opposite responses.
+#
+# `label-saturated` already existed but was UNREACHABLE on every scheduled
+# probe: reaching it needs the runner list, which needs the `administration`
+# scope, which is not grantable to GITHUB_TOKEN. So the classifier had the
+# right answer and no path to it, and 96 alert issues were filed and closed.
+#
+# Liveness is observable without the runner list. If a queued job's label set
+# has an IN-PROGRESS sibling, runners serving those labels are demonstrably
+# alive — that is the jobs API, which the probe already reads.
+test_classify_stall_liveness() {
+  echo "classify_stall (liveness from running siblings):"
+
+  # The real shape of #940, reduced. A 16-shard matrix against 4 `lean-mem`
+  # runners: four shards running, the rest queued behind them. The pool is
+  # alive and working; nothing is down.
+  local lean='["self-hosted","linux","x64","lean-mem"]'
+  local queued_shards
+  queued_shards="[{\"name\":\"Mutation Testing (rivet-core 09-of-16)\",\"labels\":$lean},{\"name\":\"Mutation Testing (rivet-core 10-of-16)\",\"labels\":$lean}]"
+  local running_siblings
+  running_siblings="[{\"name\":\"Mutation Testing (rivet-core 01-of-16)\",\"status\":\"in_progress\",\"labels\":$lean},{\"name\":\"Mutation Testing (rivet-core 09-of-16)\",\"status\":\"queued\",\"labels\":$lean},{\"name\":\"Mutation Testing (rivet-core 10-of-16)\",\"status\":\"queued\",\"labels\":$lean}]"
+
+  # No runner list — exactly what every scheduled probe has.
+  check "saturation is not a liveness failure" "queue-behind-live-runners" \
+    "$(classify_stall "" "$queued_shards" "$running_siblings" "{}")"
+
+  # CONTROL, and it is the load-bearing one. Same queued jobs, same absent
+  # runner list, but NOTHING running on those labels. That is indistinguishable
+  # from a dead pool from here, so the classifier must still refuse to call it
+  # healthy and must answer exactly as it did before.
+  local nothing_running
+  nothing_running="[{\"name\":\"Mutation Testing (rivet-core 09-of-16)\",\"status\":\"queued\",\"labels\":$lean},{\"name\":\"Mutation Testing (rivet-core 10-of-16)\",\"status\":\"queued\",\"labels\":$lean}]"
+  check "nothing running on those labels still alarms" "runners-unknown" \
+    "$(classify_stall "" "$queued_shards" "$nothing_running" "{}")"
+
+  # A sibling running on DIFFERENT labels proves nothing about these. #855's
+  # per-label lesson: the pool read online=12 busy=8 while every `rust-cpu` job
+  # queued, because the idle runners carried only `lean-mem`.
+  local other_label_running
+  other_label_running="[{\"name\":\"Test\",\"status\":\"in_progress\",\"labels\":[\"self-hosted\",\"linux\",\"x64\",\"rust-cpu\"]},{\"name\":\"Mutation Testing (rivet-core 09-of-16)\",\"status\":\"queued\",\"labels\":$lean}]"
+  check "a running sibling on other labels proves nothing" "runners-unknown" \
+    "$(classify_stall "" "$queued_shards" "$other_label_running" "{}")"
+
+  # A readable runner list must still win: an genuinely offline pool is
+  # pool-offline even if the jobs API shows something in progress.
+  local runners_offline='{"runners":[{"status":"offline","busy":false,"labels":[{"name":"lean-mem"}]}]}'
+  check "a readable offline pool still outranks the jobs signal" "pool-offline" \
+    "$(classify_stall "$runners_offline" "$queued_shards" "$running_siblings" "{}")"
+
+  # And a dependency wait must still short-circuit ahead of all of this.
+  local needs='{"Mutation Testing (rivet-core 09-of-16)":["build"],"Mutation Testing (rivet-core 10-of-16)":["build"]}'
+  local build_incomplete
+  build_incomplete="[{\"name\":\"build\",\"status\":\"in_progress\",\"labels\":$lean}]"
+  check "dependency waits still short-circuit first" "dependency-blocked" \
+    "$(classify_stall "" "$queued_shards" "$build_incomplete" "$needs")"
+}
+
 # ── classify_failure ──────────────────────────────────────────────────────
 # rivet: verifies REQ-316
 test_classify_failure() {
@@ -291,6 +354,7 @@ test_classify_failure() {
 test_classify_stall
 test_normalize_runner_fetch
 test_workflow_needs
+test_classify_stall_liveness
 test_classify_failure
 echo
 if [ "$fails" -eq 0 ]; then echo "ci-diagnose: all cases pass"; else echo "ci-diagnose: $fails case(s) FAILED"; fi
