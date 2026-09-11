@@ -70,6 +70,7 @@ jobs:
     # one is starved": a starved job stays QUEUED rather than failing, so a
     # dependent job waits on it forever instead of falling through.
     # rivet: verifies REQ-343
+    # rivet: verifies REQ-354
     runs-on: [self-hosted, linux, x64, light]
     steps:
       - uses: actions/checkout@v6
@@ -178,8 +179,12 @@ jobs:
             # workflow definition at the checked-out ref. Best-effort: a
             # missing file or parser yields `{}`, and classify_stall then
             # answers exactly as it did before rather than reclassifying.
+            # `labels` carries REQ-354's liveness signal: a job IN PROGRESS
+            # proves the runners serving its labels are alive. That is the one
+            # capacity fact observable without the `administration` scope, and
+            # this probe never has that scope.
             alljobs=$(gh api "repos/$REPO/actions/runs/${oldest_id}/jobs" --paginate \
-                        --jq '[.jobs[] | {name, status}]' 2>/dev/null || echo '[]')
+                        --jq '[.jobs[] | {name, status, labels}]' 2>/dev/null || echo '[]')
             wfpath=$(gh api "repos/$REPO/actions/runs/${oldest_id}" --jq '.path' 2>/dev/null || echo '')
             needs=$(python3 tools/ci-diagnose/workflow-needs.py "$wfpath" 2>/dev/null || echo '{}')
             mode=$(classify_stall "$allr" "$qjobs" "$alljobs" "$needs")
@@ -199,6 +204,25 @@ jobs:
                 # GitHub-hosted starvation while the fleet sat at online=12,
                 # busy=1.
                 echo "::notice::Run ${oldest_id} queued ${oldest_age}m waiting on job dependencies, not capacity. Queued: ${labels}" ;;
+              queue-behind-live-runners)
+                # REQ-354. Deliberately NOT appended to `problems`, on the same
+                # grounds as dependency-blocked above: this workflow's own
+                # charter is "when the pool goes offline every gate queues
+                # forever with no fallback and no alarm". A pool with jobs
+                # actively RUNNING on the labels these jobs need is not that
+                # condition — it is a queue behind working runners.
+                #
+                # This is the shape that filed 96 alerts: a 16-shard matrix
+                # against 4 `lean-mem` runners serializes into four waves by
+                # construction, so shards queue past the threshold every night
+                # while the fleet reads online=12 busy=12. Every one of those
+                # issues was closed without action.
+                #
+                # It fires only when EVERY queued job has a live sibling whose
+                # labels are a superset of its own; a mix where some labels
+                # have none still alarms, so a real outage cannot hide behind
+                # an unrelated running job.
+                echo "::notice::Run ${oldest_id} queued ${oldest_age}m behind runners that are demonstrably ALIVE — jobs requiring these labels are in progress right now. Saturation, not an outage. Queued: ${labels}" ;;
               hosted-starved)
                 problems+=("Run ${oldest_id} queued ${oldest_age}m — GITHUB-HOSTED starvation. Every queued job is \`ubuntu-latest\`; the self-hosted pool is irrelevant here and hosted capacity appears in the runners API at NO scope. Queued: ${labels}") ;;
               pool-offline)

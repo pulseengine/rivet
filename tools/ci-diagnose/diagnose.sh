@@ -41,8 +41,9 @@ normalize_runner_fetch() {
 
 # classify_stall <runners_json> <queued_jobs_json> [<all_jobs_json>] [<needs_json>]
 #
-# Emits one of: no-queue | dependency-blocked | hosted-starved | runners-unknown |
-#               pool-offline | label-saturated | capacity-available
+# Emits one of: no-queue | dependency-blocked | queue-behind-live-runners |
+#               hosted-starved | runners-unknown | pool-offline |
+#               label-saturated | capacity-available
 #
 # The ordering matters. Dependency waits are removed FIRST because a job
 # waiting on its `needs` is not stalled at all, and every capacity answer
@@ -52,11 +53,17 @@ normalize_runner_fetch() {
 # the old alert misleading: hosted capacity appears in the runners API at no
 # scope, so no runner count can see it.
 #
-# `all_jobs_json` is the run's jobs with their `status`; `needs_json` maps a
-# job name to its `needs` list, read from the workflow definition — the jobs
-# API does not expose `needs`. Both are optional: with two arguments the
-# function answers exactly as it did before, so a caller that cannot supply
-# the graph gets the old answer rather than a silent reclassification.
+# `all_jobs_json` is the run's jobs with their `status` AND `labels`;
+# `needs_json` maps a job name to its `needs` list, read from the workflow
+# definition — the jobs API does not expose `needs`. Both are optional: with
+# two arguments the function answers exactly as it did before, so a caller that
+# cannot supply the graph gets the old answer rather than a silent
+# reclassification.
+#
+# `labels` on `all_jobs_json` carry the REQ-354 liveness signal: a job in
+# progress proves the runners serving its labels are alive, which is the one
+# capacity fact observable without the `administration` scope. Omit them and
+# the function degrades to the previous answer rather than to a wrong one.
 classify_stall() {
   local runners_json="$1" jobs_json="$2" all_jobs_json="${3:-}" needs_json="${4:-}"
   local queued_count
@@ -110,6 +117,46 @@ classify_stall() {
   # stall whatever the real cause — #919 announced "0 runners online" while the
   # org reported online=12 busy=7.
   if [ -z "$runners_json" ]; then
+    # Before giving up on capacity, ask the JOBS API — which the caller already
+    # has — whether the pool is alive. This is REQ-354, and it is the difference
+    # between liveness and latency.
+    #
+    # `label-saturated` existed below but was UNREACHABLE on a scheduled probe:
+    # reaching it needs the runner list, which needs `administration`, which is
+    # not grantable to GITHUB_TOKEN. So the classifier held the right answer
+    # with no path to it, and a saturated pool reported the same
+    # `runners-unknown` alarm as a dead one. 96 alert issues were filed and
+    # closed on that.
+    #
+    # Liveness does not need the runner list. If a job requiring labels L is
+    # IN PROGRESS, a runner carrying at least L exists and is working. Any
+    # queued job whose labels are a SUBSET of L is therefore waiting on a live
+    # runner — it is behind a queue, not behind an outage.
+    #
+    # Required of EVERY queued job, not any: a mix where some labels have live
+    # siblings and others have none is still an outage for the others, and
+    # answering `label-saturated` there would silence the real half. When it
+    # cannot be shown for all, the answer is unchanged from before.
+    if [ -n "$all_jobs_json" ]; then
+      local unproven
+      unproven=$(jq -r --argjson all "$all_jobs_json" '
+          def lset($j): [$j.labels[]? | ascii_downcase] | unique;
+          [ $all[] | select(.status == "in_progress") | lset(.) ] as $live
+          | [ .[]
+              | lset(.) as $need
+              | select([ $live[] | select(($need - .) | length == 0) ] | length == 0)
+            ] | length' <<<"$jobs_json" 2>/dev/null || echo 1)
+      if [ "${unproven:-1}" -eq 0 ]; then
+        # Deliberately NOT `label-saturated`. That mode means "capable runners
+        # exist and none is IDLE", established from the runner list, and its
+        # caller reports per-label idle counts read from that list. Reached by
+        # this path the list is absent, so it would report "idle by label:
+        # none" and imply an empty pool — the very false alarm being removed.
+        # A distinct mode names what was actually observed.
+        echo "queue-behind-live-runners"
+        return
+      fi
+    fi
     echo "runners-unknown"
     return
   fi
