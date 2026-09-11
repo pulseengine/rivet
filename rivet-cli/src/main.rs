@@ -7287,6 +7287,36 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
         return Ok(false);
     };
 
+    // EXHAUSTIVE DESTRUCTURE — the point is the compile error, not the bindings.
+    //
+    // Both arms below are hand-rolled allowlists, the same shape as
+    // `mutate::render_artifact_yaml`, where a field not explicitly emitted is
+    // silently dropped. They omitted `release` and `provenance` for as long as
+    // those fields have existed, and nothing failed. REQ-348's record names the
+    // cost: "the comparison could not be completed because `rivet get` does not
+    // render provenance at all" — the inspector could not show the field the
+    // work needed, so the question was left open rather than answered.
+    //
+    // A pattern with no `..` means the next field added to `Artifact` breaks
+    // this build until someone decides how `get` should show it. That decision
+    // can still be "don't", but it has to be made rather than defaulted into.
+    let rivet_core::model::Artifact {
+        id: _,
+        artifact_type: _,
+        title: _,
+        description: _,
+        status: _,
+        release: _,
+        tags: _,
+        links: _,
+        fields: _,
+        fields_per_variant: _,
+        provenance: _,
+        // The on-disk location is a loader hint, not artifact content, and is
+        // `#[serde(skip)]` on the model for the same reason.
+        source_file: _,
+    } = artifact;
+
     match format {
         "json" => {
             let links_json: Vec<serde_json::Value> = artifact
@@ -7335,6 +7365,14 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
                 "links": links_json,
                 "incoming_links": incoming_json,
                 "fields": fields_json,
+                // First-class model fields, absent here until REQ-355. `release`
+                // is the dimension release readiness is queried on; `provenance`
+                // is the AI-authorship evidence chain. Both null rather than
+                // omitted when unset, so a consumer can tell "no release" from
+                // "this build does not report release".
+                "release": artifact.release,
+                "provenance": serde_json::to_value(&artifact.provenance)
+                    .unwrap_or(serde_json::Value::Null),
             });
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
@@ -7350,6 +7388,14 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
             println!("Type:        {}", artifact.artifact_type);
             println!("Title:       {}", artifact.title);
             println!("Status:      {}", artifact.status.as_deref().unwrap_or("-"));
+            // Printed unconditionally, next to Status: an artifact with no
+            // release is backlog, and that is a fact worth showing rather than
+            // a line worth hiding. A missing line reads as "this build does not
+            // report release", which is what it actually meant until REQ-355.
+            println!(
+                "Release:     {}",
+                artifact.release.as_deref().unwrap_or("-")
+            );
             if let Some(desc) = &artifact.description {
                 println!("Description: {}", desc.trim());
             }
@@ -7373,6 +7419,30 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
                 println!("Links:");
                 for link in &artifact.links {
                     println!("  {} -> {}", link.link_type, link.target);
+                }
+            }
+            if let Some(p) = &artifact.provenance {
+                println!("Provenance:");
+                println!("  created-by: {}", p.created_by);
+                for (label, value) in [
+                    ("model", p.model.as_deref()),
+                    ("session-id", p.session_id.as_deref()),
+                    ("timestamp", p.timestamp.as_deref()),
+                    ("reviewed-by", p.reviewed_by.as_deref()),
+                ] {
+                    if let Some(v) = value {
+                        println!("  {label}: {v}");
+                    }
+                }
+                if p.federation.is_some() {
+                    println!("  federation: (present — see --format yaml)");
+                }
+            }
+            if !artifact.fields_per_variant.is_empty() {
+                println!("Variant overrides:");
+                for (variant, overrides) in &artifact.fields_per_variant {
+                    let keys: Vec<&str> = overrides.keys().map(String::as_str).collect();
+                    println!("  {}: {}", variant, keys.join(", "));
                 }
             }
             // issue #358: incoming links (what links TO this artifact).
