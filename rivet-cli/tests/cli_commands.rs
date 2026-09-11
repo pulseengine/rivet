@@ -2891,6 +2891,75 @@ fn get_text_shows_artifact() {
     );
 }
 
+/// `rivet get` must render EVERY first-class field the artifact carries.
+///
+/// The text branch is a hand-rolled allowlist — the same shape as
+/// `mutate::render_artifact_yaml`, where any field not explicitly emitted is
+/// silently dropped. It rendered id, type, title, status, description, tags,
+/// fields and links, and omitted `release` and `provenance`, both of which are
+/// first-class `Artifact` struct fields.
+///
+/// This is not cosmetic. REQ-348's own record names it as the reason an earlier
+/// investigation could not be completed: *"the comparison could not be
+/// completed because `rivet get` does not render provenance at all"*. The
+/// inspector could not show the field the work needed, so the question was left
+/// open rather than answered. And `release:` is the release-planning dimension
+/// readiness is queried on — an artifact that is scoped looks unscoped here.
+///
+/// Picks an artifact that carries both, rather than asserting on a literal, so
+/// the test cannot pass against a fixture that happens to have neither.
+/// rivet: verifies REQ-355
+#[test]
+fn get_text_renders_release_and_provenance() {
+    let list = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "get",
+            "REQ-348",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("failed to execute rivet get --format json");
+    assert!(list.status.success(), "rivet get --format json must exit 0");
+    let json: serde_json::Value =
+        serde_json::from_slice(&list.stdout).expect("get --format json must be valid JSON");
+    let release = json
+        .get("release")
+        .and_then(|v| v.as_str())
+        .expect("fixture REQ-348 must carry a release, or this test is vacuous");
+
+    let output = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project_root().to_str().unwrap(),
+            "get",
+            "REQ-348",
+        ])
+        .output()
+        .expect("failed to execute rivet get REQ-348");
+    assert!(output.status.success(), "rivet get REQ-348 must exit 0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        stdout.contains("Release:"),
+        "`rivet get` must label the release scope. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains(release),
+        "`rivet get` must render the release VALUE ({release}), not just a label. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Provenance:"),
+        "`rivet get` must label provenance. Got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("ai-assisted"),
+        "`rivet get` must render the provenance VALUE, not just a label. Got:\n{stdout}"
+    );
+}
+
 /// `rivet get REQ-001 --format json` produces valid JSON with id, type, title.
 #[test]
 fn get_json_produces_valid_output() {
