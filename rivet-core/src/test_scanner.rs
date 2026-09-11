@@ -1223,4 +1223,43 @@ fn a_later_test() { assert!(true); }
             ".git must remain skipped — it is not source; got {ids:?}"
         );
     }
+    /// `target/` and `node_modules/` must stay skipped.
+    ///
+    /// REQ-352 turned the dot-dir skip into `skip_dot || name == "target" ||
+    /// name == "node_modules"`, and the PR-diff mutation gate showed a mutant
+    /// surviving at that `||`: the `.github` and `.git` tests cover the dot
+    /// branch, and nothing exercised the other two. Scanning `target/` would
+    /// walk build artefacts and could surface markers from vendored source.
+    // rivet: verifies REQ-352
+    #[test]
+    fn build_and_dependency_dirs_stay_skipped() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        for skipped in ["target", "node_modules"] {
+            let d = dir.path().join(skipped);
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(
+                d.join("x.rs"),
+                "// rivet: verifies REQ-SKIPPED\nfn f() {}\n",
+            )
+            .unwrap();
+        }
+        // A real source file, so the scan is demonstrably working — without
+        // this the assertions below would pass on a scanner that found nothing.
+        std::fs::write(
+            dir.path().join("real.rs"),
+            "// rivet: verifies REQ-REAL\nfn f() {}\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        let ids: Vec<&str> = markers.iter().map(|m| m.target_id.as_str()).collect();
+        assert!(
+            ids.contains(&"REQ-REAL"),
+            "the scan must find the real source file, or this test proves nothing; got {ids:?}"
+        );
+        assert!(
+            !ids.contains(&"REQ-SKIPPED"),
+            "target/ and node_modules/ must stay skipped; got {ids:?}"
+        );
+    }
 }
