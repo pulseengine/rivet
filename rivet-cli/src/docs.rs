@@ -3343,9 +3343,16 @@ project:
 ```
 
 To also bridge supply chain artifacts to dev requirements and features,
-both schemas will automatically load the `supply-chain-dev.bridge` which
-adds `requirement-addresses-vulnerability` and `feature-produces-release`
-link types.
+loading both schemas auto-loads the `supply-chain-dev.bridge`, which adds
+`requirement-addresses-vulnerability` and `feature-produces-release` link
+types.
+
+Auto-discovery covers rivet's BUILT-IN bridges only. A bridge file you
+drop into `schemas/` is never auto-discovered, however complete its
+`extends:` list — an on-disk file can only OVERRIDE a built-in name. Name
+your own bridge in `schemas:` to load it; `rivet init` lists any it finds
+on disk, and a declared bridge whose bases are not all loaded is an error
+rather than a silent no-op (REQ-356).
 
 ## Example artifacts
 
