@@ -142,7 +142,7 @@ pub struct StatusCounts {
     pub stale: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 pub struct Report {
     pub oracle: &'static str,
     pub entries: Vec<Entry>,
@@ -251,6 +251,66 @@ pub fn compute<'a>(
 }
 
 /// Render the report as human text.
+/// Why this run should fail, or `None` to pass.
+///
+/// Two independent obligations, and the order matters for the message:
+///
+/// 1. The POPULATION. `rivet check sources` is a drift gate, and its exit code
+///    was `firing == 0` summed over drift / missing-hash / read-error /
+///    shape-error (plus stale under `--strict`). On a corpus with no
+///    cited-sources every one of those is 0, so the command exited 0 having
+///    checked nothing. The text output says so plainly — "No artifacts have a
+///    cited-source field." — but a pipeline reads the exit code, and there 0
+///    meant "sources verified" when the population was empty. That is absence
+///    reported as success, on the assurance chain, where citation freshness is
+///    the evidence.
+///
+/// 2. The DRIFT itself, unchanged.
+///
+/// `min` is a caller-opted floor, not a changed default: a project with no
+/// citations is a legitimate configuration and keeps exiting 0 at `min == 0`.
+/// Meeting the floor never excuses drift — checked by its own test, because a
+/// flag that could mask the defect the command exists to find would be worse
+/// than the gap it closes.
+pub fn gate_reason(report: &Report, strict: bool, min: usize) -> Option<String> {
+    if report.total < min {
+        return Some(if report.total == 0 {
+            format!(
+                "--min {min} was requested but this run checked nothing: no artifact \
+                 carries a cited-source field. Exiting 0 here would report an empty \
+                 population as a verified one."
+            )
+        } else {
+            format!(
+                "--min {min} was requested but only {} cited-source(s) were found. \
+                 Citations may have been removed since the floor was set.",
+                report.total
+            )
+        });
+    }
+
+    let c = &report.by_status;
+    let mut reasons: Vec<String> = Vec::new();
+    for (n, label) in [
+        (c.drift, "drift"),
+        (c.missing_hash, "missing-hash"),
+        (c.read_error, "read-error"),
+        (c.shape_error, "shape-error"),
+    ] {
+        if n > 0 {
+            reasons.push(format!("{n} {label}"));
+        }
+    }
+    if strict && c.stale > 0 {
+        reasons.push(format!("{} stale", c.stale));
+    }
+    if reasons.is_empty() {
+        None
+    } else {
+        Some(format!("cited-source check failed: {}", reasons.join(", ")))
+    }
+}
+
 pub fn render_text(report: &Report) -> String {
     use std::fmt::Write;
     let mut out = String::new();
@@ -400,6 +460,88 @@ pub(crate) fn current_iso8601_utc() -> String {
 
 #[cfg(test)]
 mod tests {
+    // ── REQ-357: a drift gate that examined nothing must not report success ──
+    //
+    // `rivet check sources` is the cited-source drift gate. Its exit code was
+    // `firing == 0`, summed over drift / missing-hash / read-error /
+    // shape-error (+ stale under --strict). On a corpus with NO cited-sources
+    // every one of those counters is 0, so the command exits 0 having checked
+    // nothing. Measured on this repository:
+    //
+    //   $ rivet check sources
+    //   No artifacts have a cited-source field.
+    //   $ echo $?
+    //   0
+    //
+    // The text output is honest. The EXIT CODE is not: a pipeline that runs
+    // this as an audit gate reads 0 as "sources verified" when the population
+    // was empty. Absence reported as success — and on the assurance chain,
+    // where citation freshness is the evidence.
+    //
+    // The fix is a positive control the caller opts into, not a changed
+    // default: a project with no citations is a legitimate configuration and
+    // must keep exiting 0.
+
+    fn rep(total: usize, drift: usize, stale: usize) -> Report {
+        Report {
+            total,
+            by_status: StatusCounts {
+                r#match: total.saturating_sub(drift + stale),
+                drift,
+                stale,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn min_zero_is_the_current_behaviour_and_accepts_an_empty_corpus() {
+        assert_eq!(gate_reason(&rep(0, 0, 0), false, 0), None);
+    }
+
+    #[test]
+    fn an_empty_corpus_fails_when_a_minimum_is_required() {
+        let why = gate_reason(&rep(0, 0, 0), false, 1)
+            .expect("requiring 1 citation over an empty corpus must fail");
+        assert!(
+            why.contains("0") && why.contains("checked nothing"),
+            "the message must say the population was empty, not merely that a \
+             threshold was missed: {why}"
+        );
+    }
+
+    /// The shortfall must be reported against the REQUESTED minimum, so a
+    /// corpus that shrank below it is caught too — not only the empty case.
+    #[test]
+    fn a_shrunken_corpus_fails_against_its_declared_minimum() {
+        let why = gate_reason(&rep(3, 0, 0), false, 5).expect("3 < 5 must fail");
+        assert!(why.contains('3') && why.contains('5'), "got: {why}");
+        assert_eq!(gate_reason(&rep(5, 0, 0), false, 5), None, "5 >= 5 passes");
+    }
+
+    /// --min is a floor on the population, NOT a substitute for the drift
+    /// check. A corpus that meets the minimum and has drifted must still fail,
+    /// or the new flag would mask the defect the command exists to find.
+    #[test]
+    fn meeting_the_minimum_does_not_excuse_drift() {
+        let why = gate_reason(&rep(5, 2, 0), false, 5).expect("drift must still fire");
+        assert!(why.contains("drift"), "got: {why}");
+    }
+
+    /// And the two compose: --strict adds stale to the firing set, and that
+    /// must survive a satisfied --min.
+    #[test]
+    fn strict_stale_still_fires_under_a_satisfied_minimum() {
+        assert_eq!(
+            gate_reason(&rep(5, 0, 2), false, 5),
+            None,
+            "stale is quiet without --strict"
+        );
+        let why = gate_reason(&rep(5, 0, 2), true, 5).expect("--strict must fire on stale");
+        assert!(why.contains("stale"), "got: {why}");
+    }
+
     use super::*;
 
     #[test]

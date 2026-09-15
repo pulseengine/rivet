@@ -2216,6 +2216,18 @@ enum CheckAction {
         #[arg(long, conflicts_with = "update")]
         strict: bool,
 
+        /// Fail if fewer than N cited-sources were checked.
+        ///
+        /// A drift gate that examined nothing must not report success. With no
+        /// cited-sources in the corpus every drift counter is zero, so the
+        /// command exits 0 having verified nothing — the text output says so,
+        /// but a pipeline reads the exit code. This is the positive control:
+        /// state how many citations you expect, and a corpus that lost them
+        /// fails instead of passing quietly. Defaults to 0, which keeps the
+        /// previous behaviour for projects that legitimately carry none.
+        #[arg(long, default_value_t = 0, value_name = "N")]
+        min: usize,
+
         /// Output format: "text" (default) or "json".
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -2923,8 +2935,9 @@ fn run(cli: Cli) -> Result<bool> {
                 update,
                 apply,
                 strict,
+                min,
                 format,
-            } => cmd_check_sources(&cli, *update, *apply, *strict, format),
+            } => cmd_check_sources(&cli, *update, *apply, *strict, *min, format),
             CheckAction::AiDefectsOpen { format } => cmd_check_ai_defects_open(&cli, format),
             CheckAction::Docs { strict, format } => cmd_check_docs(&cli, *strict, format),
         },
@@ -17287,6 +17300,7 @@ fn cmd_check_sources(
     update: bool,
     apply: bool,
     strict: bool,
+    min: usize,
     format: &str,
 ) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
@@ -17318,14 +17332,18 @@ fn cmd_check_sources(
     // `--strict` adds stale entries to the firing set — same idea as
     // `validate --strict-cited-source-stale`, but in the read-only
     // `check sources` shape so audit gates don't have to touch any YAML.
-    let mut firing = report.by_status.drift
-        + report.by_status.missing_hash
-        + report.by_status.read_error
-        + report.by_status.shape_error;
-    if strict {
-        firing += report.by_status.stale;
+    // REQ-357: the decision lives in `check::sources::gate_reason` so it can be
+    // unit-tested and reached by the mutation gate — `rivet-cli` has no lib
+    // target, so logic left here is only exercised through the binary.
+    match check::sources::gate_reason(&report, strict, min) {
+        None => Ok(true),
+        Some(why) => {
+            if format != "json" {
+                eprintln!("error: {why}");
+            }
+            Ok(false)
+        }
     }
-    Ok(firing == 0)
 }
 
 /// `rivet check docs` — enumerate the doc scanner's per-path verdicts.
