@@ -1017,6 +1017,32 @@ enum Command {
         file: PathBuf,
     },
 
+    /// Pack a shipped release's per-id files into one file
+    ///
+    /// The inverse of `rivet shard`.
+    ///
+    /// Per-id layout removes write conflicts but accumulates files without
+    /// bound. This is git's loose-objects-then-packfiles shape: pack what is
+    /// cold, keep what is hot loose. The grouping key is a shipped release
+    /// because those artifacts are settled — nobody edits a cut release's
+    /// requirements concurrently — while the open release stays per-id, where
+    /// the concurrent writes actually happen.
+    ///
+    /// Same safety property as `shard`, in reverse: write the pack, verify the
+    /// whole project still loads every id, and only then remove the per-id
+    /// files. Reversible if anything is off.
+    Consolidate {
+        /// The per-id directory to pack, e.g. `artifacts/requirements`.
+        dir: PathBuf,
+        /// The shipped release to pack, e.g. `v0.36.0`. Only artifacts
+        /// carrying this `release:` are packed; everything else stays loose.
+        #[arg(long)]
+        release: String,
+        /// Report what would be packed and exit without writing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Capture or compare project snapshots for delta tracking
     #[cfg(feature = "serve")]
     Snapshot {
@@ -2700,6 +2726,11 @@ fn run(cli: Cli) -> Result<bool> {
             } => cmd_release_check(&cli, version, variant, format, *strict),
         },
         Command::Shard { file } => cmd_shard(&cli, file),
+        Command::Consolidate {
+            dir,
+            release,
+            dry_run,
+        } => cmd_consolidate(&cli, dir, release, *dry_run),
         #[cfg(feature = "serve")]
         Command::Snapshot { action } => match action {
             SnapshotAction::Capture { name, output } => {
@@ -7608,6 +7639,193 @@ fn cmd_shard(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     );
     println!(
         "  next: set `layout: per-id` on this source in rivet.yaml so new adds write per-id too."
+    );
+    Ok(true)
+}
+
+/// REQ-334 / #334: pack a shipped release's per-id files into one file — the
+/// inverse of `rivet shard`.
+///
+/// `shard` is one-way, so a long-lived per-id source accumulates files without
+/// bound. The maintainer's framing is git's: loose objects, then packfiles.
+/// Pack what is cold, keep what is hot loose.
+///
+/// WHEN CONSOLIDATION IS SAFE has a precise answer — exactly when future
+/// concurrent writes are unlikely — which makes a SHIPPED RELEASE the natural
+/// grouping key. Artifacts scoped to a cut release are settled; nobody edits
+/// v0.36.0's requirements concurrently after the tag. Grouping by type would
+/// restore the very problem `shard` solved, and grouping by status is weaker
+/// because status still moves.
+///
+/// The release is named explicitly rather than inferred. The tool cannot
+/// reliably know which releases are shipped, and guessing would be another
+/// figure that does not mean what it says.
+fn cmd_consolidate(cli: &Cli, dir: &std::path::Path, release: &str, dry_run: bool) -> Result<bool> {
+    use std::collections::BTreeSet;
+
+    let path = if dir.is_absolute() {
+        dir.to_path_buf()
+    } else {
+        cli.project.join(dir)
+    };
+    if !path.is_dir() {
+        anyhow::bail!("not a directory: {}", path.display());
+    }
+
+    // Collect the per-id files whose artifact carries this release.
+    let mut packing: Vec<(std::path::PathBuf, serde_yaml::Value)> = Vec::new();
+    let mut packed_ids: BTreeSet<String> = BTreeSet::new();
+    let mut loose_after = 0usize;
+    for entry in std::fs::read_dir(&path).with_context(|| format!("reading {}", path.display()))? {
+        let f = entry?.path();
+        if !f.is_file() || f.extension().is_none_or(|e| e != "yaml") {
+            continue;
+        }
+        let content = std::fs::read_to_string(&f)?;
+        let doc: serde_yaml::Value = match serde_yaml::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => {
+                loose_after += 1;
+                continue;
+            }
+        };
+        let Some(seq) = doc.get("artifacts").and_then(|v| v.as_sequence()) else {
+            loose_after += 1;
+            continue;
+        };
+        // Only a file holding EXACTLY the artifacts of this release is packed.
+        // A mixed file would otherwise be half-packed and half-deleted.
+        let all_match = !seq.is_empty()
+            && seq
+                .iter()
+                .all(|el| el.get("release").and_then(|v| v.as_str()) == Some(release));
+        if !all_match {
+            loose_after += 1;
+            continue;
+        }
+        for el in seq {
+            if let Some(id) = el.get("id").and_then(|v| v.as_str()) {
+                if !packed_ids.insert(id.to_owned()) {
+                    anyhow::bail!(
+                        "duplicate id '{id}' across per-id files in {}",
+                        path.display()
+                    );
+                }
+            }
+            packing.push((f.clone(), el.clone()));
+        }
+    }
+
+    if packed_ids.is_empty() {
+        anyhow::bail!(
+            "no artifact in {} carries `release: {release}` — nothing to pack, and an empty \
+             pack file would be a worse outcome than this error",
+            path.display()
+        );
+    }
+
+    let target = path.join(format!("{release}.yaml"));
+    if target.exists() {
+        anyhow::bail!(
+            "target already exists: {} — remove it or pack a different release",
+            target.display()
+        );
+    }
+
+    // Measure BEFORE, so the advice reported at the end is a measurement rather
+    // than an invented threshold. REQ-334 is explicit that a count-based
+    // warning fired at some made-up number is the defect class this project
+    // spent a release removing: what actually degrades is load time, so that is
+    // what gets measured and stated.
+    let t0 = std::time::Instant::now();
+    let before_ctx = ProjectContext::load(cli)?;
+    let load_before = t0.elapsed();
+    let before_ids: BTreeSet<String> = before_ctx.store.iter().map(|a| a.id.to_string()).collect();
+    drop(before_ctx);
+
+    if dry_run {
+        println!(
+            "would pack {} artifact(s) of release {release} into {}",
+            packed_ids.len(),
+            target.display()
+        );
+        println!("  {} per-id file(s) would stay loose", loose_after);
+        println!("  project load time now: {} ms", load_before.as_millis());
+        return Ok(true);
+    }
+
+    // Write the pack, preserving every field (Value round-trip, as `shard`).
+    let mut map = serde_yaml::Mapping::new();
+    map.insert(
+        serde_yaml::Value::String("artifacts".into()),
+        serde_yaml::Value::Sequence(packing.iter().map(|(_, el)| el.clone()).collect()),
+    );
+    let body = serde_yaml::to_string(&serde_yaml::Value::Mapping(map))
+        .context("serializing the consolidated file")?;
+    std::fs::write(&target, body).with_context(|| format!("writing {}", target.display()))?;
+
+    // Move the per-id files aside rather than deleting them, so the whole
+    // operation is reversible until the project is proven to still load.
+    let sources: BTreeSet<std::path::PathBuf> = packing.iter().map(|(f, _)| f.clone()).collect();
+    let mut moved: Vec<(std::path::PathBuf, std::path::PathBuf)> = Vec::new();
+    for f in &sources {
+        let bak = f.with_extension("yaml.bak");
+        std::fs::rename(f, &bak).with_context(|| format!("moving {} aside", f.display()))?;
+        moved.push((f.clone(), bak));
+    }
+
+    let restore = |moved: &[(std::path::PathBuf, std::path::PathBuf)], target: &std::path::Path| {
+        for (orig, bak) in moved {
+            std::fs::rename(bak, orig).ok();
+        }
+        std::fs::remove_file(target).ok();
+    };
+
+    // The SAFETY PROPERTY, inherited from `shard` and run in reverse: the whole
+    // project must still load every artifact it loaded before. Not the id set
+    // of the packed files — the id set of the PROJECT, which is what catches a
+    // rivet.yaml source that does not see the new file.
+    let t1 = std::time::Instant::now();
+    let after = match ProjectContext::load(cli) {
+        Ok(ctx) => {
+            let load_after = t1.elapsed();
+            let ids: BTreeSet<String> = ctx.store.iter().map(|a| a.id.to_string()).collect();
+            Some((ids, load_after))
+        }
+        Err(_) => None,
+    };
+    let Some((after_ids, load_after)) = after else {
+        restore(&moved, &target);
+        anyhow::bail!("the project no longer loads after packing — restored, no changes made");
+    };
+    if after_ids != before_ids {
+        let missing: Vec<&String> = before_ids.difference(&after_ids).collect();
+        let added: Vec<&String> = after_ids.difference(&before_ids).collect();
+        restore(&moved, &target);
+        anyhow::bail!(
+            "packing changed the project's artifact set — restored, no changes made. \
+             missing: {missing:?} unexpected: {added:?}"
+        );
+    }
+
+    for (_, bak) in &moved {
+        std::fs::remove_file(bak).ok();
+    }
+
+    println!(
+        "packed {} artifact(s) of release {release} into {} ({} per-id file(s) removed)",
+        packed_ids.len(),
+        target.display(),
+        moved.len()
+    );
+    println!(
+        "  {} per-id file(s) left loose — the open release stays where writes happen",
+        loose_after
+    );
+    println!(
+        "  project load time: {} ms before, {} ms after",
+        load_before.as_millis(),
+        load_after.as_millis()
     );
     Ok(true)
 }
