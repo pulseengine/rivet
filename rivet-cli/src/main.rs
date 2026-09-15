@@ -4299,6 +4299,24 @@ sources:
         }
     }
 
+    // REQ-356: and the ones that are one base away. A bridge fires only when
+    // ALL its bases are loaded, so the schema set is a rigour selector — this
+    // makes the tiers a project is NOT carrying visible at the moment the
+    // choice is made, rather than leaving their absence to be inferred.
+    // Informational by design: it is never an error to decline a tier, only to
+    // declare one and not satisfy it.
+    let dormant = rivet_core::embedded::dormant_bridges(&schemas);
+    if !dormant.is_empty() {
+        println!("\n  dormant bridges (one or more bases away — not active here):");
+        for (bridge, missing) in &dormant {
+            println!("    - {bridge}  needs: {}", missing.join(", "));
+        }
+        println!(
+            "    add the missing schema(s) to activate, or name the bridge in \
+             `schemas:` to make the dependency explicit and checked."
+        );
+    }
+
     // #431: vendor the resolved schema set (plus bridges) on-disk so validation
     // is pinned against rivet upgrades. The loader prefers `schemas/<name>.yaml`
     // over the embedded copy, so a vendored project is immune to release-to-

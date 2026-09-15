@@ -255,6 +255,124 @@ pub fn discover_bridges(loaded_schemas: &[String]) -> Vec<&'static str> {
         .collect()
 }
 
+fn missing_join(v: &[String]) -> String {
+    v.iter()
+        .map(|s| format!("'{s}'"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The `extends` list of a declared bridge, for the error message.
+fn extends_of(name: &str, schemas_dir: &std::path::Path) -> Vec<String> {
+    let path = schemas_dir.join(format!("{name}.yaml"));
+    if path.exists() {
+        if let Some(f) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+        {
+            return f.schema.extends;
+        }
+    }
+    BRIDGE_SCHEMAS
+        .iter()
+        .find(|b| b.filename == name)
+        .map(|b| b.extends.iter().map(|s| (*s).to_owned()).collect())
+        .unwrap_or_default()
+}
+
+/// Bridges that are dormant: not declared, and one or more bases away from applying.
+/// Reported on demand, never as an error — see `unsatisfied_bridge_bases`.
+pub fn dormant_bridges(schema_names: &[String]) -> Vec<(&'static str, Vec<String>)> {
+    let loaded: HashSet<&str> = schema_names.iter().map(String::as_str).collect();
+    BRIDGE_SCHEMAS
+        .iter()
+        .filter(|b| !schema_names.iter().any(|n| n == b.filename))
+        .filter_map(|b| {
+            let missing: Vec<String> = b
+                .extends
+                .iter()
+                .filter(|d| !loaded.contains(*d))
+                .map(|d| (*d).to_owned())
+                .collect();
+            // One or more bases away, but at least one base already present —
+            // otherwise every bridge in the catalogue is "dormant" and the
+            // list says nothing.
+            if missing.is_empty() || missing.len() == b.extends.len() {
+                None
+            } else {
+                Some((b.filename, missing))
+            }
+        })
+        .collect()
+}
+
+/// Bridges that are DECLARED in `schema_names` but whose `extends` bases are
+/// not all present. Returns `(bridge_name, missing_bases)` pairs.
+///
+/// A bridge fires only when every schema it extends is loaded, which makes the
+/// loaded set a rigour selector: dropping one line from `project.schemas`
+/// removes a whole tier of obligations. That is legitimate as a maturity
+/// dimension — a proof-of-concept need not carry a safety chain — but it has
+/// to be a DECLARED property rather than an incidental edit, or the tier
+/// disappears with no diagnostic.
+///
+/// Naming a bridge explicitly is the only way a project can say "I depend on
+/// this tier", so that declaration is what this makes load-bearing. Measured
+/// before this existed, on a fixture with no artifacts so nothing unrelated
+/// could fire: `[common, stpa, stpa-dev.bridge]` with `dev` absent exited 0 and
+/// applied nothing. The declaration bought no assurance at all.
+///
+/// Deliberately says nothing about UNDECLARED dormant bridges. A project
+/// loading only `stpa` has six of them one base away, and an alarm that fires
+/// on every legitimate partial schema set is one people learn to ignore.
+/// Dormancy is reported on demand by `rivet schema list`, not as an error.
+pub fn unsatisfied_bridge_bases(
+    schema_names: &[String],
+    schemas_dir: &std::path::Path,
+) -> Vec<(String, Vec<String>)> {
+    let loaded: HashSet<&str> = schema_names.iter().map(String::as_str).collect();
+    let mut out = Vec::new();
+
+    for name in schema_names {
+        // The bases a declared bridge needs, from disk first so a local bridge
+        // is checked on the same footing as a built-in. Auto-discovery only
+        // ever consulted BRIDGE_SCHEMAS, so an explicit declaration is the only
+        // way to load an on-disk bridge — which makes this its only safety net.
+        let path = schemas_dir.join(format!("{name}.yaml"));
+        let extends: Vec<String> = if path.exists() {
+            match std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+            {
+                Some(f) => f.schema.extends.clone(),
+                None => continue,
+            }
+        } else if let Some(b) = BRIDGE_SCHEMAS.iter().find(|b| b.filename == name) {
+            b.extends.iter().map(|s| (*s).to_owned()).collect()
+        } else {
+            continue;
+        };
+
+        // Only bridges. A plain schema's `extends: [common]` is a base-field
+        // relationship the loader already resolves, not a conjunction the
+        // project has to satisfy, and treating it as one would reject ordinary
+        // configurations.
+        if !name.ends_with(".bridge") {
+            continue;
+        }
+
+        let missing: Vec<String> = extends
+            .iter()
+            .filter(|dep| !loaded.contains(dep.as_str()))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            out.push((name.clone(), missing));
+        }
+    }
+    out
+}
+
 /// Parse an embedded schema by name (regular or bridge).
 pub fn load_embedded_schema(name: &str) -> Result<SchemaFile, Error> {
     let content = embedded_schema(name)
@@ -478,6 +596,28 @@ pub fn load_schemas_with_fallback(
         }
     }
 
+    // REQ-356: a DECLARED bridge whose bases are not all loaded is an error, in
+    // the same class as naming a schema that does not exist. Without this, the
+    // declaration is not load-bearing: the bridge simply does not apply and the
+    // project loses a tier of obligations in silence.
+    let unsatisfied = unsatisfied_bridge_bases(schema_names, schemas_dir);
+    if let Some((bridge, missing)) = unsatisfied.first() {
+        return Err(Error::Schema(format!(
+            "bridge schema '{bridge}' is declared in `schemas:` but does not apply: \
+             it extends [{}], and {} not loaded. A bridge fires only when ALL of \
+             its bases are present, so leaving this would silently drop the \
+             obligations the bridge contributes. Either add the missing schema(s) \
+             to `schemas:`, or remove '{bridge}' to state that this project does \
+             not carry that tier.",
+            missing_join(&extends_of(bridge, schemas_dir)),
+            if missing.len() == 1 {
+                format!("'{}' is", missing[0])
+            } else {
+                format!("[{}] are", missing_join(missing))
+            }
+        )));
+    }
+
     // Auto-discover bridge schemas
     let bridge_names = discover_bridges(schema_names);
     for bridge_name in bridge_names {
@@ -510,6 +650,139 @@ pub fn load_schemas_with_fallback(
 
 #[cfg(test)]
 mod tests {
+    // ── REQ-356: a declared bridge must actually fire ───────────────────
+    //
+    // A bridge applies only when ALL its base schemas are loaded, so the
+    // loaded schema set is itself a rigour selector: dropping one line from
+    // `project.schemas` removes a whole tier of obligations. Measured before
+    // this landed, on a fixture with no artifacts so nothing unrelated could
+    // fire:
+    //
+    //   [common, stpa, dev]              -> bridge loads,           exit 0
+    //   [common, stpa]                   -> bridge silently gone,   exit 0
+    //   [common, stpa, stpa-dev.bridge]  -> bridge DECLARED, base
+    //                                       missing, silently gone, exit 0
+    //   [common, stpa, not-a-schema]     -> error,                  exit 1
+    //
+    // The third row is the defect. Naming a bridge explicitly is the only way
+    // a project can SAY it depends on that tier, and it bought nothing — the
+    // declaration was not load-bearing. The fourth row is the precedent: the
+    // loader already errors on a schema problem, so an unsatisfiable
+    // declaration belongs in the same class.
+
+    /// Declaring a bridge whose bases are all loaded must succeed.
+    #[test]
+    fn declared_bridge_with_all_bases_loaded_is_accepted() {
+        let names: Vec<String> = ["common", "stpa", "dev", "stpa-dev.bridge"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let missing = unsatisfied_bridge_bases(&names, std::path::Path::new("/nonexistent"));
+        assert!(
+            missing.is_empty(),
+            "all bases are present, so nothing may be reported: {missing:?}"
+        );
+    }
+
+    /// Declaring a bridge whose base is absent must be reported, naming the
+    /// bridge AND the missing base — a message that says only "something is
+    /// wrong" would leave the reader to re-derive what this test knows.
+    #[test]
+    fn declared_bridge_with_a_missing_base_is_reported() {
+        let names: Vec<String> = ["common", "stpa", "stpa-dev.bridge"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let missing = unsatisfied_bridge_bases(&names, std::path::Path::new("/nonexistent"));
+        assert_eq!(
+            missing.len(),
+            1,
+            "exactly one unsatisfied bridge: {missing:?}"
+        );
+        assert_eq!(missing[0].0, "stpa-dev.bridge");
+        assert_eq!(missing[0].1, vec!["dev".to_owned()]);
+    }
+
+    /// A bridge that is NOT declared must stay silent. Warning about every
+    /// dormant bridge would fire on any legitimate partial schema set — a
+    /// project loading only `stpa` would be told about six of them — and an
+    /// alarm that fires on the normal case trains people to ignore it.
+    #[test]
+    fn an_undeclared_dormant_bridge_is_not_reported() {
+        let names: Vec<String> = ["common", "stpa"].iter().map(|s| (*s).to_owned()).collect();
+        let missing = unsatisfied_bridge_bases(&names, std::path::Path::new("/nonexistent"));
+        assert!(
+            missing.is_empty(),
+            "only an EXPLICIT declaration is a promise; dormancy is not an error: {missing:?}"
+        );
+    }
+
+    /// A PLAIN schema with an unloaded `extends` base must NOT be reported.
+    ///
+    /// This pins the scope boundary, and it was found by a surviving mutant:
+    /// deleting the `.bridge` guard reddened nothing, which meant the guard's
+    /// reason was unasserted. `stpa-sec` extends `stpa`, and a project may list
+    /// it without `stpa` — that is an ordinary base-field relationship the
+    /// loader already resolves, not a conjunction the project promised to
+    /// satisfy. Reporting it here would reject working configurations for a
+    /// defect this requirement is not about.
+    #[test]
+    fn a_plain_schema_with_an_unloaded_base_is_not_reported() {
+        // Must be an ON-DISK schema. For an embedded non-bridge, `extends` is
+        // never resolved at all (the lookup falls through BRIDGE_SCHEMAS and
+        // continues), so the guard is unreachable by that route — a first
+        // version of this test used embedded `stpa-sec` and stayed green with
+        // the guard deleted, which is how the wrong route was found.
+        let dir = std::env::temp_dir().join(format!("rivet-plain-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let f = dir.join("local-plain.yaml");
+        std::fs::write(
+            &f,
+            "schema:\n  name: local-plain\n  version: \"0.1.0\"\n  extends: [stpa]\nartifact-types: []\n",
+        )
+        .expect("write plain schema");
+        let names: Vec<String> = ["common", "local-plain"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let missing = unsatisfied_bridge_bases(&names, &dir);
+        std::fs::remove_file(&f).ok();
+        assert!(
+            missing.is_empty(),
+            "only `.bridge` schemas carry the all-bases-or-nothing promise; a plain \
+             schema's extends is an ordinary base-field relationship the loader \
+             already resolves, and reporting it would reject working configs: {missing:?}"
+        );
+    }
+
+    /// The same rule must hold for a LOCAL bridge on disk, not just the
+    /// compiled-in ones. Auto-discovery only ever considered `BRIDGE_SCHEMAS`,
+    /// so a dropped-in bridge is invisible to it; an explicit declaration is
+    /// the only way to load one, which makes this check its only safety net.
+    #[test]
+    fn declared_local_bridge_with_a_missing_base_is_reported() {
+        let dir = std::env::temp_dir().join(format!("rivet-bridge-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let f = dir.join("local-demo.bridge.yaml");
+        std::fs::write(
+            &f,
+            "schema:\n  name: local-demo-bridge\n  version: \"0.1.0\"\n  extends: [stpa, dev]\nartifact-types: []\n",
+        )
+        .expect("write local bridge");
+        let names: Vec<String> = ["common", "stpa", "local-demo.bridge"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let missing = unsatisfied_bridge_bases(&names, &dir);
+        std::fs::remove_file(&f).ok();
+        assert_eq!(
+            missing.len(),
+            1,
+            "the on-disk bridge must be checked too: {missing:?}"
+        );
+        assert_eq!(missing[0].1, vec!["dev".to_owned()]);
+    }
+
     use super::*;
 
     // REQ-249 (#431): schema-pin drift check flags a resolved version that
@@ -670,9 +943,20 @@ mod tests {
         let empty = std::path::Path::new("/nonexistent-schemas-dir");
 
         // The bridge resolves by name through the main loader (no on-disk dir).
+        //
+        // `dev` is in this list deliberately and must stay (REQ-356). The
+        // fixture originally omitted it, which meant this test loaded a bridge
+        // whose own link type was unusable: `constraint-satisfies` declares
+        // `source-types: [requirement]`, and `requirement` is declared ONLY by
+        // `dev`. Without `dev` the link type resolves to a source type no
+        // loaded schema defines, so any artifact using it fails with
+        // `unknown artifact type 'requirement'`. #530's point was that a
+        // bundled bridge RESOLVES by explicit name, which this still asserts;
+        // it was never that a bridge should apply without its bases.
         let names = vec![
             "common".to_string(),
             "stpa".to_string(),
+            "dev".to_string(),
             "stpa-dev.bridge".to_string(),
         ];
         let schema = load_schemas_with_fallback(&names, empty)
@@ -695,5 +979,20 @@ mod tests {
 
         // A genuinely unknown name still errors.
         assert!(load_schemas_with_fallback(&["no-such.bridge".to_string()], empty).is_err());
+
+        // And the link type the bridge contributes is actually usable: its
+        // source type is declared by a loaded schema. Asserting the link type
+        // merely EXISTS is what let the incomplete fixture look correct.
+        let lt = schema
+            .link_types
+            .get("constraint-satisfies")
+            .expect("bridge link type");
+        for src in &lt.source_types {
+            assert!(
+                schema.artifact_types.contains_key(src),
+                "bridge link 'constraint-satisfies' names source type '{src}', which no \
+                 loaded schema declares — the bridge is present but unusable"
+            );
+        }
     }
 }
