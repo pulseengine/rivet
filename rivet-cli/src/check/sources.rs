@@ -251,6 +251,80 @@ pub fn compute<'a>(
 }
 
 /// Render the report as human text.
+/// The single file path a `source-ref` names, or `None` when the value is not
+/// strictly path-shaped.
+///
+/// `source-ref` is a plain string with no drift detection (REQ-358). Measuring
+/// the corpus showed the values are not homogeneous: of 55, only 17 name one
+/// resolvable file. The rest are code-location NOTES — multi-file brace globs,
+/// line ranges spanning two files, prose, and URLs. So a rot check has to
+/// decide what it is even looking at before it can resolve anything.
+///
+/// CONSERVATIVE BY DESIGN: a false positive fails a build over prose, so only
+/// a strictly path-shaped value is accepted — no whitespace, no prose
+/// punctuation, no scheme — with an optional `:line` or `:start-end` suffix
+/// that is stripped. Prose containing a real path is a false NEGATIVE, which
+/// is the direction worth erring in.
+pub fn source_ref_path(value: &str) -> Option<&str> {
+    let v = value.trim();
+    if v.is_empty() || v.contains(char::is_whitespace) {
+        return None;
+    }
+    // A scheme means it is not a repo-relative file.
+    if v.contains("://") {
+        return None;
+    }
+    // Brace globs, lists and sentence punctuation are notes, not paths.
+    if v.contains(['{', '}', '(', ')', ';', '+', '—']) {
+        return None;
+    }
+
+    // Strip one trailing `:line` or `:start-end`. A colon with anything else
+    // after it (a second path, a label) is not a line anchor.
+    let base = match v.rsplit_once(':') {
+        Some((head, tail))
+            if !tail.is_empty()
+                && tail
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '-' || c == ',') =>
+        {
+            head
+        }
+        Some(_) => return None,
+        None => v,
+    };
+
+    // A path with a comma left in it was a multi-range note.
+    if base.is_empty() || base.contains(',') {
+        return None;
+    }
+    Some(base)
+}
+
+/// Artifacts whose `source-ref` is path-shaped but names a file that does not
+/// exist — a reference that looks valid and points at nothing.
+///
+/// Returns `(artifact_id, raw_value, missing_base)`.
+pub fn rotted_source_refs<'a>(
+    artifacts: impl Iterator<Item = &'a rivet_core::model::Artifact>,
+    project_root: &std::path::Path,
+) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    for a in artifacts {
+        let Some(raw) = a.fields.get("source-ref").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(base) = source_ref_path(raw) else {
+            continue;
+        };
+        if !project_root.join(base).exists() {
+            out.push((a.id.to_string(), raw.to_owned(), base.to_owned()));
+        }
+    }
+    out.sort();
+    out
+}
+
 /// Why this run should fail, or `None` to pass.
 ///
 /// Two independent obligations, and the order matters for the message:
@@ -460,6 +534,168 @@ pub(crate) fn current_iso8601_utc() -> String {
 
 #[cfg(test)]
 mod tests {
+    // ── REQ-358: source-ref points at files that no longer exist ────────────
+    //
+    // The maintainer reported that aadl-component carries `source-ref` as a
+    // plain string, so a file can change under a valid-looking reference.
+    // Measuring the corpus found something worse than drift — two references
+    // point at files that were DELETED, and nothing has ever flagged it:
+    //
+    //   ARCH-ADAPT-STPA  rivet-core/src/formats/stpa.rs:1  deleted in #123
+    //   ARCH-DASH-001    rivet-cli/src/serve.rs:1          deleted in #40
+    //
+    // The file did not change under the reference. It vanished, and the
+    // reference still looks fine.
+    //
+    // WHY NOT JUST MIGRATE ALL 55 TO cited-source, which is what the plan in
+    // REQ-358 originally said: because they are not all citations. Measured by
+    // type — 19 aadl-component, 25 design-decision, 11 feature — and by shape,
+    // only 17 are a resolvable single file. The rest are code-location NOTES:
+    // multi-file brace globs, line ranges across two files, and prose. A
+    // cited-source is a single URI with one sha256 by construction, so forcing
+    // those in would lose information rather than gain assurance. They keep
+    // `source-ref`, which is exactly why source-ref needs a rot check of its
+    // own rather than only a deprecation.
+    //
+    // CONSERVATIVE BY DESIGN. A false positive here fails a build over prose,
+    // so only a strictly path-shaped value is resolved at all: no whitespace,
+    // no prose punctuation, optional `:line` or `:a-b` suffix. Prose that
+    // happens to contain a real path is a false NEGATIVE, which is the
+    // direction worth erring in.
+
+    #[test]
+    fn a_path_shaped_ref_yields_its_base() {
+        assert_eq!(
+            source_ref_path("rivet-core/src/lib.rs:1"),
+            Some("rivet-core/src/lib.rs")
+        );
+        assert_eq!(
+            source_ref_path("arch/rivet_system.aadl:49-54"),
+            Some("arch/rivet_system.aadl")
+        );
+        assert_eq!(
+            source_ref_path("rivet-core/src/store.rs"),
+            Some("rivet-core/src/store.rs")
+        );
+    }
+
+    /// Everything that is NOT a single resolvable path must be declined, or
+    /// the check fires on prose. Each of these is a real value from the corpus.
+    #[test]
+    fn notes_and_prose_are_declined_not_resolved() {
+        for v in [
+            "rivet-core/src/{sexpr,commits,reqif,formats/needs_json}.rs",
+            "rivet-core/src/formats/needs_json.rs:367-454,683-705 + rivet-core/src/lib.rs:252",
+            "new: rivet-core/src/sql/ (executor + vtab module); rivet-cli/src/main.rs",
+            "serde docs: https://serde.rs/container-attrs.html#deny_unknown_fields",
+            "rivet-cli/src/main.rs — cmd_stamp_all filter predicate.",
+            "https://example.com/spec.pdf",
+        ] {
+            assert_eq!(source_ref_path(v), None, "must decline: {v}");
+        }
+    }
+
+    /// Each guard, ISOLATED. Found by surviving mutants: every fixture above
+    /// trips two or three guards at once, so deleting any single one left the
+    /// others catching them and three separate mutations went unnoticed. A
+    /// fixture that exercises a guard only incidentally asserts nothing about
+    /// it.
+    #[test]
+    fn each_guard_is_load_bearing_on_its_own() {
+        // whitespace ONLY — no braces, no scheme, no sentence punctuation
+        assert_eq!(source_ref_path("src/lib.rs and also src/other.rs"), None);
+        // brace ONLY
+        assert_eq!(source_ref_path("src/{a}.rs"), None);
+        // scheme ONLY. The PORT matters: without it the colon-tail rule already
+        // declines a URL (the tail after the last colon is not numeric), so the
+        // scheme guard looks redundant and a mutation deleting it survives.
+        // With a numeric port the tail IS numeric, the base becomes
+        // "https://example.com", and it would be resolved as a repo-relative
+        // path that cannot exist — a false positive on a URL.
+        assert_eq!(source_ref_path("https://example.com:8080"), None);
+        assert_eq!(source_ref_path("https://example.com/a.txt"), None);
+        // trailing non-numeric colon segment ONLY
+        assert_eq!(source_ref_path("src/lib.rs:notaline"), None);
+        // comma-range remnant ONLY
+        assert_eq!(source_ref_path("src/a.rs,src/b.rs"), None);
+    }
+
+    fn artifact_with_source_ref(id: &str, value: &str) -> rivet_core::model::Artifact {
+        let mut a = rivet_core::model::Artifact {
+            id: id.into(),
+            artifact_type: "aadl-component".into(),
+            title: "t".into(),
+            ..Default::default()
+        };
+        a.fields.insert(
+            "source-ref".into(),
+            serde_yaml::Value::String(value.to_owned()),
+        );
+        a
+    }
+
+    /// The COLLECTOR, which had no test at all — a surviving mutant that made
+    /// `rotted_source_refs` return nothing reddened nothing.
+    #[test]
+    fn the_collector_reports_a_missing_base_and_spares_a_live_one() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root");
+        let arts = [
+            artifact_with_source_ref("A-1", "rivet-core/src/does-not-exist.rs:1"),
+            artifact_with_source_ref("A-2", "rivet-core/src/lib.rs:1"),
+            artifact_with_source_ref("A-3", "prose about src/lib.rs and things"),
+        ];
+        let found = rotted_source_refs(arts.iter(), root);
+        assert_eq!(found.len(), 1, "exactly the missing one: {found:?}");
+        assert_eq!(found[0].0, "A-1");
+        assert_eq!(found[0].2, "rivet-core/src/does-not-exist.rs");
+        // A-2 is the control: without a live reference in the fixture this
+        // would pass on a build where nothing resolves.
+        assert!(
+            !found.iter().any(|(id, _, _)| id == "A-2"),
+            "a live reference must not be reported"
+        );
+    }
+
+    /// An artifact with no `source-ref` must not be reached at all.
+    #[test]
+    fn the_collector_ignores_artifacts_without_a_source_ref() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let a = rivet_core::model::Artifact {
+            id: "A-9".into(),
+            artifact_type: "requirement".into(),
+            title: "t".into(),
+            ..Default::default()
+        };
+        assert!(rotted_source_refs([a].iter(), root).is_empty());
+    }
+
+    /// The two real rotted references, and a live one as the control. Without
+    /// the control this would pass on a build where NOTHING resolves.
+    #[test]
+    fn the_corpus_rot_is_detected_and_live_refs_are_not() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("workspace root");
+        for dead in [
+            "rivet-core/src/formats/stpa.rs:1",
+            "rivet-cli/src/serve.rs:1",
+        ] {
+            let base = source_ref_path(dead).expect("path-shaped");
+            assert!(
+                !root.join(base).exists(),
+                "{dead} is the recorded rot — if this now exists, the reference was \
+                 fixed and this test must be updated rather than deleted"
+            );
+        }
+        let live = source_ref_path("rivet-core/src/lib.rs:1").expect("path-shaped");
+        assert!(
+            root.join(live).exists(),
+            "control: a live reference must resolve, or the check is vacuous"
+        );
+    }
+
     // ── REQ-357: a drift gate that examined nothing must not report success ──
     //
     // `rivet check sources` is the cited-source drift gate. Its exit code was

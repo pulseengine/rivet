@@ -17332,6 +17332,25 @@ fn cmd_check_sources(
     // `--strict` adds stale entries to the firing set — same idea as
     // `validate --strict-cited-source-stale`, but in the read-only
     // `check sources` shape so audit gates don't have to touch any YAML.
+    // REQ-358: `source-ref` is a plain string with no drift detection, and the
+    // corpus contains references to files that were DELETED — the reference
+    // still looks valid and points at nothing. Reported here rather than in
+    // `validate` because resolving a path needs the project root, which
+    // `validate(store, schema, graph)` does not receive.
+    let rotted = check::sources::rotted_source_refs(ctx.store.iter(), &cli.project);
+    if !rotted.is_empty() && format != "json" {
+        println!();
+        println!("source-ref references that do not resolve:");
+        for (id, raw, base) in &rotted {
+            println!("  {id}: {raw}");
+            println!("      no such file: {base}");
+        }
+        println!(
+            "  `source-ref` is a plain string with no drift detection. Prefer \
+             `cited-source`, which is sha256-stamped and checked above."
+        );
+    }
+
     // REQ-357: the decision lives in `check::sources::gate_reason` so it can be
     // unit-tested and reached by the mutation gate — `rivet-cli` has no lib
     // target, so logic left here is only exercised through the binary.
