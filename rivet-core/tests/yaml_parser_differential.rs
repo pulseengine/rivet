@@ -261,13 +261,13 @@ fn has_artifacts_key(content: &str) -> bool {
 /// disagreed with PyYAML. Fixed in the same change as this fingerprint; the
 /// residual is the 2 below.
 ///
-/// THE 2, each characterized against PyYAML rather than merely counted:
+/// It was 2 until REQ-362. **REQ-277** wrote `category`, `priority` and
+/// `upstream-ref` as top-level keys; serde dropped them and rowan read them.
+/// REQ-362 made the serde path preserve such keys into `fields`, so the two
+/// paths now agree and REQ-277 left the set — this constant reddened at
+/// `differ=1` and forced this record, as it is meant to.
 ///
-/// * **REQ-277** — `category`, `priority`, `upstream-ref` written as top-level
-///   keys instead of under `fields:`. serde DROPS them; rowan reads them. LIVE
-///   on the production path (`artifacts/` loads through serde): `rivet get
-///   REQ-277 --format json` shows `fields = {}`, `(= priority "should")`
-///   excludes it, and `validate` reports nothing about the three lost keys.
+/// THE 1 REMAINING, characterized against PyYAML rather than merely counted:
 ///
 /// * **DD-039** — `alternatives:` is a multi-line PLAIN scalar. PyYAML and
 ///   serde fold the continuation line in; rowan TRUNCATES at the first line
@@ -277,16 +277,16 @@ fn has_artifacts_key(content: &str) -> bool {
 ///
 /// Kept as a named constant rather than a bare `differ == 0` so moving the
 /// number in EITHER direction forces this record to be updated.
-const KNOWN_DIVERGENCES: usize = 2;
+const KNOWN_DIVERGENCES: usize = 1;
 
 /// The artifacts behind `KNOWN_DIVERGENCES`, by id.
 ///
-/// The count alone has the same shape as the bug it replaced. When REQ-362 or
-/// REQ-363 lands, one of these stops diverging — and if a DIFFERENT artifact
-/// had meanwhile started diverging, the count would stay at 2 and the gate
+/// The count alone has the same shape as the bug it replaced. When REQ-363
+/// lands, DD-039 stops diverging — and if a DIFFERENT artifact
+/// had meanwhile started diverging, the count would stay put and the gate
 /// would stay green with a new defect swapped into the old one's budget. The
 /// set is asserted as well, so a new instance reddens as a new instance.
-const KNOWN_DIVERGING_IDS: &[&str] = &["DD-039", "REQ-277"];
+const KNOWN_DIVERGING_IDS: &[&str] = &["DD-039"];
 
 // rivet: verifies REQ-348
 #[test]

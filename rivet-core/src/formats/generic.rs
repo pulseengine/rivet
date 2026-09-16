@@ -141,6 +141,8 @@ impl Adapter for GenericYamlAdapter {
                     fields: a.fields.clone(),
                     fields_per_variant: a.fields_per_variant.clone(),
                     provenance: a.provenance.clone(),
+                    // Export writes the canonical `fields:` block only.
+                    extra: BTreeMap::new(),
                 })
                 .collect(),
         };
@@ -159,6 +161,23 @@ struct GenericFile {
     artifacts: Vec<GenericArtifact>,
 }
 
+// REQ-362: an artifact key this struct does not name is PRESERVED into
+// `fields`, not discarded. serde's default was to drop it silently: REQ-277
+// wrote `category`, `priority` and `upstream-ref` at the artifact's top level,
+// and all three vanished with no diagnostic.
+//
+// Refusing (`deny_unknown_fields`, as `GenericFile` does one level up) was
+// tried first and is worse. The spar external fixture writes `category` and
+// `aadl-package` — both REQUIRED `aadl-component` fields — at the top level on
+// every artifact, so refusal took that project from "two fields silently
+// missing per artifact" to "external project loaded 0 artifacts". It is a
+// writing convention in use, not a typo, and rivet's own CST path (`yaml_hir`)
+// already promotes such keys into `fields`. Preserving makes the two parsers
+// agree instead of disagreeing about where a field may be written.
+//
+// The loader preserves; the validator judges. A key that is not a schema field
+// for the artifact's type still surfaces as `unknown-field`, and a typo of a
+// REQUIRED key (`titel:`, `typ:`) still fails loudly as a missing field.
 #[derive(Deserialize, serde::Serialize)]
 struct GenericArtifact {
     id: String,
@@ -185,6 +204,22 @@ struct GenericArtifact {
     fields_per_variant: BTreeMap<String, BTreeMap<String, serde_yaml::Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     provenance: Option<Provenance>,
+    /// Every artifact key not named above. Merged into `fields` on load.
+    #[serde(flatten, default, skip_serializing_if = "BTreeMap::is_empty")]
+    extra: BTreeMap<String, serde_yaml::Value>,
+}
+
+/// Merge top-level domain keys into `fields`. The canonical `fields:` block
+/// wins on a collision: it is the shape `rivet add` / `rivet modify` write, so
+/// it is the more deliberate statement of the two.
+fn merged_fields(
+    mut fields: BTreeMap<String, serde_yaml::Value>,
+    extra: BTreeMap<String, serde_yaml::Value>,
+) -> BTreeMap<String, serde_yaml::Value> {
+    for (k, v) in extra {
+        fields.entry(k).or_insert(v);
+    }
+    fields
 }
 
 pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Artifact>, Error> {
@@ -202,7 +237,7 @@ pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Ar
             release: a.release,
             tags: a.tags,
             links: a.links,
-            fields: a.fields,
+            fields: merged_fields(a.fields, a.extra),
             fields_per_variant: a.fields_per_variant,
             provenance: a.provenance,
             source_file: source.map(|p| p.to_path_buf()),
@@ -434,6 +469,98 @@ pub fn scan_skipped_files(dir: &Path) -> Vec<SkippedFile> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    // ── REQ-362: an artifact key the loader does not recognise must not vanish ──
+    //
+    // serde silently discarded any artifact key `GenericArtifact` did not name.
+    // REQ-277's top-level `category` / `priority` / `upstream-ref` vanished, and
+    // so did the spar external fixture's `category` and `aadl-package` — both
+    // REQUIRED `aadl-component` fields — on every artifact. The chosen fix is to
+    // PRESERVE such keys into `fields`, matching rivet's CST path. Refusing was
+    // tried first: it took the spar external from two fields missing per
+    // artifact to 0 artifacts loaded.
+
+    const CANONICAL: &str = "artifacts:\n  - id: R-1\n    type: requirement\n    title: t\n    fields:\n      priority: should\n";
+
+    /// Control: the canonical shape still loads with the field intact.
+    #[test]
+    fn canonical_fields_nesting_loads_with_the_value_intact() {
+        let arts = parse_generic_yaml(CANONICAL, None).expect("canonical shape must load");
+        assert_eq!(arts.len(), 1);
+        assert_eq!(
+            arts[0].fields.get("priority").and_then(|v| v.as_str()),
+            Some("should")
+        );
+    }
+
+    // rivet: verifies REQ-362
+    #[test]
+    fn a_top_level_domain_key_is_preserved_into_fields_not_dropped() {
+        let top = "artifacts:\n  - id: R-1\n    type: requirement\n    title: t\n    priority: should\n    upstream-ref: https://example.com/1\n";
+        let arts = parse_generic_yaml(top, None).expect("must load");
+        assert_eq!(
+            arts[0].fields.get("priority").and_then(|v| v.as_str()),
+            Some("should"),
+            "a top-level `priority:` must land in fields, got {:?}",
+            arts[0].fields
+        );
+        assert_eq!(
+            arts[0].fields.get("upstream-ref").and_then(|v| v.as_str()),
+            Some("https://example.com/1")
+        );
+    }
+
+    /// The two shapes must produce the SAME artifact. This is the property that
+    /// makes REQ-277 stop diverging between the serde and CST paths.
+    #[test]
+    fn top_level_and_nested_forms_load_identically() {
+        let top =
+            "artifacts:\n  - id: R-1\n    type: requirement\n    title: t\n    priority: should\n";
+        let a = parse_generic_yaml(top, None).unwrap();
+        let b = parse_generic_yaml(CANONICAL, None).unwrap();
+        assert_eq!(a[0].fields, b[0].fields);
+    }
+
+    /// On a collision the canonical `fields:` block wins. It is what `rivet add`
+    /// and `rivet modify` write, so it is the more deliberate of the two.
+    #[test]
+    fn the_canonical_fields_block_wins_a_collision() {
+        let both = "artifacts:\n  - id: R-1\n    type: requirement\n    title: t\n    priority: top\n    fields:\n      priority: nested\n";
+        let arts = parse_generic_yaml(both, None).unwrap();
+        assert_eq!(
+            arts[0].fields.get("priority").and_then(|v| v.as_str()),
+            Some("nested")
+        );
+    }
+
+    /// A typo of an OPTIONAL key is preserved where it can be seen — in `fields`,
+    /// where `validate` reports it as `unknown-field` — instead of vanishing.
+    #[test]
+    fn a_typo_of_an_optional_key_is_preserved_not_dropped() {
+        let typo =
+            "artifacts:\n  - id: R-1\n    type: requirement\n    title: t\n    staus: draft\n";
+        let arts = parse_generic_yaml(typo, None).unwrap();
+        assert_eq!(
+            arts[0].status, None,
+            "the typo must not be read as `status`"
+        );
+        assert_eq!(
+            arts[0].fields.get("staus").and_then(|v| v.as_str()),
+            Some("draft"),
+            "the typo'd key must be preserved, not silently dropped"
+        );
+    }
+
+    /// A typo of a REQUIRED key still fails loudly — preservation must not
+    /// weaken that.
+    #[test]
+    fn a_typo_of_a_required_key_still_fails() {
+        let typo = "artifacts:\n  - id: R-1\n    type: requirement\n    titel: t\n";
+        let err = parse_generic_yaml(typo, None)
+            .expect_err("a missing required `title` must still be an error")
+            .to_string();
+        assert!(err.contains("title"), "must name the missing key: {err}");
+    }
 
     /// REQ-062 / F2: genuinely corrupt YAML (not even parseable) is a
     /// ParseError; a bare list / scalar with no artifact signal is not.
