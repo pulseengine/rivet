@@ -387,7 +387,7 @@ artifacts:
       category: system
       aadl-package: RivetAdapters
       classifier-kind: type
-      source-ref: rivet-core/src/formats/stpa.rs:1
+      source-ref: rivet-core/src/yaml_hir.rs
     provenance:
       created-by: ai-assisted
       timestamp: 2026-04-07T03:40:26Z
@@ -475,7 +475,7 @@ artifacts:
       aadl-package: RivetDashboard
       classifier-kind: implementation
       aadl-file: arch/rivet_dashboard.aadl:18-35
-      source-ref: rivet-cli/src/serve.rs:1
+      source-ref: rivet-cli/src/serve/mod.rs
     provenance:
       created-by: ai-assisted
       timestamp: 2026-04-07T03:40:26Z
