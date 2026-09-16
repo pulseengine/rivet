@@ -1320,8 +1320,7 @@ fn scalar_to_yaml_value(kind: SyntaxKind, raw: &str) -> serde_yaml::Value {
     match kind {
         SyntaxKind::SingleQuotedScalar => {
             let inner = &raw[1..raw.len() - 1];
-            let unescaped = inner.replace("''", "'");
-            serde_yaml::Value::String(unescaped)
+            serde_yaml::Value::String(unquote_single_quoted(inner))
         }
         SyntaxKind::DoubleQuotedScalar => {
             let inner = &raw[1..raw.len() - 1];
@@ -1551,20 +1550,111 @@ fn scalar_text(node: &SyntaxNode) -> Option<String> {
 /// Strip quotes from a scalar token.
 fn unquote_scalar(kind: SyntaxKind, raw: &str) -> String {
     match kind {
-        SyntaxKind::SingleQuotedScalar => raw[1..raw.len() - 1].replace("''", "'"),
+        SyntaxKind::SingleQuotedScalar => unquote_single_quoted(&raw[1..raw.len() - 1]),
         SyntaxKind::DoubleQuotedScalar => unescape_double_quoted(&raw[1..raw.len() - 1]),
         _ => raw.to_string(),
     }
 }
 
-/// Process YAML double-quoted escape sequences.
+/// Fold the line break the caller has just consumed inside a quoted scalar
+/// (YAML 1.2 §7.3.1 and §7.3.2 flow line folding, REQ-364).
+///
+/// A quoted scalar may span lines, and its line breaks are not content. White
+/// space before an unescaped break is dropped (but not white space produced by
+/// an escape, which ends before `protected_len`), a single break becomes one
+/// space, each following empty line becomes one `\n`, and indentation on the
+/// next line is dropped. An escaped break (`\` at the end of a line in a
+/// double-quoted scalar) joins the lines with nothing, but still keeps its
+/// empty lines. PyYAML reads `"alpha\` break `\n  gamma"` as `alphagamma` and
+/// `"alpha\` break, empty line, `  gamma"` as `alpha\ngamma`.
+fn fold_flow_break(
+    first: char,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    result: &mut String,
+    protected_len: usize,
+    escaped: bool,
+) {
+    if first == '\r' && chars.peek() == Some(&'\n') {
+        chars.next();
+    }
+    if !escaped {
+        while result.len() > protected_len && result.ends_with([' ', '\t']) {
+            result.pop();
+        }
+    }
+    let mut empty_lines = 0usize;
+    loop {
+        while matches!(chars.peek(), Some(' ' | '\t')) {
+            chars.next();
+        }
+        match chars.peek() {
+            Some('\r') => {
+                chars.next();
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                empty_lines += 1;
+            }
+            Some('\n') => {
+                chars.next();
+                empty_lines += 1;
+            }
+            _ => break,
+        }
+    }
+    if empty_lines > 0 {
+        result.extend(std::iter::repeat_n('\n', empty_lines));
+    } else if !escaped {
+        result.push(' ');
+    }
+}
+
+/// Decode a single-quoted scalar's content: `''` is one quote, and line
+/// breaks fold (REQ-364).
+fn unquote_single_quoted(inner: &str) -> String {
+    let mut result = String::with_capacity(inner.len());
+    let mut chars = inner.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' if chars.peek() == Some(&'\'') => {
+                chars.next();
+                result.push('\'');
+            }
+            '\n' | '\r' => fold_flow_break(c, &mut chars, &mut result, 0, false),
+            _ => result.push(c),
+        }
+    }
+    result
+}
+
+/// Process YAML double-quoted escape sequences, folding line breaks (REQ-364).
 ///
 /// Handles: `\\`, `\"`, `\n`, `\t`, `\r`, `\/`, `\0`, and `\uXXXX`.
 fn unescape_double_quoted(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars();
+    let mut chars = s.chars().peekable();
+    // Everything before this length came from an escape and is content even
+    // if it is white space; folding must not trim it.
+    let mut protected_len = 0usize;
+    // Set when the previous iteration decoded an escape. Applied at the top of
+    // the next iteration because several escape arms leave via `continue`.
+    let mut after_escape = false;
     while let Some(c) = chars.next() {
+        if after_escape {
+            protected_len = result.len();
+            after_escape = false;
+        }
+        if c == '\n' || c == '\r' {
+            fold_flow_break(c, &mut chars, &mut result, protected_len, false);
+            continue;
+        }
         if c == '\\' {
+            if let Some(&brk @ ('\n' | '\r')) = chars.peek() {
+                chars.next();
+                fold_flow_break(brk, &mut chars, &mut result, protected_len, true);
+                continue;
+            }
+            after_escape = true;
             match chars.next() {
                 Some('\\') => result.push('\\'),
                 Some('"') => result.push('"'),
@@ -2676,6 +2766,90 @@ artifacts:
             (PlainScalar, "two"),
         ]);
         assert_eq!(scalar_text(&next_line).as_deref(), Some("one"));
+    }
+
+    // ── REQ-364: quoted scalars spanning lines ──────────────────────────
+    //
+    // Expected values are PyYAML's (`yaml.safe_load`), an independent reader.
+    // `field_of` puts the value under `k:` at indent 6, so continuation lines
+    // sit at indent 8, and asserts the following key survives.
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn multi_line_quoted_scalars_fold_a_single_break_to_a_space() {
+        assert_eq!(
+            field_of("'alpha beta\n        gamma'\n"),
+            "alpha beta gamma"
+        );
+        assert_eq!(
+            field_of("\"alpha beta\n        gamma\"\n"),
+            "alpha beta gamma"
+        );
+    }
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn multi_line_quoted_scalars_keep_each_empty_line_as_a_newline() {
+        assert_eq!(field_of("'alpha\n\n        gamma'\n"), "alpha\ngamma");
+        assert_eq!(field_of("'alpha\n\n\n        gamma'\n"), "alpha\n\ngamma");
+        assert_eq!(field_of("\"alpha\n\n        gamma\"\n"), "alpha\ngamma");
+    }
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn multi_line_quoted_scalars_drop_white_space_around_a_break() {
+        assert_eq!(field_of("'alpha   \n             gamma'\n"), "alpha gamma");
+        assert_eq!(field_of("\"alpha\t\n        gamma\"\n"), "alpha gamma");
+    }
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn double_quoted_escaped_break_joins_lines_but_keeps_empty_lines() {
+        assert_eq!(field_of("\"alpha\\\n        gamma\"\n"), "alphagamma");
+        assert_eq!(field_of("\"alpha \\\n        gamma\"\n"), "alpha gamma");
+        assert_eq!(field_of("\"alpha\\\n\n        gamma\"\n"), "alpha\ngamma");
+    }
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn escaped_white_space_before_a_break_is_content() {
+        assert_eq!(field_of("\"alpha\\ \n        gamma\"\n"), "alpha  gamma");
+        assert_eq!(field_of("\"alpha\\t\n        gamma\"\n"), "alpha\t gamma");
+        assert_eq!(field_of("\"a\\u0020\n        b\"\n"), "a  b");
+    }
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn multi_line_quoted_scalars_fold_crlf_breaks() {
+        assert_eq!(unescape_double_quoted("alpha\r\n  gamma"), "alpha gamma");
+        assert_eq!(
+            unquote_single_quoted("alpha\r\n\r\n  gamma"),
+            "alpha\ngamma"
+        );
+    }
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn doubled_single_quote_decodes_on_a_continuation_line() {
+        assert_eq!(field_of("'it''s\n        here'\n"), "it's here");
+    }
+
+    /// The reported shape: PyYAML's `safe_dump` wraps a long single-quoted
+    /// description at 80 columns. rowan returned `'Controller issues: a
+    /// ''quoted'' brake command with a colon: and a`.
+    // rivet: verifies REQ-364
+    #[test]
+    fn pyyaml_wrapped_description_reads_whole() {
+        let source = "artifacts:\n  - id: H-1\n    type: hazard\n    title: t\n    description: 'Controller issues: a ''quoted'' brake command with a colon: and a\n      long explanation that keeps going well past eighty columns so the emitter wraps\n      it'\n    status: draft\n";
+        let hir = extract_generic_artifacts(source);
+        let a = &hir.artifacts[0].artifact;
+        assert_eq!(
+            a.description.as_deref(),
+            Some(
+                "Controller issues: a 'quoted' brake command with a colon: and a long explanation that keeps going well past eighty columns so the emitter wraps it"
+            )
+        );
+        assert_eq!(a.status.as_deref(), Some("draft"));
     }
 
     /// The same collector reads `title`. A multi-line plain title must fold too,
