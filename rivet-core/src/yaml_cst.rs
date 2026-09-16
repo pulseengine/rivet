@@ -1590,6 +1590,7 @@ artifacts:
         out
     }
 
+    // rivet: verifies REQ-353
     #[test]
     fn flow_mapping_as_value() {
         let root = parse_and_check("provenance: {created-by: ai-assisted, model: m}\n");
@@ -1621,6 +1622,7 @@ artifacts:
         );
     }
 
+    // rivet: verifies REQ-353
     #[test]
     fn flow_mapping_as_sequence_item() {
         let root = parse_and_check("artifacts:\n  - {id: R-1, type: requirement}\n");

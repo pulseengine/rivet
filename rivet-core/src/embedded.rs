@@ -755,6 +755,7 @@ mod tests {
     /// Declaring a bridge whose base is absent must be reported, naming the
     /// bridge AND the missing base — a message that says only "something is
     /// wrong" would leave the reader to re-derive what this test knows.
+    // rivet: verifies REQ-356
     #[test]
     fn declared_bridge_with_a_missing_base_is_reported() {
         let names: Vec<String> = ["common", "stpa", "stpa-dev.bridge"]
@@ -811,6 +812,7 @@ mod tests {
         .expect("write bridge");
     }
 
+    // rivet: verifies REQ-359
     #[test]
     fn an_undeclared_local_bridge_is_reported_with_its_bases() {
         let dir = std::env::temp_dir().join(format!("rivet-loc-a-{}", std::process::id()));
@@ -838,6 +840,7 @@ mod tests {
     /// so it gets an assertion rather than a comment: the returned list is
     /// informational and `discover_bridges` — which is what actually loads —
     /// must still not see the file.
+    // rivet: verifies REQ-359
     #[test]
     fn reporting_a_local_bridge_does_not_make_it_load() {
         let dir = std::env::temp_dir().join(format!("rivet-loc-b-{}", std::process::id()));
@@ -952,6 +955,7 @@ mod tests {
     /// compiled-in ones. Auto-discovery only ever considered `BRIDGE_SCHEMAS`,
     /// so a dropped-in bridge is invisible to it; an explicit declaration is
     /// the only way to load one, which makes this check its only safety net.
+    // rivet: verifies REQ-356
     #[test]
     fn declared_local_bridge_with_a_missing_base_is_reported() {
         let dir = std::env::temp_dir().join(format!("rivet-bridge-{}", std::process::id()));
