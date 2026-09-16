@@ -4318,6 +4318,23 @@ sources:
     // choice is made, rather than leaving their absence to be inferred.
     // Informational by design: it is never an error to decline a tier, only to
     // declare one and not satisfy it.
+    // REQ-359: bridge files present on disk that nobody declared. Auto-discovery
+    // is built-ins only, so these are invisible until named — this makes them
+    // visible WITHOUT making them implicit. Activation stays an explicit
+    // `schemas:` entry, which REQ-356 then checks.
+    let local = rivet_core::embedded::undeclared_local_bridges(&schemas, &dir.join("schemas"));
+    if !local.is_empty() {
+        println!("\n  local bridges found on disk but NOT declared:");
+        for (stem, missing) in &local {
+            if missing.is_empty() {
+                println!("    - {stem}  (bases satisfied — add `- {stem}` to `schemas:` to load)");
+            } else {
+                println!("    - {stem}  needs: {}", missing.join(", "));
+            }
+        }
+        println!("    a dropped-in bridge is never auto-discovered; only built-ins are.");
+    }
+
     let dormant = rivet_core::embedded::dormant_bridges(&schemas);
     if !dormant.is_empty() {
         println!("\n  dormant bridges (one or more bases away — not active here):");

@@ -306,6 +306,74 @@ pub fn dormant_bridges(schema_names: &[String]) -> Vec<(&'static str, Vec<String
         .collect()
 }
 
+/// Bridge files present in `schemas_dir` that no one has declared.
+///
+/// Returns `(stem, missing_bases)`. `missing_bases` is empty when every base
+/// is already loaded — i.e. the bridge would apply the moment it is declared.
+///
+/// REPORT, NOT A LOAD, and the distinction is the decision (REQ-359).
+/// `discover_bridges` iterates the compiled-in `BRIDGE_SCHEMAS` list, so a
+/// bridge dropped into `schemas/` is unreachable by auto-discovery — an
+/// on-disk file can only override a built-in NAME. The obvious fix is to make
+/// discovery scan the directory. That was considered and rejected: REQ-356
+/// established that a declared bridge is CHECKED, and auto-discovery is the
+/// opposite of a declaration — obligations appearing and disappearing
+/// according to which files happen to be present. That is the silent
+/// rigour-selection hazard REQ-356 closed, reintroduced one layer down, in
+/// exactly the repositories where a safety chain lives.
+///
+/// So this makes the file VISIBLE and leaves activation to an explicit
+/// `schemas:` entry, which REQ-356 then checks. Built-ins are excluded even
+/// when vendored on disk: they already auto-discover, and listing one would
+/// tell the reader to declare something already active.
+pub fn undeclared_local_bridges(
+    schema_names: &[String],
+    schemas_dir: &std::path::Path,
+) -> Vec<(String, Vec<String>)> {
+    let loaded: HashSet<&str> = schema_names.iter().map(String::as_str).collect();
+    let Ok(rd) = std::fs::read_dir(schemas_dir) else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != "yaml") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !stem.ends_with(".bridge") {
+            continue;
+        }
+        // Already declared, so REQ-356's check owns it.
+        if loaded.contains(stem) {
+            continue;
+        }
+        // A vendored built-in is already auto-discovered.
+        if BRIDGE_SCHEMAS.iter().any(|b| b.filename == stem) {
+            continue;
+        }
+        let Some(file) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+        else {
+            continue;
+        };
+        let missing: Vec<String> = file
+            .schema
+            .extends
+            .iter()
+            .filter(|d| !loaded.contains(d.as_str()))
+            .cloned()
+            .collect();
+        out.push((stem.to_owned(), missing));
+    }
+    out.sort();
+    out
+}
+
 /// Bridges that are DECLARED in `schema_names` but whose `extends` bases are
 /// not all present. Returns `(bridge_name, missing_bases)` pairs.
 ///
@@ -714,6 +782,131 @@ mod tests {
         assert!(
             missing.is_empty(),
             "only an EXPLICIT declaration is a promise; dormancy is not an error: {missing:?}"
+        );
+    }
+
+    // ── REQ-359: local bridges are discoverable as a REPORT, never a load ──
+    //
+    // `discover_bridges` iterates the compiled-in BRIDGE_SCHEMAS list, so a
+    // bridge file dropped into `schemas/` is unreachable by auto-discovery: an
+    // on-disk file can only OVERRIDE a built-in name. Reproduced with both
+    // bases loaded and schemas/local-demo.bridge.yaml present — zero mentions,
+    // while the built-in stpa-dev.bridge auto-loaded from embedded beside it.
+    //
+    // The approved answer is NOT to make them auto-load. REQ-356 established
+    // that a DECLARED bridge is checked; auto-discovery is the opposite, with
+    // obligations appearing and disappearing by directory listing — the same
+    // silent rigour-selection hazard one layer down, in exactly the repos
+    // where a safety chain lives. So discovery becomes visible without
+    // becoming implicit: find them, name them, and print the line to add.
+
+    fn write_bridge(dir: &std::path::Path, stem: &str, extends: &str) {
+        std::fs::create_dir_all(dir).expect("temp dir");
+        std::fs::write(
+            dir.join(format!("{stem}.yaml")),
+            format!(
+                "schema:\n  name: {stem}\n  version: \"0.1.0\"\n  extends: [{extends}]\nartifact-types: []\n"
+            ),
+        )
+        .expect("write bridge");
+    }
+
+    #[test]
+    fn an_undeclared_local_bridge_is_reported_with_its_bases() {
+        let dir = std::env::temp_dir().join(format!("rivet-loc-a-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_bridge(&dir, "local-demo.bridge", "stpa, dev");
+        let names: Vec<String> = ["common", "stpa", "dev"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let found = undeclared_local_bridges(&names, &dir);
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(
+            found.len(),
+            1,
+            "the on-disk bridge must be found: {found:?}"
+        );
+        assert_eq!(found[0].0, "local-demo.bridge");
+        assert!(
+            found[0].1.is_empty(),
+            "both bases are loaded, so nothing is missing"
+        );
+    }
+
+    /// Reporting it must NOT load it. This is the whole point of the decision,
+    /// so it gets an assertion rather than a comment: the returned list is
+    /// informational and `discover_bridges` — which is what actually loads —
+    /// must still not see the file.
+    #[test]
+    fn reporting_a_local_bridge_does_not_make_it_load() {
+        let dir = std::env::temp_dir().join(format!("rivet-loc-b-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_bridge(&dir, "local-demo.bridge", "stpa, dev");
+        let names: Vec<String> = ["common", "stpa", "dev"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        assert_eq!(undeclared_local_bridges(&names, &dir).len(), 1);
+        assert!(
+            !discover_bridges(&names)
+                .iter()
+                .any(|b| b.contains("local-demo")),
+            "auto-discovery must still be built-ins only — a report is not a load"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A local bridge that IS declared is not "undeclared" — it would already
+    /// be loaded, and REQ-356 already checks its bases.
+    #[test]
+    fn a_declared_local_bridge_is_not_reported_as_undeclared() {
+        let dir = std::env::temp_dir().join(format!("rivet-loc-c-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_bridge(&dir, "local-demo.bridge", "stpa, dev");
+        let names: Vec<String> = ["common", "stpa", "dev", "local-demo.bridge"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let found = undeclared_local_bridges(&names, &dir);
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(
+            found.is_empty(),
+            "a declared bridge is not undeclared: {found:?}"
+        );
+    }
+
+    /// Missing bases are reported alongside, so the reader learns both that
+    /// the file exists and what it would still need.
+    #[test]
+    fn an_undeclared_local_bridge_reports_its_missing_bases() {
+        let dir = std::env::temp_dir().join(format!("rivet-loc-d-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_bridge(&dir, "local-demo.bridge", "stpa, dev");
+        let names: Vec<String> = ["common", "stpa"].iter().map(|s| (*s).to_owned()).collect();
+        let found = undeclared_local_bridges(&names, &dir);
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].1, vec!["dev".to_owned()]);
+    }
+
+    /// A built-in whose file is vendored on disk must not be reported as a
+    /// local discovery — it is already auto-discovered, and listing it would
+    /// tell the reader to declare something that is already active.
+    #[test]
+    fn a_vendored_builtin_bridge_is_not_reported_as_local() {
+        let dir = std::env::temp_dir().join(format!("rivet-loc-e-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        write_bridge(&dir, "stpa-dev.bridge", "stpa, dev");
+        let names: Vec<String> = ["common", "stpa", "dev"]
+            .iter()
+            .map(|s| (*s).to_owned())
+            .collect();
+        let found = undeclared_local_bridges(&names, &dir);
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(
+            found.is_empty(),
+            "stpa-dev.bridge is a built-in and already auto-discovers: {found:?}"
         );
     }
 
