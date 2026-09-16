@@ -1,0 +1,16 @@
+rivet-yaml contains code ported from serde_yaml 0.9.34
+(https://github.com/dtolnay/serde-yaml), Copyright (c) David Tolnay,
+licensed under either of the Apache License, Version 2.0 or the MIT license,
+at your option. It is used here under the Apache License, Version 2.0.
+
+Ported files: src/mapping.rs, src/number.rs, src/scalar.rs (from de.rs),
+src/value/*.rs, and tests/value.rs (from tests/test_value.rs). Each carries
+an attribution header.
+
+Changes from upstream: module paths; `use crate::de` in number.rs points at
+src/scalar.rs; and elided lifetimes spelled out as `'_` in eight signatures
+to satisfy current rustc lints (syntax only, no behavioural change); doc
+examples call rivet_yaml:: instead of serde_yaml:: and import derives from
+serde instead of serde_derive, so the doctests exercise this crate; clippy
+allow attributes for lints newer than upstream; in tests/value.rs, indoc!
+literals written out already dedented.
