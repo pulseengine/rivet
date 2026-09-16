@@ -232,6 +232,12 @@ jobs:
       # cost) so a broken guard fails PRs early.
       - name: Compliance report size-guard tests (#671)
         run: bash .github/actions/compliance/verify_archive_size_test.sh
+      # #953 regression coverage — the validate-exit-code gate is a shell
+      # script exercised by a shell test; run it here so a broken gate
+      # fails PRs early rather than shipping a green release on a red
+      # `rivet validate`.
+      - name: Compliance report validate-gate tests (#953)
+        run: bash .github/actions/compliance/run_validate_test.sh
       # REQ-316 / REQ-317: the CI-signal classifiers. They are shell, so they
       # run here rather than in a compile job — and they must RUN somewhere, or
       # they are documentation rather than a gate.

@@ -165,18 +165,12 @@ runs:
     - name: Validate
       id: validate
       shell: bash
-      working-directory: ${{ inputs.project-dir }}
+      # `run_validate.sh` treats `rivet validate`'s exit code as the
+      # source of truth and propagates it as its own exit — a failing
+      # validate now fails this step and, via `needs:`, the release-time
+      # `create-release` job that gates on `build-compliance` (#953).
       run: |
-        set +e
-        OUTPUT=$(rivet validate 2>&1)
-        RC=$?
-        set -e
-        echo "$OUTPUT"
-        if echo "$OUTPUT" | grep -q "Result: PASS"; then
-          echo "result=PASS" >> "$GITHUB_OUTPUT"
-        else
-          echo "result=FAIL" >> "$GITHUB_OUTPUT"
-        fi
+        "${GITHUB_ACTION_PATH}/run_validate.sh" "${{ inputs.project-dir }}"
 
     - name: Stats
       id: stats
