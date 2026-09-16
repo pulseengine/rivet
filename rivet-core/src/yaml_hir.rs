@@ -879,7 +879,15 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
                 }
             }
             "description" => {
-                let text = scalar_text(&value_node).or_else(|| block_scalar_text(&value_node));
+                // Block scalar FIRST, matching `extract_text_value` and
+                // `extract_field_value`. The CST lexes a chomping indicator
+                // (`|-`, `>+`) as a PlainScalar token inside the BlockScalar
+                // node, so trying `scalar_text` first returned that token: a
+                // description written as `|-` was read as the string "-". No
+                // artifact in this repository uses a chomped block scalar, so
+                // this was latent here — but it silently replaced a whole
+                // description with one character for any project that did.
+                let text = block_scalar_text(&value_node).or_else(|| scalar_text(&value_node));
                 description = text;
                 field_spans.insert("description".into(), value_span);
             }
@@ -1589,10 +1597,22 @@ fn unescape_double_quoted(s: &str) -> String {
     result
 }
 
-/// Extract block-scalar text from a Value node.
+/// Extract block-scalar text from a Value node, applying YAML's `|` / `>`
+/// semantics and the `-` / `+` chomping indicators.
 ///
-/// Looks for a BlockScalar child and concatenates its BlockScalarLine tokens,
-/// stripping the common indent prefix.
+/// This used to join body lines with `\n` whether the header was `|` or `>`,
+/// and always clip to one trailing newline. `>` was therefore read as `|`, and
+/// `-`/`+` were ignored. Live on the production read path: `safety/stpa` loads
+/// through here, and 148 of 154 STPA descriptions disagreed with PyYAML
+/// (`...Rivet\nvalidation...` where folding yields `...Rivet validation...`).
+/// The on-disk source was never touched — `yaml_edit` preserves the block
+/// byte-for-byte — so correcting the reader corrects the store.
+///
+/// The folding rule is a port of PyYAML's `scan_block_scalar` rather than a
+/// fresh reading of the spec, because the subtle cases (blank lines inside a
+/// folded scalar, more-indented lines, `+` keeping trailing blank lines) are
+/// exactly where a hand-derived rule goes wrong. Every expectation in the
+/// `folded_scalar_*` / `literal_scalar_*` tests is PyYAML's output.
 fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
     let block = child_of_kind(value_node, SyntaxKind::BlockScalar)?;
 
@@ -1612,10 +1632,25 @@ fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
     // common leading-whitespace prefix.
     let raw = block.text().to_string();
     let mut iter = raw.lines();
-    let header = iter.next()?; // `|` or `>` line, plus any chomp / comment
-    if !header.trim_start().starts_with(['|', '>']) {
-        return None;
-    }
+    let header = iter.next()?.trim_start(); // `|` or `>` line, plus any chomp / comment
+    let folded = match header.chars().next() {
+        Some('|') => false,
+        Some('>') => true,
+        _ => return None,
+    };
+    // Indicators follow the style character in either order (`|-2`, `|2-`),
+    // up to whitespace or a comment. Only chomping changes the value here; an
+    // explicit indentation digit is accepted and ignored because content
+    // indent is recovered from the body below.
+    let chomp = header
+        .chars()
+        .skip(1)
+        .take_while(|c| !c.is_whitespace() && *c != '#')
+        .fold(Chomp::Clip, |acc, c| match c {
+            '-' => Chomp::Strip,
+            '+' => Chomp::Keep,
+            _ => acc,
+        });
 
     let body_lines: Vec<&str> = iter.collect();
     if body_lines.is_empty() {
@@ -1630,31 +1665,99 @@ fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         .min()
         .unwrap_or(0);
 
-    let mut result = String::new();
-    for line in &body_lines {
-        if line.trim().is_empty() {
-            result.push('\n');
-        } else if line.len() > min_indent {
-            // Safety: min_indent counts only leading whitespace bytes,
-            // which are always valid UTF-8 boundaries. The char_boundary
-            // check is a defensive fallback for malformed input.
-            if line.is_char_boundary(min_indent) {
-                result.push_str(&line[min_indent..]);
-                result.push('\n');
+    // Dedent. A blank line becomes "" so the folding pass can tell a paragraph
+    // break from a content line.
+    let dedented: Vec<&str> = body_lines
+        .iter()
+        .map(|line| {
+            if line.trim().is_empty() {
+                ""
+            } else if line.len() > min_indent && line.is_char_boundary(min_indent) {
+                // min_indent counts only leading whitespace bytes, which are
+                // always valid UTF-8 boundaries; the check is defensive.
+                &line[min_indent..]
             } else {
-                result.push_str(line); // fallback: don't strip
-                result.push('\n');
+                line // fallback: don't strip
+            }
+        })
+        .collect();
+
+    Some(fold_and_chomp(&dedented, folded, chomp))
+}
+
+/// YAML block-scalar chomping indicator.
+#[derive(Clone, Copy)]
+enum Chomp {
+    /// No indicator: keep exactly one final line break.
+    Clip,
+    /// `-`: remove the final line break and trailing blank lines.
+    Strip,
+    /// `+`: keep the final line break and every trailing blank line.
+    Keep,
+}
+
+/// Join dedented block-scalar lines, folding when `folded`, then apply `chomp`.
+///
+/// A port of the loop in PyYAML's `Scanner.scan_block_scalar`. Between two
+/// content lines the break is:
+///
+/// * a single space — when folding, when neither line is more-indented (starts
+///   with a space or tab after dedent), and when no blank line separates them;
+/// * nothing — in that same folding case when blank lines DO separate them,
+///   because each blank line contributes its own `\n` instead;
+/// * `\n` — in every other case, including all of `|`.
+fn fold_and_chomp(lines: &[&str], folded: bool, chomp: Chomp) -> String {
+    let more_indented = |l: &str| l.starts_with([' ', '\t']);
+
+    let mut out = String::new();
+    let mut idx = 0;
+    let mut breaks = 0usize;
+    // Leading blank lines are preserved as line breaks.
+    while idx < lines.len() && lines[idx].is_empty() {
+        breaks += 1;
+        idx += 1;
+    }
+
+    let mut saw_content = false;
+    while idx < lines.len() {
+        out.extend(std::iter::repeat_n('\n', breaks));
+        let line = lines[idx];
+        out.push_str(line);
+        saw_content = true;
+        idx += 1;
+
+        breaks = 0;
+        while idx < lines.len() && lines[idx].is_empty() {
+            breaks += 1;
+            idx += 1;
+        }
+        let Some(next) = lines.get(idx) else {
+            break; // `breaks` now counts the trailing blank lines
+        };
+        if folded && !more_indented(line) && !more_indented(next) {
+            if breaks == 0 {
+                out.push(' ');
             }
         } else {
-            result.push_str(line);
-            result.push('\n');
+            out.push('\n');
         }
     }
 
-    // Trim trailing newlines and add a single trailing newline (matches
-    // YAML 1.2 default clip-chomping for `|`).
-    let trimmed = result.trim_end_matches('\n');
-    Some(trimmed.to_string() + "\n")
+    if !saw_content {
+        return match chomp {
+            Chomp::Keep => "\n".repeat(breaks),
+            Chomp::Clip | Chomp::Strip => String::new(),
+        };
+    }
+    match chomp {
+        Chomp::Strip => {}
+        Chomp::Clip => out.push('\n'),
+        Chomp::Keep => {
+            out.push('\n');
+            out.extend(std::iter::repeat_n('\n', breaks));
+        }
+    }
+    out
 }
 
 /// Find a MappingEntry whose key text matches `name`.
@@ -2293,6 +2396,106 @@ artifacts:
     fn unquote_scalar_double_quoted_integration() {
         let result = unquote_scalar(SyntaxKind::DoubleQuotedScalar, "\"line1\\nline2\"");
         assert_eq!(result, "line1\nline2");
+    }
+
+    // ── YAML block-scalar semantics: folding and chomping ─────────────
+    //
+    // `block_scalar_text` joined body lines with `\n` whether the header was
+    // `|` (literal) or `>` (folded), and always clipped to one trailing
+    // newline regardless of a `-` (strip) or `+` (keep) chomping indicator.
+    // Its own comment said it "matches YAML 1.2 default clip-chomping for
+    // `|`" — `>` and the chomping indicators were never considered.
+    //
+    // This is LIVE on the production read path. `safety/stpa` loads through
+    // this code, and 148 of 154 STPA descriptions in the store disagreed with
+    // PyYAML: `...runs Rivet\nvalidation...` where YAML folding yields
+    // `...runs Rivet validation...`. The `generic-yaml` sources were unaffected
+    // because they load through serde_yaml, which folds correctly — so the
+    // defect was confined to exactly the files a differential gate classified
+    // as rowan-only and never compared against anything.
+    //
+    // EVERY EXPECTED VALUE BELOW IS PyYAML's OUTPUT for the same document, not
+    // a reading of the spec. Where the spec is subtle — blank lines inside a
+    // folded scalar, more-indented lines, `+` keeping trailing blank lines — a
+    // hand-derived expectation is exactly where this code went wrong before.
+
+    fn desc_of(block: &str) -> String {
+        let source = format!(
+            "artifacts:\n  - id: A-1\n    type: req\n    title: t\n    description: {block}"
+        );
+        let hir = extract_generic_artifacts(&source);
+        hir.artifacts[0]
+            .artifact
+            .description
+            .clone()
+            .expect("description")
+    }
+
+    // rivet: verifies REQ-361
+    #[test]
+    fn folded_scalar_joins_lines_with_spaces() {
+        // PyYAML: 'one two three four five\n'
+        assert_eq!(
+            desc_of(">\n      one two\n      three four\n      five\n"),
+            "one two three four five\n"
+        );
+    }
+
+    #[test]
+    fn folded_scalar_keeps_a_blank_line_as_a_paragraph_break() {
+        // PyYAML: 'para one line a para one line b\npara two\n'
+        assert_eq!(
+            desc_of(">\n      para one line a\n      para one line b\n\n      para two\n"),
+            "para one line a para one line b\npara two\n"
+        );
+    }
+
+    #[test]
+    fn folded_scalar_does_not_fold_more_indented_lines() {
+        // PyYAML: 'normal a normal b\n  indented x\n  indented y\nnormal c\n'
+        assert_eq!(
+            desc_of(
+                ">\n      normal a\n      normal b\n        indented x\n        indented y\n      normal c\n"
+            ),
+            "normal a normal b\n  indented x\n  indented y\nnormal c\n"
+        );
+    }
+
+    // rivet: verifies REQ-361
+    #[test]
+    fn folded_scalar_strip_chomping_removes_the_final_newline() {
+        // PyYAML: 'a b'
+        assert_eq!(desc_of(">-\n      a\n      b\n"), "a b");
+    }
+
+    #[test]
+    fn folded_scalar_keep_chomping_retains_trailing_blank_lines() {
+        // PyYAML: 'a b\n\n\n'
+        assert_eq!(desc_of(">+\n      a\n      b\n\n\n"), "a b\n\n\n");
+    }
+
+    /// Literal scalars must NOT fold. Without this control a fix that folded
+    /// everything would pass every test above.
+    // rivet: verifies REQ-361
+    #[test]
+    fn literal_scalar_preserves_line_breaks() {
+        // PyYAML: 'one two\nthree four\n'
+        assert_eq!(
+            desc_of("|\n      one two\n      three four\n"),
+            "one two\nthree four\n"
+        );
+    }
+
+    #[test]
+    fn literal_scalar_strip_chomping_removes_the_final_newline() {
+        // PyYAML: 'a\nb'
+        assert_eq!(desc_of("|-\n      a\n      b\n"), "a\nb");
+    }
+
+    #[test]
+    fn literal_scalar_keep_chomping_retains_trailing_blank_lines() {
+        // PyYAML: 'a\nb\n\n\n'
+        assert_eq!(desc_of("|+\n      a\n      b\n\n\n"), "a\nb\n\n\n");
     }
 
     // ── Block scalar Unicode safety tests ──────────────────────────

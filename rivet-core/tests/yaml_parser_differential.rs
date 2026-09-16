@@ -100,18 +100,39 @@ fn fingerprint(a: &rivet_core::model::Artifact) -> String {
                 .replace('\n', ";")
         },
     );
-    format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}",
-        a.id,
-        a.artifact_type,
-        a.title,
+    // `fields` is where `serde_yaml::Value` lives, so it is the component a
+    // read-path migration is most likely to change — and the one the first
+    // version of this fingerprint left out. `BTreeMap` iterates in key order,
+    // so the rendering is deterministic.
+    let fields = a
+        .fields
+        .iter()
+        .map(|(k, v)| {
+            let rendered = serde_yaml::to_string(v).unwrap_or_default();
+            format!("{k}={}", rendered.trim_end().replace('\n', ";"))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    // SEP is the ASCII unit separator, not `|`. `serde_yaml::to_string` emits
+    // `|` for multi-line block scalars and titles may contain one, and a
+    // stray `|` shifts every component after it — misattributing a `fields`
+    // divergence to whatever came earlier.
+    [
+        a.id.as_str(),
+        a.artifact_type.as_str(),
+        a.title.as_str(),
         a.status.as_deref().unwrap_or(""),
         a.release.as_deref().unwrap_or(""),
-        a.tags.join("+"),
-        links.join(","),
-        prov
-    )
+        &a.tags.join("+"),
+        &links.join(","),
+        &prov,
+        &fields,
+    ]
+    .join(SEP)
 }
+
+/// Component separator for `fingerprint`. See the note there.
+const SEP: &str = "\u{1f}";
 
 fn via_serde(content: &str, f: &Path) -> Vec<String> {
     match rivet_core::formats::generic::parse_generic_yaml(content, Some(f)) {
@@ -163,6 +184,12 @@ fn fingerprint_carries_every_component_it_claims() {
             reviewed_by: None,
             federation: None,
         }),
+        fields: [(
+            "priority".to_owned(),
+            serde_yaml::Value::String("a-distinctive-priority".to_owned()),
+        )]
+        .into_iter()
+        .collect(),
         ..Default::default()
     };
     let f = fingerprint(&a);
@@ -176,6 +203,8 @@ fn fingerprint_carries_every_component_it_claims() {
         ("links", "verifies->REQ-002"),
         ("provenance.created-by", "ai-assisted"),
         ("provenance.model", "a-model-name"),
+        ("fields.key", "priority"),
+        ("fields.value", "a-distinctive-priority"),
     ] {
         assert!(
             f.contains(needle),
@@ -188,7 +217,7 @@ fn fingerprint_carries_every_component_it_claims() {
 /// Which fingerprint COMPONENT differs, so a failure names the defect rather
 /// than the file. The order matches `fingerprint`.
 fn first_differing_component(a: &str, b: &str) -> &'static str {
-    const NAMES: [&str; 8] = [
+    const NAMES: [&str; 9] = [
         "id",
         "type",
         "title",
@@ -197,8 +226,9 @@ fn first_differing_component(a: &str, b: &str) -> &'static str {
         "tags",
         "links",
         "provenance",
+        "fields",
     ];
-    let (av, bv): (Vec<&str>, Vec<&str>) = (a.split('|').collect(), b.split('|').collect());
+    let (av, bv): (Vec<&str>, Vec<&str>) = (a.split(SEP).collect(), b.split(SEP).collect());
     for (i, name) in NAMES.iter().enumerate() {
         if av.get(i) != bv.get(i) {
             return name;
@@ -218,19 +248,45 @@ fn has_artifacts_key(content: &str) -> bool {
         .is_some()
 }
 
-/// The corpus's known divergence count. **Zero since REQ-346 landed
-/// `FlowMapping` in `yaml_cst`.**
+/// The corpus's known divergence count, with every counted artifact named.
 ///
-/// It was 18: that many artifacts write `provenance:` as a flow mapping
-/// (`{created-by: …, model: …}`), serde read them, and the CST — which had a
-/// `FlowSequence` node and no `FlowMapping` — yielded no provenance at all,
-/// silently and with no parse error. This gate is what found that, by pinning
-/// the number rather than asserting a comfortable zero; closing the gap
-/// reddened it and forced this constant to be updated instead of quietly
-/// agreeing. It is kept as a named constant rather than folded into a bare
-/// `differ == 0` so the same forcing function applies to whatever the next
-/// divergence turns out to be.
-const KNOWN_DIVERGENCES: usize = 0;
+/// HISTORY, because the number has been wrong twice and both times the gate
+/// said it was fine. It was 18 (flow-style provenance) until REQ-353 added
+/// `FlowMapping`, then 0. That 0 was a weak green: the fingerprint omitted
+/// `fields`, which is where `serde_yaml::Value` lives. Adding `fields` took the
+/// same corpus from `agree=26 differ=0` to `differ=10` across **110**
+/// artifacts. 108 of them were one defect — rowan did not fold `>` block
+/// scalars or honour `-`/`+` chomping — and that defect was LIVE: the rowan
+/// path is production for `safety/stpa`, where 148 of 154 descriptions
+/// disagreed with PyYAML. Fixed in the same change as this fingerprint; the
+/// residual is the 2 below.
+///
+/// THE 2, each characterized against PyYAML rather than merely counted:
+///
+/// * **REQ-277** — `category`, `priority`, `upstream-ref` written as top-level
+///   keys instead of under `fields:`. serde DROPS them; rowan reads them. LIVE
+///   on the production path (`artifacts/` loads through serde): `rivet get
+///   REQ-277 --format json` shows `fields = {}`, `(= priority "should")`
+///   excludes it, and `validate` reports nothing about the three lost keys.
+///
+/// * **DD-039** — `alternatives:` is a multi-line PLAIN scalar. PyYAML and
+///   serde fold the continuation line in; rowan TRUNCATES at the first line
+///   (`"...Rejected because it"`). Latent here: DD-039 loads through serde in
+///   production and no `safety/stpa` artifact uses a multi-line plain scalar.
+///   It would become live on a read-path migration onto the CST.
+///
+/// Kept as a named constant rather than a bare `differ == 0` so moving the
+/// number in EITHER direction forces this record to be updated.
+const KNOWN_DIVERGENCES: usize = 2;
+
+/// The artifacts behind `KNOWN_DIVERGENCES`, by id.
+///
+/// The count alone has the same shape as the bug it replaced. When REQ-362 or
+/// REQ-363 lands, one of these stops diverging — and if a DIFFERENT artifact
+/// had meanwhile started diverging, the count would stay at 2 and the gate
+/// would stay green with a new defect swapped into the old one's budget. The
+/// set is asserted as well, so a new instance reddens as a new instance.
+const KNOWN_DIVERGING_IDS: &[&str] = &["DD-039", "REQ-277"];
 
 // rivet: verifies REQ-348
 #[test]
@@ -259,6 +315,7 @@ fn differential_survey() {
         std::collections::BTreeMap::new();
     let mut count_mismatch: Vec<String> = Vec::new();
     let mut examples: Vec<String> = Vec::new();
+    let mut diverging_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
     for f in &files {
         let content = std::fs::read_to_string(f).unwrap_or_default();
@@ -306,6 +363,9 @@ fn differential_survey() {
                 *by_component
                     .entry(first_differing_component(a, b))
                     .or_default() += 1;
+                if let Some(id) = a.split(SEP).next() {
+                    diverging_ids.insert(id.to_owned());
+                }
                 if examples.len() < 4 {
                     examples.push(format!("{rel}\n      serde: {a}\n      rowan: {b}"));
                 }
@@ -381,6 +441,16 @@ fn differential_survey() {
         } else {
             classes.join(", ")
         }
+    );
+    let expected: std::collections::BTreeSet<String> = KNOWN_DIVERGING_IDS
+        .iter()
+        .map(|s| (*s).to_owned())
+        .collect();
+    assert_eq!(
+        diverging_ids, expected,
+        "the SET of diverging artifacts changed even if the count did not. A new \
+         id here is a new defect, not a budget to spend — characterize it against \
+         PyYAML before touching KNOWN_DIVERGING_IDS."
     );
 }
 
