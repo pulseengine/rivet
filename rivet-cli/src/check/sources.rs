@@ -636,6 +636,7 @@ mod tests {
 
     /// The COLLECTOR, which had no test at all — a surviving mutant that made
     /// `rotted_source_refs` return nothing reddened nothing.
+    // rivet: verifies REQ-358
     #[test]
     fn the_collector_reports_a_missing_base_and_spares_a_live_one() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -673,6 +674,7 @@ mod tests {
 
     /// The two real rotted references, and a live one as the control. Without
     /// the control this would pass on a build where NOTHING resolves.
+    // rivet: verifies REQ-358
     #[test]
     fn the_corpus_rot_is_detected_and_live_refs_are_not() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -736,6 +738,7 @@ mod tests {
         assert_eq!(gate_reason(&rep(0, 0, 0), false, 0), None);
     }
 
+    // rivet: verifies REQ-357
     #[test]
     fn an_empty_corpus_fails_when_a_minimum_is_required() {
         let why = gate_reason(&rep(0, 0, 0), false, 1)
@@ -759,6 +762,7 @@ mod tests {
     /// --min is a floor on the population, NOT a substitute for the drift
     /// check. A corpus that meets the minimum and has drifted must still fail,
     /// or the new flag would mask the defect the command exists to find.
+    // rivet: verifies REQ-357
     #[test]
     fn meeting_the_minimum_does_not_excuse_drift() {
         let why = gate_reason(&rep(5, 2, 0), false, 5).expect("drift must still fire");
