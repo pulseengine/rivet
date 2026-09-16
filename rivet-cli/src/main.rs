@@ -2185,6 +2185,19 @@ enum CheckAction {
         #[arg(long = "scan")]
         scan: Vec<std::path::PathBuf>,
 
+        /// Fail if fewer than N named-test step(s) were checked.
+        ///
+        /// The rot gate this command exists to catch is silent: a corpus that
+        /// carries zero `fields.steps[].run` entries scans nothing and exits
+        /// 0 having verified nothing (#954), and a corpus whose steps stopped
+        /// parsing after a schema rename looks identical to one that removed
+        /// them. State how many named-test steps the project expects, and a
+        /// corpus that drops below the floor fails instead of passing
+        /// quietly. Defaults to 0, which keeps the previous behaviour for
+        /// projects that legitimately carry none.
+        #[arg(long, default_value_t = 0, value_name = "N")]
+        min: usize,
+
         /// Output format: "text" (default) or "json".
         #[arg(short, long, default_value = "text")]
         format: String,
@@ -2928,8 +2941,8 @@ fn run(cli: Cli) -> Result<bool> {
             CheckAction::GapsJson { baseline, format } => {
                 cmd_check_gaps_json(&cli, baseline.as_deref(), format)
             }
-            CheckAction::VerificationEvidence { scan, format } => {
-                cmd_check_verification_evidence(&cli, scan, format)
+            CheckAction::VerificationEvidence { scan, min, format } => {
+                cmd_check_verification_evidence(&cli, scan, *min, format)
             }
             CheckAction::Sources {
                 update,
@@ -9257,6 +9270,7 @@ fn is_nextest_filterset(run: &str) -> bool {
 fn cmd_check_verification_evidence(
     cli: &Cli,
     scan: &[std::path::PathBuf],
+    min: usize,
     format: &str,
 ) -> Result<bool> {
     use rivet_core::verification_evidence as ve;
@@ -9381,7 +9395,20 @@ fn cmd_check_verification_evidence(
     //   `✓ verification-evidence: 0 named-test step(s) all reference an existing test.`
     // — a checkmark over nothing checked, the same weak-green shape this check
     // exists to kill. Report it as a distinct outcome instead.
+    //
+    // #954: fixing the text output there left the RETURN value at
+    // `missing.is_empty()`, which is `true` on an empty scan. The gate was
+    // green twice per push having verified nothing. `check::verification_evidence`
+    // owns the decision, mirroring REQ-357's `check sources --min`.
     let empty_scan = checked == 0 && skipped.is_empty();
+    let gate = check::verification_evidence::Report {
+        checked,
+        missing: missing.len(),
+        skipped: skipped.len(),
+        empty_scan,
+    };
+    let gate_why = check::verification_evidence::gate_reason(&gate, min);
+    let ok = gate_why.is_none();
 
     if format == "json" {
         let obj = serde_json::json!({
@@ -9390,7 +9417,8 @@ fn cmd_check_verification_evidence(
             "missing": missing,
             "skipped": skipped,
             "empty_scan": empty_scan,
-            "ok": missing.is_empty(),
+            "min": min,
+            "ok": ok,
         });
         println!("{}", serde_json::to_string_pretty(&obj)?);
     } else {
@@ -9434,8 +9462,11 @@ fn cmd_check_verification_evidence(
                 println!("  {} — (from `{}`)", s.artifact, s.command);
             }
         }
+        if let Some(why) = &gate_why {
+            eprintln!("\nerror: {why}");
+        }
     }
-    Ok(missing.is_empty())
+    Ok(ok)
 }
 
 /// #547 (REQ-238): trace a requirement FORWARD to the test results that cover
