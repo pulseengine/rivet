@@ -5,6 +5,27 @@
 
 ## [Unreleased]
 
+### Fixed
+- **`rivet check verification-evidence` reported success on an empty scan**
+  (REQ-236, #954) — `cmd_check_verification_evidence` returned
+  `Ok(missing.is_empty())`, which is `true` when no artifact carries a
+  `fields.steps[].run` naming a cargo-test filter. The text output had
+  already been fixed to warn (#770), but the exit code and the JSON `ok`
+  field kept saying pass. On the rivet corpus itself the step ran in the
+  gated `traceability` job and again in the hosted floor, green twice per
+  push, having verified nothing. The decision now lives in
+  `check::verification_evidence::gate_reason`, mirroring REQ-357's
+  `check sources --min` pattern, and is covered by unit tests.
+
+### Added
+- **`rivet check verification-evidence --min N`** (REQ-236, #954) — caller-opted
+  floor on the number of named-test step(s) checked. Defaults to 0, which
+  keeps the previous behaviour for projects that legitimately carry none.
+  A project that expects named-test steps declares how many, and a corpus
+  that drops below the floor — steps deleted, or steps that stopped parsing
+  after a schema rename — fails instead of passing quietly, catching the
+  drift class the command exists to find.
+
 ## [0.37.0] - 2026-09-09
 
 v0.36.0 collected signals that lied about the code. This release collects
