@@ -1474,12 +1474,57 @@ fn scalar_text(node: &SyntaxNode) -> Option<String> {
                 SyntaxKind::PlainScalar => {
                     // The lexer splits plain scalars at commas and brackets.
                     // Collect all sibling tokens to reconstruct the full value.
+                    //
+                    // A Newline INSIDE this node is a plain-scalar continuation
+                    // (REQ-363): the CST keeps a multi-line plain scalar's later
+                    // lines in the same Value node, while a single-line value's
+                    // line break sits outside it, between MappingEntry siblings.
+                    // This used to `break` on any Newline, which truncated every
+                    // multi-line plain scalar to its first line — DD-039's
+                    // `alternatives:` read as "…Rejected because it". YAML folds
+                    // the break: one line break becomes a space, and each blank
+                    // line in between contributes a `\n` instead.
                     let mut text = t.text().to_string();
                     let mut next = t.next_sibling_or_token();
                     while let Some(sibling) = next {
                         match sibling {
                             rowan::NodeOrToken::Token(ref st) => match st.kind() {
-                                SyntaxKind::Newline | SyntaxKind::Comment => break,
+                                SyntaxKind::Comment => break,
+                                SyntaxKind::Newline => {
+                                    let mut breaks = 0usize;
+                                    let mut resume = None;
+                                    let mut look = Some(sibling.clone());
+                                    while let Some(el) = look {
+                                        match &el {
+                                            rowan::NodeOrToken::Token(lt)
+                                                if lt.kind() == SyntaxKind::Newline =>
+                                            {
+                                                breaks += 1;
+                                            }
+                                            rowan::NodeOrToken::Token(lt)
+                                                if lt.kind() == SyntaxKind::Whitespace => {}
+                                            rowan::NodeOrToken::Token(lt)
+                                                if lt.kind() != SyntaxKind::Comment =>
+                                            {
+                                                resume = Some(el.clone());
+                                                break;
+                                            }
+                                            // A comment, or a child node, ends the scalar.
+                                            _ => break,
+                                        }
+                                        look = el.next_sibling_or_token();
+                                    }
+                                    // Nothing but trailing breaks before the node
+                                    // ends: this was the scalar's last line.
+                                    let Some(resume) = resume else { break };
+                                    text.truncate(text.trim_end().len());
+                                    if breaks == 1 {
+                                        text.push(' ');
+                                    } else {
+                                        text.extend(std::iter::repeat_n('\n', breaks - 1));
+                                    }
+                                    next = Some(resume);
+                                }
                                 _ => {
                                     text.push_str(st.text());
                                     next = sibling.next_sibling_or_token();
@@ -2496,6 +2541,95 @@ artifacts:
     fn literal_scalar_keep_chomping_retains_trailing_blank_lines() {
         // PyYAML: 'a\nb\n\n\n'
         assert_eq!(desc_of("|+\n      a\n      b\n\n\n"), "a\nb\n\n\n");
+    }
+
+    // ── REQ-363: multi-line PLAIN scalars fold, they are not truncated ─────
+    //
+    // `scalar_text` stopped collecting at the first Newline token. The CST
+    // keeps a plain scalar's continuation lines INSIDE the Value node
+    // (`PlainScalar "one two"`, Newline, Whitespace, `PlainScalar "three
+    // four"`), so everything after line one was silently discarded: DD-039's
+    // `alternatives:` came back as "…Rejected because it". A single-line value
+    // has no Newline inside its Value node — the break sits outside, between
+    // MappingEntry siblings — so continuing past an internal Newline cannot
+    // reach the next key.
+    //
+    // Every expected value below is PyYAML's output for the same document.
+
+    fn field_of(body: &str) -> String {
+        let source = format!(
+            "artifacts:\n  - id: A-1\n    type: req\n    title: t\n    fields:\n      k: {body}      after: sentinel\n"
+        );
+        let hir = extract_generic_artifacts(&source);
+        let a = &hir.artifacts[0].artifact;
+        assert_eq!(
+            a.fields.get("after").and_then(|v| v.as_str()),
+            Some("sentinel"),
+            "the NEXT key must survive untouched — a fold that swallows it is worse \
+             than the truncation it replaced: {:?}",
+            a.fields
+        );
+        a.fields
+            .get("k")
+            .and_then(|v| v.as_str())
+            .expect("k")
+            .to_owned()
+    }
+
+    // rivet: verifies REQ-363
+    #[test]
+    fn multi_line_plain_scalar_folds_continuation_into_one_line() {
+        // PyYAML: 'one two three four'
+        assert_eq!(
+            field_of("one two\n        three four\n"),
+            "one two three four"
+        );
+    }
+
+    #[test]
+    fn multi_line_plain_scalar_folds_three_lines() {
+        // PyYAML: 'alpha beta gamma'
+        assert_eq!(
+            field_of("alpha\n        beta\n        gamma\n"),
+            "alpha beta gamma"
+        );
+    }
+
+    #[test]
+    fn multi_line_plain_scalar_keeps_a_blank_line_as_a_newline() {
+        // PyYAML: 'para one continues\npara two'
+        assert_eq!(
+            field_of("para one\n        continues\n\n        para two\n"),
+            "para one continues\npara two"
+        );
+    }
+
+    #[test]
+    fn multi_line_plain_scalar_with_a_url_colon_folds() {
+        // PyYAML: 'see http://x.io/a and more'
+        assert_eq!(
+            field_of("see http://x.io/a\n        and more\n"),
+            "see http://x.io/a and more"
+        );
+    }
+
+    /// Control: a single-line value is unchanged. Without it a fold that
+    /// appended the next line's text everywhere could pass the tests above.
+    #[test]
+    fn single_line_plain_scalar_is_unchanged() {
+        assert_eq!(field_of("just one line\n"), "just one line");
+    }
+
+    /// The same collector reads `title`. A multi-line plain title must fold too,
+    /// and must not absorb the following `status:` key.
+    #[test]
+    fn multi_line_plain_title_folds_and_does_not_absorb_the_next_key() {
+        let source = "artifacts:\n  - id: A-1\n    type: req\n    title: first half\n      second half\n    status: draft\n";
+        let hir = extract_generic_artifacts(source);
+        let a = &hir.artifacts[0].artifact;
+        // PyYAML: 'first half second half'
+        assert_eq!(a.title, "first half second half");
+        assert_eq!(a.status.as_deref(), Some("draft"));
     }
 
     // ── Block scalar Unicode safety tests ──────────────────────────
