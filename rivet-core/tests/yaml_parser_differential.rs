@@ -10,6 +10,7 @@
     clippy::arithmetic_side_effects,
     clippy::as_conversions,
     clippy::cast_possible_wrap,
+    clippy::wildcard_enum_match_arm,
     clippy::panic,
     clippy::print_stdout
 )]
@@ -456,6 +457,226 @@ fn differential_survey() {
         "the SET of diverging artifacts changed even if the count did not. A new \
          id here is a new defect, not a budget to spend — characterize it against \
          PyYAML before touching KNOWN_DIVERGING_IDS."
+    );
+}
+
+/// A mapping in the independent parse that carries a string id, with the
+/// chain of `(key, mapping)` ancestors that leads to it (outermost first; the
+/// last element is the artifact's own mapping, and its key is the key of the
+/// sequence it sits in).
+type IdChain<'a> = Vec<(Option<&'a str>, &'a serde_yaml::Mapping)>;
+
+/// Keys that carry an artifact id. `ca` mirrors yaml_hir's documented alias —
+/// "`ca` is an alias for `id` in STPA control-action items" — which is schema
+/// behaviour, not parsing, so the reference has to know it to find those items.
+const ID_KEYS: &[&str] = &["id", "ca"];
+
+fn index_ids<'a>(
+    v: &'a serde_yaml::Value,
+    key: Option<&'a str>,
+    chain: &mut IdChain<'a>,
+    out: &mut std::collections::BTreeMap<String, Vec<IdChain<'a>>>,
+) {
+    match v {
+        serde_yaml::Value::Mapping(m) => {
+            chain.push((key, m));
+            if let Some(id) = ID_KEYS
+                .iter()
+                .find_map(|k| m.get(*k).and_then(serde_yaml::Value::as_str))
+            {
+                out.entry(id.to_owned()).or_default().push(chain.clone());
+            }
+            for (k, child) in m {
+                index_ids(child, k.as_str(), chain, out);
+            }
+            chain.pop();
+        }
+        serde_yaml::Value::Sequence(s) => {
+            for child in s {
+                index_ids(child, key, chain, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn json(v: &serde_yaml::Value) -> serde_json::Value {
+    serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
+}
+
+fn strings_under(v: &serde_yaml::Value, out: &mut Vec<String>) {
+    match v {
+        serde_yaml::Value::String(s) => out.push(s.clone()),
+        serde_yaml::Value::Sequence(s) => s.iter().for_each(|c| strings_under(c, out)),
+        serde_yaml::Value::Mapping(m) => m.values().for_each(|c| strings_under(c, out)),
+        _ => {}
+    }
+}
+
+/// REQ-348's open half. `differential_survey` compares only `artifacts:`-shaped
+/// files, so every `safety/stpa` file — the rowan-only partition, where the
+/// folded-scalar corruption lived undetected — was compared against nothing.
+///
+/// This compares that partition against an INDEPENDENT parse of the same text
+/// (serde_yaml's generic `Value`, which knows nothing of rivet's schemas). It
+/// does not re-implement the schema-driven mapping; it checks that every value
+/// rowan hands back is the value the document actually holds. For each artifact
+/// rowan extracts, the reference must contain exactly one mapping with that
+/// `id`, and rowan's title, description, status and every field value must
+/// equal what that mapping (or, for inherited fields, its nearest ancestor)
+/// holds; every link target must appear as a string under it. Per file, rowan
+/// must find as many artifacts as the reference has `id`-bearing mappings.
+// rivet: verifies REQ-348
+#[test]
+fn rowan_only_partition_matches_an_independent_parse() {
+    let root = workspace_root();
+    let (schema_names, source_paths) = project_config(&root);
+    let schema = rivet_core::load_schemas(&schema_names, &root.join("schemas"))
+        .expect("load the project's own schema set");
+    let mut files = Vec::new();
+    for s in &source_paths {
+        yaml_files(&root.join(s), &mut files);
+    }
+    files.sort();
+
+    let (mut files_compared, mut artifacts_compared, mut values_compared) = (0usize, 0, 0);
+    let mut derived_compared = 0usize;
+    let mut mismatches: Vec<String> = Vec::new();
+
+    for f in &files {
+        let content = std::fs::read_to_string(f).unwrap_or_default();
+        if has_artifacts_key(&content) {
+            continue;
+        }
+        let rel = f.strip_prefix(&root).unwrap_or(f).display().to_string();
+        let parsed = rivet_core::yaml_hir::extract_schema_driven(&content, &schema, Some(f));
+        if parsed.artifacts.is_empty() {
+            continue;
+        }
+        let reference: serde_yaml::Value = match serde_yaml::from_str(&content) {
+            Ok(v) => v,
+            Err(e) => {
+                mismatches.push(format!(
+                    "{rel}: the independent parser rejects the file: {e}"
+                ));
+                continue;
+            }
+        };
+        let mut by_id = std::collections::BTreeMap::new();
+        index_ids(&reference, None, &mut Vec::new(), &mut by_id);
+        files_compared += 1;
+
+        let reference_count: usize = by_id.values().map(Vec::len).sum();
+        if reference_count != parsed.artifacts.len() {
+            mismatches.push(format!(
+                "{rel}: rowan found {} artifacts, the reference has {reference_count} id-bearing mappings",
+                parsed.artifacts.len()
+            ));
+        }
+
+        for pa in &parsed.artifacts {
+            let a = &pa.artifact;
+            let Some(chains) = by_id.get(a.id.as_str()) else {
+                mismatches.push(format!(
+                    "{rel} {}: no mapping with this id in the reference",
+                    a.id
+                ));
+                continue;
+            };
+            if chains.len() != 1 {
+                mismatches.push(format!("{rel} {}: id appears {} times", a.id, chains.len()));
+                continue;
+            }
+            let chain = &chains[0];
+            let own = chain
+                .last()
+                .map(|(_, m)| *m)
+                .expect("chain ends at the artifact");
+            artifacts_compared += 1;
+
+            for (key, got) in [
+                ("title", Some(a.title.as_str())),
+                ("description", a.description.as_deref()),
+                ("status", a.status.as_deref()),
+            ] {
+                if let Some(want) = own.get(key).and_then(serde_yaml::Value::as_str) {
+                    values_compared += 1;
+                    if got != Some(want) {
+                        mismatches.push(format!(
+                            "{rel} {} {key}:\n      reference: {want:?}\n      rowan:     {got:?}",
+                            a.id
+                        ));
+                    }
+                }
+            }
+            for (k, v) in &a.fields {
+                match chain.iter().rev().find_map(|(_, m)| m.get(k.as_str())) {
+                    Some(want) => {
+                        values_compared += 1;
+                        if json(want) != json(v) {
+                            mismatches.push(format!(
+                                "{rel} {} field {k}:\n      reference: {:?}\n      rowan:     {:?}",
+                                a.id,
+                                json(want),
+                                json(v)
+                            ));
+                        }
+                    }
+                    // `uca-type` is DERIVED, not read: yaml_hir sets it from the
+                    // key of the group the item sits in (`not-providing:` …).
+                    // It is checked against exactly that key, which the
+                    // reference does know.
+                    None if k == "uca-type" => {
+                        let group_key = chain.last().and_then(|(key, _)| *key);
+                        derived_compared += 1;
+                        if v.as_str() != group_key {
+                            mismatches.push(format!(
+                                "{rel} {} uca-type {:?} is not the group key {group_key:?}",
+                                a.id,
+                                json(v)
+                            ));
+                        }
+                    }
+                    None => mismatches.push(format!(
+                        "{rel} {} field {k}={:?}: not present in the reference mapping or its ancestors",
+                        a.id,
+                        json(v)
+                    )),
+                }
+            }
+            let mut present = Vec::new();
+            for (_, m) in chain {
+                strings_under(&serde_yaml::Value::Mapping((*m).clone()), &mut present);
+            }
+            for l in &a.links {
+                if !present.iter().any(|s| s == &l.target) {
+                    mismatches.push(format!(
+                        "{rel} {} link {} -> {}: target not present in the reference",
+                        a.id, l.link_type, l.target
+                    ));
+                }
+            }
+        }
+    }
+
+    println!(
+        "ROWAN-ONLY PARTITION files={files_compared} artifacts={artifacts_compared} values={values_compared} derived={derived_compared} mismatches={}",
+        mismatches.len()
+    );
+    for m in mismatches.iter().take(12) {
+        println!("  MISMATCH {m}");
+    }
+    assert!(
+        files_compared > 0 && artifacts_compared > 0 && values_compared > 0,
+        "the rowan-only partition must be compared over a non-empty set, or agreement is \
+         vacuous: files={files_compared} artifacts={artifacts_compared} values={values_compared}"
+    );
+    assert!(
+        mismatches.is_empty(),
+        "rowan disagrees with an independent parse on the rowan-only partition \
+         ({} mismatches); first:\n  {}",
+        mismatches.len(),
+        mismatches.first().map(String::as_str).unwrap_or_default()
     );
 }
 
