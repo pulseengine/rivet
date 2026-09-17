@@ -327,68 +327,31 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                     text: &source[start..pos],
                 });
             }
-            // Single-quoted scalar — must close on the same line.
-            // If no closing quote before newline, treat as plain scalar.
-            b'\'' => {
-                pos += 1;
-                let mut closed = false;
-                while pos < bytes.len() && bytes[pos] != b'\n' && bytes[pos] != b'\r' {
-                    if bytes[pos] == b'\'' {
-                        pos += 1;
-                        // Escaped quote '' inside single-quoted string
-                        if pos < bytes.len() && bytes[pos] == b'\'' {
-                            pos += 1;
-                            continue;
-                        }
-                        closed = true;
-                        break;
-                    }
-                    pos += 1;
-                }
-                if closed {
-                    tokens.push(Token {
-                        kind: SyntaxKind::SingleQuotedScalar,
-                        text: &source[start..pos],
-                    });
+            // Quoted scalars. They may span lines (REQ-364), under the
+            // continuation rule in `scan_quoted_scalar`; one that does not
+            // close under that rule is a plain scalar ending at the line, which
+            // is what an apostrophe in prose (`Rivet's`, `don't`) needs.
+            b'\'' | b'"' => {
+                let kind = if b == b'\'' {
+                    SyntaxKind::SingleQuotedScalar
                 } else {
-                    // No closing quote on this line — treat as plain scalar
-                    // (common in block scalar content like: Rivet's, don't)
-                    pos = lex_plain_scalar(source, bytes, start);
-                    tokens.push(Token {
-                        kind: SyntaxKind::PlainScalar,
-                        text: &source[start..pos],
-                    });
-                }
-            }
-            // Double-quoted scalar — must close on the same line.
-            b'"' => {
-                pos += 1;
-                let mut closed = false;
-                while pos < bytes.len() && bytes[pos] != b'"' {
-                    if bytes[pos] == b'\n' || bytes[pos] == b'\r' {
-                        break;
+                    SyntaxKind::DoubleQuotedScalar
+                };
+                match scan_quoted_scalar(bytes, start) {
+                    Some(end) => {
+                        pos = end;
+                        tokens.push(Token {
+                            kind,
+                            text: &source[start..pos],
+                        });
                     }
-                    if bytes[pos] == b'\\' {
-                        pos += 1; // skip escaped char
+                    None => {
+                        pos = lex_plain_scalar(source, bytes, start);
+                        tokens.push(Token {
+                            kind: SyntaxKind::PlainScalar,
+                            text: &source[start..pos],
+                        });
                     }
-                    pos += 1;
-                }
-                if pos < bytes.len() && bytes[pos] == b'"' {
-                    pos += 1; // closing quote
-                    closed = true;
-                }
-                if closed {
-                    tokens.push(Token {
-                        kind: SyntaxKind::DoubleQuotedScalar,
-                        text: &source[start..pos],
-                    });
-                } else {
-                    // No closing quote on this line — treat as plain scalar
-                    pos = lex_plain_scalar(source, bytes, start);
-                    tokens.push(Token {
-                        kind: SyntaxKind::PlainScalar,
-                        text: &source[start..pos],
-                    });
                 }
             }
             // Plain scalar (anything else)
@@ -403,6 +366,84 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
     }
 
     tokens
+}
+
+/// Scan a quoted scalar whose opening quote is at `start`, returning the
+/// position just past its closing quote, or `None` if it does not close.
+///
+/// A quoted scalar may continue onto later lines (YAML 1.2 §7.3.1, §7.3.2;
+/// REQ-364) — PyYAML's `safe_dump` wraps long quoted strings at 80 columns.
+/// This lexer is context-free and also tokenizes block scalar bodies, so an
+/// unbounded scan would let an apostrophe in prose swallow the lines after it,
+/// sibling keys included. The continuation rule bounds it: past a line break,
+/// empty lines are skipped and the next non-empty line must be indented deeper
+/// than the line the quote opened on. Anything at or left of that indentation
+/// — a sibling key, the end of a block body, a document marker — ends the
+/// attempt and the scalar is reported as unclosed.
+fn scan_quoted_scalar(bytes: &[u8], start: usize) -> Option<usize> {
+    let quote = *bytes.get(start)?;
+    let line_start = bytes[..start]
+        .iter()
+        .rposition(|&c| c == b'\n' || c == b'\r')
+        .map_or(0, |i| i + 1);
+    let open_indent = bytes[line_start..start]
+        .iter()
+        .take_while(|&&c| c == b' ')
+        .count();
+    let mut pos = start + 1;
+    while let Some(&c) = bytes.get(pos) {
+        match c {
+            b'\'' if quote == b'\'' => {
+                if bytes.get(pos + 1) == Some(&b'\'') {
+                    pos += 2;
+                    continue;
+                }
+                return Some(pos + 1);
+            }
+            b'"' if quote == b'"' => return Some(pos + 1),
+            // An escape. `\` + line break is an escaped line break and falls to
+            // the continuation rule on the next iteration, like a plain break.
+            b'\\' if quote == b'"' => {
+                pos += match bytes.get(pos + 1) {
+                    Some(b'\n' | b'\r') => 1,
+                    Some(_) => 2,
+                    None => return None,
+                };
+            }
+            b'\n' | b'\r' => pos = quoted_continuation(bytes, pos, open_indent)?,
+            _ => pos += 1,
+        }
+    }
+    None
+}
+
+/// From a line break inside a quoted scalar, skip empty lines and return the
+/// position of the next line's first non-blank byte if that line is indented
+/// deeper than `open_indent`; otherwise `None`. See `scan_quoted_scalar`.
+fn quoted_continuation(bytes: &[u8], mut pos: usize, open_indent: usize) -> Option<usize> {
+    loop {
+        if bytes.get(pos) == Some(&b'\r') {
+            pos += 1;
+        }
+        if bytes.get(pos) == Some(&b'\n') {
+            pos += 1;
+        }
+        let line_start = pos;
+        while matches!(bytes.get(pos), Some(b' ' | b'\t')) {
+            pos += 1;
+        }
+        match bytes.get(pos) {
+            None => return None,
+            Some(b'\n' | b'\r') => continue,
+            Some(_) => {
+                let indent = bytes[line_start..pos]
+                    .iter()
+                    .take_while(|&&c| c == b' ')
+                    .count();
+                return (indent > open_indent).then_some(pos);
+            }
+        }
+    }
 }
 
 /// Advance past a plain (unquoted) scalar value.
@@ -1616,6 +1657,83 @@ artifacts:
     // rivet: verifies REQ-353
     /// A plain scalar folds across a blank line instead of ending there
     /// (REQ-363). Before, `para two` was re-parsed as a key with no colon.
+    // ── REQ-364: quoted scalars spanning lines ──────────────────────────
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn a_multi_line_quoted_scalar_is_one_token() {
+        for (src, kind, text) in [
+            (
+                "k: 'alpha\n  gamma'\nafter: sentinel\n",
+                SyntaxKind::SingleQuotedScalar,
+                "'alpha\n  gamma'",
+            ),
+            (
+                "k: \"alpha\\\n\n  gamma\"\nafter: sentinel\n",
+                SyntaxKind::DoubleQuotedScalar,
+                "\"alpha\\\n\n  gamma\"",
+            ),
+        ] {
+            let tokens = lex(src);
+            assert!(
+                tokens.iter().any(|t| t.kind == kind && t.text == text),
+                "expected one {kind:?} token {text:?}, got {:?}",
+                tokens.iter().map(|t| (t.kind, t.text)).collect::<Vec<_>>()
+            );
+            let root = parse_and_check(src);
+            assert!(
+                collect_entries(&root)
+                    .iter()
+                    .any(|(k, v)| k == "after" && v == "sentinel"),
+                "the key after a multi-line quoted scalar must parse as its own entry"
+            );
+        }
+    }
+
+    /// The continuation rule is STRICTLY deeper than the opening line. With
+    /// `>=`, the unclosed `'it` below continues onto `after:` (same
+    /// indentation) and closes on the quote in `z: 'q'`, swallowing a key.
+    // rivet: verifies REQ-364
+    #[test]
+    fn an_unclosed_quote_does_not_swallow_a_sibling_key() {
+        for src in [
+            "fields:\n  k: 'it\n  after: sentinel\n  z: 'q'\n",
+            "fields:\n  k: \"C:\\\"\n  after: sentinel\n  z: \"q\"\n",
+        ] {
+            // An unclosed quote is not valid YAML, so errors are allowed here;
+            // the tree must still be lossless and keep the sibling key.
+            let (green, _errors) = parse(src);
+            let root = SyntaxNode::new_root(green);
+            assert_eq!(root.text().to_string(), src, "round-trip failed");
+            assert!(
+                collect_entries(&root)
+                    .iter()
+                    .any(|(k, v)| k == "after" && v == "sentinel"),
+                "an unclosed quote must not run into the sibling key: {src:?} -> {:?}",
+                collect_entries(&root)
+            );
+        }
+    }
+
+    /// The lexer also tokenizes block scalar bodies, so a quote in prose is
+    /// where a multi-line scan could run away. The body is deeper than the
+    /// key after it, so the rule stops the scan at the end of the body.
+    // rivet: verifies REQ-364
+    #[test]
+    fn a_quote_in_a_block_body_does_not_swallow_the_next_key() {
+        let src = "fields:\n  k: |\n    Rivet's rule\n    don't 'x\n  after: sentinel\n  z: 'q'\n";
+        let (_green, errors) = parse(src);
+        assert!(errors.is_empty(), "valid YAML: {errors:?}");
+        let root = parse_and_check(src);
+        assert!(
+            collect_entries(&root)
+                .iter()
+                .any(|(k, v)| k == "after" && v == "sentinel"),
+            "a quote inside a block body must not swallow the key after the block: {:?}",
+            collect_entries(&root)
+        );
+    }
+
     // rivet: verifies REQ-363
     #[test]
     fn plain_scalar_continues_across_a_blank_line() {
