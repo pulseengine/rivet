@@ -109,12 +109,19 @@ fn lookup_type<'a>(
     }
 }
 
-/// Regex matching an artifact-id-shaped token in prose: leading
-/// uppercase letter, optional uppercase / digit chars, a `-`, and a
-/// numeric suffix. `\b` boundaries avoid substrings of larger
-/// identifiers. Matches `H-3`, `REQ-028`, `SYSREQ-001`, `CC-12`, etc.
+/// Regex matching an artifact-id-shaped token in prose. An id is a
+/// prefix of one or more `[A-Z][A-Z0-9]*`-shaped segments joined by
+/// `-`, followed by a numeric suffix. `\b` boundaries avoid substrings
+/// of larger identifiers. Matches `H-3`, `REQ-028`, `SYSREQ-001`,
+/// `CC-12`, and multi-segment ids like `CM-TR-001` (#972).
+///
+/// The multi-segment shape is required: with a single-segment prefix
+/// the regex matched the SUFFIX of a compound id
+/// (`\b[A-Z][A-Z0-9]*-[0-9]+\b` picked `TR-001` out of `CM-TR-001`),
+/// which both suggested a false trace to an unrelated `TR-001` and
+/// silently skipped the whole `CM-TR-001` id.
 static ID_MENTION_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b[A-Z][A-Z0-9]*-[0-9]+\b").unwrap());
+    LazyLock::new(|| Regex::new(r"\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]+\b").unwrap());
 
 /// A single validation diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3760,6 +3767,73 @@ then:
         assert!(
             diags.is_empty(),
             "unresolved id must not warn, got {diags:?}"
+        );
+    }
+
+    // rivet: verifies REQ-004 (regression for #972)
+    #[test]
+    fn prose_mention_matches_multi_segment_id_not_its_suffix() {
+        // #972: the previous regex `\b[A-Z][A-Z0-9]*-[0-9]+\b` matched
+        // the SUFFIX of a multi-segment id. Prose saying "as CM-TR-001"
+        // warned about `TR-001` (a false trace to an unrelated
+        // requirement) and never matched `CM-TR-001` whole (so a real
+        // prose mention with no typed link went undetected). Pin both
+        // directions: the whole id is warned about, and the suffix is
+        // not.
+        use crate::schema::LinkTypeDef;
+        use crate::store::Store;
+
+        let mut schema_file = minimal_schema("test");
+        schema_file.link_types.push(LinkTypeDef {
+            name: "relates".into(),
+            inverse: None,
+            description: "test relation".into(),
+            source_types: vec!["test".into()],
+            target_types: vec!["test".into()],
+        });
+        let schema = Schema::merge(&[schema_file]);
+
+        // A-1 mentions CM-TR-001 in prose. Both TR-001 and CM-TR-001
+        // are in the store and would each be legally linkable from
+        // A-1 (all `test`) if a typed link were added.
+        let a = make_artifact(
+            "A-1",
+            "test",
+            None,
+            Some("This work follows CM-TR-001 closely."),
+            vec![],
+            vec![],
+        );
+        let tr = make_artifact("TR-001", "test", None, None, vec![], vec![]);
+        let cmtr = make_artifact("CM-TR-001", "test", None, None, vec![], vec![]);
+
+        let mut store = Store::new();
+        store.insert(a).unwrap();
+        store.insert(tr).unwrap();
+        store.insert(cmtr).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+
+        let diags: Vec<_> = crate::validate::validate(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "prose-mention-without-typed-link")
+            .collect();
+
+        assert_eq!(
+            diags.len(),
+            1,
+            "expected exactly one prose-mention warning (for CM-TR-001), got {diags:?}"
+        );
+        let msg = &diags[0].message;
+        assert!(
+            msg.contains("CM-TR-001"),
+            "warning must name the whole id CM-TR-001: {msg}"
+        );
+        // The message quotes the mentioned id as `'<id>'`; guard on the
+        // exact quoted form so a `CM-TR-001` match here doesn't also
+        // match the substring `TR-001`.
+        assert!(
+            !msg.contains("'TR-001'"),
+            "must not warn about the suffix TR-001 (the pre-#972 false-positive): {msg}"
         );
     }
 
