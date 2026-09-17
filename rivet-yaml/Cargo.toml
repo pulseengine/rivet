@@ -1,0 +1,23 @@
+[package]
+name = "rivet-yaml"
+description = "rivet's own YAML value model and serde entry points (REQ-346)"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+indexmap = "2.2.1"
+itoa = "1"
+ryu = "1"
+# REQ-346 step 2 only: from_str / to_string delegate here. Removed when rivet's
+# own parser and emitter replace the delegate.
+serde_yaml = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

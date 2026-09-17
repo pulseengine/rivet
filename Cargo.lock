@@ -3096,6 +3096,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rivet-yaml"
+version = "0.37.0"
+dependencies = [
+ "indexmap 2.14.0",
+ "itoa",
+ "ryu",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+]
+
+[[package]]
 name = "rmcp"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

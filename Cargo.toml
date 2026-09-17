@@ -4,6 +4,7 @@ members = [
     "rivet-core",
     "rivet-cli",
     "etch",
+    "rivet-yaml",
 ]
 # compose-witness is a sibling cargo project, NOT a workspace member: it
 # builds to a Wasm component (cdylib + wit-bindgen-rt) targeting
