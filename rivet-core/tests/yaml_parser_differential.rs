@@ -267,26 +267,31 @@ fn has_artifacts_key(content: &str) -> bool {
 /// paths now agree and REQ-277 left the set — this constant reddened at
 /// `differ=1` and forced this record, as it is meant to.
 ///
-/// THE 1 REMAINING, characterized against PyYAML rather than merely counted:
+/// It was 1 until REQ-363. **DD-039** writes `alternatives:` as a multi-line
+/// PLAIN scalar; PyYAML and serde fold the continuation line in, and rowan
+/// truncated at the first line (`"...Rejected because it"`). REQ-363 made the
+/// CST keep the continuation (across blank lines too) and the HIR fold it, so
+/// DD-039 left the set — this constant reddened at `differ=0` and forced this
+/// record.
 ///
-/// * **DD-039** — `alternatives:` is a multi-line PLAIN scalar. PyYAML and
-///   serde fold the continuation line in; rowan TRUNCATES at the first line
-///   (`"...Rejected because it"`). Latent here: DD-039 loads through serde in
-///   production and no `safety/stpa` artifact uses a multi-line plain scalar.
-///   It would become live on a read-path migration onto the CST.
+/// ZERO IS THE STEADY STATE. The two paths now agree on every comparable file
+/// in the corpus (26 of 26). Any future divergence is a new defect and must be
+/// characterized against PyYAML, added to `KNOWN_DIVERGING_IDS` by id, and
+/// counted here — never absorbed silently. Zero cannot be reached by comparing
+/// nothing: `differential_survey` separately asserts `compared > 0`.
 ///
 /// Kept as a named constant rather than a bare `differ == 0` so moving the
 /// number in EITHER direction forces this record to be updated.
-const KNOWN_DIVERGENCES: usize = 1;
+const KNOWN_DIVERGENCES: usize = 0;
 
 /// The artifacts behind `KNOWN_DIVERGENCES`, by id.
 ///
-/// The count alone has the same shape as the bug it replaced. When REQ-363
-/// lands, DD-039 stops diverging — and if a DIFFERENT artifact
-/// had meanwhile started diverging, the count would stay put and the gate
-/// would stay green with a new defect swapped into the old one's budget. The
-/// set is asserted as well, so a new instance reddens as a new instance.
-const KNOWN_DIVERGING_IDS: &[&str] = &["DD-039"];
+/// The count alone has the same shape as the bug it replaced: if one known
+/// divergence closed while a DIFFERENT artifact started diverging, the count
+/// would stay put and the gate would stay green with a new defect swapped into
+/// the old one's budget. The set is asserted as well, so a new instance
+/// reddens as a new instance. Empty now; see `KNOWN_DIVERGENCES`.
+const KNOWN_DIVERGING_IDS: &[&str] = &[];
 
 // rivet: verifies REQ-348
 #[test]

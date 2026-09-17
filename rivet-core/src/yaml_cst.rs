@@ -1138,12 +1138,35 @@ impl<'src> Parser<'src> {
 
     // ── Helpers ─────────────────────────────────────────────────────
 
-    /// Check if the line after the current Newline is a plain scalar
-    /// continuation (indented deeper than `entry_indent`, not a new
-    /// mapping entry or sequence item, and not blank).
+    /// Check if the next NON-BLANK line after the current Newline is a plain
+    /// scalar continuation (indented deeper than `entry_indent`, and not a new
+    /// mapping entry, sequence item or comment).
+    ///
+    /// Blank lines are skipped rather than ending the scalar (REQ-363). YAML
+    /// folds a plain scalar across blank lines — each blank line becomes a
+    /// `\n` in the value — and PyYAML and serde_yaml both read
+    /// `k: para one\n  continues\n\n  para two` as `para one continues\npara
+    /// two`. This used to return `false` on a blank line, so `para two` was
+    /// re-parsed as a mapping key and failed with "expected ':' after mapping
+    /// key". That was loud rather than silent, but it refused valid YAML the
+    /// external parser accepted — a regression in waiting for the read-path
+    /// migration. Only previously-erroring input changes: a deeper-indented
+    /// bare line after a blank line has no other valid reading.
     fn is_plain_scalar_continuation(&self, entry_indent: usize) -> bool {
         // self.pos should be at a Newline token
         let mut la = self.pos + 1;
+        // Skip blank lines: a Newline, optionally preceded by whitespace.
+        loop {
+            let mut p = la;
+            if p < self.tokens.len() && self.tokens[p].kind == SyntaxKind::Whitespace {
+                p += 1;
+            }
+            if p < self.tokens.len() && self.tokens[p].kind == SyntaxKind::Newline {
+                la = p + 1;
+                continue;
+            }
+            break;
+        }
         let mut line_indent = 0;
 
         // Measure indent
@@ -1591,6 +1614,114 @@ artifacts:
     }
 
     // rivet: verifies REQ-353
+    /// A plain scalar folds across a blank line instead of ending there
+    /// (REQ-363). Before, `para two` was re-parsed as a key with no colon.
+    // rivet: verifies REQ-363
+    #[test]
+    fn plain_scalar_continues_across_a_blank_line() {
+        let src = "fields:\n  k: para one\n    continues\n\n    para two\n  after: sentinel\n";
+        let (_green, errors) = parse(src);
+        assert!(
+            errors.is_empty(),
+            "a blank line inside a plain scalar is valid YAML: {errors:?}"
+        );
+        let root = parse_and_check(src);
+        let entries = collect_entries(&root);
+        assert!(
+            entries.iter().any(|(k, v)| k == "after" && v == "sentinel"),
+            "the entry after the folded scalar must still parse as its own key: {entries:?}"
+        );
+    }
+
+    /// A comment-only line ENDS a plain scalar; it is never part of the value.
+    ///
+    /// This asserts the CST STRUCTURE rather than an extracted value, and that
+    /// is deliberate. The HIR folding in `yaml_hir::scalar_text` also refuses to
+    /// resume a scalar at a comment, so the two layers mask each other: letting
+    /// the CST admit a comment line leaves every extracted value unchanged
+    /// (the HIR guard catches it), and removing the HIR guard changes nothing
+    /// either (the CST never admits one). Both mutations survived every
+    /// value-level test. Only a structural assertion sees this layer alone.
+    ///
+    /// PyYAML reads both documents here as `k = "one"` / `k = "one two"`, with
+    /// `after = "sentinel"` intact.
+    // rivet: verifies REQ-363
+    #[test]
+    fn a_comment_line_is_never_inside_a_plain_scalar_value_node() {
+        for src in [
+            "fields:\n  k: one\n    # a comment\n  after: sentinel\n",
+            "fields:\n  k: one\n    two\n    # a comment\n  after: sentinel\n",
+        ] {
+            let root = parse_and_check(src);
+            let k_value = root
+                .descendants()
+                .filter(|d| d.kind() == SyntaxKind::MappingEntry)
+                .find(|e| {
+                    e.children()
+                        .find(|c| c.kind() == SyntaxKind::Key)
+                        .is_some_and(|k| k.text().to_string().trim() == "k")
+                })
+                .and_then(|e| e.children().find(|c| c.kind() == SyntaxKind::Value))
+                .expect("k's Value node");
+            let text = k_value.text().to_string();
+            assert!(
+                !text.contains('#'),
+                "a comment-only line must end the plain scalar, not join its Value node: {text:?}"
+            );
+            assert!(
+                collect_entries(&root)
+                    .iter()
+                    .any(|(k, v)| k == "after" && v == "sentinel"),
+                "the following key must still parse as its own entry"
+            );
+        }
+    }
+
+    /// Trailing blank lines before a LESS-indented key are not a continuation:
+    /// skipping blanks must not reach past the end of the value.
+    // rivet: verifies REQ-363
+    #[test]
+    fn plain_scalar_continues_across_a_whitespace_only_line() {
+        // A blank line holding only spaces is still blank. cargo-mutants on
+        // #970 showed the lookahead's whitespace skip was untested: every blank
+        // line in the other tests is an empty `\n`. Without the skip, the
+        // whitespace-only line ends the scalar and `para two` fails to parse.
+        let src = "fields:\n  k: para one\n    continues\n   \n    para two\n  after: sentinel\n";
+        let (_green, errors) = parse(src);
+        assert!(
+            errors.is_empty(),
+            "a whitespace-only line inside a plain scalar is valid YAML: {errors:?}"
+        );
+        let root = parse_and_check(src);
+        assert!(
+            collect_entries(&root)
+                .iter()
+                .any(|(k, v)| k == "k" && v.contains("para two")),
+            "the continuation after the whitespace-only line must stay in k's value: {:?}",
+            collect_entries(&root)
+        );
+        assert!(
+            collect_entries(&root)
+                .iter()
+                .any(|(k, v)| k == "after" && v == "sentinel")
+        );
+    }
+
+    // rivet: verifies REQ-363
+    #[test]
+    fn blank_lines_before_a_sibling_key_do_not_join_it() {
+        let root = parse_and_check("fields:\n  k: value\n\n\n  after: sentinel\n");
+        let entries = collect_entries(&root);
+        assert!(
+            entries.contains(&("k".to_owned(), "value".to_owned())),
+            "{entries:?}"
+        );
+        assert!(
+            entries.contains(&("after".to_owned(), "sentinel".to_owned())),
+            "{entries:?}"
+        );
+    }
+
     #[test]
     fn flow_mapping_as_value() {
         let root = parse_and_check("provenance: {created-by: ai-assisted, model: m}\n");
