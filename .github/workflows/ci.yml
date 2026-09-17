@@ -676,6 +676,15 @@ jobs:
   # would require a semver major/minor bump relative to the base branch.
   # SCRC Phase 2 (DD-063): catch accidental breaking changes before they
   # escape to a release.
+  #
+  # #968: until 2026-09-17 this compared against CRATES.IO, not the base
+  # branch. The `rivet-core` name there is an unrelated 0.1.0, so every run
+  # reported `0 checks: 0 pass, 254 skip` and passed without looking. The
+  # baseline is now the PR's base branch, which needs full history.
+  #
+  # AN INTENDED BREAKING CHANGE is allowed by bumping the workspace version
+  # in the same PR (a 0.x minor bump permits breaking changes), so the break
+  # is visible in the diff rather than waved through by the gate.
   semver-checks:
     name: Semver Checks (rivet-core public API)
     needs: changes
@@ -684,6 +693,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # The previous obi1kenobi/cargo-semver-checks-action@v2 wrapper
@@ -696,7 +707,19 @@ jobs:
       - name: Install cargo-semver-checks
         run: cargo install --locked cargo-semver-checks
       - name: Check rivet-core public API
-        run: cargo semver-checks check-release -p rivet-core --default-features
+        # A PR that bumps rivet-core's version legitimately runs zero checks
+        # (the bump permits breaking changes). That output is the same shape
+        # as the vacuous comparison #968 fixed, so say so loudly rather than
+        # letting `0 checks` read as a pass.
+        run: |
+          set +e
+          cargo semver-checks check-release -p rivet-core --default-features \
+            --baseline-rev "origin/${{ github.base_ref }}" 2>&1 | tee semver.out
+          rc=${PIPESTATUS[0]}
+          if grep -q ' 0 checks:' semver.out; then
+            echo "::warning title=semver-checks ran no checks::this PR changes rivet-core's version, which permits breaking changes. Review the public API diff by hand."
+          fi
+          exit "$rc"
 
   # ── Code coverage (Rust nightly for source-based instrumentation) ───
   coverage:
