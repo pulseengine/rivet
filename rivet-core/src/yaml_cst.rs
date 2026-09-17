@@ -1681,6 +1681,34 @@ artifacts:
     /// skipping blanks must not reach past the end of the value.
     // rivet: verifies REQ-363
     #[test]
+    fn plain_scalar_continues_across_a_whitespace_only_line() {
+        // A blank line holding only spaces is still blank. cargo-mutants on
+        // #970 showed the lookahead's whitespace skip was untested: every blank
+        // line in the other tests is an empty `\n`. Without the skip, the
+        // whitespace-only line ends the scalar and `para two` fails to parse.
+        let src = "fields:\n  k: para one\n    continues\n   \n    para two\n  after: sentinel\n";
+        let (_green, errors) = parse(src);
+        assert!(
+            errors.is_empty(),
+            "a whitespace-only line inside a plain scalar is valid YAML: {errors:?}"
+        );
+        let root = parse_and_check(src);
+        assert!(
+            collect_entries(&root)
+                .iter()
+                .any(|(k, v)| k == "k" && v.contains("para two")),
+            "the continuation after the whitespace-only line must stay in k's value: {:?}",
+            collect_entries(&root)
+        );
+        assert!(
+            collect_entries(&root)
+                .iter()
+                .any(|(k, v)| k == "after" && v == "sentinel")
+        );
+    }
+
+    // rivet: verifies REQ-363
+    #[test]
     fn blank_lines_before_a_sibling_key_do_not_join_it() {
         let root = parse_and_check("fields:\n  k: value\n\n\n  after: sentinel\n");
         let entries = collect_entries(&root);

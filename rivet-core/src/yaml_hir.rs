@@ -1503,14 +1503,19 @@ fn scalar_text(node: &SyntaxNode) -> Option<String> {
                                             }
                                             rowan::NodeOrToken::Token(lt)
                                                 if lt.kind() == SyntaxKind::Whitespace => {}
-                                            rowan::NodeOrToken::Token(lt)
-                                                if lt.kind() != SyntaxKind::Comment =>
-                                            {
+                                            // Resume at the next token. A comment
+                                            // needs no guard here: resuming at one
+                                            // reaches the `Comment => break` arm
+                                            // above at once, and the separator just
+                                            // pushed is trimmed on return. The guard
+                                            // this used to carry was equivalent —
+                                            // cargo-mutants could not kill it (#970).
+                                            rowan::NodeOrToken::Token(_) => {
                                                 resume = Some(el.clone());
                                                 break;
                                             }
-                                            // A comment, or a child node, ends the scalar.
-                                            _ => break,
+                                            // A child node ends the scalar.
+                                            rowan::NodeOrToken::Node(_) => break,
                                         }
                                         look = el.next_sibling_or_token();
                                     }
@@ -2618,6 +2623,59 @@ artifacts:
     #[test]
     fn single_line_plain_scalar_is_unchanged() {
         assert_eq!(field_of("just one line\n"), "just one line");
+    }
+
+    /// A blank line holding only spaces is still a blank line. PyYAML reads
+    /// this as `para one continues\npara two`.
+    // rivet: verifies REQ-363
+    #[test]
+    fn multi_line_plain_scalar_treats_a_whitespace_only_line_as_blank() {
+        assert_eq!(
+            field_of("para one\n        continues\n           \n        para two\n"),
+            "para one continues\npara two"
+        );
+    }
+
+    fn hand_built_value(tokens: &[(SyntaxKind, &str)]) -> SyntaxNode {
+        let mut b = rowan::GreenNodeBuilder::new();
+        b.start_node(SyntaxKind::Value.into());
+        for (kind, text) in tokens {
+            b.token((*kind).into(), text);
+        }
+        b.finish_node();
+        SyntaxNode::new_root(b.finish())
+    }
+
+    /// `scalar_text` ends a plain scalar at a comment. yaml_cst never puts a
+    /// comment inside a plain scalar's Value node (pinned structurally by
+    /// `a_comment_line_is_never_inside_a_plain_scalar_value_node`), so no
+    /// PARSED document reaches that arm, and cargo-mutants on #970 reported it
+    /// as a survivor. A hand-built node reaches it directly, on both shapes: a
+    /// trailing comment on the scalar's line, and a comment-only line after a
+    /// break. Without the arm both read `one # note two`.
+    // rivet: verifies REQ-363
+    #[test]
+    fn scalar_text_ends_a_plain_scalar_at_a_comment_inside_its_node() {
+        use SyntaxKind::{Comment, Newline, PlainScalar, Whitespace};
+        let same_line = hand_built_value(&[
+            (PlainScalar, "one"),
+            (Whitespace, " "),
+            (Comment, "# note"),
+            (Newline, "\n"),
+            (Whitespace, "  "),
+            (PlainScalar, "two"),
+        ]);
+        assert_eq!(scalar_text(&same_line).as_deref(), Some("one"));
+        let next_line = hand_built_value(&[
+            (PlainScalar, "one"),
+            (Newline, "\n"),
+            (Whitespace, "  "),
+            (Comment, "# note"),
+            (Newline, "\n"),
+            (Whitespace, "  "),
+            (PlainScalar, "two"),
+        ]);
+        assert_eq!(scalar_text(&next_line).as_deref(), Some("one"));
     }
 
     /// The same collector reads `title`. A multi-line plain title must fold too,
