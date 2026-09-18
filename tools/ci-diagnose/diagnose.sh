@@ -204,6 +204,16 @@ classify_stall() {
 # #855. A step that failed with work still SKIPPED after it never ran the work
 # at all — calling that a proof break, as happened repeatedly with Kani, is a
 # different wrong answer.
+#
+# The `Post <name>` steps are GitHub's per-action cleanup hooks; the runner
+# schedules them AFTER the workflow's own steps and routinely marks them
+# `skipped` once any earlier step has failed. Counting them alongside real
+# work steps turned "setup-failed" back into the misdiagnosis this classifier
+# was written to prevent: on #970 job 105030664579 the assertion step
+# `Check surviving mutants` failed with 4 missed mutants, and the trailing
+# `Post Run Swatinem/rust-cache@v2` skip was enough to hide it behind
+# "setup-failed" (REQ-316). Only NON-`Post ` skipped steps are evidence that
+# the work never ran.
 classify_failure() {
   local job_json="$1"
   local conclusion
@@ -219,7 +229,10 @@ classify_failure() {
 
   local skipped_after
   skipped_after=$(jq -r --argjson i "$failed_idx" '
-      [.steps[$i + 1 :][]? | select(.conclusion == "skipped")] | length' <<<"$job_json")
+      [.steps[$i + 1 :][]?
+       | select(.conclusion == "skipped"
+                and ((.name // "") | startswith("Post ") | not))]
+      | length' <<<"$job_json")
   if [ "${skipped_after:-0}" -gt 0 ]; then
     echo "setup-failed"
   else

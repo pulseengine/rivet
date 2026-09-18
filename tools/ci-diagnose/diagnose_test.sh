@@ -347,6 +347,33 @@ test_classify_failure() {
       {"name":"Run cargo kani -p rivet-core","conclusion":"skipped"}]}'
   check "setup failed, work skipped" "setup-failed" "$(classify_failure "$setup")"
 
+  # #973 / PR #970 job 105030664579, reduced. The mutation-testing work step
+  # ran and its assertion step failed with 4 missed mutants; the report was
+  # uploaded; then GitHub's own `Post Run …` cleanup hook was skipped, as it
+  # always is once any earlier step has failed. Counting that skip as evidence
+  # the work never ran turned a real assertion break into "setup-failed" —
+  # the misdiagnosis this classifier exists to prevent, the other way around.
+  local mutants_post_skip='{"conclusion":"failure","steps":[
+      {"name":"Set up job","conclusion":"success"},
+      {"name":"Run cargo-mutants","conclusion":"success"},
+      {"name":"Check surviving mutants","conclusion":"failure"},
+      {"name":"Upload mutants report","conclusion":"success"},
+      {"name":"Post Run Swatinem/rust-cache@v2","conclusion":"skipped"},
+      {"name":"Complete job","conclusion":"success"}]}'
+  check "assertion failed, only Post cleanup skipped" "job-failed" \
+    "$(classify_failure "$mutants_post_skip")"
+
+  # Both shapes together: an install action fails so the work step is skipped
+  # AND the trailing `Post …` cleanup is skipped. The non-post skip must still
+  # win — the excluded-post rule cannot silence a genuine setup failure.
+  local setup_with_post='{"conclusion":"failure","steps":[
+      {"name":"Set up job","conclusion":"success"},
+      {"name":"Run model-checking/kani-github-action@v1","conclusion":"failure"},
+      {"name":"Run cargo kani -p rivet-core","conclusion":"skipped"},
+      {"name":"Post Run actions/checkout@v4","conclusion":"skipped"}]}'
+  check "setup failed with a Post skip still after it" "setup-failed" \
+    "$(classify_failure "$setup_with_post")"
+
   check "success is not a failure" "job-passed" \
     "$(classify_failure '{"conclusion":"success","steps":[]}')"
 }
