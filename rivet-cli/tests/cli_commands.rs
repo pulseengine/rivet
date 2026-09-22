@@ -11509,6 +11509,105 @@ fn add_rejects_a_base_field_passed_as_a_custom_field() {
     );
 }
 
+/// `rivet add --release <ver>` must create a release-scoped artifact in one
+/// step (#962). Before this, `add` refused `--field release=…` and pointed to
+/// `--release`, which `add` did not accept, so the caller had to run `add`
+/// followed by `modify --set-release` to express one fact — a common release-
+/// planning case where forgetting the second step silently drops the artifact
+/// out of `rivet list --release`.
+#[test]
+fn add_assigns_a_release_in_one_step() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let init = Command::new(rivet_bin())
+        .args(["init", "--dir", dirs])
+        .output()
+        .expect("init");
+    assert!(init.status.success());
+
+    let add = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "add",
+            "--type",
+            "requirement",
+            "--id",
+            "REQ-VERIFYSTREAM-001",
+            "--title",
+            "verify stream",
+            "--status",
+            "approved",
+            "--release",
+            "v0.36.0",
+        ])
+        .output()
+        .expect("add --release");
+    assert!(
+        add.status.success(),
+        "add --release must succeed; got:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&add.stdout),
+        String::from_utf8_lossy(&add.stderr)
+    );
+
+    // Release readiness IS a query over top-level `release:`. If `--release`
+    // ended up in custom `fields:`, this listing returns nothing — which is
+    // exactly the invisibility the base-field rejection was written to head
+    // off. The new artifact must show up here.
+    let list = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "list",
+            "--release",
+            "v0.36.0",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("list --release");
+    assert!(
+        list.status.success(),
+        "list --release must succeed; got:\n{}",
+        String::from_utf8_lossy(&list.stderr)
+    );
+    let body = String::from_utf8_lossy(&list.stdout);
+    assert!(
+        body.contains("REQ-VERIFYSTREAM-001"),
+        "the added artifact must be visible to `list --release v0.36.0` — \
+         if it isn't, --release landed in custom `fields:`; got:\n{body}"
+    );
+
+    // And it must be a top-level `release:` on the artifact, not filed under
+    // custom `fields:`. `get` in yaml format shows the artifact as stored.
+    let get = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "get",
+            "REQ-VERIFYSTREAM-001",
+            "--format",
+            "yaml",
+        ])
+        .output()
+        .expect("get yaml");
+    assert!(get.status.success());
+    let yaml = String::from_utf8_lossy(&get.stdout);
+    let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("get output is valid YAML");
+    assert_eq!(
+        doc.get("release").and_then(|v| v.as_str()),
+        Some("v0.36.0"),
+        "`release:` must be a top-level base field on the artifact; got:\n{yaml}"
+    );
+    if let Some(fields) = doc.get("fields") {
+        assert!(
+            fields.get("release").is_none(),
+            "`release` must not also be filed under custom `fields:`; got:\n{yaml}"
+        );
+    }
+}
+
 // ── rivet stamp: provenance is merged, not replaced (#912) ──────────────
 
 /// Build a temp project holding one fully-stamped artifact.
