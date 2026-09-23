@@ -1690,6 +1690,124 @@ artifacts:
         }
     }
 
+    /// The OTHER quote character is ordinary content, and `\` escapes only
+    /// inside double quotes. Dropping either guard in `scan_quoted_scalar`
+    /// ends the token early or runs it past its closing quote; PR-diff
+    /// mutation testing on #976 reported all four as survivors, because the
+    /// integration gate that covers them is not a `--lib` test.
+    // rivet: verifies REQ-364
+    #[test]
+    fn a_quote_of_the_other_kind_stays_inside_the_scalar() {
+        for (src, kind, text) in [
+            // An apostrophe inside a double-quoted scalar.
+            (
+                "k: \"it's here\"\n",
+                SyntaxKind::DoubleQuotedScalar,
+                "\"it's here\"",
+            ),
+            // A double quote inside a single-quoted scalar.
+            (
+                "k: 'say \"hi\" now'\n",
+                SyntaxKind::SingleQuotedScalar,
+                "'say \"hi\" now'",
+            ),
+            // `\"` is an escape: the token ends at the LAST quote.
+            (
+                "k: \"a\\\"b\"\n",
+                SyntaxKind::DoubleQuotedScalar,
+                "\"a\\\"b\"",
+            ),
+            // `\` is NOT an escape in single quotes, so this closes.
+            ("k: 'C:\\'\n", SyntaxKind::SingleQuotedScalar, "'C:\\'"),
+        ] {
+            let tokens = lex(src);
+            assert!(
+                tokens.iter().any(|t| t.kind == kind && t.text == text),
+                "expected one {kind:?} token {text:?}, got {:?}",
+                tokens.iter().map(|t| (t.kind, t.text)).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// An escaped line break obeys the same continuation rule as a plain one.
+    /// Reading the byte AFTER the backslash is what distinguishes them: read
+    /// the wrong byte and `\` + break is consumed as an ordinary escape, the
+    /// rule never runs, and the scan runs on into the following lines.
+    ///
+    /// The swallowed line must itself carry a quote for that to show: with the
+    /// rule skipped, the scan closes on THAT quote. Without one, the scan hits
+    /// the next break, the rule refuses there instead, and the damage is
+    /// masked — which is why the first version of this test could not kill the
+    /// mutants #976 reported.
+    // rivet: verifies REQ-364
+    #[test]
+    fn an_escaped_break_does_not_consume_the_line_after_it() {
+        let src = "fields:\n  k: \"alpha\\\nafter: \"sentinel\"\n";
+        let (green, _errors) = parse(src);
+        let root = SyntaxNode::new_root(green);
+        assert_eq!(root.text().to_string(), src, "round-trip failed");
+        let entries = collect_entries(&root);
+        assert!(
+            entries.iter().any(|(k, _)| k == "after"),
+            "the key on the line after an escaped break must stay a key: {entries:?}"
+        );
+    }
+
+    // rivet: verifies REQ-364
+    #[test]
+    fn an_escaped_break_before_a_shallower_line_does_not_continue() {
+        let src = "fields:\n  k: \"alpha\\\nafter: sentinel\n  z: \"q\"\n";
+        let (green, _errors) = parse(src);
+        let root = SyntaxNode::new_root(green);
+        assert_eq!(root.text().to_string(), src, "round-trip failed");
+        assert!(
+            collect_entries(&root)
+                .iter()
+                .any(|(k, v)| k == "after" && v == "sentinel"),
+            "a line at column 0 cannot continue a scalar opened at indent 2: {:?}",
+            collect_entries(&root)
+        );
+    }
+
+    /// The continuation line must be indented STRICTLY deeper, so a line one
+    /// space deeper continues. Measuring the indent from one byte past the
+    /// break undercounts it by one and refuses exactly this case.
+    // rivet: verifies REQ-364
+    #[test]
+    fn a_continuation_one_space_deeper_still_continues() {
+        let src = "fields:\n  k: 'alpha\n   gamma'\n  after: sentinel\n";
+        let root = parse_and_check(src);
+        let entries = collect_entries(&root);
+        assert!(
+            entries.iter().any(|(k, v)| k == "k" && v.contains("gamma")),
+            "indent 3 is deeper than the opening line's 2: {entries:?}"
+        );
+        assert!(entries.iter().any(|(k, v)| k == "after" && v == "sentinel"));
+    }
+
+    /// CRLF input reaches the `\r` half of the break handling, which no
+    /// LF-only test executes at all.
+    // rivet: verifies REQ-364
+    #[test]
+    fn a_multi_line_quoted_scalar_folds_a_crlf_break() {
+        let src = "fields:\r\n  k: 'alpha\r\n    gamma'\r\n  after: sentinel\r\n";
+        let tokens = lex(src);
+        assert!(
+            tokens
+                .iter()
+                .any(|t| t.kind == SyntaxKind::SingleQuotedScalar
+                    && t.text == "'alpha\r\n    gamma'"),
+            "expected one CRLF-spanning quoted token, got {:?}",
+            tokens.iter().map(|t| (t.kind, t.text)).collect::<Vec<_>>()
+        );
+        let root = parse_and_check(src);
+        assert!(
+            collect_entries(&root)
+                .iter()
+                .any(|(k, v)| k == "after" && v == "sentinel")
+        );
+    }
+
     /// The continuation rule is STRICTLY deeper than the opening line. With
     /// `>=`, the unclosed `'it` below continues onto `after:` (same
     /// indentation) and closes on the quote in `z: 'q'`, swallowing a key.

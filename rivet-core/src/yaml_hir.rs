@@ -2834,6 +2834,18 @@ artifacts:
         assert_eq!(field_of("'it''s\n        here'\n"), "it's here");
     }
 
+    /// `''` is TWO quotes; a lone one is content. The lexer never hands this
+    /// helper an undoubled quote (it would have closed the scalar), so the
+    /// guard is only reachable by calling the helper directly — which is why
+    /// mutation testing on #976 reported dropping it as a survivor. Without
+    /// the guard, the quote eats the character after it: `a'b` → `a'`.
+    // rivet: verifies REQ-364
+    #[test]
+    fn a_lone_quote_in_single_quoted_content_is_not_an_escape() {
+        assert_eq!(unquote_single_quoted("a'b"), "a'b");
+        assert_eq!(unquote_single_quoted("a''b"), "a'b");
+    }
+
     /// The reported shape: PyYAML's `safe_dump` wraps a long single-quoted
     /// description at 80 columns. rowan returned `'Controller issues: a
     /// ''quoted'' brake command with a colon: and a`.
