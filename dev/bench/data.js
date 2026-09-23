@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790189478802,
+  "lastUpdate": 1790195304110,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "562a3eb293cad16fbd1f6b37b48ba3fee723d463",
-          "message": "fix(validate): dedupe overlapping sources + deterministic diagnostic order (#746) (#759)\n\nOverlapping sources produced duplicate artifacts and a non-deterministic\ndiagnostic order. This dedupes the source set and makes diagnostic ordering\nstable.\n\nMeasured effect on external-artifact ordering, `/api/v1/artifacts?limit=1000\n&origin=all` against the real repo, same input three times:\n\n  main       PROC,REQ,SYS,THR / REQ,THR,SYS,PROC / PROC,REQ,SYS,THR\n  this PR    PROC,REQ,SYS,THR (stable, positions 0-3)\n\nRun 2 on main differs from runs 1 and 3 — ordering was genuinely\nnon-deterministic before this change.\n\nOn the CI failure this PR carried for 14 days: both red jobs were the same\ntest (api_artifacts_external_excluded_under_variant_scope), and it was the\nPREMISE assertion, not the property under test. It did not reproduce on either\nbase across 3 full serve_integration runs plus the whole workspace suite, and\nafter rebasing onto current main it passes on the first attempt with no retry\n(2257 tests run, 2257 passed, 0 flaky). The original root cause was NOT\nestablished. Recording that plainly rather than crediting the rebase: a green\nrun is absence of evidence here, not an explanation. Two hypotheses were\ntested and discarded — a /api/v1/health readiness race (load_externals is\nsynchronous, called before the socket binds) and window truncation (the\nexternals sit at positions 0-3, inside the 1000 cap).\n\nFound while diagnosing it, filed separately rather than fixed here: #832,\n/api/v1/artifacts silently drops 17 of 1017 artifacts at its limit cap with no\ntruncation signal in the response.\n\nFixes: REQ-004\nRefs: REQ-159, #746",
-          "timestamp": "2026-08-20T11:09:25+02:00",
-          "tree_id": "741720f918732452aa1d315f3d8fab683c19c53f",
-          "url": "https://github.com/pulseengine/rivet/commit/562a3eb293cad16fbd1f6b37b48ba3fee723d463"
-        },
-        "date": 1787217745958,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85092,
-            "range": "± 1124",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 900666,
-            "range": "± 7784",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13898477,
-            "range": "± 852784",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2277,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25777,
-            "range": "± 997",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 350356,
-            "range": "± 1530",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1511327,
-            "range": "± 37036",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164629,
-            "range": "± 2167",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1950803,
-            "range": "± 17028",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 36180103,
-            "range": "± 3324509",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 512376,
-            "range": "± 2972",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 18448920,
-            "range": "± 144953",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1466475660,
-            "range": "± 12012034",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4306,
-            "range": "± 25",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 61112,
-            "range": "± 346",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 779274,
-            "range": "± 12586",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60253,
-            "range": "± 298",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 674785,
-            "range": "± 4971",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8679207,
-            "range": "± 548614",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1075,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14518,
-            "range": "± 71",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 320371,
-            "range": "± 2167",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23479,
-            "range": "± 111",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 163766,
-            "range": "± 1460",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1525053,
-            "range": "± 20942",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1498630,
             "range": "± 38090",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cd27062617eeadcf405aa053e9b682cca1201dc3",
+          "message": "ci(kani): run the suite once on push, and give it a budget it can finish in (#839) (#989)\n\nThe action's final step is `${{ inputs.command }} ${{ inputs.args }}`, so the push path — which passed no args — ran cargo-kani over the whole workspace inside the action, and the job then ran cargo kani -p rivet-core again. The first invocation alone exhausted the budget; both main pushes on 2026-09-23 were cancelled at exactly 45:00 with no proof starting.\n\nNow one invocation scoped to rivet-core, and 90 minutes for the 27-harness suite. Not cached deliberately: install measured ~3s plus ~12s setup, against a 7-minute compile.\n\nRefs: REQ-267\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9",
+          "timestamp": "2026-09-23T21:12:47+02:00",
+          "tree_id": "8b400fd517a7827a0bfe66be68da056416889807",
+          "url": "https://github.com/pulseengine/rivet/commit/cd27062617eeadcf405aa053e9b682cca1201dc3"
+        },
+        "date": 1790195302719,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85127,
+            "range": "± 1771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 910744,
+            "range": "± 30124",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 19184393,
+            "range": "± 1033176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1923,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24420,
+            "range": "± 594",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 351203,
+            "range": "± 3947",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1536517,
+            "range": "± 10213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 163874,
+            "range": "± 2667",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1920849,
+            "range": "± 35390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 29734241,
+            "range": "± 7612735",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 461459,
+            "range": "± 2141",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 14692242,
+            "range": "± 100821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1058107289,
+            "range": "± 16176016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4246,
+            "range": "± 14",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 47009,
+            "range": "± 516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 741845,
+            "range": "± 5226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60119,
+            "range": "± 389",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 725890,
+            "range": "± 3088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8039766,
+            "range": "± 55302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1289,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15149,
+            "range": "± 41",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 248745,
+            "range": "± 1979",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21358,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 145741,
+            "range": "± 656",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1351594,
+            "range": "± 19280",
             "unit": "ns/iter"
           }
         ]
