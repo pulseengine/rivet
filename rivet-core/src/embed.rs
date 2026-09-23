@@ -1257,18 +1257,18 @@ fn read_artifact_field(a: &crate::model::Artifact, name: &str) -> String {
     }
 }
 
-fn yaml_value_to_plain_string(v: &serde_yaml::Value) -> String {
+fn yaml_value_to_plain_string(v: &rivet_yaml::Value) -> String {
     match v {
-        serde_yaml::Value::String(s) => s.clone(),
-        serde_yaml::Value::Number(n) => n.to_string(),
-        serde_yaml::Value::Bool(b) => b.to_string(),
-        serde_yaml::Value::Null => String::new(),
-        serde_yaml::Value::Sequence(seq) => seq
+        rivet_yaml::Value::String(s) => s.clone(),
+        rivet_yaml::Value::Number(n) => n.to_string(),
+        rivet_yaml::Value::Bool(b) => b.to_string(),
+        rivet_yaml::Value::Null => String::new(),
+        rivet_yaml::Value::Sequence(seq) => seq
             .iter()
             .map(yaml_value_to_plain_string)
             .collect::<Vec<_>>()
             .join(","),
-        serde_yaml::Value::Mapping(_) | serde_yaml::Value::Tagged(_) => format!("{v:?}"),
+        rivet_yaml::Value::Mapping(_) | rivet_yaml::Value::Tagged(_) => format!("{v:?}"),
     }
 }
 
@@ -1897,7 +1897,7 @@ mod tests {
         // `fields=id,title,asil` should produce the three columns in order.
         let mut a = plain("REQ-1", "requirement", Some("Auth"), &[]);
         a.fields
-            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
+            .insert("asil".into(), rivet_yaml::Value::String("ASIL-B".into()));
         let store = make_store(vec![a]);
         let schema = Schema::merge(&[]);
         let graph = LinkGraph::build(&store, &schema);
@@ -2045,10 +2045,10 @@ mod tests {
         // ASIL is a common custom YAML field; group-by that.
         let mut a = plain("A", "requirement", None, &[]);
         a.fields
-            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
+            .insert("asil".into(), rivet_yaml::Value::String("ASIL-B".into()));
         let mut b = plain("B", "requirement", None, &[]);
         b.fields
-            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
+            .insert("asil".into(), rivet_yaml::Value::String("ASIL-B".into()));
         let c = plain("C", "requirement", None, &[]); // no asil → unset
         let store = make_store(vec![a, b, c]);
         let schema = Schema::merge(&[]);
@@ -2068,16 +2068,16 @@ mod tests {
         let mut req_a = plain("REQ-1", "requirement", None, &[]);
         req_a
             .fields
-            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
+            .insert("asil".into(), rivet_yaml::Value::String("ASIL-B".into()));
         let mut req_b = plain("REQ-2", "requirement", None, &[]);
         req_b
             .fields
-            .insert("asil".into(), serde_yaml::Value::String("ASIL-D".into()));
+            .insert("asil".into(), rivet_yaml::Value::String("ASIL-D".into()));
         // Non-requirement artifact — should be excluded by type filter.
         let mut test_a = plain("TEST-1", "test", None, &[]);
         test_a
             .fields
-            .insert("asil".into(), serde_yaml::Value::String("ASIL-B".into()));
+            .insert("asil".into(), rivet_yaml::Value::String("ASIL-B".into()));
         let store = make_store(vec![req_a, req_b, test_a]);
         let schema = Schema::merge(&[]);
         let graph = LinkGraph::build(&store, &schema);
@@ -2305,7 +2305,7 @@ traceability-rules:
     required-link: verifies
     target-types: [test]
 "#;
-        let file: crate::schema::SchemaFile = serde_yaml::from_str(yaml).unwrap();
+        let file: crate::schema::SchemaFile = rivet_yaml::from_str(yaml).unwrap();
         Schema::merge(&[file])
     }
 
@@ -2496,7 +2496,7 @@ traceability-rules:
     required-link: verifies
     target-types: [test]
 "#;
-        let file: crate::schema::SchemaFile = serde_yaml::from_str(yaml).unwrap();
+        let file: crate::schema::SchemaFile = rivet_yaml::from_str(yaml).unwrap();
         let schema = Schema::merge(&[file]);
         let store = Store::new();
         let graph = LinkGraph::build(&store, &schema);
@@ -2707,7 +2707,7 @@ traceability-rules:
     required-link: verifies
     target-types: [test]
 "#;
-        let file: crate::schema::SchemaFile = serde_yaml::from_str(yaml).unwrap();
+        let file: crate::schema::SchemaFile = rivet_yaml::from_str(yaml).unwrap();
         let schema = Schema::merge(&[file]);
 
         let mut req1 = plain("REQ-1", "requirement", None, &[]);

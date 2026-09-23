@@ -156,8 +156,8 @@ impl MigrationRecipeFile {
     }
 
     /// Parse a recipe from YAML text.
-    pub fn parse(s: &str) -> Result<Self, serde_yaml::Error> {
-        serde_yaml::from_str(s)
+    pub fn parse(s: &str) -> Result<Self, rivet_yaml::Error> {
+        rivet_yaml::from_str(s)
     }
 }
 
@@ -379,7 +379,7 @@ impl RewriteMap {
 fn enum_conflict_for(
     target_def: &crate::schema::ArtifactTypeDef,
     target_field_name: &str,
-    field_value: &serde_yaml::Value,
+    field_value: &rivet_yaml::Value,
     target_type_name: &str,
 ) -> Option<ChangeKind> {
     let target_field = target_def
@@ -583,10 +583,10 @@ pub fn diff_artifacts(
 /// mechanical / decidable changes and ignores conflicts (they're left
 /// for the conflict-marker path).
 ///
-/// We work at the parsed `serde_yaml::Value` level rather than CST
+/// We work at the parsed `rivet_yaml::Value` level rather than CST
 /// editing for simplicity and because Phase 1 explicitly does not
 /// preserve formatting (snapshots cover the rollback story). The result
-/// is canonical-formatted YAML via `serde_yaml::to_string`.
+/// is canonical-formatted YAML via `rivet_yaml::to_string`.
 pub fn apply_to_file(
     original: &str,
     file_changes: &[&PlannedChange],
@@ -606,7 +606,7 @@ pub fn apply_to_file(
         )));
     }
 
-    let mut doc: serde_yaml::Value = serde_yaml::from_str(original).map_err(Error::Yaml)?;
+    let mut doc: rivet_yaml::Value = rivet_yaml::from_str(original).map_err(Error::Yaml)?;
 
     let artifacts = doc
         .as_mapping_mut()
@@ -663,42 +663,42 @@ pub fn apply_to_file(
         };
 
         let id = map
-            .get(serde_yaml::Value::String("id".into()))
+            .get(rivet_yaml::Value::String("id".into()))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_default();
 
         // ── Type rename ──────────────────────────────────────────────
         let current_type = map
-            .get(serde_yaml::Value::String("type".into()))
+            .get(rivet_yaml::Value::String("type".into()))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
         if let Some(t) = current_type.as_deref() {
             if let Some(tr) = type_map.get(t) {
                 map.insert(
-                    serde_yaml::Value::String("type".into()),
-                    serde_yaml::Value::String(tr.to.clone()),
+                    rivet_yaml::Value::String("type".into()),
+                    rivet_yaml::Value::String(tr.to.clone()),
                 );
             }
         }
 
         // ── Link-type renames ────────────────────────────────────────
         if let Some(links) = map
-            .get_mut(serde_yaml::Value::String("links".into()))
+            .get_mut(rivet_yaml::Value::String("links".into()))
             .and_then(|v| v.as_sequence_mut())
         {
             for link in links.iter_mut() {
                 if let Some(link_map_val) = link.as_mapping_mut() {
                     let current_type = link_map_val
-                        .get(serde_yaml::Value::String("type".into()))
+                        .get(rivet_yaml::Value::String("type".into()))
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
                     if let Some(t) = current_type.as_deref() {
                         if let Some(lr) = link_map.get(t) {
                             link_map_val.insert(
-                                serde_yaml::Value::String("type".into()),
-                                serde_yaml::Value::String(lr.to.clone()),
+                                rivet_yaml::Value::String("type".into()),
+                                rivet_yaml::Value::String(lr.to.clone()),
                             );
                         }
                     }
@@ -719,7 +719,7 @@ pub fn apply_to_file(
         }
     }
 
-    serde_yaml::to_string(&doc).map_err(Error::Yaml)
+    rivet_yaml::to_string(&doc).map_err(Error::Yaml)
 }
 
 /// Like [`apply_to_file`], but tolerates conflict-class changes by
@@ -742,41 +742,41 @@ pub fn apply_to_file_partial(
     apply_to_file(original, &auto, recipe)
 }
 
-fn apply_field_renames(map: &mut serde_yaml::Mapping, renames: &BTreeMap<String, String>) {
+fn apply_field_renames(map: &mut rivet_yaml::Mapping, renames: &BTreeMap<String, String>) {
     // Operate on top-level keys.
     for (from, to) in renames {
-        let key = serde_yaml::Value::String(from.clone());
+        let key = rivet_yaml::Value::String(from.clone());
         if let Some(value) = map.remove(&key) {
-            map.insert(serde_yaml::Value::String(to.clone()), value);
+            map.insert(rivet_yaml::Value::String(to.clone()), value);
         }
     }
     // Operate on nested `fields:` mapping.
     if let Some(fields) = map
-        .get_mut(serde_yaml::Value::String("fields".into()))
+        .get_mut(rivet_yaml::Value::String("fields".into()))
         .and_then(|v| v.as_mapping_mut())
     {
         for (from, to) in renames {
-            let key = serde_yaml::Value::String(from.clone());
+            let key = rivet_yaml::Value::String(from.clone());
             if let Some(value) = fields.remove(&key) {
-                fields.insert(serde_yaml::Value::String(to.clone()), value);
+                fields.insert(rivet_yaml::Value::String(to.clone()), value);
             }
         }
     }
 }
 
-fn apply_field_drops(map: &mut serde_yaml::Mapping, drops: &[(String, UnmappedFieldPolicy)]) {
+fn apply_field_drops(map: &mut rivet_yaml::Mapping, drops: &[(String, UnmappedFieldPolicy)]) {
     // We only operate on the nested `fields:` mapping for drops —
     // top-level keys like `id`, `title`, `status`, `links`, `tags`,
     // `description` are base fields and not dropped by the migration.
     let Some(fields) = map
-        .get_mut(serde_yaml::Value::String("fields".into()))
+        .get_mut(rivet_yaml::Value::String("fields".into()))
         .and_then(|v| v.as_mapping_mut())
     else {
         return;
     };
-    let mut legacy_stash: Vec<(String, serde_yaml::Value)> = Vec::new();
+    let mut legacy_stash: Vec<(String, rivet_yaml::Value)> = Vec::new();
     for (field, policy) in drops {
-        let key = serde_yaml::Value::String(field.clone());
+        let key = rivet_yaml::Value::String(field.clone());
         let Some(value) = fields.remove(&key) else {
             continue;
         };
@@ -788,13 +788,13 @@ fn apply_field_drops(map: &mut serde_yaml::Mapping, drops: &[(String, UnmappedFi
     }
     if !legacy_stash.is_empty() {
         // Get-or-create the `legacy` sub-mapping.
-        let legacy_key = serde_yaml::Value::String("legacy".into());
+        let legacy_key = rivet_yaml::Value::String("legacy".into());
         let legacy_map = match fields.get_mut(&legacy_key) {
-            Some(serde_yaml::Value::Mapping(m)) => m,
+            Some(rivet_yaml::Value::Mapping(m)) => m,
             _ => {
                 fields.insert(
                     legacy_key.clone(),
-                    serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
+                    rivet_yaml::Value::Mapping(rivet_yaml::Mapping::new()),
                 );
                 fields
                     .get_mut(&legacy_key)
@@ -803,24 +803,24 @@ fn apply_field_drops(map: &mut serde_yaml::Mapping, drops: &[(String, UnmappedFi
             }
         };
         for (k, v) in legacy_stash {
-            legacy_map.insert(serde_yaml::Value::String(k), v);
+            legacy_map.insert(rivet_yaml::Value::String(k), v);
         }
     }
 }
 
 // ── Conflict markers (Phase 2) ─────────────────────────────────────────
 
-/// Format a `serde_yaml::Value` as a single-line printable string for
+/// Format a `rivet_yaml::Value` as a single-line printable string for
 /// embedding in conflict markers / diagnostics. Mappings/sequences are
-/// rendered via `serde_yaml::to_string` and trimmed; scalars are
+/// rendered via `rivet_yaml::to_string` and trimmed; scalars are
 /// rendered without surrounding quotes.
-pub fn yaml_value_as_display(v: &serde_yaml::Value) -> String {
+pub fn yaml_value_as_display(v: &rivet_yaml::Value) -> String {
     match v {
-        serde_yaml::Value::Null => "~".to_string(),
-        serde_yaml::Value::Bool(b) => b.to_string(),
-        serde_yaml::Value::Number(n) => n.to_string(),
-        serde_yaml::Value::String(s) => s.clone(),
-        other => serde_yaml::to_string(other)
+        rivet_yaml::Value::Null => "~".to_string(),
+        rivet_yaml::Value::Bool(b) => b.to_string(),
+        rivet_yaml::Value::Number(n) => n.to_string(),
+        rivet_yaml::Value::String(s) => s.clone(),
+        other => rivet_yaml::to_string(other)
             .unwrap_or_default()
             .trim_end()
             .to_string(),
@@ -830,14 +830,14 @@ pub fn yaml_value_as_display(v: &serde_yaml::Value) -> String {
 /// Describe the top-level shape of a parsed YAML document, for
 /// diagnostics when a file does not have the expected `artifacts:`
 /// sequence.
-fn describe_yaml_shape(doc: &serde_yaml::Value) -> &'static str {
+fn describe_yaml_shape(doc: &rivet_yaml::Value) -> &'static str {
     match doc {
-        serde_yaml::Value::Mapping(_) => "a mapping without an `artifacts` key",
-        serde_yaml::Value::Sequence(_) => "a bare sequence",
-        serde_yaml::Value::Null => "an empty document",
-        serde_yaml::Value::Bool(_) | serde_yaml::Value::Number(_) => "a scalar",
-        serde_yaml::Value::String(_) => "a string",
-        serde_yaml::Value::Tagged(_) => "a tagged value",
+        rivet_yaml::Value::Mapping(_) => "a mapping without an `artifacts` key",
+        rivet_yaml::Value::Sequence(_) => "a bare sequence",
+        rivet_yaml::Value::Null => "an empty document",
+        rivet_yaml::Value::Bool(_) | rivet_yaml::Value::Number(_) => "a scalar",
+        rivet_yaml::Value::String(_) => "a string",
+        rivet_yaml::Value::Tagged(_) => "a tagged value",
     }
 }
 
@@ -885,7 +885,7 @@ pub fn write_conflict_markers(
         ));
     };
 
-    let mut doc: serde_yaml::Value = serde_yaml::from_str(original).map_err(Error::Yaml)?;
+    let mut doc: rivet_yaml::Value = rivet_yaml::from_str(original).map_err(Error::Yaml)?;
     let artifacts = doc
         .as_mapping_mut()
         .and_then(|m| m.get_mut("artifacts"))
@@ -901,7 +901,7 @@ pub fn write_conflict_markers(
             continue;
         };
         let id = map
-            .get(serde_yaml::Value::String("id".into()))
+            .get(rivet_yaml::Value::String("id".into()))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string())
             .unwrap_or_default();
@@ -909,12 +909,12 @@ pub fn write_conflict_markers(
             continue;
         }
         if let Some(fields) = map
-            .get_mut(serde_yaml::Value::String("fields".into()))
+            .get_mut(rivet_yaml::Value::String("fields".into()))
             .and_then(|v| v.as_mapping_mut())
         {
             fields.insert(
-                serde_yaml::Value::String(field.clone()),
-                serde_yaml::Value::String(sentinel.clone()),
+                rivet_yaml::Value::String(field.clone()),
+                rivet_yaml::Value::String(sentinel.clone()),
             );
         }
         found = true;
@@ -926,7 +926,7 @@ pub fn write_conflict_markers(
         )));
     }
 
-    let serialised = serde_yaml::to_string(&doc).map_err(Error::Yaml)?;
+    let serialised = rivet_yaml::to_string(&doc).map_err(Error::Yaml)?;
 
     // Splice the sentinel line out and replace it with a multi-line
     // conflict block. We match on `<field>: <sentinel>` so we don't
@@ -1026,9 +1026,9 @@ pub fn restore_artifact_from_snapshot(
     let proj_content = std::fs::read_to_string(&proj_path)
         .map_err(|e| Error::Io(format!("reading {}: {}", proj_path.display(), e)))?;
 
-    let mut proj_doc: serde_yaml::Value =
-        serde_yaml::from_str(&proj_content).map_err(Error::Yaml)?;
-    let snap_doc: serde_yaml::Value = serde_yaml::from_str(&snap_content).map_err(Error::Yaml)?;
+    let mut proj_doc: rivet_yaml::Value =
+        rivet_yaml::from_str(&proj_content).map_err(Error::Yaml)?;
+    let snap_doc: rivet_yaml::Value = rivet_yaml::from_str(&snap_content).map_err(Error::Yaml)?;
 
     // Find the snapshot version of this artifact.
     let snap_artifact = snap_doc
@@ -1076,7 +1076,7 @@ pub fn restore_artifact_from_snapshot(
         proj_artifacts.push(snap_artifact);
     }
 
-    let new_content = serde_yaml::to_string(&proj_doc).map_err(Error::Yaml)?;
+    let new_content = rivet_yaml::to_string(&proj_doc).map_err(Error::Yaml)?;
     std::fs::write(&proj_path, new_content)
         .map_err(|e| Error::Io(format!("writing {}: {}", proj_path.display(), e)))?;
     Ok(())
@@ -1477,10 +1477,10 @@ mod tests {
 
         let mut a = artifact("REQ-001", "requirement");
         a.fields
-            .insert("priority".into(), serde_yaml::Value::String("must".into()));
+            .insert("priority".into(), rivet_yaml::Value::String("must".into()));
         a.fields.insert(
             "category".into(),
-            serde_yaml::Value::String("functional".into()),
+            rivet_yaml::Value::String("functional".into()),
         );
 
         let recipe = dev_to_aspice();
@@ -1680,7 +1680,7 @@ mod tests {
         // target side.
         a.fields.insert(
             "priority".into(),
-            serde_yaml::Value::Number(serde_yaml::Number::from(5)),
+            rivet_yaml::Value::Number(rivet_yaml::Number::from(5)),
         );
         let recipe = dev_to_aspice();
         let map = diff_artifacts(&recipe, &[a], Some(&target));
@@ -1764,7 +1764,7 @@ mod tests {
         // `prio: 7` is out of the target `priority` enum.
         a.fields.insert(
             "prio".into(),
-            serde_yaml::Value::Number(serde_yaml::Number::from(7)),
+            rivet_yaml::Value::Number(rivet_yaml::Number::from(7)),
         );
 
         let map = diff_artifacts(&recipe, &[a], Some(&target));
@@ -1815,7 +1815,7 @@ mod tests {
         let mut a = artifact("REQ-001", "requirement");
         // `prio: should` is in the target `priority` enum.
         a.fields
-            .insert("prio".into(), serde_yaml::Value::String("should".into()));
+            .insert("prio".into(), rivet_yaml::Value::String("should".into()));
 
         let map = diff_artifacts(&recipe, &[a], Some(&target));
 

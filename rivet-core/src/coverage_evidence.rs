@@ -231,7 +231,7 @@ impl CoverageStore {
 pub fn load_evidence(path: &Path) -> Result<CoverageRun, crate::error::Error> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| crate::error::Error::CoverageEvidence(format!("{}: {e}", path.display())))?;
-    let file: CoverageRunFile = serde_yaml::from_str(&content)
+    let file: CoverageRunFile = rivet_yaml::from_str(&content)
         .map_err(|e| crate::error::Error::CoverageEvidence(format!("{}: {e}", path.display())))?;
     if file.schema != SCHEMA_URL {
         return Err(crate::error::Error::CoverageEvidence(format!(

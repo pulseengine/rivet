@@ -250,19 +250,19 @@ fn analysis_diagnostic_to_artifact(
     let mut fields = BTreeMap::new();
     fields.insert(
         "analysis-name".into(),
-        serde_yaml::Value::String(diag.analysis.clone()),
+        rivet_yaml::Value::String(diag.analysis.clone()),
     );
     fields.insert(
         "severity".into(),
-        serde_yaml::Value::String(severity.into()),
+        rivet_yaml::Value::String(severity.into()),
     );
     fields.insert(
         "component-path".into(),
-        serde_yaml::Value::String(diag.path.join(".")),
+        rivet_yaml::Value::String(diag.path.join(".")),
     );
     fields.insert(
         "details".into(),
-        serde_yaml::Value::String(diag.message.clone()),
+        rivet_yaml::Value::String(diag.message.clone()),
     );
 
     Artifact {
@@ -383,15 +383,15 @@ fn component_to_artifact(
     let mut fields = BTreeMap::new();
     fields.insert(
         "category".into(),
-        serde_yaml::Value::String(category.into()),
+        rivet_yaml::Value::String(category.into()),
     );
     fields.insert(
         "aadl-package".into(),
-        serde_yaml::Value::String(pkg_name.into()),
+        rivet_yaml::Value::String(pkg_name.into()),
     );
     fields.insert(
         "classifier-kind".into(),
-        serde_yaml::Value::String(classifier_kind.into()),
+        rivet_yaml::Value::String(classifier_kind.into()),
     );
 
     Artifact {
@@ -416,19 +416,19 @@ fn diagnostic_to_artifact(index: usize, diag: &SparDiagnostic) -> Artifact {
     let mut fields = BTreeMap::new();
     fields.insert(
         "analysis-name".into(),
-        serde_yaml::Value::String(diag.analysis.clone()),
+        rivet_yaml::Value::String(diag.analysis.clone()),
     );
     fields.insert(
         "severity".into(),
-        serde_yaml::Value::String(diag.severity.clone()),
+        rivet_yaml::Value::String(diag.severity.clone()),
     );
     fields.insert(
         "component-path".into(),
-        serde_yaml::Value::String(diag.path.join(".")),
+        rivet_yaml::Value::String(diag.path.join(".")),
     );
     fields.insert(
         "details".into(),
-        serde_yaml::Value::String(diag.message.clone()),
+        rivet_yaml::Value::String(diag.message.clone()),
     );
 
     Artifact {

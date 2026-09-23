@@ -1161,7 +1161,7 @@ async fn test_modify_description_with_backticks_and_newlines() {
     // The resulting file must still parse as YAML.
     let content =
         std::fs::read_to_string(tmp.path().join("artifacts").join("requirements.yaml")).unwrap();
-    let _parsed: serde_yaml::Value = serde_yaml::from_str(&content).unwrap_or_else(|e| {
+    let _parsed: rivet_yaml::Value = rivet_yaml::from_str(&content).unwrap_or_else(|e| {
         panic!("file should parse as YAML after tricky description: {e}\n{content}")
     });
 

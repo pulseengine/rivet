@@ -589,17 +589,17 @@ fn render_artifact_yaml(artifact: &Artifact) -> String {
         lines.push("    fields:".to_string());
         for (key, value) in fields {
             match value {
-                serde_yaml::Value::String(s) => {
+                rivet_yaml::Value::String(s) => {
                     lines.push(format!("      {key}: {}", yaml_render_scalar_value(s, 6)));
                 }
-                serde_yaml::Value::Number(n) => lines.push(format!("      {key}: {n}")),
-                serde_yaml::Value::Bool(b) => lines.push(format!("      {key}: {b}")),
+                rivet_yaml::Value::Number(n) => lines.push(format!("      {key}: {n}")),
+                rivet_yaml::Value::Bool(b) => lines.push(format!("      {key}: {b}")),
                 // Nested sequence/mapping: emit as properly-indented YAML under
                 // the key (serde produces valid YAML; we just shift it right),
                 // not as a block-scalar string — so a list field stays a list.
                 other => {
                     lines.push(format!("      {key}:"));
-                    let nested = serde_yaml::to_string(other).unwrap_or_default();
+                    let nested = rivet_yaml::to_string(other).unwrap_or_default();
                     for nl in nested.lines() {
                         if nl.is_empty() {
                             lines.push(String::new());
@@ -963,7 +963,7 @@ mod tests {
         let mut fields = BTreeMap::new();
         fields.insert(
             "priority".to_string(),
-            serde_yaml::Value::String("critical".to_string()),
+            rivet_yaml::Value::String("critical".to_string()),
         );
 
         let mut artifact = minimal_artifact("REQ-099", "requirement");
@@ -1087,8 +1087,8 @@ mod tests {
         let body = render_artifact_yaml(&artifact);
         // Must parse as a real artifacts document (the bug failed here).
         let doc = format!("schema: dev\nartifacts:\n{body}");
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
         let art = &parsed["artifacts"][0];
         assert_eq!(art["title"].as_str(), Some("Multi word: with colon"));
         assert_eq!(
@@ -1107,16 +1107,16 @@ mod tests {
         artifact.title = "T".to_string();
         artifact.fields.insert(
             "owners".to_string(),
-            serde_yaml::Value::Sequence(vec![
-                serde_yaml::Value::String("alice".to_string()),
-                serde_yaml::Value::String("bob".to_string()),
+            rivet_yaml::Value::Sequence(vec![
+                rivet_yaml::Value::String("alice".to_string()),
+                rivet_yaml::Value::String("bob".to_string()),
             ]),
         );
 
         let body = render_artifact_yaml(&artifact);
         let doc = format!("schema: dev\nartifacts:\n{body}");
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
         let owners = &parsed["artifacts"][0]["fields"]["owners"];
         assert!(
             owners.is_sequence(),
@@ -1146,8 +1146,8 @@ mod tests {
 
         let body = render_artifact_yaml(&artifact);
         let doc = format!("schema: dev\nartifacts:\n{body}");
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&doc).expect("rendered artifact YAML must parse");
         let prov = &parsed["artifacts"][0]["provenance"];
         assert_eq!(prov["created-by"].as_str(), Some("ai-assisted"));
         assert_eq!(prov["model"].as_str(), Some("claude-opus-4-8"));
@@ -1201,7 +1201,7 @@ mod tests {
         let mut overlay = std::collections::BTreeMap::new();
         overlay.insert(
             "priority".to_string(),
-            serde_yaml::Value::String("must".to_string()),
+            rivet_yaml::Value::String("must".to_string()),
         );
         artifact
             .fields_per_variant

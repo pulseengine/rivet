@@ -5878,7 +5878,7 @@ fn cmd_validate(
             let binding_yaml = std::fs::read_to_string(bp)
                 .with_context(|| format!("reading binding {}", bp.display()))?;
             let fb: rivet_core::feature_model::FeatureBinding =
-                serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
+                rivet_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
 
             // Collect bound artifact IDs from effective features
             let bound_ids: std::collections::BTreeSet<String> = resolved
@@ -5913,7 +5913,7 @@ fn cmd_validate(
             let binding_yaml = std::fs::read_to_string(bp)
                 .with_context(|| format!("reading binding {}", bp.display()))?;
             let fb: rivet_core::feature_model::FeatureBinding =
-                serde_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
+                rivet_yaml::from_str(&binding_yaml).context("parsing feature binding")?;
 
             let unknown: Vec<String> = fb
                 .bindings
@@ -7480,7 +7480,7 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
         }
         "yaml" => {
             // Serialize the artifact back to YAML
-            let yaml = serde_yaml::to_string(artifact)
+            let yaml = rivet_yaml::to_string(artifact)
                 .unwrap_or_else(|e| format!("# failed to serialize: {e}"));
             print!("{yaml}");
         }
@@ -7508,8 +7508,8 @@ fn cmd_get(cli: &Cli, id: &str, format: &str) -> Result<bool> {
                 println!("Fields:");
                 for (key, value) in &artifact.fields {
                     let val_str = match value {
-                        serde_yaml::Value::String(s) => s.clone(),
-                        other => serde_yaml::to_string(other)
+                        rivet_yaml::Value::String(s) => s.clone(),
+                        other => rivet_yaml::to_string(other)
                             .unwrap_or_default()
                             .trim()
                             .to_string(),
@@ -7603,8 +7603,8 @@ fn cmd_shard(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     }
     let content =
         std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let doc: serde_yaml::Value =
-        serde_yaml::from_str(&content).with_context(|| format!("parsing {}", path.display()))?;
+    let doc: rivet_yaml::Value =
+        rivet_yaml::from_str(&content).with_context(|| format!("parsing {}", path.display()))?;
     let arts = doc
         .get("artifacts")
         .and_then(|v| v.as_sequence())
@@ -7614,7 +7614,7 @@ fn cmd_shard(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     }
 
     // Collect (id, element); reject missing or duplicate ids before writing.
-    let mut entries: Vec<(String, serde_yaml::Value)> = Vec::new();
+    let mut entries: Vec<(String, rivet_yaml::Value)> = Vec::new();
     let mut ids: BTreeSet<String> = BTreeSet::new();
     for el in arts {
         let id = el
@@ -7639,12 +7639,12 @@ fn cmd_shard(cli: &Cli, file: &std::path::Path) -> Result<bool> {
 
     // Write one `<ID>.yaml` per artifact, preserving every field (Value round-trip).
     for (id, el) in &entries {
-        let mut map = serde_yaml::Mapping::new();
+        let mut map = rivet_yaml::Mapping::new();
         map.insert(
-            serde_yaml::Value::String("artifacts".into()),
-            serde_yaml::Value::Sequence(vec![el.clone()]),
+            rivet_yaml::Value::String("artifacts".into()),
+            rivet_yaml::Value::Sequence(vec![el.clone()]),
         );
-        let body = serde_yaml::to_string(&serde_yaml::Value::Mapping(map))
+        let body = rivet_yaml::to_string(&rivet_yaml::Value::Mapping(map))
             .with_context(|| format!("serializing {id}"))?;
         std::fs::write(dir.join(format!("{id}.yaml")), body)
             .with_context(|| format!("writing {id}.yaml"))?;
@@ -7655,8 +7655,8 @@ fn cmd_shard(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     for (id, _) in &entries {
         let f = dir.join(format!("{id}.yaml"));
         let c = std::fs::read_to_string(&f)?;
-        let v: serde_yaml::Value =
-            serde_yaml::from_str(&c).with_context(|| format!("re-parsing {}", f.display()))?;
+        let v: rivet_yaml::Value =
+            rivet_yaml::from_str(&c).with_context(|| format!("re-parsing {}", f.display()))?;
         if let Some(seq) = v.get("artifacts").and_then(|x| x.as_sequence()) {
             for e in seq {
                 if let Some(i) = e.get("id").and_then(|x| x.as_str()) {
@@ -7744,7 +7744,7 @@ fn cmd_consolidate(cli: &Cli, dir: &std::path::Path, release: &str, dry_run: boo
     }
 
     // Collect the per-id files whose artifact carries this release.
-    let mut packing: Vec<(std::path::PathBuf, serde_yaml::Value)> = Vec::new();
+    let mut packing: Vec<(std::path::PathBuf, rivet_yaml::Value)> = Vec::new();
     let mut packed_ids: BTreeSet<String> = BTreeSet::new();
     let mut loose_after = 0usize;
     for entry in std::fs::read_dir(&path).with_context(|| format!("reading {}", path.display()))? {
@@ -7753,7 +7753,7 @@ fn cmd_consolidate(cli: &Cli, dir: &std::path::Path, release: &str, dry_run: boo
             continue;
         }
         let content = std::fs::read_to_string(&f)?;
-        let doc: serde_yaml::Value = match serde_yaml::from_str(&content) {
+        let doc: rivet_yaml::Value = match rivet_yaml::from_str(&content) {
             Ok(v) => v,
             Err(_) => {
                 loose_after += 1;
@@ -7826,12 +7826,12 @@ fn cmd_consolidate(cli: &Cli, dir: &std::path::Path, release: &str, dry_run: boo
     }
 
     // Write the pack, preserving every field (Value round-trip, as `shard`).
-    let mut map = serde_yaml::Mapping::new();
+    let mut map = rivet_yaml::Mapping::new();
     map.insert(
-        serde_yaml::Value::String("artifacts".into()),
-        serde_yaml::Value::Sequence(packing.iter().map(|(_, el)| el.clone()).collect()),
+        rivet_yaml::Value::String("artifacts".into()),
+        rivet_yaml::Value::Sequence(packing.iter().map(|(_, el)| el.clone()).collect()),
     );
-    let body = serde_yaml::to_string(&serde_yaml::Value::Mapping(map))
+    let body = rivet_yaml::to_string(&rivet_yaml::Value::Mapping(map))
         .context("serializing the consolidated file")?;
     std::fs::write(&target, body).with_context(|| format!("writing {}", target.display()))?;
 
@@ -8489,7 +8489,7 @@ fn discover_variant_binding(
 ) -> Result<rivet_core::feature_model::FeatureBinding> {
     // REQ-106: a variant file may embed its own `bindings:` — it IS its own
     // binding model. Mirrors `rivet variant solve --binding <variant-file>`.
-    if let Ok(fb) = serde_yaml::from_str::<rivet_core::feature_model::FeatureBinding>(variant_yaml)
+    if let Ok(fb) = rivet_yaml::from_str::<rivet_core::feature_model::FeatureBinding>(variant_yaml)
     {
         if !fb.bindings.is_empty() {
             return Ok(fb);
@@ -8514,7 +8514,7 @@ fn discover_variant_binding(
     {
         let yaml =
             std::fs::read_to_string(&p).with_context(|| format!("reading {}", p.display()))?;
-        return serde_yaml::from_str(&yaml)
+        return rivet_yaml::from_str(&yaml)
             .with_context(|| format!("parsing feature binding {}", p.display()));
     }
     Ok(rivet_core::feature_model::FeatureBinding {
@@ -10094,7 +10094,7 @@ fn cmd_supplier_list(cli: &Cli, format: &str) -> Result<bool> {
                     .fields
                     .get("expected-derived-types")
                     .cloned()
-                    .unwrap_or(serde_yaml::Value::Null);
+                    .unwrap_or(rivet_yaml::Value::Null);
                 let received = a
                     .fields
                     .get("received-status")
@@ -10152,7 +10152,7 @@ fn cmd_supplier_list(cli: &Cli, format: &str) -> Result<bool> {
             .fields
             .get("expected-derived-types")
             .and_then(|v| match v {
-                serde_yaml::Value::Sequence(items) => Some(
+                rivet_yaml::Value::Sequence(items) => Some(
                     items
                         .iter()
                         .filter_map(|i| i.as_str())
@@ -10336,12 +10336,12 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str, accept_drift: boo
     let source_of_truth = anchor.fields.get("source-of-truth");
     let org = source_of_truth
         .and_then(|v| v.as_mapping())
-        .and_then(|m| m.get(serde_yaml::Value::String("org".into())))
+        .and_then(|m| m.get(rivet_yaml::Value::String("org".into())))
         .and_then(|v| v.as_str())
         .unwrap_or("unknown-org");
     let contract = source_of_truth
         .and_then(|v| v.as_mapping())
-        .and_then(|m| m.get(serde_yaml::Value::String("contract".into())))
+        .and_then(|m| m.get(rivet_yaml::Value::String("contract".into())))
         .and_then(|v| v.as_str())
         .or_else(|| {
             anchor
@@ -10386,7 +10386,7 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str, accept_drift: boo
     // `--accept-drift` explicitly authorises the new revision.
     let prior_manifest_hash: Option<String> = std::fs::read_to_string(&manifest_path)
         .ok()
-        .and_then(|m| serde_yaml::from_str::<serde_yaml::Value>(&m).ok())
+        .and_then(|m| rivet_yaml::from_str::<rivet_yaml::Value>(&m).ok())
         .and_then(|v| {
             v.get("federation")
                 .and_then(|f| f.get("source-hash"))
@@ -10464,7 +10464,7 @@ fn cmd_supplier_pull(cli: &Cli, anchor_id: &str, format: &str, accept_drift: boo
     // The manifest YAML is hand-authored to be readable; we wrap
     // the provenance struct under a single top-level key so future
     // additions (cached-artifacts:, signatures:) compose cleanly.
-    let manifest = serde_yaml::to_string(&serde_json::json!({
+    let manifest = rivet_yaml::to_string(&serde_json::json!({
         "federation": provenance,
         "cache": {
             "payload": payload_name,
@@ -10719,7 +10719,7 @@ impl MatrixCell {
 const MATRIX_LEGEND: &str = "legend: · absent  ○ applied (not CI-gated)  ● applied + CI-gated";
 
 fn read_string_list(
-    fields: &std::collections::BTreeMap<String, serde_yaml::Value>,
+    fields: &std::collections::BTreeMap<String, rivet_yaml::Value>,
     key: &str,
 ) -> Vec<String> {
     fields
@@ -16151,7 +16151,7 @@ fn cmd_variant_check_all(
     let binding_yaml = std::fs::read_to_string(binding_path)
         .with_context(|| format!("reading {}", binding_path.display()))?;
     let binding: rivet_core::feature_model::FeatureBinding =
-        serde_yaml::from_str(&binding_yaml).context("parsing binding")?;
+        rivet_yaml::from_str(&binding_yaml).context("parsing binding")?;
 
     let mut results: Vec<(String, std::result::Result<(), Vec<String>>)> = Vec::new();
     for vc in &binding.variants {
@@ -16300,7 +16300,7 @@ fn cmd_variant_solve(
         let yaml =
             std::fs::read_to_string(bp).with_context(|| format!("reading {}", bp.display()))?;
         let b: rivet_core::feature_model::FeatureBinding =
-            serde_yaml::from_str(&yaml).context("parsing binding")?;
+            rivet_yaml::from_str(&yaml).context("parsing binding")?;
         Some(b)
     } else {
         None
@@ -16491,10 +16491,10 @@ fn cmd_variant_attr(
     match f.attributes.get(key) {
         Some(v) => {
             match v {
-                serde_yaml::Value::Null => println!(),
-                serde_yaml::Value::Bool(b) => println!("{b}"),
-                serde_yaml::Value::Number(n) => println!("{n}"),
-                serde_yaml::Value::String(s) => println!("{s}"),
+                rivet_yaml::Value::Null => println!(),
+                rivet_yaml::Value::Bool(b) => println!("{b}"),
+                rivet_yaml::Value::Number(n) => println!("{n}"),
+                rivet_yaml::Value::String(s) => println!("{s}"),
                 // list/map → JSON so shells can parse structurally
                 other => {
                     let json =
@@ -16597,10 +16597,10 @@ fn cmd_variant_explain(
                 println!("  attributes:");
                 for (k, v) in a {
                     let rendered = match v {
-                        serde_yaml::Value::Null => "null".into(),
-                        serde_yaml::Value::Bool(b) => b.to_string(),
-                        serde_yaml::Value::Number(n) => n.to_string(),
-                        serde_yaml::Value::String(s) => format!("\"{s}\""),
+                        rivet_yaml::Value::Null => "null".into(),
+                        rivet_yaml::Value::Bool(b) => b.to_string(),
+                        rivet_yaml::Value::Number(n) => n.to_string(),
+                        rivet_yaml::Value::String(s) => format!("\"{s}\""),
                         _ => serde_json::to_string(&rivet_core_yaml_to_json(v))
                             .unwrap_or_else(|_| "<unserializable>".into()),
                     };
@@ -16809,7 +16809,7 @@ fn cmd_variant_manifest(
     let binding_yaml = std::fs::read_to_string(binding_path)
         .with_context(|| format!("reading {}", binding_path.display()))?;
     let binding: rivet_core::feature_model::FeatureBinding =
-        serde_yaml::from_str(&binding_yaml).context("parsing binding model")?;
+        rivet_yaml::from_str(&binding_yaml).context("parsing binding model")?;
 
     let resolved = rivet_core::feature_model::solve_with_bindings(&model, &variant, &binding)
         .map_err(|errs| {
@@ -16924,7 +16924,7 @@ fn cmd_variant_matrix(
     let binding_yaml = std::fs::read_to_string(binding_path)
         .with_context(|| format!("reading {}", binding_path.display()))?;
     let mut binding: rivet_core::feature_model::FeatureBinding =
-        serde_yaml::from_str(&binding_yaml).context("parsing binding model")?;
+        rivet_yaml::from_str(&binding_yaml).context("parsing binding model")?;
 
     // If --variants-dir is given, load every *.yaml there as a VariantConfig
     // and append. Name collisions with binding-inline variants are fatal.
@@ -17033,11 +17033,11 @@ fn cmd_variant_matrix(
 /// YAML→JSON conversion for non-scalar attribute values printed by
 /// `rivet variant attr`. Mirrors the internal helper in `variant_emit`
 /// but is small enough to keep here rather than expose publicly.
-fn rivet_core_yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
+fn rivet_core_yaml_to_json(v: &rivet_yaml::Value) -> serde_json::Value {
     match v {
-        serde_yaml::Value::Null => serde_json::Value::Null,
-        serde_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
-        serde_yaml::Value::Number(n) => {
+        rivet_yaml::Value::Null => serde_json::Value::Null,
+        rivet_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
+        rivet_yaml::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 serde_json::json!(i)
             } else if let Some(u) = n.as_u64() {
@@ -17050,16 +17050,16 @@ fn rivet_core_yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
                 serde_json::Value::Null
             }
         }
-        serde_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
-        serde_yaml::Value::Sequence(items) => {
+        rivet_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
+        rivet_yaml::Value::Sequence(items) => {
             serde_json::Value::Array(items.iter().map(rivet_core_yaml_to_json).collect())
         }
-        serde_yaml::Value::Mapping(m) => {
+        rivet_yaml::Value::Mapping(m) => {
             let mut out = serde_json::Map::new();
             for (k, v) in m {
                 let key = match k {
-                    serde_yaml::Value::String(s) => s.clone(),
-                    other => serde_yaml::to_string(other)
+                    rivet_yaml::Value::String(s) => s.clone(),
+                    other => rivet_yaml::to_string(other)
                         .unwrap_or_default()
                         .trim()
                         .to_string(),
@@ -17068,7 +17068,7 @@ fn rivet_core_yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
             }
             serde_json::Value::Object(out)
         }
-        serde_yaml::Value::Tagged(t) => rivet_core_yaml_to_json(&t.value),
+        rivet_yaml::Value::Tagged(t) => rivet_core_yaml_to_json(&t.value),
     }
 }
 
@@ -18002,7 +18002,7 @@ fn cmd_import_results_junit(
             run: run.run.clone(),
             results: run.results.clone(),
         };
-        let yaml = serde_yaml::to_string(&run_file).context("failed to serialize run to YAML")?;
+        let yaml = rivet_yaml::to_string(&run_file).context("failed to serialize run to YAML")?;
         std::fs::write(&out_path, &yaml)
             .with_context(|| format!("failed to write {}", out_path.display()))?;
     }
@@ -18322,9 +18322,9 @@ fn cmd_add(
     }
 
     // Build fields map
-    let mut fields_map: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+    let mut fields_map: BTreeMap<String, rivet_yaml::Value> = BTreeMap::new();
     for (key, value) in fields {
-        fields_map.insert(key.clone(), serde_yaml::Value::String(value.clone()));
+        fields_map.insert(key.clone(), rivet_yaml::Value::String(value.clone()));
     }
 
     // Build links
@@ -18952,7 +18952,7 @@ enum BatchMutation {
         #[serde(default)]
         links: Vec<BatchLink>,
         #[serde(default)]
-        fields: std::collections::BTreeMap<String, serde_yaml::Value>,
+        fields: std::collections::BTreeMap<String, rivet_yaml::Value>,
     },
     Link {
         source: String,
@@ -18993,7 +18993,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
     let content = std::fs::read_to_string(file)
         .with_context(|| format!("reading batch file {}", file.display()))?;
 
-    let batch: BatchFile = serde_yaml::from_str(&content).with_context(|| "parsing batch file")?;
+    let batch: BatchFile = rivet_yaml::from_str(&content).with_context(|| "parsing batch file")?;
 
     if batch.mutations.is_empty() {
         println!("batch: no mutations to apply");

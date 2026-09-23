@@ -299,7 +299,7 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
                 .iter()
                 .filter(|id| {
                     let declared = store.get(id).is_some_and(|a| {
-                        a.fields.get(field) == Some(&serde_yaml::Value::Bool(true))
+                        a.fields.get(field) == Some(&rivet_yaml::Value::Bool(true))
                     });
                     if declared {
                         exempt_ids.push((*id).to_string());
@@ -455,7 +455,7 @@ fn terminates_at_external_anchor(
             // only honour the boundary when the rule is unrestricted.
             continue;
         };
-        let serde_yaml::Value::Sequence(items) = expected else {
+        let rivet_yaml::Value::Sequence(items) = expected else {
             continue;
         };
         let anchor_provides: Vec<&str> = items.iter().filter_map(|v| v.as_str()).collect();
@@ -850,7 +850,7 @@ mod tests {
         let mut anchor = minimal_artifact("ANCHOR-ACME-001", "external-anchor");
         anchor.fields.insert(
             "expected-derived-types".into(),
-            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("requirement".into())]),
+            rivet_yaml::Value::Sequence(vec![rivet_yaml::Value::String("requirement".into())]),
         );
         store.insert(anchor).unwrap();
         store
@@ -913,7 +913,7 @@ mod tests {
         let mut anchor = minimal_artifact("ANCHOR-X", "external-anchor");
         anchor.fields.insert(
             "expected-derived-types".into(),
-            serde_yaml::Value::Sequence(vec![serde_yaml::Value::String("verification".into())]),
+            rivet_yaml::Value::Sequence(vec![rivet_yaml::Value::String("verification".into())]),
         );
         store.insert(anchor).unwrap();
         store
@@ -1235,7 +1235,7 @@ mod tests {
         let mut undeveloped = minimal_artifact("G-002", "safety-goal");
         undeveloped
             .fields
-            .insert("undeveloped".into(), serde_yaml::Value::Bool(true));
+            .insert("undeveloped".into(), rivet_yaml::Value::Bool(true));
         store.upsert(undeveloped);
 
         let graph = LinkGraph::build(&store, &schema);
@@ -1302,7 +1302,7 @@ mod tests {
         let mut explicit_false = minimal_artifact("G-001", "safety-goal");
         explicit_false
             .fields
-            .insert("undeveloped".into(), serde_yaml::Value::Bool(false));
+            .insert("undeveloped".into(), rivet_yaml::Value::Bool(false));
         store.upsert(explicit_false);
         store.upsert(minimal_artifact("G-002", "safety-goal")); // field absent
 

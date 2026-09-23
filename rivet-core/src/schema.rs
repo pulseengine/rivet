@@ -690,27 +690,27 @@ fn get_field_value<'a>(artifact: &'a Artifact, field: &str) -> Option<Cow<'a, st
     }
 }
 
-/// Convert a `serde_yaml::Value` to a `Cow<str>`.
+/// Convert a `rivet_yaml::Value` to a `Cow<str>`.
 ///
 /// Returns `None` for null values; returns a debug representation for
 /// complex types (sequences, mappings).
-fn yaml_value_to_cow(v: &serde_yaml::Value) -> Option<Cow<'_, str>> {
+fn yaml_value_to_cow(v: &rivet_yaml::Value) -> Option<Cow<'_, str>> {
     match v {
-        serde_yaml::Value::String(s) => Some(Cow::Borrowed(s.as_str())),
-        serde_yaml::Value::Bool(b) => Some(Cow::Owned(b.to_string())),
-        serde_yaml::Value::Number(n) => Some(Cow::Owned(n.to_string())),
-        serde_yaml::Value::Null => None,
+        rivet_yaml::Value::String(s) => Some(Cow::Borrowed(s.as_str())),
+        rivet_yaml::Value::Bool(b) => Some(Cow::Owned(b.to_string())),
+        rivet_yaml::Value::Number(n) => Some(Cow::Owned(n.to_string())),
+        rivet_yaml::Value::Null => None,
         _ => Some(Cow::Owned(format!("{v:?}"))),
     }
 }
 
-/// Resolve a dotted path within a `serde_yaml::Value`.
+/// Resolve a dotted path within a `rivet_yaml::Value`.
 ///
 /// For example, given a mapping `{created-by: ai, reviewed-by: alice}` and
 /// `rest = "created-by"`, returns `Some(Cow::Borrowed("ai"))`.
 ///
 /// Supports arbitrary nesting depth (e.g., `a.b.c`).
-fn resolve_dotted_path<'a>(value: &'a serde_yaml::Value, rest: &str) -> Option<Cow<'a, str>> {
+fn resolve_dotted_path<'a>(value: &'a rivet_yaml::Value, rest: &str) -> Option<Cow<'a, str>> {
     let mapping = value.as_mapping()?;
     if let Some(dot_pos) = rest.find('.') {
         let key = &rest[..dot_pos];
@@ -1068,7 +1068,7 @@ impl Schema {
     pub fn load_file(path: &Path) -> Result<SchemaFile, Error> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| Error::Io(format!("{}: {}", path.display(), e)))?;
-        let schema_file: SchemaFile = serde_yaml::from_str(&content)
+        let schema_file: SchemaFile = rivet_yaml::from_str(&content)
             .map_err(|e| Error::Schema(format!("{}: {}", path.display(), e)))?;
         Ok(schema_file)
     }
@@ -1454,7 +1454,7 @@ mod tests {
     }
 
     /// Build an artifact with custom fields in the `fields` map.
-    fn artifact_with_fields(id: &str, fields: Vec<(&str, serde_yaml::Value)>) -> Artifact {
+    fn artifact_with_fields(id: &str, fields: Vec<(&str, rivet_yaml::Value)>) -> Artifact {
         let mut a = minimal_artifact(id, "test");
         for (k, v) in fields {
             a.fields.insert(k.to_string(), v);
@@ -1527,7 +1527,7 @@ mod tests {
     fn get_field_value_custom_string_field() {
         let a = artifact_with_fields(
             "X-1",
-            vec![("safety", serde_yaml::Value::String("ASIL_B".into()))],
+            vec![("safety", rivet_yaml::Value::String("ASIL_B".into()))],
         );
         let val = get_field_value(&a, "safety");
         assert_eq!(val, Some(Cow::Borrowed("ASIL_B")));
@@ -1535,7 +1535,7 @@ mod tests {
 
     #[test]
     fn get_field_value_custom_bool_field() {
-        let a = artifact_with_fields("X-1", vec![("critical", serde_yaml::Value::Bool(true))]);
+        let a = artifact_with_fields("X-1", vec![("critical", rivet_yaml::Value::Bool(true))]);
         let val = get_field_value(&a, "critical");
         assert_eq!(val, Some(Cow::<str>::Owned("true".into())));
     }
@@ -1546,7 +1546,7 @@ mod tests {
             "X-1",
             vec![(
                 "priority",
-                serde_yaml::Value::Number(serde_yaml::Number::from(42)),
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(42)),
             )],
         );
         let val = get_field_value(&a, "priority");
@@ -1610,7 +1610,7 @@ mod tests {
         let re = cond.compile_regex();
         let a = artifact_with_fields(
             "X-1",
-            vec![("safety", serde_yaml::Value::String("ASIL_D".into()))],
+            vec![("safety", rivet_yaml::Value::String("ASIL_D".into()))],
         );
         assert!(cond.matches_artifact_with(&a, re.as_ref()));
     }
@@ -1624,7 +1624,7 @@ mod tests {
         let re = cond.compile_regex();
         let a = artifact_with_fields(
             "X-1",
-            vec![("safety", serde_yaml::Value::String("QM".into()))],
+            vec![("safety", rivet_yaml::Value::String("QM".into()))],
         );
         assert!(!cond.matches_artifact_with(&a, re.as_ref()));
     }
@@ -1639,7 +1639,7 @@ mod tests {
         };
         let a = artifact_with_fields(
             "X-1",
-            vec![("safety", serde_yaml::Value::String("ASIL_C".into()))],
+            vec![("safety", rivet_yaml::Value::String("ASIL_C".into()))],
         );
         assert!(cond.matches_artifact_with(&a, None));
     }
@@ -1669,16 +1669,16 @@ mod tests {
 
     // ── dotted field access tests ───────────────────────────────────────
 
-    /// Helper: create a provenance mapping as a serde_yaml::Value.
-    fn provenance_mapping(entries: &[(&str, &str)]) -> serde_yaml::Value {
-        let mut map = serde_yaml::Mapping::new();
+    /// Helper: create a provenance mapping as a rivet_yaml::Value.
+    fn provenance_mapping(entries: &[(&str, &str)]) -> rivet_yaml::Value {
+        let mut map = rivet_yaml::Mapping::new();
         for (k, v) in entries {
             map.insert(
-                serde_yaml::Value::String(k.to_string()),
-                serde_yaml::Value::String(v.to_string()),
+                rivet_yaml::Value::String(k.to_string()),
+                rivet_yaml::Value::String(v.to_string()),
             );
         }
-        serde_yaml::Value::Mapping(map)
+        rivet_yaml::Value::Mapping(map)
     }
 
     #[test]
@@ -1715,7 +1715,7 @@ mod tests {
     fn get_field_value_dotted_path_root_not_mapping() {
         let a = artifact_with_fields(
             "X-1",
-            vec![("provenance", serde_yaml::Value::String("flat".into()))],
+            vec![("provenance", rivet_yaml::Value::String("flat".into()))],
         );
         let val = get_field_value(&a, "provenance.created-by");
         assert_eq!(val, None);
@@ -1723,17 +1723,17 @@ mod tests {
 
     #[test]
     fn get_field_value_dotted_path_deeply_nested() {
-        let mut inner = serde_yaml::Mapping::new();
+        let mut inner = rivet_yaml::Mapping::new();
         inner.insert(
-            serde_yaml::Value::String("key".into()),
-            serde_yaml::Value::String("deep-value".into()),
+            rivet_yaml::Value::String("key".into()),
+            rivet_yaml::Value::String("deep-value".into()),
         );
-        let mut outer = serde_yaml::Mapping::new();
+        let mut outer = rivet_yaml::Mapping::new();
         outer.insert(
-            serde_yaml::Value::String("nested".into()),
-            serde_yaml::Value::Mapping(inner),
+            rivet_yaml::Value::String("nested".into()),
+            rivet_yaml::Value::Mapping(inner),
         );
-        let a = artifact_with_fields("X-1", vec![("root", serde_yaml::Value::Mapping(outer))]);
+        let a = artifact_with_fields("X-1", vec![("root", rivet_yaml::Value::Mapping(outer))]);
         let val = get_field_value(&a, "root.nested.key");
         assert_eq!(val, Some(Cow::Borrowed("deep-value")));
     }

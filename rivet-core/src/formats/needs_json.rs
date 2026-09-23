@@ -302,29 +302,29 @@ const EXCLUDED_EXTRA_KEYS: &[&str] = &[
     "max_content_lines",
 ];
 
-fn json_value_to_yaml(v: &serde_json::Value) -> serde_yaml::Value {
+fn json_value_to_yaml(v: &serde_json::Value) -> rivet_yaml::Value {
     match v {
-        serde_json::Value::Null => serde_yaml::Value::Null,
-        serde_json::Value::Bool(b) => serde_yaml::Value::Bool(*b),
+        serde_json::Value::Null => rivet_yaml::Value::Null,
+        serde_json::Value::Bool(b) => rivet_yaml::Value::Bool(*b),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                serde_yaml::Value::Number(serde_yaml::Number::from(i))
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(i))
             } else if let Some(f) = n.as_f64() {
-                serde_yaml::Value::Number(serde_yaml::Number::from(f))
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(f))
             } else {
-                serde_yaml::Value::String(n.to_string())
+                rivet_yaml::Value::String(n.to_string())
             }
         }
-        serde_json::Value::String(s) => serde_yaml::Value::String(s.clone()),
+        serde_json::Value::String(s) => rivet_yaml::Value::String(s.clone()),
         serde_json::Value::Array(arr) => {
-            serde_yaml::Value::Sequence(arr.iter().map(json_value_to_yaml).collect())
+            rivet_yaml::Value::Sequence(arr.iter().map(json_value_to_yaml).collect())
         }
         serde_json::Value::Object(map) => {
             let mapping = map
                 .iter()
-                .map(|(k, v)| (serde_yaml::Value::String(k.clone()), json_value_to_yaml(v)))
+                .map(|(k, v)| (rivet_yaml::Value::String(k.clone()), json_value_to_yaml(v)))
                 .collect();
-            serde_yaml::Value::Mapping(mapping)
+            rivet_yaml::Value::Mapping(mapping)
         }
     }
 }
@@ -551,11 +551,11 @@ mod tests {
         // Extra fields should be present (underscores replaced with dashes in keys).
         assert_eq!(
             a.fields.get("priority"),
-            Some(&serde_yaml::Value::String("high".into()))
+            Some(&rivet_yaml::Value::String("high".into()))
         );
         assert_eq!(
             a.fields.get("safety-level"),
-            Some(&serde_yaml::Value::String("ASIL-B".into()))
+            Some(&rivet_yaml::Value::String("ASIL-B".into()))
         );
         // Empty status should become None.
         assert!(a.status.is_none());

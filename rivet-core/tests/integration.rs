@@ -82,7 +82,7 @@ fn make_artifact_full(
     status: Option<&str>,
     tags: &[&str],
     links: Vec<Link>,
-    fields: BTreeMap<String, serde_yaml::Value>,
+    fields: BTreeMap<String, rivet_yaml::Value>,
 ) -> Artifact {
     Artifact {
         id: id.into(),
@@ -165,7 +165,7 @@ fn test_generic_yaml_roundtrip() {
             vec![],
             {
                 let mut f = BTreeMap::new();
-                f.insert("priority".into(), serde_yaml::Value::String("must".into()));
+                f.insert("priority".into(), rivet_yaml::Value::String("must".into()));
                 f
             },
         ),
@@ -184,7 +184,7 @@ fn test_generic_yaml_roundtrip() {
                 let mut f = BTreeMap::new();
                 f.insert(
                     "rationale".into(),
-                    serde_yaml::Value::String("For testing".into()),
+                    rivet_yaml::Value::String("For testing".into()),
                 );
                 f
             },
@@ -755,7 +755,7 @@ fn test_reqif_roundtrip() {
             vec![],
             {
                 let mut f = BTreeMap::new();
-                f.insert("priority".into(), serde_yaml::Value::String("must".into()));
+                f.insert("priority".into(), rivet_yaml::Value::String("must".into()));
                 f
             },
         ),
@@ -1022,7 +1022,7 @@ fn test_diff_modified_artifact() {
             let mut f = BTreeMap::new();
             f.insert(
                 "priority".into(),
-                serde_yaml::Value::String("should".into()),
+                rivet_yaml::Value::String("should".into()),
             );
             f
         },
@@ -1050,7 +1050,7 @@ fn test_diff_modified_artifact() {
         ],
         {
             let mut f = BTreeMap::new();
-            f.insert("priority".into(), serde_yaml::Value::String("must".into()));
+            f.insert("priority".into(), rivet_yaml::Value::String("must".into()));
             f
         },
     ))
@@ -1408,7 +1408,7 @@ schema:
   license: Apache-2.0
 "#;
     let schema_file: rivet_core::schema::SchemaFile =
-        serde_yaml::from_str(yaml).expect("parse schema with optional fields");
+        rivet_yaml::from_str(yaml).expect("parse schema with optional fields");
     assert_eq!(schema_file.schema.name, "test-schema");
     assert_eq!(schema_file.schema.version, "1.0.0");
     assert_eq!(

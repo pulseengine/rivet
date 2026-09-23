@@ -55,7 +55,7 @@ fn artifact_yaml(description_value: &str) -> String {
 /// Parse with both paths and assert they agree on the description and that
 /// neither lost the key that follows it.
 fn assert_paths_agree(yaml: &str, context: &str) -> Result<String, TestCaseError> {
-    let serde: serde_yaml::Value = serde_yaml::from_str(yaml).map_err(|e| {
+    let serde: rivet_yaml::Value = rivet_yaml::from_str(yaml).map_err(|e| {
         TestCaseError::fail(format!(
             "GENERATOR produced invalid YAML ({e}): {context} {yaml:?}"
         ))

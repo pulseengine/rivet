@@ -1054,17 +1054,17 @@ pub fn modify_artifact_yaml(
                 .map(|(_, rest)| rest.trim())
                 .unwrap_or("");
             if after_colon.starts_with('{') {
-                let mut map: serde_yaml::Mapping =
-                    serde_yaml::from_str(after_colon).map_err(|e| {
+                let mut map: rivet_yaml::Mapping =
+                    rivet_yaml::from_str(after_colon).map_err(|e| {
                         Error::Validation(format!(
                             "parsing flow-style `fields:` map for '{id}': {e}"
                         ))
                     })?;
                 map.insert(
-                    serde_yaml::Value::String(key.clone()),
-                    serde_yaml::Value::String(value.clone()),
+                    rivet_yaml::Value::String(key.clone()),
+                    rivet_yaml::Value::String(value.clone()),
                 );
-                let block = serde_yaml::to_string(&map).map_err(|e| {
+                let block = rivet_yaml::to_string(&map).map_err(|e| {
                     Error::Validation(format!("re-emitting `fields:` map for '{id}': {e}"))
                 })?;
                 let indent = " ".repeat(sub_indent);
@@ -1172,7 +1172,7 @@ pub fn modify_artifact_yaml(
     // YAML fails here with the caller's id and the parser's own diagnostic,
     // rather than being written to disk and blamed on the next `rivet
     // validate` on a file the tool itself just wrote.
-    serde_yaml::from_str::<serde_yaml::Value>(&out).map_err(|e| {
+    rivet_yaml::from_str::<rivet_yaml::Value>(&out).map_err(|e| {
         Error::Validation(format!(
             "modify produced invalid YAML for '{id}' (post-write parse check): {e}"
         ))
@@ -1894,7 +1894,7 @@ artifacts:
         let output = editor.to_string();
 
         // Must parse back as YAML — no unquoted-scalar corruption.
-        let parsed: serde_yaml::Value = serde_yaml::from_str(&output)
+        let parsed: rivet_yaml::Value = rivet_yaml::from_str(&output)
             .unwrap_or_else(|e| panic!("output must parse as YAML: {e}\n---\n{output}"));
         let desc = &parsed["artifacts"][0]["description"];
         let s = desc.as_str().expect("description should be a string");
@@ -1925,7 +1925,7 @@ artifacts:
         let output = editor.to_string();
 
         // Must parse back cleanly.
-        let parsed: serde_yaml::Value = serde_yaml::from_str(&output)
+        let parsed: rivet_yaml::Value = rivet_yaml::from_str(&output)
             .unwrap_or_else(|e| panic!("output must parse as YAML: {e}\n---\n{output}"));
         assert_eq!(
             parsed["artifacts"][0]["description"].as_str(),
@@ -1950,8 +1950,8 @@ artifacts:
         let store = crate::store::Store::new();
         let out =
             modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
         assert_eq!(
             parsed["artifacts"][0]["description"].as_str(),
             Some("Updated via --set-description"),
@@ -1990,8 +1990,8 @@ artifacts:
             modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
 
         // Must still be valid YAML — the corruption made this fail.
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
         let arts = parsed["artifacts"].as_sequence().expect("artifacts seq");
         // The sibling artifact must survive (it used to vanish).
         assert_eq!(arts.len(), 2, "both artifacts must remain after the edit");
@@ -2032,8 +2032,8 @@ artifacts:
         let store = crate::store::Store::new();
         let out =
             modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
         assert_eq!(
             parsed["artifacts"][0]["fields"]["priority"].as_str(),
             Some("should"),
@@ -2074,8 +2074,8 @@ artifacts:
             modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
 
         // Must still parse — the corruption made this fail.
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
         assert_eq!(
             parsed["artifacts"][0]["release"].as_str(),
             Some("v0.22.0"),
@@ -2122,8 +2122,8 @@ artifacts:
         let out =
             modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
 
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
         assert_eq!(
             parsed["artifacts"][0]["release"].as_str(),
             Some("v1.0.0"),
@@ -2174,8 +2174,8 @@ artifacts:
 
         // The whole document must still parse — the regression produced a
         // block-mapping/sequence type clash that serde_yaml rejects outright.
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
 
         // The orphaned `- core` / `- safety` lines must be GONE: the new
         // flow-style value fully replaces the old block list.
@@ -2187,7 +2187,7 @@ artifacts:
             .as_sequence()
             .expect("tags must be a sequence")
             .iter()
-            .filter_map(serde_yaml::Value::as_str)
+            .filter_map(rivet_yaml::Value::as_str)
             .collect();
         assert_eq!(tags, vec!["core", "safety", "newtag"]);
 
@@ -2231,8 +2231,8 @@ artifacts:
             modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
 
         // Must still be valid YAML — the raw-write corruption made this fail.
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
         let arts = parsed["artifacts"].as_sequence().expect("artifacts seq");
         assert_eq!(arts.len(), 2, "both artifacts must survive the edit");
         assert_eq!(
@@ -2277,8 +2277,8 @@ artifacts:
         let out =
             modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
 
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
         assert_eq!(
             parsed["artifacts"].as_sequence().map(Vec::len),
             Some(2),
@@ -2314,8 +2314,8 @@ artifacts:
         let out =
             modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
 
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
         assert_eq!(
             parsed["artifacts"][0]["fields"]["rationale"].as_str(),
             Some(hostile),
@@ -2344,7 +2344,7 @@ artifacts:
     }
 
     fn assert_rationale_replaced(out: &str, case: &str) {
-        let parsed: serde_yaml::Value = serde_yaml::from_str(out)
+        let parsed: rivet_yaml::Value = rivet_yaml::from_str(out)
             .unwrap_or_else(|e| panic!("{case}: output must parse as YAML: {e}\n---\n{out}"));
         assert_eq!(
             parsed["artifacts"][0]["fields"]["rationale"].as_str(),
@@ -2499,7 +2499,7 @@ artifacts:
       priority: should",
         );
         assert_rationale_replaced(&out, "with following artifact");
-        let parsed: serde_yaml::Value = serde_yaml::from_str(&out).expect("must parse");
+        let parsed: rivet_yaml::Value = rivet_yaml::from_str(&out).expect("must parse");
         assert_eq!(
             parsed["artifacts"][1]["id"].as_str(),
             Some("REQ-002"),
@@ -2565,8 +2565,8 @@ artifacts:
             &store,
         )
         .expect("modify must succeed");
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&out).expect("issue-979 output must parse as YAML");
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("issue-979 output must parse as YAML");
         assert_eq!(
             parsed["artifacts"][0]["fields"]["verification-description"].as_str(),
             Some("SHORT TEST VALUE"),
@@ -2616,7 +2616,7 @@ artifacts:
         // Confirm serde_yaml itself rejects the shape, so the gate isn't
         // asserting a stricter rule than the parser it defers to.
         assert!(
-            serde_yaml::from_str::<serde_yaml::Value>(broken).is_err(),
+            rivet_yaml::from_str::<rivet_yaml::Value>(broken).is_err(),
             "the synthesized corruption must be genuinely unparseable — otherwise\
              the gate cannot catch it"
         );

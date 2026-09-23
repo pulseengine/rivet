@@ -71,12 +71,12 @@ pub struct FileRecord {
 impl RivetVersion {
     /// Parse a YAML pin file.
     pub fn from_yaml(yaml: &str) -> Result<Self, Error> {
-        serde_yaml::from_str(yaml).map_err(|e| Error::Schema(format!(".rivet-version: {e}")))
+        rivet_yaml::from_str(yaml).map_err(|e| Error::Schema(format!(".rivet-version: {e}")))
     }
 
     /// Serialise to YAML for writing.
     pub fn to_yaml(&self) -> Result<String, Error> {
-        serde_yaml::to_string(self)
+        rivet_yaml::to_string(self)
             .map_err(|e| Error::Schema(format!(".rivet-version to_yaml: {e}")))
     }
 

@@ -193,7 +193,7 @@ impl std::fmt::Display for CitedSourceParseError {
     }
 }
 
-/// Parse a `serde_yaml::Value` into a typed `CitedSource`.
+/// Parse a `rivet_yaml::Value` into a typed `CitedSource`.
 ///
 /// Validates that:
 /// - the value is a mapping
@@ -201,19 +201,19 @@ impl std::fmt::Display for CitedSourceParseError {
 /// - `kind` is one of the allowed enum values
 /// - the URI scheme (when one is present) is in `ALLOWED_URI_SCHEMES`
 ///   (relative paths and bare filenames are accepted for `kind: file`)
-pub fn parse_cited_source(value: &serde_yaml::Value) -> Result<CitedSource, CitedSourceParseError> {
+pub fn parse_cited_source(value: &rivet_yaml::Value) -> Result<CitedSource, CitedSourceParseError> {
     let map = value
         .as_mapping()
         .ok_or(CitedSourceParseError::NotAMapping)?;
 
     let uri = map
-        .get(serde_yaml::Value::String("uri".into()))
+        .get(rivet_yaml::Value::String("uri".into()))
         .and_then(|v| v.as_str())
         .ok_or(CitedSourceParseError::MissingUri)?
         .to_string();
 
     let kind_raw = map
-        .get(serde_yaml::Value::String("kind".into()))
+        .get(rivet_yaml::Value::String("kind".into()))
         .and_then(|v| v.as_str())
         .ok_or(CitedSourceParseError::MissingKind)?;
 
@@ -238,12 +238,12 @@ pub fn parse_cited_source(value: &serde_yaml::Value) -> Result<CitedSource, Cite
     }
 
     let sha256 = map
-        .get(serde_yaml::Value::String("sha256".into()))
+        .get(rivet_yaml::Value::String("sha256".into()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
     let last_checked = map
-        .get(serde_yaml::Value::String("last-checked".into()))
+        .get(rivet_yaml::Value::String("last-checked".into()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
@@ -834,8 +834,8 @@ mod tests {
     use std::collections::BTreeMap;
     use std::io::Write;
 
-    fn yaml_value(s: &str) -> serde_yaml::Value {
-        serde_yaml::from_str(s).expect("valid YAML")
+    fn yaml_value(s: &str) -> rivet_yaml::Value {
+        rivet_yaml::from_str(s).expect("valid YAML")
     }
 
     #[test]
@@ -1036,13 +1036,13 @@ last-checked: 2026-04-28T14:30:00Z
             provenance: None,
             source_file: None,
         };
-        let mut cs_map = serde_yaml::Mapping::new();
+        let mut cs_map = rivet_yaml::Mapping::new();
         cs_map.insert("uri".into(), "doc.md".into());
         cs_map.insert("kind".into(), "file".into());
         cs_map.insert("sha256".into(), original_hash.into());
         artifact
             .fields
-            .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
+            .insert("cited-source".into(), rivet_yaml::Value::Mapping(cs_map));
 
         let diags = validate_cited_sources(vec![artifact], dir.path(), false, false, false);
         assert!(diags.iter().any(|d| d.rule == "cited-source-drift"));
@@ -1070,13 +1070,13 @@ last-checked: 2026-04-28T14:30:00Z
             provenance: None,
             source_file: None,
         };
-        let mut cs_map = serde_yaml::Mapping::new();
+        let mut cs_map = rivet_yaml::Mapping::new();
         cs_map.insert("uri".into(), "doc.md".into());
         cs_map.insert("kind".into(), "file".into());
         cs_map.insert("sha256".into(), original_hash.into());
         artifact
             .fields
-            .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
+            .insert("cited-source".into(), rivet_yaml::Value::Mapping(cs_map));
 
         let diags = validate_cited_sources(vec![artifact], dir.path(), true, false, false);
         let drift = diags
@@ -1258,14 +1258,14 @@ artifacts:
             provenance: None,
             source_file: None,
         };
-        let mut cs_map = serde_yaml::Mapping::new();
+        let mut cs_map = rivet_yaml::Mapping::new();
         cs_map.insert("uri".into(), "doc.md".into());
         cs_map.insert("kind".into(), "file".into());
         cs_map.insert("sha256".into(), h.into());
         // Note: no last-checked
         artifact
             .fields
-            .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
+            .insert("cited-source".into(), rivet_yaml::Value::Mapping(cs_map));
 
         let diags = validate_cited_sources(vec![artifact], dir.path(), false, false, false);
         let stale = diags
@@ -1296,7 +1296,7 @@ artifacts:
             provenance: None,
             source_file: None,
         };
-        let mut cs_map = serde_yaml::Mapping::new();
+        let mut cs_map = rivet_yaml::Mapping::new();
         cs_map.insert("uri".into(), "doc.md".into());
         cs_map.insert("kind".into(), "file".into());
         cs_map.insert("sha256".into(), h.into());
@@ -1304,7 +1304,7 @@ artifacts:
         cs_map.insert("last-checked".into(), "1970-01-01T00:00:00Z".into());
         artifact
             .fields
-            .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
+            .insert("cited-source".into(), rivet_yaml::Value::Mapping(cs_map));
 
         let diags = validate_cited_sources(vec![artifact], dir.path(), false, true, false);
         let stale = diags
@@ -1360,14 +1360,14 @@ artifacts:
             provenance: None,
             source_file: None,
         };
-        let mut cs_map = serde_yaml::Mapping::new();
+        let mut cs_map = rivet_yaml::Mapping::new();
         cs_map.insert("uri".into(), "doc.md".into());
         cs_map.insert("kind".into(), "file".into());
         cs_map.insert("sha256".into(), h.into());
         cs_map.insert("last-checked".into(), fresh.into());
         artifact
             .fields
-            .insert("cited-source".into(), serde_yaml::Value::Mapping(cs_map));
+            .insert("cited-source".into(), rivet_yaml::Value::Mapping(cs_map));
 
         let diags = validate_cited_sources(vec![artifact], dir.path(), false, false, false);
         assert!(

@@ -6,7 +6,7 @@ pub enum Error {
     Io(String),
 
     #[error("YAML parse error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
+    Yaml(#[from] rivet_yaml::Error),
 
     #[error("Schema error: {0}")]
     Schema(String),

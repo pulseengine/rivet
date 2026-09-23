@@ -920,7 +920,7 @@ pub fn render_requirements(
                 );
                 for (k, v) in &art.fields {
                     let val_str = match v {
-                        serde_yaml::Value::String(s) => html_escape(s),
+                        rivet_yaml::Value::String(s) => html_escape(s),
                         other => html_escape(&format!("{other:?}")),
                     };
                     writeln!(
@@ -1577,7 +1577,7 @@ fn render_stpa_sec_hierarchy(out: &mut String, store: &Store, _graph: &LinkGraph
 
 /// Append CIA impact badges if the artifact has a `cia-impact` or
 /// `cybersecurity-properties` field.
-fn render_cia_badges(out: &mut String, fields: &BTreeMap<String, serde_yaml::Value>) {
+fn render_cia_badges(out: &mut String, fields: &BTreeMap<String, rivet_yaml::Value>) {
     // Check for cia-impact or cybersecurity-properties field
     let cia_field = fields
         .get("cia-impact")
@@ -1585,9 +1585,9 @@ fn render_cia_badges(out: &mut String, fields: &BTreeMap<String, serde_yaml::Val
 
     if let Some(val) = cia_field {
         match val {
-            serde_yaml::Value::Sequence(items) => {
+            rivet_yaml::Value::Sequence(items) => {
                 for item in items {
-                    if let serde_yaml::Value::String(s) = item {
+                    if let rivet_yaml::Value::String(s) = item {
                         write!(
                             out,
                             " <span class=\"badge badge-info\">{}</span>",
@@ -1597,7 +1597,7 @@ fn render_cia_badges(out: &mut String, fields: &BTreeMap<String, serde_yaml::Val
                     }
                 }
             }
-            serde_yaml::Value::String(s) => {
+            rivet_yaml::Value::String(s) => {
                 write!(
                     out,
                     " <span class=\"badge badge-info\">{}</span>",
@@ -2387,7 +2387,7 @@ fn render_document_body_for_export(
                 .iter()
                 .map(|(k, v)| {
                     let val = match v {
-                        serde_yaml::Value::String(s) => s.clone(),
+                        rivet_yaml::Value::String(s) => s.clone(),
                         other => format!("{other:?}"),
                     };
                     (k.clone(), val)

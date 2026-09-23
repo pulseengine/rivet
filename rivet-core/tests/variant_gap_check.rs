@@ -42,7 +42,7 @@ use rivet_core::feature_model::{FeatureModel, VariantConfig, solve};
 /// PV has a closed attribute type system (ps:integer / ps:float /
 /// ps:boolean / ps:string / ps:version / ps:element / ps:feature,
 /// manual §10.1 line 6075). Rivet stores attributes as
-/// `BTreeMap<String, serde_yaml::Value>` (feature_model.rs:78) with
+/// `BTreeMap<String, rivet_yaml::Value>` (feature_model.rs:78) with
 /// no declared types. A YAML model that writes `asil-numeric: "3"`
 /// (string) and one that writes `asil-numeric: 3` (int) are both
 /// accepted without comment.
@@ -160,13 +160,13 @@ selects:
 deselects:
   - asil-c
 "#;
-    let parsed: Result<VariantConfig, _> = serde_yaml::from_str(overlay_yaml);
+    let parsed: Result<VariantConfig, _> = rivet_yaml::from_str(overlay_yaml);
     match parsed {
         Ok(vc) => {
             // If parse succeeded but no `extends` field existed on the
             // struct, serde will have silently dropped it — confirm by
             // re-encoding and checking the key is absent.
-            let roundtrip = serde_yaml::to_string(&vc).unwrap();
+            let roundtrip = rivet_yaml::to_string(&vc).unwrap();
             assert!(
                 !roundtrip.contains("extends"),
                 "VariantConfig now preserves `extends` — gap closing? \
@@ -277,7 +277,7 @@ bindings:
       - glob: "src/perception/pedestrian/asil_c/**"
         when: '(has-tag "asil-c")'
 "#;
-    let parsed: Result<FeatureBinding, _> = serde_yaml::from_str(yaml);
+    let parsed: Result<FeatureBinding, _> = rivet_yaml::from_str(yaml);
     assert!(
         parsed.is_ok(),
         "expected Binding.source to accept `{{glob, when}}` entries — gap still open ({:?})",

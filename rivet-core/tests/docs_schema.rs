@@ -268,7 +268,7 @@ fn all_embedded_constants_parse_as_yaml() {
     ];
 
     for (name, content) in all {
-        let parsed: Result<rivet_core::schema::SchemaFile, _> = serde_yaml::from_str(content);
+        let parsed: Result<rivet_core::schema::SchemaFile, _> = rivet_yaml::from_str(content);
         assert!(
             parsed.is_ok(),
             "embedded schema constant for '{name}' must be valid YAML: {:?}",
@@ -285,7 +285,7 @@ fn all_embedded_constants_parse_as_yaml() {
 fn all_bridge_schemas_parse_as_yaml() {
     for bridge in rivet_core::embedded::BRIDGE_SCHEMAS {
         let parsed: Result<rivet_core::schema::SchemaFile, _> =
-            serde_yaml::from_str(bridge.content);
+            rivet_yaml::from_str(bridge.content);
         assert!(
             parsed.is_ok(),
             "bridge schema '{}' must be valid YAML: {:?}",

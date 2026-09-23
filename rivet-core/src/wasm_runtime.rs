@@ -531,17 +531,17 @@ fn convert_wit_artifact_to_host(
         .map(|f| {
             let value = match f.value {
                 adapter_bindings::pulseengine::rivet::types::FieldValue::Text(s) => {
-                    serde_yaml::Value::String(s)
+                    rivet_yaml::Value::String(s)
                 }
                 adapter_bindings::pulseengine::rivet::types::FieldValue::Number(n) => {
-                    serde_yaml::Value::Number(serde_yaml::Number::from(n))
+                    rivet_yaml::Value::Number(rivet_yaml::Number::from(n))
                 }
                 adapter_bindings::pulseengine::rivet::types::FieldValue::Boolean(b) => {
-                    serde_yaml::Value::Bool(b)
+                    rivet_yaml::Value::Bool(b)
                 }
                 adapter_bindings::pulseengine::rivet::types::FieldValue::TextList(list) => {
-                    serde_yaml::Value::Sequence(
-                        list.into_iter().map(serde_yaml::Value::String).collect(),
+                    rivet_yaml::Value::Sequence(
+                        list.into_iter().map(rivet_yaml::Value::String).collect(),
                     )
                 }
             };
@@ -601,17 +601,17 @@ fn convert_host_artifact_to_wit(
     }
 }
 
-/// Convert a `serde_yaml::Value` to a WIT `FieldValue`.
+/// Convert a `rivet_yaml::Value` to a WIT `FieldValue`.
 fn yaml_value_to_wit_field(
-    value: &serde_yaml::Value,
+    value: &rivet_yaml::Value,
 ) -> adapter_bindings::pulseengine::rivet::types::FieldValue {
     use adapter_bindings::pulseengine::rivet::types::FieldValue;
 
     match value {
-        serde_yaml::Value::String(s) => FieldValue::Text(s.clone()),
-        serde_yaml::Value::Bool(b) => FieldValue::Boolean(*b),
-        serde_yaml::Value::Number(n) => FieldValue::Number(n.as_f64().unwrap_or(0.0)),
-        serde_yaml::Value::Sequence(seq) => {
+        rivet_yaml::Value::String(s) => FieldValue::Text(s.clone()),
+        rivet_yaml::Value::Bool(b) => FieldValue::Boolean(*b),
+        rivet_yaml::Value::Number(n) => FieldValue::Number(n.as_f64().unwrap_or(0.0)),
+        rivet_yaml::Value::Sequence(seq) => {
             let strings: Vec<String> = seq
                 .iter()
                 .filter_map(|v| v.as_str().map(String::from))
@@ -819,7 +819,7 @@ mod tests {
         assert_eq!(host.links[0].target, "REQ-000");
         assert_eq!(
             host.fields.get("priority"),
-            Some(&serde_yaml::Value::String("high".into()))
+            Some(&rivet_yaml::Value::String("high".into()))
         );
 
         // Round-trip back to WIT
@@ -836,30 +836,30 @@ mod tests {
         use adapter_bindings::pulseengine::rivet::types::FieldValue;
 
         // String
-        let v = serde_yaml::Value::String("hello".into());
+        let v = rivet_yaml::Value::String("hello".into());
         match yaml_value_to_wit_field(&v) {
             FieldValue::Text(s) => assert_eq!(s, "hello"),
             other => panic!("expected Text, got {:?}", other),
         }
 
         // Boolean
-        let v = serde_yaml::Value::Bool(true);
+        let v = rivet_yaml::Value::Bool(true);
         match yaml_value_to_wit_field(&v) {
             FieldValue::Boolean(b) => assert!(b),
             other => panic!("expected Boolean, got {:?}", other),
         }
 
         // Number
-        let v = serde_yaml::Value::Number(serde_yaml::Number::from(42));
+        let v = rivet_yaml::Value::Number(rivet_yaml::Number::from(42));
         match yaml_value_to_wit_field(&v) {
             FieldValue::Number(n) => assert!((n - 42.0).abs() < f64::EPSILON),
             other => panic!("expected Number, got {:?}", other),
         }
 
         // Sequence of strings
-        let v = serde_yaml::Value::Sequence(vec![
-            serde_yaml::Value::String("a".into()),
-            serde_yaml::Value::String("b".into()),
+        let v = rivet_yaml::Value::Sequence(vec![
+            rivet_yaml::Value::String("a".into()),
+            rivet_yaml::Value::String("b".into()),
         ]);
         match yaml_value_to_wit_field(&v) {
             FieldValue::TextList(list) => assert_eq!(list, vec!["a", "b"]),

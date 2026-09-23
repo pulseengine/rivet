@@ -229,7 +229,7 @@ fn apply_rewrites_dev_to_aspice_and_validate_reports_expected_link_gaps() {
     // until they do, `rivet validate` names exactly what is missing.
     //
     // Pre-REQ-091: the rowan-yaml CST silently dropped flush-left
-    // sequences (which is the format serde_yaml::to_string emits),
+    // sequences (which is the format rivet_yaml::to_string emits),
     // so validate read zero artifacts from the migrated files and
     // exited 0 — the test "passed" by hiding the gap. After REQ-091
     // the validator sees the artifacts and surfaces the real link
@@ -386,7 +386,7 @@ fn make_conflicted_project() -> (tempfile::TempDir, PathBuf, String) {
     };
     std::fs::write(
         mig_root.join("plan.yaml"),
-        serde_yaml::to_string(&rewrite).unwrap(),
+        rivet_yaml::to_string(&rewrite).unwrap(),
     )
     .unwrap();
 
@@ -404,7 +404,7 @@ fn make_conflicted_project() -> (tempfile::TempDir, PathBuf, String) {
     let _ = ResolutionStatus::Pending; // ensure import is referenced
     std::fs::write(
         mig_root.join("manifest.yaml"),
-        serde_yaml::to_string(&manifest).unwrap(),
+        rivet_yaml::to_string(&manifest).unwrap(),
     )
     .unwrap();
     std::fs::write(mig_root.join("state"), "PLANNED").unwrap();
