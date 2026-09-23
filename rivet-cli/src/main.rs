@@ -1184,6 +1184,14 @@ enum Command {
         #[arg(long, default_value = "draft")]
         status: String,
 
+        /// Assign the artifact to a release at creation. This is a top-level
+        /// base field (not a custom `fields:` entry), so `rivet list --release
+        /// <ver>` and the release-readiness queries see it. Equivalent to
+        /// `rivet add … && rivet modify <ID> --set-release <ver>`, in one
+        /// step (#962).
+        #[arg(long)]
+        release: Option<String>,
+
         /// Comma-separated tags
         #[arg(long, value_delimiter = ',')]
         tags: Vec<String>,
@@ -2983,6 +2991,7 @@ fn run(cli: Cli) -> Result<bool> {
             id,
             description,
             status,
+            release,
             tags,
             fields,
             links,
@@ -2996,6 +3005,7 @@ fn run(cli: Cli) -> Result<bool> {
             id.as_deref(),
             description.as_deref(),
             status,
+            release.as_deref(),
             tags,
             fields,
             links,
@@ -18224,6 +18234,7 @@ fn cmd_add(
     explicit_id: Option<&str>,
     description: Option<&str>,
     status: &str,
+    release: Option<&str>,
     tags: &[String],
     fields: &[(String, String)],
     links: &[(String, String)],
@@ -18332,7 +18343,7 @@ fn cmd_add(
         title: title.to_string(),
         description: description.map(|s| s.to_string()),
         status: Some(status.to_string()),
-        release: None,
+        release: release.map(str::to_string),
         tags: tags.to_vec(),
         links: link_vec,
         fields: fields_map,

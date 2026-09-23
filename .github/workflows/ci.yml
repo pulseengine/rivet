@@ -676,6 +676,15 @@ jobs:
   # would require a semver major/minor bump relative to the base branch.
   # SCRC Phase 2 (DD-063): catch accidental breaking changes before they
   # escape to a release.
+  #
+  # #968: until 2026-09-17 this compared against CRATES.IO, not the base
+  # branch. The `rivet-core` name there is an unrelated 0.1.0, so every run
+  # reported `0 checks: 0 pass, 254 skip` and passed without looking. The
+  # baseline is now the PR's base branch, which needs full history.
+  #
+  # AN INTENDED BREAKING CHANGE is allowed by bumping the workspace version
+  # in the same PR (a 0.x minor bump permits breaking changes), so the break
+  # is visible in the diff rather than waved through by the gate.
   semver-checks:
     name: Semver Checks (rivet-core public API)
     needs: changes
@@ -684,6 +693,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # The previous obi1kenobi/cargo-semver-checks-action@v2 wrapper
@@ -696,7 +707,19 @@ jobs:
       - name: Install cargo-semver-checks
         run: cargo install --locked cargo-semver-checks
       - name: Check rivet-core public API
-        run: cargo semver-checks check-release -p rivet-core --default-features
+        # A PR that bumps rivet-core's version legitimately runs zero checks
+        # (the bump permits breaking changes). That output is the same shape
+        # as the vacuous comparison #968 fixed, so say so loudly rather than
+        # letting `0 checks` read as a pass.
+        run: |
+          set +e
+          cargo semver-checks check-release -p rivet-core --default-features \
+            --baseline-rev "origin/${{ github.base_ref }}" 2>&1 | tee semver.out
+          rc=${PIPESTATUS[0]}
+          if grep -q ' 0 checks:' semver.out; then
+            echo "::warning title=semver-checks ran no checks::this PR changes rivet-core's version, which permits breaking changes. Review the public API diff by hand."
+          fi
+          exit "$rc"
 
   # ── Code coverage (Rust nightly for source-based instrumentation) ───
   coverage:
@@ -1336,15 +1359,38 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+      # BOTH the action and the Kani version are pinned (#839).
+      #
+      # Unpinned, this job broke twice in a week from upstream releases it
+      # adopted silently:
+      #
+      #   1. `@v1` is a BRANCH, not a tag. Kani 0.68.0 changed `kani --version`
+      #      to `Kani Rust Verifier <v> (…)`, the action's install script could
+      #      not parse it, and every run failed with "The version of Kani
+      #      installed was different than the one requested" — before any proof
+      #      ran. Fixed upstream in 69d357ba (2026-09-20); pinned to that SHA,
+      #      as REQ-267 pins dtolnay/rust-toolchain.
+      #   2. With no `kani-version`, the action installs `latest`. Kani 0.68.0
+      #      (2026-09-16) ICEs on this crate graph: kani-compiler panics with
+      #      `TryFromIntError(PosOverflow)` at codegen/rvalue.rs:1009 while
+      #      codegen'ing `regex_automata::meta::strategy::new`, a transitive
+      #      dependency. That is an upstream bug, not a proof failure, and it
+      #      is why `cargo kani` was reported as skipped rather than red.
+      #
+      # 0.67.0 is the release before that ICE. Raise it deliberately, after
+      # checking a run, rather than by letting `latest` move on its own.
       # PR runs: smoke-test only (--only-codegen, ~5 min). Full Kani
       # runs on push to main (still 45 min budget). The 27-harness
       # full suite was overrunning the 45 min budget mid-unwind.
       - if: github.event_name == 'pull_request'
-        uses: model-checking/kani-github-action@v1
+        uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1 @ 2026-09-20
         with:
+          kani-version: '0.67.0'
           args: '-p rivet-core --only-codegen'
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: model-checking/kani-github-action@v1
+        uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1 @ 2026-09-20
+        with:
+          kani-version: '0.67.0'
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: cargo kani -p rivet-core
 
