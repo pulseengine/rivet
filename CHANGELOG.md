@@ -5,9 +5,118 @@
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-09-23
+
+v0.37.0 collected diagnostics that lied about themselves. This release is about
+the layer underneath all of them: **rivet's own YAML reader was wrong in five
+different ways, and every one of them was silently corrupting data in
+production.** Not one was reported by a user. Each was found by comparing
+rivet's two parsers against each other, or against an independent reader, over
+the real corpus — and each fix reddened the gate that found it before it went
+green.
+
+The worst of them: 148 of 154 STPA descriptions in this repository were read
+wrong (REQ-361), every controller's `feedback` field existed nowhere in rivet's
+model (REQ-365), and a description written by PyYAML's own `safe_dump` was
+truncated at its first line with `rivet validate` still reporting PASS
+(REQ-364). The differential gate that caught the last two did not exist when
+the release opened; REQ-348 built it, and it has since found a live defect on
+its first run every time it was widened.
+
+### Added
+- **`rivet consolidate <dir> --release <version>`** (REQ-334) — the inverse of
+  `rivet shard`: packs a shipped release's per-id files back into one file, and
+  refuses to write an empty pack rather than reporting success over nothing.
+- **Unscoped work is now surfaced in release readiness** (REQ-345) — 601 of 706
+  artifacts carried no `release:` and were invisible to every readiness query.
+  `rivet release status` now reports them as an explicit informational count.
+- **`rivet get` renders `release` and `provenance`** (REQ-355) — the
+  single-artifact inspector hid two first-class fields, which is why an earlier
+  parser investigation could not compare provenance at all.
+- **`rivet add --release`** (#962) — assigns a release at creation instead of
+  requiring a second `modify` call.
+
+### Fixed — the YAML read path
+- **Block scalars were not folded** (REQ-361) — `>` and its `-`/`+` chomping
+  were ignored on the rowan path, so 148 of 154 STPA descriptions disagreed
+  with PyYAML in production. Ported from PyYAML's own scanner.
+- **Flow mappings were dropped with no parse error** (REQ-353) — `yaml_cst` had
+  no `FlowMapping` node, so `provenance: {…}` was read as nothing on 18
+  artifacts. Flow mappings now emit the same `Mapping` node a block mapping
+  does, so every existing walker gained flow support without knowing flow
+  exists.
+- **Top-level domain keys were silently dropped** (REQ-362) — an artifact
+  writing `priority:` beside `id:` instead of under `fields:` lost them on
+  load. They are now preserved into `fields`, with the canonical entry winning
+  on collision. Refusing them instead broke a real external source, which is
+  why preservation is the fix.
+- **Multi-line plain scalars were truncated at the first line** (REQ-363) — the
+  CST kept continuation lines only up to a blank line, and the HIR stopped at
+  the first newline. Both now fold per YAML 1.2 §7.3.3.
+- **Quoted scalars spanning lines were truncated** (REQ-364, #969) — opening
+  quote kept, the rest dropped, no diagnostic. PyYAML's default `safe_dump`
+  wraps long quoted strings at 80 columns, so STPA files written by Python
+  tooling lost descriptions. A quoted token may now continue only onto a line
+  indented strictly deeper than the one it opened on, which also bounds an
+  older runaway where a trailing backslash carried a token past its line.
+- **List-of-mapping fields became their first key names** (REQ-365, #971) —
+  `control-actions: [{ca, target, action}, …]` read as `["ca","ca","ca"]` on
+  the production `stpa-yaml` path. All 8 controllers in this repository's own
+  control structure were affected, and every `feedback` entry was lost.
+
+### Fixed — gates that passed while checking nothing
+- **The two YAML parsers are now compared against each other** (REQ-348) — and
+  the `safety/stpa` partition, where REQ-361's corruption lived undetected, is
+  compared against an independent parse rather than by hand. 12 files, 347
+  artifacts, 835 values, 0 mismatches.
+- **`rivet check sources` exited 0 over zero cited-sources** (REQ-357) — a
+  drift gate reporting success having verified nothing.
+- **A CI gate could not be evidence** (REQ-352) — the marker scanner read
+  neither config files nor `.github`, so two requirements had no route to
+  verified.
+- **`source-ref` had no drift detection** (REQ-358) — 55 artifacts referenced
+  external files through a plain string while the drift-checked `cited-source`
+  field sat unused on every type.
+- **A bridge schema's obligations vanished when a base was dropped** (REQ-356),
+  and **a bridge dropped into `schemas/` was never auto-discovered** (REQ-359)
+  while the docs read as though it would be.
+- **The advisories check never ran** (REQ-347) — `cargo deny check` omitted
+  `advisories`, so thirteen reasoned ignores were dead config and `cargo-audit`
+  sat outside `CI Gate`.
+- **The runner-liveness probe** measured queue latency rather than liveness and
+  its one correct answer was unreachable (REQ-354), ran on the hosted pool it
+  was meant to watch (REQ-343), and fired nightly until a real outage arrived
+  as the hundredth identical alert (REQ-351).
+
+### Fixed — tooling
+- **Prose-mention validation matched multi-segment ids by their suffix** (#972)
+  — in a project whose ids carry a two-segment prefix, a mention of the full id
+  matched only its trailing segment, and the remediation the rule printed would
+  have created a false trace to an unrelated requirement.
+- **`classify_failure` called a real failure `setup-failed`** (#973) when only
+  GitHub's Post cleanup steps were skipped.
+- **`modify` now re-parses its own output** as a post-write safety gate (#979).
+- **The semver gate ran 0 of 254 checks** (#968) — it compared rivet-core
+  against an unrelated crates.io `rivet-core 0.1.0`. It now compares against the
+  PR's base branch, with a version bump as the explicit escape.
+- **Kani stopped adopting broken upstream releases** (#839) — the action is
+  SHA-pinned and the tool pinned to 0.67.0; 0.68.0 ICEs on this crate graph.
+
+### Known gaps
+- REQ-346 (remove the unmaintained `serde_yaml`) moved out of this release to
+  the next minor. Step 1
+  shipped here — the `rivet-yaml` crate, a safe-Rust port of serde_yaml's value
+  model — but rivet still reads and writes through serde_yaml. The five defects
+  above were all found while measuring that migration; they are its
+  preconditions.
+- REQ-351 is `verified` with no verification evidence a scanner can see: it was
+  measured operationally, by the alert not firing across four nightlies while
+  the trigger condition recurred. `rivet release notes` reports this.
+
+
 ### Fixed
 - **`rivet check verification-evidence` reported success on an empty scan**
-  (REQ-236, #954) — `cmd_check_verification_evidence` returned
+  (#954) — extending the gate REQ-236 shipped in v0.23.0: `cmd_check_verification_evidence` returned
   `Ok(missing.is_empty())`, which is `true` when no artifact carries a
   `fields.steps[].run` naming a cargo-test filter. The text output had
   already been fixed to warn (#770), but the exit code and the JSON `ok`
@@ -18,7 +127,7 @@
   `check sources --min` pattern, and is covered by unit tests.
 
 ### Added
-- **`rivet check verification-evidence --min N`** (REQ-236, #954) — caller-opted
+- **`rivet check verification-evidence --min N`** (#954) — caller-opted
   floor on the number of named-test step(s) checked. Defaults to 0, which
   keeps the previous behaviour for projects that legitimately carry none.
   A project that expects named-test steps declares how many, and a corpus
