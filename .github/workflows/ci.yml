@@ -1356,7 +1356,13 @@ jobs:
     # not pre-installed on smithy. Move once toolchains role ships kani.
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 45
+    # 90, not 45: the PR path (`--only-codegen`) finishes in ~7.5 min, but the
+    # push path verifies 27 harnesses and is documented above as exceeding 30.
+    # Both main pushes on 2026-09-23 were CANCELLED at exactly 45:00 with
+    # `cargo kani` never reaching a proof. Installation is not the cost —
+    # measured at ~3 s for `cargo install` plus ~12 s for `cargo-kani setup`,
+    # so caching the toolchain would buy nothing.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
       # BOTH the action and the Kani version are pinned (#839).
@@ -1387,12 +1393,17 @@ jobs:
         with:
           kani-version: '0.67.0'
           args: '-p rivet-core --only-codegen'
+      # ONE invocation on push, not two. The action's last step is literally
+      # `${{ inputs.command }} ${{ inputs.args }}`, so with no `args` it ran
+      # `cargo-kani` over the WHOLE WORKSPACE itself — and the job then ran
+      # `cargo kani -p rivet-core` again as a separate step. The first
+      # invocation alone exhausted the budget, which is why the proofs never
+      # started. Scope it to rivet-core and run it once.
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1 @ 2026-09-20
         with:
           kani-version: '0.67.0'
-      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: cargo kani -p rivet-core
+          args: '-p rivet-core'
 
   # ── Verus SMT verification ──────────────────────────────────────────
   # Toolchain + workspace are now correct (rules_verus@fc7b636 past the
