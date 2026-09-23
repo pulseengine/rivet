@@ -1359,15 +1359,38 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+      # BOTH the action and the Kani version are pinned (#839).
+      #
+      # Unpinned, this job broke twice in a week from upstream releases it
+      # adopted silently:
+      #
+      #   1. `@v1` is a BRANCH, not a tag. Kani 0.68.0 changed `kani --version`
+      #      to `Kani Rust Verifier <v> (…)`, the action's install script could
+      #      not parse it, and every run failed with "The version of Kani
+      #      installed was different than the one requested" — before any proof
+      #      ran. Fixed upstream in 69d357ba (2026-09-20); pinned to that SHA,
+      #      as REQ-267 pins dtolnay/rust-toolchain.
+      #   2. With no `kani-version`, the action installs `latest`. Kani 0.68.0
+      #      (2026-09-16) ICEs on this crate graph: kani-compiler panics with
+      #      `TryFromIntError(PosOverflow)` at codegen/rvalue.rs:1009 while
+      #      codegen'ing `regex_automata::meta::strategy::new`, a transitive
+      #      dependency. That is an upstream bug, not a proof failure, and it
+      #      is why `cargo kani` was reported as skipped rather than red.
+      #
+      # 0.67.0 is the release before that ICE. Raise it deliberately, after
+      # checking a run, rather than by letting `latest` move on its own.
       # PR runs: smoke-test only (--only-codegen, ~5 min). Full Kani
       # runs on push to main (still 45 min budget). The 27-harness
       # full suite was overrunning the 45 min budget mid-unwind.
       - if: github.event_name == 'pull_request'
-        uses: model-checking/kani-github-action@v1
+        uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1 @ 2026-09-20
         with:
+          kani-version: '0.67.0'
           args: '-p rivet-core --only-codegen'
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: model-checking/kani-github-action@v1
+        uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1 @ 2026-09-20
+        with:
+          kani-version: '0.67.0'
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: cargo kani -p rivet-core
 
