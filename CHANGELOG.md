@@ -5,6 +5,28 @@
 
 ## [Unreleased]
 
+<!-- rivet-docs-check: ignore TR-038 -->
+
+### Changed
+- **`V-ordeal-cert-sat-is-self-checked` downgrade condition** (#988) —
+  the honest-SAT-boundary warning no longer fires on a SAT certificate
+  used as a `verifies` source when the bundle carries `witness-sha256`
+  (envelope `witness.assignment_sha256`, ordeal TR-038) AND the recheck
+  was recorded as `verification-result: pass`. The boundary moves from
+  "SAT verdict" to "SAT bundle without a re-checked witness" — the same
+  recheck-gates-verifies shape UNSAT already uses. The warning still
+  fires for SAT bundles that carry no witness; this changes what
+  `rivet validate` reports on downstream corpora that ingest TR-038
+  bundles.
+
+### Added
+- **`witness-sha256` and `bit-map-sha256` fields on
+  `ordeal-certificate`** (#988) — additive optional fields mirroring
+  the ordeal-cert/v1 `witness.assignment_sha256` and
+  `witness.bit_map_sha256` (ordeal TR-038). Consumed by the downgrade
+  above; absence remains valid for existing SAT bundles (INFO level for
+  unknown neighbouring fields preserved, 0.32.0 compatibility).
+
 ## [0.38.0] - 2026-09-23
 
 v0.37.0 collected diagnostics that lied about themselves. This release is about

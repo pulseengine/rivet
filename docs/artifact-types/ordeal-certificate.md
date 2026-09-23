@@ -1,4 +1,4 @@
-<!-- rivet-docs-check: ignore OC-001 OC-002 REQ-001 FEAT-042 -->
+<!-- rivet-docs-check: ignore OC-001 OC-002 REQ-001 FEAT-042 TR-038 -->
 
 # `ordeal-certificate` — machine-re-checkable proof evidence
 
@@ -31,6 +31,8 @@ Fields mirror the upstream envelope recognizably:
 | `cnf-sha256`          | `recheck.problem_sha256`     | sha256 of the canonical DIMACS clause text |
 | `proof-sha256`        | `recheck.proof_sha256`       | sha256 of the proof payload (LRAT for `unsat`) |
 | `cnf-ref`/`proof-ref` | (contract, deferred)         | External blobs — **not supported by the v1 reader**, see below |
+| `witness-sha256`      | `witness.assignment_sha256`  | sha256 of the SAT witness assignment (ordeal TR-038) — enables the SAT recheck path |
+| `bit-map-sha256`      | `witness.bit_map_sha256`     | sha256 of the per-model-variable signed-literal map (ordeal TR-038) |
 | `recheck`             | `recheck` block              | `{command, expect-exit}` — the recheck invocation contract |
 | `verification-result` | (rivet-side record)          | `pass`/`fail` outcome of actually running the recheck |
 | `rechecked-at`        | (rivet-side record)          | RFC 3339 timestamp of that run |
@@ -73,13 +75,28 @@ Coverage semantics in `rivet validate`
 ## The honest SAT boundary
 
 UNSAT is the certificate-carrying verdict: the bundle holds a DIMACS CNF
-plus an LRAT proof that an independent trusted checker validates. For SAT
-verdicts (e.g. `attests-claim: variant-consistent`, the "config is valid"
-answer) the proof payload is the **self-checked model** — checked against
-all constraints at solve time, but ordeal ships no independently
-re-checkable SAT witness yet. The schema flags a SAT certificate used as a
-`verifies` source with a warning (`V-ordeal-cert-sat-is-self-checked`)
-rather than passing it off as checker-validated evidence.
+plus an LRAT proof that an independent trusted checker validates. SAT
+verdicts are now re-checkable in the same shape when the bundle carries a
+**witness block** (ordeal TR-038, design in ordeal
+`docs/design/sat-witness.md`, approved 2026-09-24): the optional
+`witness-sha256` field mirrors the envelope's `witness.assignment_sha256`,
+and re-checking is `ordeal_lrat::check_sat(problem, assignment)` plus
+`ordeal_lrat::check_binding` per binding — the same trusted crate that
+re-checks LRAT for UNSAT.
+
+The boundary therefore moves from "SAT verdict" to "SAT bundle without a
+re-checked witness". `V-ordeal-cert-sat-is-self-checked` fires on a `sat`
+certificate used as a `verifies` source **unless** the bundle carries
+`witness-sha256` AND the recheck was recorded as
+`verification-result: pass` — the same recheck-gates-verifies shape UNSAT
+already uses (`cnf-sha256` + `proof-sha256` + a recorded pass). The
+warning still fires for SAT bundles that carry no witness, so the honest
+boundary holds unchanged for those.
+
+Historical note: the earlier wording — "ordeal ships no independently
+re-checkable SAT witness yet" — was true up to ordeal-cert/v1 without the
+witness block, and is preserved in the schema header for that reason. The
+current state is the sentence above it.
 
 ## The v1 inline-only reader boundary
 
