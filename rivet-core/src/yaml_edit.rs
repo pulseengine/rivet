@@ -1161,7 +1161,24 @@ pub fn modify_artifact_yaml(
         }
     }
 
-    Ok(editor.to_string())
+    let out = editor.to_string();
+
+    // #979: post-write parse gate. The primary block-scalar corruption class
+    // (#573/#613/#618/#625/#806) is caught inside `field_block_end` and the
+    // sibling extent helpers, but the reporter's second ask was that `modify`
+    // never report success on a file it corrupted. A round-trip through
+    // `serde_yaml` before we hand `out` back is the "re-parse the file it
+    // wrote" check: any future regression that produces syntactically invalid
+    // YAML fails here with the caller's id and the parser's own diagnostic,
+    // rather than being written to disk and blamed on the next `rivet
+    // validate` on a file the tool itself just wrote.
+    serde_yaml::from_str::<serde_yaml::Value>(&out).map_err(|e| {
+        Error::Validation(format!(
+            "modify produced invalid YAML for '{id}' (post-write parse check): {e}"
+        ))
+    })?;
+
+    Ok(out)
 }
 
 /// Add a link entry to an artifact in its YAML file using the safe editor.
@@ -2510,5 +2527,112 @@ artifacts:
       priority: must",
         );
         assert_rationale_replaced(&out, "plain scalar control");
+    }
+
+    /// #979: the exact reproduction the reporter filed against 0.32.0, run on
+    /// current main. The primary corruption (orphaned continuation lines under
+    /// a `>` block scalar) was fixed by #806; this test pins the fix at the
+    /// issue's own field name (`verification-description`) and its own body
+    /// shape (multi-line prose with commas and parens), so a regression on
+    /// this shape reddens under the issue number rather than the class one.
+    #[test]
+    fn set_field_replaces_verification_description_folded_scalar_issue_979() {
+        let params = crate::mutate::ModifyParams {
+            set_fields: vec![(
+                "verification-description".to_string(),
+                "SHORT TEST VALUE".to_string(),
+            )],
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out = modify_artifact_yaml(
+            "\
+artifacts:
+  - id: SR-32
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      priority: must
+      verification-description: >
+        Foundation: stackful_intrinsic_signatures_pinned +
+        stackful_lift_is_async_without_callback. Emitter:
+        sr32_has_callback_export_detects_companion (detection),
+        ...
+",
+            "SR-32",
+            &params,
+            &store,
+        )
+        .expect("modify must succeed");
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(&out).expect("issue-979 output must parse as YAML");
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["verification-description"].as_str(),
+            Some("SHORT TEST VALUE"),
+            "the whole block-scalar node must be replaced, with no body line folded into the new value"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["fields"]["priority"].as_str(),
+            Some("must"),
+            "the sibling `priority:` field must survive the replacement"
+        );
+        assert!(
+            !out.contains("Foundation:"),
+            "no orphaned continuation line may remain in the on-disk text"
+        );
+    }
+
+    /// The reporter's second ask ("modify should re-parse the file it wrote
+    /// and fail loudly"): a synthesized corruption of the exact #979 shape
+    /// (orphaned continuation lines carrying `key:` after a plain scalar
+    /// header) reaches the parse gate at the end of `modify_artifact_yaml`
+    /// and is refused before any I/O — so a future regression that produces
+    /// invalid YAML can no longer report success. The scenario is one this
+    /// file's editor cannot itself produce today (the #806 fix removes the
+    /// body), so we hand-corrupt an artifact block and drive it through the
+    /// modify path to prove the gate is wired.
+    #[test]
+    fn modify_artifact_yaml_refuses_to_return_unparseable_output_issue_979() {
+        // Exactly the corruption the reporter saw against 0.32.0: the header
+        // was replaced (`>` gone) but the body's key-shaped continuation lines
+        // were left behind. `serde_yaml` rejects this: a mapping value cannot
+        // continue with `Foundation:`-shaped tokens at a deeper indent after a
+        // plain scalar. The parse gate must refuse it too.
+        let broken = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: T
+    status: draft
+    fields:
+      verification-description: SHORT TEST VALUE
+        Foundation: stackful_intrinsic_signatures_pinned +
+        stackful_lift_is_async_without_callback. Emitter:
+        sr32_has_callback_export_detects_companion (detection),
+        ...
+      priority: must
+";
+        // Confirm serde_yaml itself rejects the shape, so the gate isn't
+        // asserting a stricter rule than the parser it defers to.
+        assert!(
+            serde_yaml::from_str::<serde_yaml::Value>(broken).is_err(),
+            "the synthesized corruption must be genuinely unparseable — otherwise\
+             the gate cannot catch it"
+        );
+        // A no-op modify still runs the parse gate on the emitted string.
+        let params = crate::mutate::ModifyParams::default();
+        let store = crate::store::Store::new();
+        let err = modify_artifact_yaml(broken, "REQ-001", &params, &store)
+            .expect_err("the parse gate must refuse invalid YAML instead of returning it");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("post-write parse check"),
+            "the refusal must name the parse gate so the failure mode is legible: got `{msg}`"
+        );
+        assert!(
+            msg.contains("REQ-001"),
+            "the refusal must name the artifact id the caller passed: got `{msg}`"
+        );
     }
 }
