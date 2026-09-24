@@ -353,15 +353,81 @@ jobs:
           name: vsix
           path: vscode-rivet/*.vsix
 
+  # ── Release note (Automotive SPICE 11-03) ─────────────────────────────
+  # REQ-369: REQ-327 taught rivet to GENERATE an 11-03 release note from
+  # the artifact store and the commit trailers, but nothing published it
+  # — the release body was `--generate-notes`, a flat pull-request list.
+  # The note is generated HERE, in CI, at the tagged commit, so what ships
+  # is what the trace says; a note pasted from a local run could disagree
+  # with the tag it claims to describe.
+  build-release-note:
+    name: Generate release note (ASPICE 11-03)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # `rivet release notes --since` walks the commit trailers
+          # between two tags. A shallow clone has neither the tags nor the
+          # log, and the command would quietly emit a note whose commit
+          # section is empty — a note that looks generated and says
+          # nothing.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Generate release note
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF#refs/tags/}"
+          BARE="${VERSION#v}"
+          OUT="rivet-${BARE}-release-note.md"
+          # The tag immediately preceding this one ON THIS HISTORY.
+          # Deliberately not `git tag --sort=-v:refname | head -1`: that
+          # reads the whole tag namespace and would pick a tag that is
+          # newer, or on another branch, whenever one exists.
+          PREV="$(git describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || true)"
+          if [ -n "$PREV" ]; then
+            echo "::notice::Generating release note for $VERSION since $PREV"
+            cargo run --release -p rivet-cli -- release notes "$VERSION" --since "$PREV" > "$OUT"
+          else
+            echo "::warning::No preceding tag; the note omits its commit section"
+            cargo run --release -p rivet-cli -- release notes "$VERSION" > "$OUT"
+          fi
+          # An empty note is worse than no note: it would ship as the
+          # release body and read as though nothing had been delivered.
+          test -s "$OUT"
+          if ! head -1 "$OUT" | grep -q '^# Release note'; then
+            echo "::error::generated file is not a release note"
+            exit 1
+          fi
+          echo "--- generated release note ---"
+          cat "$OUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-note
+          path: rivet-*-release-note.md
+
   # ── Create GitHub Release ─────────────────────────────────────────────
   # Note: build-test-evidence is intentionally NOT in `needs` — that job
   # depends on a flaky WASI cross-compile (spar → highs-sys) and a failure
   # there must not block publication of the cross-platform binaries. If
   # the test-evidence tarball does build, it will be available as a
   # workflow artifact and can be attached to the release manually.
+  #
+  # build-release-note IS required, by contrast: it is deterministic,
+  # costs one cached build, and a release published without its 11-03
+  # item is the exact defect REQ-369 exists to close. Letting it fail
+  # open would ship that defect quietly.
   create-release:
     name: Create GitHub Release
-    needs: [build-binaries, build-compliance, build-vsix, docs-check]
+    needs:
+      - build-binaries
+      - build-compliance
+      - build-vsix
+      - docs-check
+      - build-release-note
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -375,7 +441,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.vsix" \) -exec mv {} release-assets/ \;
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.vsix" -o -name "rivet-*-release-note.md" \) -exec mv {} release-assets/ \;
           ls -la release-assets/
 
       # ── Toolchain SBOM (CycloneDX) ─────────────────────────────────────
@@ -490,16 +556,70 @@ jobs:
           # create the release with assets. `--clobber` lets re-runs
           # overwrite assets that a previous failed attempt partially
           # uploaded.
+          BARE="${VERSION#v}"
+          NOTE="release-assets/rivet-${BARE}-release-note.md"
+          test -s "$NOTE"
+
+          # REQ-369: compose the body OURSELVES rather than combining
+          # --notes-file with --generate-notes. gh documents no interaction
+          # between those two flags — neither precedence nor concatenation —
+          # so relying on it would make the body depend on the gh build that
+          # happens to be on the runner, and a build that preferred the
+          # generated notes would silently ship the pull-request-list body
+          # this requirement exists to replace. The generate-notes REST
+          # endpoint is read-only and returns exactly what --generate-notes
+          # would have produced, so asking for it explicitly and pasting it
+          # under the trace-derived note is deterministic.
+          GEN="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+                   -f tag_name="$VERSION" --jq .body 2>/dev/null || true)"
+          if [ -z "$GEN" ]; then
+            echo "::warning::generate-notes returned nothing; the body carries the release note alone"
+          fi
+          {
+            cat "$NOTE"
+            if [ -n "$GEN" ]; then
+              printf '\n\n---\n\n'
+              printf '%s\n' "$GEN"
+            fi
+          } > release-body.md
+
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "::notice::Release $VERSION already exists; uploading assets"
             gh release upload "$VERSION" --clobber release-assets/*
+            # REQ-369: this is the LIVE path, not a hypothetical one — the
+            # maintainer tags after main is green and may create the release
+            # by hand. Setting the body only on the create path would leave
+            # this requirement doing nothing where it counts. Anything they
+            # wrote is PRESERVED below the generated note rather than lost.
+            EXISTING="$(gh release view "$VERSION" --json body -q .body)"
+            if printf '%s' "$EXISTING" | grep -q '^# Release note'; then
+              echo "::notice::existing body already carries the generated note"
+            else
+              {
+                cat "$NOTE"
+                printf '\n\n---\n\n'
+                printf '%s\n' "$EXISTING"
+              } > release-body.md
+              gh release edit "$VERSION" --notes-file release-body.md
+            fi
           else
             echo "::notice::Creating Release $VERSION with assets"
             gh release create "$VERSION" \
               --title "Rivet $VERSION" \
-              --generate-notes \
+              --notes-file release-body.md \
               release-assets/*
           fi
+
+          # REQ-369: assert the body actually carries the note. The
+          # composition above is deterministic, so this is a regression
+          # guard rather than a bet — but a release published without its
+          # 11-03 item is exactly the defect being closed, and absence is
+          # not success, so the check is positive and by name.
+          if ! gh release view "$VERSION" --json body -q .body | grep -q '^# Release note'; then
+            echo "::error::release body does not carry the generated 11-03 note"
+            exit 1
+          fi
+          echo "::notice::release body carries the generated release note"
 
   # ── Publish VS Code Extension to Marketplace ──────────────────────────
   # Runs after create-release so the VSIX is always on the Release page

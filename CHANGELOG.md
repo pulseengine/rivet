@@ -6,6 +6,14 @@
 ## [Unreleased]
 
 ### Added
+- **`release` is now a column in `rivet sql`** (REQ-372) — the artifacts table
+  projected `id`, `type`, `title`, `description`, `status` and `fields_json`
+  but not `release`, so the obvious planning query failed outright with
+  `identifier not found: release`. There was no workaround: `release` is a
+  first-class field, not an entry in `fields`, so neither `fields_json` nor the
+  `fields` table could reach it. `SELECT release, COUNT(*) FROM artifacts
+  GROUP BY release` now works, as does joining release against status,
+  provenance or links.
 - **`rivet release list`** (REQ-370) — enumerates every release label the store
   knows about with its artifact total, its verified count and whether it is
   cuttable. `rivet release status` already answered "is this one release ready",
