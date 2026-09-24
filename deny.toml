@@ -23,6 +23,33 @@ ignore = [
     "RUSTSEC-2026-0247",  # bitmaps
     "RUSTSEC-2026-0248",  # im
     "RUSTSEC-2026-0251",  # sized-chunks
+    # salsa 0.26.1 — RUSTSEC-2026-0308, use-after-free in interned values and
+    # cached function results. Fixed in salsa >= 0.28.5.
+    #
+    # ASSESSED NOT APPLICABLE, not deferred. The advisory states its own
+    # exemption: "Applications that disable garbage collection for all
+    # explicitly declared interned structs ... and do not use implicitly
+    # interned query arguments are not affected." Both clauses hold here:
+    #   - rivet-core declares NO `#[salsa::interned]` struct (only
+    #     `#[salsa::input]` and `#[salsa::tracked]`), so the first clause is
+    #     vacuously satisfied. Same for spar, the other salsa consumer.
+    #   - every one of the 17 tracked functions in `rivet-core/src/db.rs`
+    #     takes `db` plus salsa INPUT structs only (SourceFile,
+    #     SourceFileSet, SchemaInputSet, ExtraArtifactSet, FilterInput).
+    #     None takes a plain value, so nothing is implicitly interned.
+    #
+    # WHY NOT JUST UPGRADE: rivet cannot move alone. spar v0.10.0 pins
+    # `salsa = "0.26"` and rivet-core shares salsa types with spar-hir /
+    # spar-analysis across the crate boundary. Bumping rivet to 0.28 resolves
+    # to TWO salsa versions in one tree and rivet-core then fails to compile
+    # with E0308/E0271 type mismatches — measured, not assumed. The upgrade is
+    # a cross-repo change: spar must move first and cut a tag. Tracked as
+    # REQ-376.
+    #
+    # RE-CHECK THIS when spar bumps, and BEFORE adding any interned struct or
+    # any tracked function that takes a non-salsa argument — either of those
+    # ends the exemption and makes this a live vulnerability.
+    "RUSTSEC-2026-0308",  # salsa (assessed not applicable — see above)
 ]
 
 [licenses]

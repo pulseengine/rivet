@@ -2362,6 +2362,297 @@ fn sql_join_and_json_over_the_store() {
     );
 }
 
+/// Every file under `dir`, as (relative path, bytes), for byte-identity
+/// comparison. REQ-366 is explicit that asserting the exit code is not enough:
+/// the exit code was already correct, the WRITES were the defect, so a test
+/// that checks only the code passes straight over it.
+fn tree_snapshot(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
+    fn walk(base: &std::path::Path, d: &std::path::Path, out: &mut Vec<(String, Vec<u8>)>) {
+        let Ok(entries) = std::fs::read_dir(d) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(base, &p, out);
+            } else if let Ok(bytes) = std::fs::read(&p) {
+                let rel = p.strip_prefix(base).unwrap_or(&p).display().to_string();
+                out.push((rel, bytes));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, dir, &mut out);
+    out.sort();
+    out
+}
+
+/// A dev project with one requirement file, for batch tests.
+fn batch_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold");
+        }
+    }
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: Seed\n    status: draft\n",
+    )
+    .unwrap();
+    tmp
+}
+
+// rivet: verifies REQ-367
+#[test]
+fn a_batch_that_fails_partway_writes_nothing_at_all() {
+    // #955: Phase 1 validates every mutation, which READS as all-or-nothing,
+    // and Phase 2 then wrote one file at a time. `find_file_for_type` is not
+    // checked in Phase 1, so a later `add` for a type with no file failed
+    // AFTER earlier mutations were already on disk.
+    //
+    // The type matters. `feature` is declared by the dev schema with NO
+    // required fields, so it passes Phase 1 and fails in Phase 2 — which is
+    // the only way this test touches the staging at all. An earlier draft used
+    // `design-decision`, whose required `rationale` made Phase 1 reject it, so
+    // Phase 2 never ran and the test passed against the OLD write-immediately
+    // code. Caught by a negative control; do not swap the type without
+    // re-running one.
+    let tmp = batch_project();
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let batch = dir.join("batch.yaml");
+    std::fs::write(
+        &batch,
+        "mutations:\n\
+         \x20 - action: modify\n    id: REQ-1\n    set_title: CHANGED\n\
+         \x20 - action: add\n    type: feature\n    title: no file for this type\n",
+    )
+    .unwrap();
+
+    let before = tree_snapshot(dir);
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "batch", batch.to_str().unwrap()])
+        .output()
+        .expect("batch");
+    assert!(
+        !out.status.success(),
+        "a batch whose second mutation cannot resolve a file must fail:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let after = tree_snapshot(dir);
+    assert_eq!(before.len(), after.len(), "no file created or removed");
+    for ((pb, cb), (pa, ca)) in before.iter().zip(after.iter()) {
+        assert_eq!(pb, pa);
+        assert_eq!(
+            cb, ca,
+            "FILE WRITTEN BY A FAILED BATCH: {pb}\n\
+             the first mutation must not survive the second one failing"
+        );
+    }
+    // And specifically: the modify that came FIRST must not have landed.
+    let reqs = std::fs::read_to_string(dir.join("artifacts/reqs.yaml")).unwrap();
+    assert!(
+        !reqs.contains("CHANGED"),
+        "the first mutation was written despite the batch failing:\n{reqs}"
+    );
+}
+
+// rivet: verifies REQ-367
+#[test]
+fn a_batch_that_succeeds_applies_every_mutation() {
+    // The negative control for the test above: if `batch` stopped writing
+    // altogether, the byte-identity assertion would pass for the wrong reason.
+    let tmp = batch_project();
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+
+    let batch = dir.join("batch.yaml");
+    std::fs::write(
+        &batch,
+        "mutations:\n\
+         \x20 - action: modify\n    id: REQ-1\n    set_title: RENAMED\n\
+         \x20 - action: add\n    type: requirement\n    title: Added by batch\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "batch", batch.to_str().unwrap()])
+        .output()
+        .expect("batch");
+    assert!(
+        out.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let reqs = std::fs::read_to_string(dir.join("artifacts/reqs.yaml")).unwrap();
+    assert!(reqs.contains("RENAMED"), "modify did not land:\n{reqs}");
+    assert!(reqs.contains("Added by batch"), "add did not land:\n{reqs}");
+    // Both mutations touched the SAME file — the second must not discard the
+    // first, which is what staging threads `base_content` through for.
+    assert!(
+        reqs.contains("RENAMED") && reqs.contains("Added by batch"),
+        "one mutation overwrote the other:\n{reqs}"
+    );
+}
+
+// rivet: verifies REQ-366
+#[test]
+fn a_failed_bulk_modify_leaves_the_tree_byte_identical() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    // Two artifacts in DIFFERENT files, so a per-file write loop would have
+    // written the first before failing on the second.
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-A\n    type: requirement\n    title: A\n    status: draft\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/b.yaml"),
+        "artifacts:\n  \
+         - id: REQ-B\n    type: requirement\n    title: B\n    status: draft\n",
+    )
+    .unwrap();
+
+    let before = tree_snapshot(dir);
+    assert!(
+        before.len() > 2,
+        "fixture must actually contain files to compare"
+    );
+
+    // `priority` is constrained by the dev schema, so this fails validation —
+    // but it fails for EVERY target, which is exactly the bulk case.
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "modify",
+            "--where",
+            "(= status \"draft\")",
+            "--field",
+            "priority=not-an-allowed-value",
+        ])
+        .output()
+        .expect("modify");
+    assert!(
+        !out.status.success(),
+        "an invalid bulk modify must fail, not succeed quietly"
+    );
+
+    let after = tree_snapshot(dir);
+    assert_eq!(
+        before.len(),
+        after.len(),
+        "no file may be created or removed by a failed modify"
+    );
+    for ((pb, cb), (pa, ca)) in before.iter().zip(after.iter()) {
+        assert_eq!(pb, pa, "file set changed: {pb} vs {pa}");
+        assert_eq!(
+            cb, ca,
+            "FILE REWRITTEN BY A FAILED MODIFY: {pb}\n\
+             the exit code was already correct before this fix; the writes were the defect"
+        );
+    }
+}
+
+// rivet: verifies REQ-366
+#[test]
+fn bulk_modify_applies_to_every_matching_artifact_when_it_succeeds() {
+    // The negative control for the test above: if `modify --where` silently
+    // stopped writing altogether, the byte-identity assertion would pass for
+    // the wrong reason. This pins that the success path still writes.
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold");
+        }
+    }
+    // Two files, and two artifacts inside one of them — so this also pins that
+    // successive edits to a single file do not discard each other.
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-A\n    type: requirement\n    title: A\n    status: draft\n  \
+         - id: REQ-C\n    type: requirement\n    title: C\n    status: draft\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/b.yaml"),
+        "artifacts:\n  \
+         - id: REQ-B\n    type: requirement\n    title: B\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "modify",
+            "--where",
+            "(= status \"draft\")",
+            "--set-release",
+            "v9.9.9",
+        ])
+        .output()
+        .expect("modify");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let a = std::fs::read_to_string(dir.join("artifacts/a.yaml")).unwrap();
+    let b = std::fs::read_to_string(dir.join("artifacts/b.yaml")).unwrap();
+    assert_eq!(
+        a.matches("v9.9.9").count(),
+        2,
+        "BOTH artifacts in one file must be written, not just the last:\n{a}"
+    );
+    assert_eq!(b.matches("v9.9.9").count(), 1, "{b}");
+}
+
 // rivet: verifies REQ-373
 #[test]
 fn sql_json_preserves_cell_types_and_null() {
