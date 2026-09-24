@@ -185,6 +185,8 @@ fn ordeal_certificate_schema_registered_and_declares_the_contract() {
         "cnf-ref",
         "proof-sha256",
         "proof-ref",
+        "witness-sha256",
+        "bit-map-sha256",
         "recheck",
         "verification-result",
     ] {
@@ -485,25 +487,45 @@ fn unsat_verdict_requires_the_recheckable_pair() {
     assert!(diags_for_rule(&diags, rule).is_empty(), "{diags:?}");
 }
 
-/// The honest SAT boundary: a `sat` certificate used as a `verifies`
-/// source draws a warning — the model is self-checked, not
-/// independently re-checked.
+/// The honest SAT boundary: a `sat` certificate **with no witness
+/// block** used as a `verifies` source draws a warning — the model is
+/// self-checked, not independently re-checked. The witness path is
+/// covered by `sat_certificate_with_rechecked_witness_does_not_warn`
+/// and `sat_certificate_without_witness_still_warns` below; this test
+/// pins the negative control the schema warning has always carried.
 #[test]
 fn sat_certificate_as_verifies_source_warns() {
     let rule = "V-ordeal-cert-sat-is-self-checked";
     let req = artifact("REQ-1", "requirement", "implemented", &[]);
 
+    // SAT + verifies with NO witness-sha256 recorded: the honest
+    // boundary still holds and the rule fires.
     let mut sat = unsat_cert("OC-SAT", true, &[("verifies", "REQ-1")]);
     sat.fields.insert("verdict".into(), yaml("sat"));
     sat.fields
         .insert("attests-claim".into(), yaml("variant-consistent"));
+    // Explicit negative control: no witness block present on the
+    // bundle. The rule matches on absence of `witness-sha256`.
+    assert!(
+        !sat.fields.contains_key("witness-sha256"),
+        "test fixture must carry no witness"
+    );
     let diags = run_validate(vec![req.clone(), sat]);
     let hits = diags_for_rule(&diags, rule);
-    assert_eq!(hits.len(), 1, "SAT + verifies must warn: {diags:?}");
+    assert_eq!(
+        hits.len(),
+        1,
+        "SAT + verifies + no witness must warn: {diags:?}"
+    );
     assert_eq!(hits[0].severity, Severity::Warning);
     assert!(
         hits[0].message.contains("self-checked"),
         "{}",
+        hits[0].message
+    );
+    assert!(
+        hits[0].message.contains("witness"),
+        "the warning must now name the missing witness path: {}",
         hits[0].message
     );
 
@@ -511,4 +533,85 @@ fn sat_certificate_as_verifies_source_warns() {
     let unsat = unsat_cert("OC-U", true, &[("verifies", "REQ-1")]);
     let diags = run_validate(vec![req, unsat]);
     assert!(diags_for_rule(&diags, rule).is_empty(), "{diags:?}");
+}
+
+/// Ordeal TR-038: a SAT bundle that carries `witness-sha256` and whose
+/// recheck was recorded as `verification-result: pass` re-checks the
+/// witness path (`ordeal_lrat::check_sat` + `check_binding` per
+/// binding) — same trusted crate that validates LRAT for UNSAT. The
+/// honest-boundary warning must NOT fire for that artifact.
+#[test]
+fn sat_certificate_with_rechecked_witness_does_not_warn() {
+    let rule = "V-ordeal-cert-sat-is-self-checked";
+    let req = artifact("REQ-1", "requirement", "implemented", &[]);
+
+    let mut sat = unsat_cert("OC-SAT-W", true, &[("verifies", "REQ-1")]);
+    sat.fields.insert("verdict".into(), yaml("sat"));
+    sat.fields
+        .insert("attests-claim".into(), yaml("variant-consistent"));
+    // The witness block: assignment sha, plus (optional) bit-map sha.
+    // `verification-result: pass` is already set by the `rechecked`
+    // arg to `unsat_cert(true, …)` above — that is the recheck-gates-
+    // verifies signal the new rule composes with, not bypasses.
+    sat.fields.insert(
+        "witness-sha256".into(),
+        yaml("2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"),
+    );
+    sat.fields.insert(
+        "bit-map-sha256".into(),
+        yaml("fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9"),
+    );
+
+    let diags = run_validate(vec![req, sat]);
+    assert!(
+        diags_for_rule(&diags, rule).is_empty(),
+        "SAT + witness-sha256 + verification-result: pass must NOT warn: {diags:?}"
+    );
+}
+
+/// The negative control the coverage-split rests on: strip either half
+/// of the witness recheck (the `witness-sha256` presence OR the pass
+/// record) and the honest-boundary warning fires again — the new rule
+/// composes with `V-ordeal-cert-recheck-gates-verifies`, it does not
+/// bypass it.
+#[test]
+fn sat_certificate_without_witness_still_warns() {
+    let rule = "V-ordeal-cert-sat-is-self-checked";
+    let req = artifact("REQ-1", "requirement", "implemented", &[]);
+
+    // Case A: witness-sha256 present but recheck not recorded as pass.
+    let mut sat_no_pass = unsat_cert("OC-SAT-NP", false, &[("verifies", "REQ-1")]);
+    sat_no_pass.fields.insert("verdict".into(), yaml("sat"));
+    sat_no_pass
+        .fields
+        .insert("attests-claim".into(), yaml("variant-consistent"));
+    sat_no_pass.fields.insert(
+        "witness-sha256".into(),
+        yaml("2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"),
+    );
+    let diags = run_validate(vec![req.clone(), sat_no_pass]);
+    let hits = diags_for_rule(&diags, rule);
+    assert_eq!(
+        hits.len(),
+        1,
+        "SAT + witness-sha256 without pass must still warn: {diags:?}"
+    );
+    assert_eq!(hits[0].severity, Severity::Warning);
+
+    // Case B: verification-result: pass recorded but no witness-sha256.
+    let mut sat_no_witness = unsat_cert("OC-SAT-NW", true, &[("verifies", "REQ-1")]);
+    sat_no_witness.fields.insert("verdict".into(), yaml("sat"));
+    sat_no_witness
+        .fields
+        .insert("attests-claim".into(), yaml("variant-consistent"));
+    // No witness-sha256 inserted: this is the "current path preserved
+    // as negative control" the AC asks for.
+    let diags = run_validate(vec![req, sat_no_witness]);
+    let hits = diags_for_rule(&diags, rule);
+    assert_eq!(
+        hits.len(),
+        1,
+        "SAT + pass without witness-sha256 must still warn: {diags:?}"
+    );
+    assert_eq!(hits[0].severity, Severity::Warning);
 }

@@ -5,17 +5,7 @@
 
 ## [Unreleased]
 
-### Changed
-- **`rivet sql --format json` now emits typed cells** (REQ-373) — every cell
-  used to cross `SqlResult.rows: Vec<Vec<String>>`, so `SELECT COUNT(*)`
-  arrived as the string `"2"` and `jq 'map(.n) | add'` failed on rivet's own
-  machine-readable output. Counts are now JSON numbers, booleans are booleans,
-  and **SQL `NULL` is `null` rather than `""`** — so a consumer can finally
-  tell "no release" from "release is empty". The `table` and `csv` formats are
-  unchanged: they are text by definition and stringify at the edge, and NULL
-  still renders as empty there rather than as the word `null`. `SqlResult.rows`
-  is now `Vec<Vec<SqlValue>>`, a breaking change to a rivet-core public type
-  that the 0.x minor bump permits.
+<!-- rivet-docs-check: ignore TR-038 -->
 
 ### Added
 - **`release` is now a column in `rivet sql`** (REQ-372) — the artifacts table
@@ -26,6 +16,12 @@
   `fields` table could reach it. `SELECT release, COUNT(*) FROM artifacts
   GROUP BY release` now works, as does joining release against status,
   provenance or links.
+- **`witness-sha256` and `bit-map-sha256` fields on
+  `ordeal-certificate`** (#988) — additive optional fields mirroring
+  the ordeal-cert/v1 `witness.assignment_sha256` and
+  `witness.bit_map_sha256` (ordeal TR-038). Consumed by the downgrade
+  above; absence remains valid for existing SAT bundles (INFO level for
+  unknown neighbouring fields preserved, 0.32.0 compatibility).
 - **`rivet release list`** (REQ-370) — enumerates every release label the store
   knows about with its artifact total, its verified count and whether it is
   cuttable. `rivet release status` already answered "is this one release ready",
@@ -39,6 +35,28 @@
   the other half of the request was to be told the query rather than memorise
   it. A shipped release may legitimately read "not cuttable": its artifacts were
   scoped before the readiness rule existed, and the output says so.
+
+### Changed
+- **`rivet sql --format json` now emits typed cells** (REQ-373) — every cell
+  used to cross `SqlResult.rows: Vec<Vec<String>>`, so `SELECT COUNT(*)`
+  arrived as the string `"2"` and `jq 'map(.n) | add'` failed on rivet's own
+  machine-readable output. Counts are now JSON numbers, booleans are booleans,
+  and **SQL `NULL` is `null` rather than `""`** — so a consumer can finally
+  tell "no release" from "release is empty". The `table` and `csv` formats are
+  unchanged: they are text by definition and stringify at the edge, and NULL
+  still renders as empty there rather than as the word `null`. `SqlResult.rows`
+  is now `Vec<Vec<SqlValue>>`, a breaking change to a rivet-core public type
+  that the 0.x minor bump permits.
+- **`V-ordeal-cert-sat-is-self-checked` downgrade condition** (#988) —
+  the honest-SAT-boundary warning no longer fires on a SAT certificate
+  used as a `verifies` source when the bundle carries `witness-sha256`
+  (envelope `witness.assignment_sha256`, ordeal TR-038) AND the recheck
+  was recorded as `verification-result: pass`. The boundary moves from
+  "SAT verdict" to "SAT bundle without a re-checked witness" — the same
+  recheck-gates-verifies shape UNSAT already uses. The warning still
+  fires for SAT bundles that carry no witness; this changes what
+  `rivet validate` reports on downstream corpora that ingest TR-038
+  bundles.
 
 ## [0.38.0] - 2026-09-23
 
