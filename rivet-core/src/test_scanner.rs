@@ -1378,26 +1378,49 @@ fn a_later_test() { assert!(true); }
 
     /// Proof-language markers must fall back to `file:line`, not to a guessed
     /// theorem or definition name. The catch-all enclosing-function regex
-    /// happens to match `def foo` and `int foo` — words that legitimately
-    /// appear inside a Lean or Rocq file — and attributing a marker to one of
-    /// those is exactly the misattribution shape REQ-326 documents. An
-    /// unambiguous `AxiomCheck.lean:1` beats a plausible wrong name.
+    /// `(?:pub\s+)?(?:fn|func|function|def|void|int|bool|auto)\s+(\w+)\s*\(`
+    /// happens to match `def foo (` — a legitimate Lean shape — and attributing
+    /// a marker to that def is exactly the misattribution shape REQ-326
+    /// documents. An unambiguous `AxiomCheck.lean:2` beats a plausible wrong
+    /// name.
+    ///
+    /// The Lean fixture places `def my_theorem_name (h : True) : True := h` on
+    /// the line ABOVE the marker so the backward scan in
+    /// `find_enclosing_function` would reach it if the `language == "lean" ||
+    /// language == "rocq"` guard were removed. The parenthesised parameter
+    /// list is load-bearing: without `(`, the catch-all cannot match and the
+    /// guard is untested. An earlier draft of this test used
+    /// `def my_theorem_name : True := ⟨⟩` (no parens), which trips the same
+    /// vacuous-negative-control shape REQ-352 warns about — the PR-diff
+    /// mutation gate reported a surviving `|| -> &&` at 279:51.
+    ///
+    /// Rocq is a positive control rather than a mutation-gate killer: its
+    /// keywords (`Definition`, `Theorem`, `Lemma`, `Fixpoint`) share no prefix
+    /// with the catch-all's alternation (`fn|func|function|def|void|int|bool|
+    /// auto`), so removing the `"rocq"` guard does not change attribution for
+    /// natural Rocq syntax. The Lean half is what kills the mutant.
     #[test]
     fn proof_markers_fall_back_to_file_and_line() {
         let dir = tempfile::tempdir().expect("temp dir");
-        // A `def` that the generic catch-all would greedily match if we let it.
         std::fs::write(
             dir.path().join("AxiomCheck.lean"),
-            "-- rivet: verifies VER-ATTR-001\ndef my_theorem_name : True := ⟨⟩\n",
+            "def my_theorem_name (h : True) : True := h\n\
+             -- rivet: verifies VER-ATTR-001\n",
         )
         .unwrap();
         std::fs::write(
             dir.path().join("Soundness.v"),
-            "(* rivet: verifies VER-ATTR-002 *)\nDefinition my_defn : nat := 0.\n",
+            "Definition my_defn (n : nat) : nat := n.\n\
+             (* rivet: verifies VER-ATTR-002 *)\n",
         )
         .unwrap();
 
         let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        assert_eq!(
+            markers.len(),
+            2,
+            "one marker per proof file expected; got {markers:?}"
+        );
         for m in &markers {
             assert!(
                 m.test_name.contains(':'),
@@ -1405,5 +1428,22 @@ fn a_later_test() { assert!(true); }
                 m.test_name
             );
         }
+        // Load-bearing: the Lean marker sits below a `def my_theorem_name (`,
+        // which the generic catch-all regex would capture if the guard were
+        // removed. Asserting the name is NOT `my_theorem_name` is what kills
+        // the `|| -> &&` mutant at line 279 — without this specific
+        // negative-control assertion, removing the `"lean"`/`"rocq"` guard
+        // changed nothing and the test stayed green on a scanner that had
+        // silently regressed.
+        let lean = markers
+            .iter()
+            .find(|m| m.target_id == "VER-ATTR-001")
+            .expect("VER-ATTR-001 must be found");
+        assert_ne!(
+            lean.test_name, "my_theorem_name",
+            "the lean guard must be effective — a `def foo (` above the marker \
+             must NOT be latched onto by the catch-all; got test_name={}",
+            lean.test_name
+        );
     }
 }
