@@ -5,6 +5,23 @@
 
 ## [Unreleased]
 
+### Fixed
+- **Bulk mutations are no longer half-applied** (REQ-366, REQ-367 — #965, #955)
+  — `modify --where` and `batch` both validated every target up front, which
+  reads as all-or-nothing, and then wrote one file at a time. Reproduced on a
+  pristine copy of this repository, a bulk `modify --where` setting a release
+  exited 1 naming an artifact belonging to the vendored external project, with
+  **eleven files already rewritten**. An agent reading exit 1 reasonably
+  concludes nothing was written. Both commands now compute every file's new content before committing
+  any of it, and each file is committed via a temporary file plus a rename so
+  none is ever observed half-written. `--where` also no longer selects external
+  artifacts, which are read-only here, and `rivet modify` on an external is now
+  refused by name in the pre-pass instead of failing inside the write loop.
+  This does **not** make the commit atomic across files: a process killed
+  mid-commit can still leave some files updated. Cross-file atomicity needs a
+  journal; the defect fixed here is a computation error leaving files
+  rewritten, and staging removes that class entirely.
+
 <!-- rivet-docs-check: ignore TR-038 -->
 
 ### Added

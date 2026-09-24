@@ -18704,6 +18704,12 @@ fn cmd_modify(
             })?;
             let mut ids: Vec<String> = store
                 .iter()
+                // REQ-366 / #965: externals are READ-ONLY here — they are a
+                // vendored copy of another project's tree, so a write would be
+                // discarded on the next `rivet sync`. They were being selected,
+                // listed by --dry-run, and only rejected deep inside the write
+                // loop, after earlier files were already on disk.
+                .filter(|a| !mutate::is_external_id(&a.id))
                 .filter(|a| {
                     rivet_core::sexpr_eval::matches_filter_with_store(&expr, a, &graph, &store)
                 })
@@ -18749,12 +18755,27 @@ fn cmd_modify(
     // Apply in a single in-process pass: load once (above), write each
     // affected file once here. No subprocess re-spawn, so this cannot race
     // the way a shell loop of per-ID `rivet modify` invocations can (#353).
+    //
+    // REQ-366 / #965: compute EVERY file's new content before writing any of
+    // it. The validation pass above made this look all-or-nothing and it was
+    // not — a failure raised inside the old write loop left every earlier file
+    // already rewritten (reproduced: exit 1 naming `spar:SPAR-THR-001`, eleven
+    // files changed). Staging cannot fail halfway because nothing reaches disk
+    // until the whole set is computed.
+    let mut staged = mutate::StagedWrites::new();
     for tid in &target_ids {
         let source_file = mutate::find_source_file(tid, &store)
             .ok_or_else(|| anyhow::anyhow!("cannot determine source file for '{tid}'"))?;
-        mutate::modify_artifact_in_file(tid, &params, &source_file, &store)
+        // Thread the staged content through, so two artifacts in one file both
+        // land instead of the second overwriting the first.
+        let base = staged
+            .base_content(&source_file)
+            .with_context(|| format!("reading {}", source_file.display()))?;
+        let updated = mutate::modify_artifact_yaml(&base, tid, &params, &store)
             .with_context(|| format!("updating {}", source_file.display()))?;
+        staged.stage(source_file, updated);
     }
+    staged.commit().context("writing staged changes")?;
 
     if target_ids.len() == 1 {
         println!("modified {}", target_ids[0]);
@@ -19229,7 +19250,15 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
         }
     }
 
-    // ── Phase 2: apply all mutations ────────────────────────────────────
+    // ── Phase 2: compute every file, then commit ────────────────────────
+    // REQ-367 / #955: Phase 1 validates everything, which reads as
+    // all-or-nothing — and then this phase used to write one file at a time.
+    // A failure here (notably `find_file_for_type` returning None, which
+    // Phase 1 never checked) left every earlier mutation already on disk with
+    // the command exiting non-zero. Nothing now reaches disk until the whole
+    // batch is computed.
+    let mut staged = mutate::StagedWrites::new();
+    let mut applied: Vec<String> = Vec::new();
     for (i, mutation) in batch.mutations.iter().enumerate() {
         match mutation {
             BatchMutation::Add {
@@ -19282,10 +19311,12 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                         )
                     })?;
 
-                mutate::append_artifact_to_file(&artifact, &target_file)
-                    .with_context(|| format!("writing to {}", target_file.display()))?;
+                let base = staged
+                    .base_content(&target_file)
+                    .with_context(|| format!("reading {}", target_file.display()))?;
+                staged.stage(target_file, mutate::append_artifact_yaml(&base, &artifact));
 
-                println!("added {}", id);
+                applied.push(format!("added {id}"));
                 store.upsert(artifact);
                 prev_id = Some(id);
             }
@@ -19311,10 +19342,14 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     external: None,
                 };
 
-                mutate::add_link_to_file(&source, &link, &source_file)
+                let base = staged
+                    .base_content(&source_file)
+                    .with_context(|| format!("reading {}", source_file.display()))?;
+                let updated = mutate::add_link_yaml(&base, &source, &link)
                     .with_context(|| format!("updating {}", source_file.display()))?;
+                staged.stage(source_file, updated);
 
-                println!("linked {} --[{}]--> {}", source, link_type, target);
+                applied.push(format!("linked {source} --[{link_type}]--> {target}"));
             }
             BatchMutation::Modify {
                 id,
@@ -19342,17 +19377,27 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                     )
                 })?;
 
-                mutate::modify_artifact_in_file(&id, &params, &source_file, &store)
+                let base = staged
+                    .base_content(&source_file)
+                    .with_context(|| format!("reading {}", source_file.display()))?;
+                let updated = mutate::modify_artifact_yaml(&base, &id, &params, &store)
                     .with_context(|| format!("updating {}", source_file.display()))?;
+                staged.stage(source_file, updated);
 
-                println!("modified {}", id);
+                applied.push(format!("modified {id}"));
             }
         }
     }
 
+    // Nothing above touched the disk. Commit the whole batch, or none of it.
+    let files = staged.commit().context("writing staged batch changes")?;
+    for line in &applied {
+        println!("{line}");
+    }
     println!(
-        "\nbatch: applied {} mutation(s) successfully",
-        batch.mutations.len()
+        "\nbatch: applied {} mutation(s) across {} file(s) successfully",
+        batch.mutations.len(),
+        files
     );
     Ok(true)
 }

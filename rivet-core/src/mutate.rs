@@ -365,6 +365,18 @@ pub fn validate_modify(
     store: &Store,
     schema: &Schema,
 ) -> Result<(), Error> {
+    // REQ-366 / #965: refuse an external before anything is written. Externals
+    // are a vendored copy of another project's tree; a write here is discarded
+    // on the next `rivet sync`, and previously it failed deep inside the write
+    // loop instead — after earlier files were already on disk. Naming the
+    // external is the point: the old failure said only "not found in file".
+    if is_external_id(id) {
+        return Err(Error::Validation(format!(
+            "'{id}' belongs to an external project and is read-only here; \
+             modify it in its own repository and re-run `rivet sync`"
+        )));
+    }
+
     let artifact = store
         .get(id)
         .ok_or_else(|| Error::Validation(format!("artifact '{}' does not exist", id)))?;
@@ -506,20 +518,37 @@ pub fn append_artifact_to_file(artifact: &Artifact, file_path: &Path) -> Result<
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
 
-    let yaml_block = render_artifact_yaml(artifact);
-
-    // Append to end of file
-    let mut new_content = content;
-    if !new_content.ends_with('\n') {
-        new_content.push('\n');
-    }
-    new_content.push('\n');
-    new_content.push_str(&yaml_block);
+    let new_content = append_artifact_yaml(&content, artifact);
 
     std::fs::write(file_path, &new_content)
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
 
     Ok(())
+}
+
+/// Append an artifact to YAML text, returning the new text.
+///
+/// The pure half of [`append_artifact_to_file`] — reads nothing, writes
+/// nothing — so a batch can compute every file before committing any of it
+/// (REQ-367).
+#[must_use]
+pub fn append_artifact_yaml(content: &str, artifact: &Artifact) -> String {
+    let yaml_block = render_artifact_yaml(artifact);
+    let mut new_content = content.to_string();
+    if !new_content.ends_with('\n') {
+        new_content.push('\n');
+    }
+    new_content.push('\n');
+    new_content.push_str(&yaml_block);
+    new_content
+}
+
+/// Add a link to an artifact in YAML text, returning the new text.
+///
+/// # Errors
+/// Returns [`Error::Validation`] if the source artifact is not in `content`.
+pub fn add_link_yaml(content: &str, source_id: &str, link: &Link) -> Result<String, Error> {
+    crate::yaml_edit::add_link_yaml(content, source_id, link)
 }
 
 /// Render a single artifact as YAML suitable for appending under `artifacts:`.
@@ -702,6 +731,132 @@ pub fn modify_artifact_in_file(
     crate::yaml_edit::modify_artifact_in_file(id, params, file_path, store)
 }
 
+/// A set of file rewrites computed in full BEFORE any of them is written.
+///
+/// REQ-366 / REQ-367: `modify --where` and `batch` both validated every target
+/// up front and then wrote one file at a time, which reads as all-or-nothing
+/// and is not. A failure raised inside the write loop — an external artifact
+/// that is not in the file the store points at, a YAML edit that cannot find
+/// its block — left every earlier file already rewritten. Reproduced on a
+/// pristine copy of this repository: the command exits 1 naming
+/// `spar:SPAR-THR-001`, and eleven files are already changed.
+///
+/// Staging separates COMPUTING the new content, which is pure and can fail,
+/// from WRITING it, which is the part that must not fail halfway. Any error
+/// while staging aborts before a single byte reaches disk.
+///
+/// Honest boundary: this does not make the commit itself atomic across files.
+/// Each file lands atomically via write-to-temp + rename, so no file is ever
+/// observed half-written, but a process killed mid-commit can still leave some
+/// files updated and others not. Cross-file atomicity needs a journal, which is
+/// disproportionate to the defect being fixed — the reported failure is a
+/// COMPUTATION error leaving files rewritten, and staging removes that class
+/// entirely.
+#[derive(Debug, Default)]
+pub struct StagedWrites {
+    files: std::collections::BTreeMap<PathBuf, String>,
+}
+
+impl StagedWrites {
+    /// An empty staging set.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The staged content for `path`, if it has already been staged.
+    ///
+    /// Callers apply successive edits to the same file by threading this
+    /// through, so two artifacts living in one file both land.
+    #[must_use]
+    pub fn staged(&self, path: &Path) -> Option<&str> {
+        self.files.get(path).map(String::as_str)
+    }
+
+    /// The content to edit next for `path`: whatever is already staged, or the
+    /// file's current bytes.
+    ///
+    /// # Errors
+    /// Returns [`Error::Io`] if the file cannot be read.
+    pub fn base_content(&self, path: &Path) -> Result<String, Error> {
+        match self.staged(path) {
+            Some(s) => Ok(s.to_string()),
+            None => std::fs::read_to_string(path)
+                .map_err(|e| Error::Io(format!("{}: {}", path.display(), e))),
+        }
+    }
+
+    /// Record the new content for `path`, replacing any earlier staging.
+    pub fn stage(&mut self, path: PathBuf, content: String) {
+        self.files.insert(path, content);
+    }
+
+    /// How many distinct files are staged.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.files.len()
+    }
+
+    /// Whether nothing is staged.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.files.is_empty()
+    }
+
+    /// Write every staged file, each via a temporary file plus a rename so no
+    /// file is ever observed half-written. Returns the number of files written.
+    ///
+    /// # Errors
+    /// Returns [`Error::Io`] on the first write or rename that fails.
+    pub fn commit(self) -> Result<usize, Error> {
+        let n = self.files.len();
+        for (path, content) in self.files {
+            // Same directory, so the rename is within one filesystem and is
+            // therefore atomic; a temp file elsewhere would degrade to a copy.
+            let tmp = path.with_extension(format!(
+                "{}.rivet-tmp",
+                path.extension().map_or("", |e| e.to_str().unwrap_or(""))
+            ));
+            std::fs::write(&tmp, &content)
+                .map_err(|e| Error::Io(format!("{}: {}", tmp.display(), e)))?;
+            std::fs::rename(&tmp, &path).map_err(|e| {
+                // Leave no debris behind if the rename is what failed.
+                let _ = std::fs::remove_file(&tmp);
+                Error::Io(format!("{}: {}", path.display(), e))
+            })?;
+        }
+        Ok(n)
+    }
+}
+
+/// Apply modify params to YAML text, returning the new text.
+///
+/// The pure half of [`modify_artifact_in_file`]: it reads nothing and writes
+/// nothing, which is what lets a bulk modify compute every file before
+/// committing any of it (see [`StagedWrites`]).
+///
+/// # Errors
+/// Returns [`Error::Validation`] if the artifact is not present in `content`,
+/// or if the edit would produce YAML that no longer parses.
+pub fn modify_artifact_yaml(
+    content: &str,
+    id: &str,
+    params: &ModifyParams,
+    store: &Store,
+) -> Result<String, Error> {
+    crate::yaml_edit::modify_artifact_yaml(content, id, params, store)
+}
+
+/// Whether an id refers to an artifact owned by another project.
+///
+/// Externals are namespaced `prefix:ID` and are READ-ONLY from this project's
+/// point of view — they live in a vendored copy of someone else's tree, so a
+/// write here would be silently discarded on the next `rivet sync`.
+#[must_use]
+pub fn is_external_id(id: &str) -> bool {
+    id.contains(':')
+}
+
 /// Remove an artifact from its YAML file.
 ///
 /// Delegates to [`crate::yaml_edit`] for indentation-safe editing.
@@ -712,6 +867,185 @@ pub fn remove_artifact_from_file(artifact_id: &str, file_path: &Path) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // rivet: verifies REQ-366
+    #[test]
+    fn staged_writes_put_nothing_on_disk_until_commit() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let f = dir.path().join("a.yaml");
+        std::fs::write(&f, "original\n").unwrap();
+
+        let mut staged = StagedWrites::new();
+        staged.stage(f.clone(), "rewritten\n".to_string());
+        assert_eq!(staged.len(), 1);
+        // The whole point: staged is not written.
+        assert_eq!(
+            std::fs::read_to_string(&f).unwrap(),
+            "original\n",
+            "staging must not touch the file"
+        );
+
+        assert_eq!(staged.commit().unwrap(), 1);
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "rewritten\n");
+    }
+
+    // rivet: verifies REQ-366
+    #[test]
+    fn a_failure_while_staging_leaves_every_earlier_file_byte_identical() {
+        // The reproduced defect (#965): the old write loop wrote file A, then
+        // failed on B, leaving A changed and the command exiting 1. Here the
+        // failure is a read of a file that does not exist — the same shape,
+        // raised during staging — and A must be untouched.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let a = dir.path().join("a.yaml");
+        std::fs::write(&a, "original-a\n").unwrap();
+        let missing = dir.path().join("does-not-exist.yaml");
+
+        let mut staged = StagedWrites::new();
+        staged.stage(a.clone(), "rewritten-a\n".to_string());
+        let err = staged.base_content(&missing).expect_err("read must fail");
+        assert!(
+            format!("{err}").contains("does-not-exist.yaml"),
+            "the error must name the file: {err}"
+        );
+        // Caller aborts here, dropping `staged` without committing.
+        drop(staged);
+
+        assert_eq!(
+            std::fs::read_to_string(&a).unwrap(),
+            "original-a\n",
+            "a failure before commit must leave the tree BYTE-IDENTICAL"
+        );
+    }
+
+    // rivet: verifies REQ-366
+    #[test]
+    fn two_edits_to_one_file_both_land() {
+        // Two artifacts sharing a source file is the common case in this repo
+        // (requirements.yaml holds hundreds). Threading `base_content` through
+        // is what stops the second edit discarding the first.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let f = dir.path().join("a.yaml");
+        std::fs::write(&f, "one\n").unwrap();
+
+        let mut staged = StagedWrites::new();
+        let base = staged.base_content(&f).unwrap();
+        assert_eq!(base, "one\n", "first read comes from disk");
+        staged.stage(f.clone(), format!("{base}two\n"));
+
+        let base = staged.base_content(&f).unwrap();
+        assert_eq!(base, "one\ntwo\n", "second read comes from the STAGED copy");
+        staged.stage(f.clone(), format!("{base}three\n"));
+
+        assert_eq!(staged.len(), 1, "still one file, not three");
+        staged.commit().unwrap();
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), "one\ntwo\nthree\n");
+    }
+
+    // rivet: verifies REQ-366
+    #[test]
+    fn commit_leaves_no_temp_files_behind() {
+        // Commit writes through a temp file plus a rename so no file is ever
+        // observed half-written; debris would be a new failure mode.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let f = dir.path().join("a.yaml");
+        std::fs::write(&f, "x\n").unwrap();
+
+        let mut staged = StagedWrites::new();
+        staged.stage(f.clone(), "y\n".to_string());
+        staged.commit().unwrap();
+
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains("rivet-tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp debris left: {leftovers:?}");
+    }
+
+    // rivet: verifies REQ-366
+    #[test]
+    fn staged_writes_counts_distinct_files_not_edits() {
+        // `len` is what tells the caller how many files a batch touched, and
+        // the mutation gate found it untested: every existing assertion used a
+        // single file, so `len -> 1` survived. Two files, and a repeat edit to
+        // one of them, pin both halves.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let a = dir.path().join("a.yaml");
+        let b = dir.path().join("b.yaml");
+        std::fs::write(&a, "a\n").unwrap();
+        std::fs::write(&b, "b\n").unwrap();
+
+        let mut staged = StagedWrites::new();
+        assert!(staged.is_empty(), "a fresh set is empty");
+        assert_eq!(staged.len(), 0);
+
+        staged.stage(a.clone(), "a1\n".to_string());
+        assert!(!staged.is_empty(), "staging one file makes it non-empty");
+        assert_eq!(staged.len(), 1);
+
+        staged.stage(b.clone(), "b1\n".to_string());
+        assert_eq!(staged.len(), 2, "two distinct files");
+
+        // Re-staging the same path replaces rather than accumulating.
+        staged.stage(a.clone(), "a2\n".to_string());
+        assert_eq!(staged.len(), 2, "a repeat edit is not a third file");
+
+        assert_eq!(staged.commit().unwrap(), 2, "commit reports files written");
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "a2\n");
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "b1\n");
+    }
+
+    // rivet: verifies REQ-366
+    #[test]
+    fn validate_modify_refuses_an_external_and_names_it() {
+        // #965: the external was accepted by the pre-write pass and only blew
+        // up inside the write loop, after earlier files were already on disk,
+        // with a message that said merely "not found in file". Refusing here
+        // is what makes the failure legible AND harmless.
+        let mut sf = minimal_schema("test");
+        sf.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".to_string(),
+            ..Default::default()
+        }];
+        let schema = Schema::merge(&[sf]);
+        let store = Store::new();
+        let params = ModifyParams {
+            set_release: Some("v9.9.9".to_string()),
+            ..Default::default()
+        };
+
+        let err = validate_modify("spar:SPAR-THR-001", &params, &store, &schema)
+            .expect_err("an external must be refused before anything is written");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("spar:SPAR-THR-001"),
+            "the refusal must NAME the external, which the old failure did not: {msg}"
+        );
+        assert!(
+            msg.contains("read-only"),
+            "the refusal must say why, so the caller knows this is not a bug: {msg}"
+        );
+        // And the refusal must be about externality, not about absence — an
+        // unknown LOCAL id gives a different message.
+        let err = validate_modify("REQ-NOPE", &params, &store, &schema)
+            .expect_err("an unknown local id still fails");
+        assert!(
+            format!("{err}").contains("does not exist"),
+            "a missing local artifact must not be reported as external: {err}"
+        );
+    }
+
+    // rivet: verifies REQ-366
+    #[test]
+    fn external_ids_are_recognised_and_local_ones_are_not() {
+        assert!(is_external_id("spar:SPAR-THR-001"));
+        assert!(!is_external_id("REQ-366"));
+        // A hyphenated local id must not be mistaken for a namespaced one.
+        assert!(!is_external_id("SEC-UCA-001"));
+    }
+
     use crate::schema::*;
     use crate::test_helpers::{
         artifact_with_links, artifact_with_status, minimal_artifact, minimal_schema,

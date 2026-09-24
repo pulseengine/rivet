@@ -1186,15 +1186,27 @@ pub fn add_link_to_file(source_id: &str, link: &Link, file_path: &Path) -> Resul
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
 
-    let mut editor = YamlEditor::parse(&content);
-    editor
-        .add_link(source_id, &link.link_type, &link.target)
-        .map_err(Error::Validation)?;
+    let new_content = add_link_yaml(&content, source_id, link)?;
 
-    std::fs::write(file_path, editor.to_string())
+    std::fs::write(file_path, new_content)
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
 
     Ok(())
+}
+
+/// Add a link to an artifact in YAML text, returning the new text.
+///
+/// The pure half of [`add_link_to_file`] — reads nothing, writes nothing — so a
+/// batch can compute every file before committing any of it (REQ-367).
+///
+/// # Errors
+/// Returns [`Error::Validation`] if the source artifact is not in `content`.
+pub fn add_link_yaml(content: &str, source_id: &str, link: &Link) -> Result<String, Error> {
+    let mut editor = YamlEditor::parse(content);
+    editor
+        .add_link(source_id, &link.link_type, &link.target)
+        .map_err(Error::Validation)?;
+    Ok(editor.to_string())
 }
 
 /// Remove a link from an artifact in its YAML file using the safe editor.
