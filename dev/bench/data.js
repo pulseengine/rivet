@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790195304110,
+  "lastUpdate": 1790228982671,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "2418f89b3e2bced4f3e10bce95f300f0c0a39645",
-          "message": "fix(test): use CARGO_BIN_EXE_rivet in mcp_integration so release evidence builds (#293) (#834)\n\n`Build test evidence` was red from v0.31.0 through v0.33.1 and the job comment\nblamed a flaky highs-sys WASI cross-compile. That was stale: the failing step\nis `Run tests with JUnit XML`, and the failure is mcp_integration.\n\nrivet_bin() walked up from current_exe() -- pop the filename, pop again only if\nthe parent is named `deps`, append `rivet`, assert it exists. On that runner the\nwalk landed in a build-script OUT_DIR:\n\n  target/debug/build/rivet-cli/e015544e6f99c26d/out/rivet\n\nThe `deps` check did not match, the second pop never happened, and the assert\nreported a wrong guess as a missing binary. Every test in the file died in ~5ms\nthrough all three nextest retries. continue-on-error on the job hid it, so four\nconsecutive releases shipped a compliance bundle containing no test evidence.\n\nCARGO_BIN_EXE_rivet removes the guess: for an integration test cargo builds the\nbinary and substitutes its absolute path at compile time. The other 27\nintegration tests in this directory already used it; this was the only holdout.\n\nReproduced before fixing. Running the test binary from a build-script\nOUT_DIR-shaped path: before exit 101 with the same \"rivet binary not found\"\nmessage shape as CI, after exit 0. Two earlier hypotheses were tested and\ndiscarded and are recorded in the source comment so they are not re-run -- that\nnextest does not build bin targets (it does), and that the self-hosted runners\nmerely had a warm target dir (insufficient).\n\nAlso replaces the stale WASI comment and records what continue-on-error cost\nhere, so the next red on that job is investigated rather than shipped past.\n\nRefs: FEAT-080\nRefs: #293",
-          "timestamp": "2026-08-20T11:10:27+02:00",
-          "tree_id": "732f90ab21d15927ee79bb0dcac13c52725088e6",
-          "url": "https://github.com/pulseengine/rivet/commit/2418f89b3e2bced4f3e10bce95f300f0c0a39645"
-        },
-        "date": 1787217803390,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85739,
-            "range": "± 2025",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 916907,
-            "range": "± 12058",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14212563,
-            "range": "± 1166747",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2154,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24918,
-            "range": "± 114",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 370515,
-            "range": "± 1432",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 100,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 101,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1517123,
-            "range": "± 12708",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164486,
-            "range": "± 1051",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1974167,
-            "range": "± 16915",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 31134143,
-            "range": "± 2371586",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 494016,
-            "range": "± 2626",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 18166964,
-            "range": "± 106964",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1485884471,
-            "range": "± 11944076",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4447,
-            "range": "± 21",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 62404,
-            "range": "± 1231",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 844545,
-            "range": "± 2602",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 56156,
-            "range": "± 206",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 682151,
-            "range": "± 4782",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7881890,
-            "range": "± 197420",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1016,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14886,
-            "range": "± 101",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 311729,
-            "range": "± 2268",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23303,
-            "range": "± 162",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 162997,
-            "range": "± 871",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1518800,
-            "range": "± 20935",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1351594,
             "range": "± 19280",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4de6e01897fc6b793ba31e5d5f42d838bf9ea104",
+          "message": "feat(ordeal-certificate): consume ordeal TR-038 SAT witness — downgrade V-ordeal-cert-sat-is-self-checked (#991)\n\nFollows the recheck-gates-verifies shape UNSAT already uses: `witness-sha256`\n(envelope `witness.assignment_sha256`) plus `verification-result: pass`. No new\nrecord kind; composes with `V-ordeal-cert-recheck-gates-verifies` rather than\nbypassing it. The honest boundary moves from \"SAT verdict\" to \"SAT bundle\nwithout a re-checked witness\"; the warning still fires for SAT bundles that\ncarry no witness.\n\nCloses #988.\n\nRefs: REQ-277",
+          "timestamp": "2026-09-24T07:36:24+02:00",
+          "tree_id": "a58e87ef0938a3fa99fe0be18c1c1bd9ac4de079",
+          "url": "https://github.com/pulseengine/rivet/commit/4de6e01897fc6b793ba31e5d5f42d838bf9ea104"
+        },
+        "date": 1790228981094,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 87050,
+            "range": "± 5465",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 909104,
+            "range": "± 19807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14663235,
+            "range": "± 911093",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2165,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25564,
+            "range": "± 1083",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 369310,
+            "range": "± 2106",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1517052,
+            "range": "± 32743",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 163779,
+            "range": "± 1449",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1938993,
+            "range": "± 16500",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 33461385,
+            "range": "± 3300584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 498186,
+            "range": "± 3457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 16289566,
+            "range": "± 166121",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1290745302,
+            "range": "± 19392605",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4522,
+            "range": "± 51",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 65760,
+            "range": "± 703",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 861326,
+            "range": "± 19870",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60042,
+            "range": "± 1634",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 701113,
+            "range": "± 5032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 10184455,
+            "range": "± 2111342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1113,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14356,
+            "range": "± 302",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 330404,
+            "range": "± 8046",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22493,
+            "range": "± 69",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 158961,
+            "range": "± 2981",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1490189,
+            "range": "± 12581",
             "unit": "ns/iter"
           }
         ]
