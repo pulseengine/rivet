@@ -158,6 +158,39 @@ pub fn default_patterns() -> Vec<MarkerPattern> {
             link_type_group: 1,
             id_group: 2,
         },
+        // Lean line comment: -- rivet: verifies VER-036 (#992)
+        // Proof files are the artefacts PulseEngine's soundness stories rest
+        // on — a Lean file carrying `#print axioms` IS the verification, and
+        // the source-marker scanner previously had no `lean` entry so a
+        // `.lean` file was skipped before any pattern ran. Same shape as the
+        // shell gap (REQ-319) and the yaml/toml gap (REQ-352).
+        MarkerPattern {
+            language: "lean".into(),
+            pattern: Regex::new(r"--\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
+                .expect("valid regex"),
+            link_type_group: 1,
+            id_group: 2,
+        },
+        // Lean block comment on a single line: /- rivet: verifies VER-036 -/
+        // Multi-line block comments are out of scope; the reporter's use case
+        // is a one-line marker at the top of an `AxiomCheck.lean` file.
+        MarkerPattern {
+            language: "lean".into(),
+            pattern: Regex::new(r"/-\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)\s*-/")
+                .expect("valid regex"),
+            link_type_group: 1,
+            id_group: 2,
+        },
+        // Rocq/Coq block comment: (* rivet: verifies VER-036 *)
+        // `(* ... *)` is the only comment form in Rocq, so a distinct
+        // language is needed rather than reusing "generic" (which is `//`).
+        MarkerPattern {
+            language: "rocq".into(),
+            pattern: Regex::new(r"\(\*\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)\s*\*\)")
+                .expect("valid regex"),
+            link_type_group: 1,
+            id_group: 2,
+        },
     ]
 }
 
@@ -186,6 +219,16 @@ fn detect_language(path: &Path) -> Option<&'static str> {
         // REQ-343 (the probe's runs-on) and REQ-347 (the advisories check) are
         // both CI-config changes with no test to carry a marker.
         "yml" | "yaml" | "toml" => Some("config"),
+        // #992: proof files are the artefacts PulseEngine's soundness stories
+        // rest on — Lean's `#guard_msgs`-pinned `#print axioms` IS the
+        // verification, and there was no `lean` entry so a `.lean` file with
+        // `-- rivet: verifies VER-NNN` was skipped before any pattern ran.
+        // Own category rather than an alias for "generic" because Lean uses
+        // `--` and `/- -/`, neither of which the generic `//` pattern matches.
+        "lean" => Some("lean"),
+        // `.v` is Rocq/Coq. (Verilog also uses `.v`, but the marker keyword is
+        // `rivet:` and a Verilog file would only match if it carried one.)
+        "v" => Some("rocq"),
         _ => None,
     }
 }
@@ -226,7 +269,14 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
     // the catch-all would attribute a workflow marker to a shell helper several
     // steps away. The caller falls back to `file:line`, which is unambiguous —
     // and guessing a plausible-but-wrong name is exactly how REQ-326 happened.
-    if language == "config" {
+    //
+    // The same reasoning applies to proof files. Lean and Rocq name their
+    // proofs `theorem foo :`, `lemma foo :`, `Theorem Foo :`, `Definition
+    // Foo :` — none of which the generic catch-all (`fn|func|function|def|
+    // void|int|bool|auto`) matches by intent. Falling through would attribute
+    // a proof marker to a `def foo` inside a doc comment or a nearby unrelated
+    // structure. `AxiomCheck.lean:1` beats a guessed proof name.
+    if language == "config" || language == "lean" || language == "rocq" {
         return None;
     }
     let fn_pattern = match language {
@@ -1261,5 +1311,99 @@ fn a_later_test() { assert!(true); }
             !ids.contains(&"REQ-SKIPPED"),
             "target/ and node_modules/ must stay skipped; got {ids:?}"
         );
+    }
+
+    /// #992: Lean proof files are evidence, and the scanner previously had no
+    /// `.lean` entry — so a `-- rivet: verifies VER-036` at the top of an
+    /// `AxiomCheck.lean` was silently skipped and the axiom-cleanliness gate
+    /// could never be evidence for a verification artifact. Identical shape to
+    /// the shell gap (REQ-319) and the yaml/toml gap (REQ-352): the pattern
+    /// itself was never the obstacle; `detect_language` returned `None` and
+    /// `scan_file` bailed before any pattern ran. Both Lean comment forms are
+    /// exercised (line `--` and single-line block `/- -/`) so the mutation
+    /// gate can distinguish the two `MarkerPattern` entries.
+    #[test]
+    fn lean_proof_files_are_scanned_for_markers() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join("AxiomCheck.lean"),
+            "-- rivet: verifies VER-036\nimport Lean\nopen Lean\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Block.lean"),
+            "/- rivet: verifies VER-BLOCK -/\ntheorem trivial_true : True := ⟨⟩\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        let ids: Vec<&str> = markers.iter().map(|m| m.target_id.as_str()).collect();
+        assert!(
+            ids.contains(&"VER-036"),
+            "Lean line-comment marker must be found; got {ids:?}"
+        );
+        assert!(
+            ids.contains(&"VER-BLOCK"),
+            "Lean single-line block-comment marker must be found; got {ids:?}"
+        );
+        assert!(
+            markers.iter().all(|m| m.link_type == "verifies"),
+            "link type must parse from Lean comments; got {:?}",
+            markers.iter().map(|m| &m.link_type).collect::<Vec<_>>()
+        );
+    }
+
+    /// #992 (Rocq/Coq half): `.v` files use `(* ... *)`, which no existing
+    /// language pattern matches — "generic" is `//` and "config" is `#`. Own
+    /// language rather than an alias.
+    #[test]
+    fn rocq_proof_files_are_scanned_for_markers() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join("Soundness.v"),
+            "(* rivet: verifies VER-ROCQ-001 *)\nTheorem trivial : True. Proof. exact I. Qed.\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        assert_eq!(
+            markers.len(),
+            1,
+            "one Rocq marker expected; got {}",
+            markers.len()
+        );
+        assert_eq!(markers[0].target_id, "VER-ROCQ-001");
+        assert_eq!(markers[0].link_type, "verifies");
+    }
+
+    /// Proof-language markers must fall back to `file:line`, not to a guessed
+    /// theorem or definition name. The catch-all enclosing-function regex
+    /// happens to match `def foo` and `int foo` — words that legitimately
+    /// appear inside a Lean or Rocq file — and attributing a marker to one of
+    /// those is exactly the misattribution shape REQ-326 documents. An
+    /// unambiguous `AxiomCheck.lean:1` beats a plausible wrong name.
+    #[test]
+    fn proof_markers_fall_back_to_file_and_line() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        // A `def` that the generic catch-all would greedily match if we let it.
+        std::fs::write(
+            dir.path().join("AxiomCheck.lean"),
+            "-- rivet: verifies VER-ATTR-001\ndef my_theorem_name : True := ⟨⟩\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("Soundness.v"),
+            "(* rivet: verifies VER-ATTR-002 *)\nDefinition my_defn : nat := 0.\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        for m in &markers {
+            assert!(
+                m.test_name.contains(':'),
+                "proof marker must be file:line, not a guessed name; got {}",
+                m.test_name
+            );
+        }
     }
 }
