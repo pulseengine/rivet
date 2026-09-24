@@ -9065,3 +9065,18 @@ artifacts:
       model: claude-opus-5
       timestamp: 2026-09-24T07:13:56Z
     release: v0.40.0
+
+  - id: REQ-375
+    type: requirement
+    title: nine of eleven declared oracles never execute and six of their commands do not exist — the dispatcher matches one hard-coded string and skips the rest silently
+    status: proposed
+    description: "The schemas declare eleven oracles across dev, aspice and iso-26262, each with a command field naming what discharges it. NINE OF THE ELEVEN NEVER EXECUTE, and SIX of the eight distinct commands they name DO NOT EXIST AS SUBCOMMANDS. Measured on this tree. The dispatcher in close_gaps.rs skips every oracle whose command does not begin with rivet validate, with a bare continue and no warning; its own comment says when the oracle library lands, this becomes a general dispatcher over the command field, so the gap is known but unrecorded as an artifact. And of the commands themselves, rivet check bidirectional and rivet check review-signoff exist, while decomposition-coverage, work-product-content, base-practice-coverage, asil-decomposition, coverage-threshold and method-table-compliance do not. WHAT THIS LOOKS LIKE FROM OUTSIDE is worse than a missing feature. rivet pipelines list prints the ISO 26262 confirmation, coverage and vmodel pipelines with their uses-oracles sets rendered as though they were live, including coverage-threshold and method-table-compliance, whose commands do not exist. A reader of that output reasonably concludes those checks run. rivet close-gaps is honest in its own help text, which says MVP structural pipeline and dev schema, but nothing connects that caveat to the pipelines listing, and nothing warns at the point the oracle is skipped. TWO DEFECTS, and they should be fixed in that order. First, a declared oracle whose command cannot be dispatched must be REPORTED, not silently skipped: pipelines validate already exists as an advisory checker over unknown oracle references and is the natural home, and the skip site in the dispatcher must say what it skipped and why. Absence of a firing currently cannot be distinguished from a clean run. Second, the dispatcher must become general over the command field rather than matching one hard-coded string, which is what the code comment already promises. WHY THIS MATTERS BEYOND TIDINESS. The oracle declaration is the extension point for routing checklist questions that cannot be verified mechanically, an assessor asking whether a requirement is atomic, whether a rationale actually supports its decision, to something outside rivet and bringing back an opinion for a human to weigh. That design is sound and is tracked separately, but it hangs off a dispatcher that today executes exactly one hard-coded command. A new oracle kind added now would be declared, listed by pipelines, and silently never run. Related to issue 957 gates that pass vacuously and issue 958 documented behaviour the code does not have."
+    tags: [oracle, weak-green, aspice, extension-point]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-24T15:33:28Z
+    release: v0.40.0

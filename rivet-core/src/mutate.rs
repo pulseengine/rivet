@@ -966,6 +966,39 @@ mod tests {
 
     // rivet: verifies REQ-366
     #[test]
+    fn staged_writes_counts_distinct_files_not_edits() {
+        // `len` is what tells the caller how many files a batch touched, and
+        // the mutation gate found it untested: every existing assertion used a
+        // single file, so `len -> 1` survived. Two files, and a repeat edit to
+        // one of them, pin both halves.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let a = dir.path().join("a.yaml");
+        let b = dir.path().join("b.yaml");
+        std::fs::write(&a, "a\n").unwrap();
+        std::fs::write(&b, "b\n").unwrap();
+
+        let mut staged = StagedWrites::new();
+        assert!(staged.is_empty(), "a fresh set is empty");
+        assert_eq!(staged.len(), 0);
+
+        staged.stage(a.clone(), "a1\n".to_string());
+        assert!(!staged.is_empty(), "staging one file makes it non-empty");
+        assert_eq!(staged.len(), 1);
+
+        staged.stage(b.clone(), "b1\n".to_string());
+        assert_eq!(staged.len(), 2, "two distinct files");
+
+        // Re-staging the same path replaces rather than accumulating.
+        staged.stage(a.clone(), "a2\n".to_string());
+        assert_eq!(staged.len(), 2, "a repeat edit is not a third file");
+
+        assert_eq!(staged.commit().unwrap(), 2, "commit reports files written");
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "a2\n");
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "b1\n");
+    }
+
+    // rivet: verifies REQ-366
+    #[test]
     fn validate_modify_refuses_an_external_and_names_it() {
         // #965: the external was accepted by the pre-write pass and only blew
         // up inside the write loop, after earlier files were already on disk,
