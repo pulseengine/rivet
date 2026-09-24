@@ -101,7 +101,7 @@ fn generate_artifacts(n: usize, links_per: usize) -> Vec<Artifact> {
                 links,
                 fields: {
                     let mut f = BTreeMap::new();
-                    f.insert("priority".into(), serde_yaml::Value::String("must".into()));
+                    f.insert("priority".into(), rivet_yaml::Value::String("must".into()));
                     f
                 },
                 fields_per_variant: Default::default(),

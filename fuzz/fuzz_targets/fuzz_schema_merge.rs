@@ -9,7 +9,7 @@ fuzz_target!(|data: &[u8]| {
     };
 
     // Try to parse the fuzzed input as a SchemaFile.
-    let Ok(fuzzed_schema) = serde_yaml::from_str::<SchemaFile>(s) else {
+    let Ok(fuzzed_schema) = rivet_yaml::from_str::<SchemaFile>(s) else {
         return;
     };
 
@@ -22,7 +22,7 @@ artifact-types: []
 link-types: []
 traceability-rules: []
 "#;
-    let base_schema: SchemaFile = serde_yaml::from_str(base_yaml).unwrap();
+    let base_schema: SchemaFile = rivet_yaml::from_str(base_yaml).unwrap();
 
     // Merge the base schema with the fuzzed schema — this exercises the
     // HashMap insertion, inverse-map building, and traceability-rule

@@ -51,7 +51,7 @@ use rivet_core::validate::{Diagnostic, validate};
 fn parse_schema(name: &str) -> SchemaFile {
     let content =
         embedded_schema(name).unwrap_or_else(|| panic!("embedded schema `{name}` not found"));
-    serde_yaml::from_str(content)
+    rivet_yaml::from_str(content)
         .unwrap_or_else(|e| panic!("schema `{name}` failed to parse as SchemaFile: {e}"))
 }
 
@@ -90,8 +90,8 @@ fn artifact(id: &str, art_type: &str, status: &str, links: &[(&str, &str)]) -> A
     }
 }
 
-fn yaml(v: &str) -> serde_yaml::Value {
-    serde_yaml::Value::String(v.into())
+fn yaml(v: &str) -> rivet_yaml::Value {
+    rivet_yaml::Value::String(v.into())
 }
 
 /// A fully-populated, hash-carrying UNSAT certificate. `rechecked`
@@ -103,11 +103,11 @@ fn unsat_cert(id: &str, rechecked: bool, links: &[(&str, &str)]) -> Artifact {
     a.fields.insert("verdict".into(), yaml("unsat"));
     a.fields.insert(
         "produced-by".into(),
-        serde_yaml::from_str("{name: ordeal, version: 0.17.0}").unwrap(),
+        rivet_yaml::from_str("{name: ordeal, version: 0.17.0}").unwrap(),
     );
     a.fields.insert(
         "checked-by".into(),
-        serde_yaml::from_str("{name: ordeal-lrat, version: 0.17.0}").unwrap(),
+        rivet_yaml::from_str("{name: ordeal-lrat, version: 0.17.0}").unwrap(),
     );
     a.fields
         .insert("attests-claim".into(), yaml("variant-inconsistent"));
@@ -121,7 +121,7 @@ fn unsat_cert(id: &str, rechecked: bool, links: &[(&str, &str)]) -> Artifact {
     );
     a.fields.insert(
         "recheck".into(),
-        serde_yaml::from_str(
+        rivet_yaml::from_str(
             "{command: 'ordeal-lrat check problem.cnf proof.lrat', expect-exit: 0}",
         )
         .unwrap(),
@@ -272,7 +272,7 @@ fn golden_fixture_roundtrips_byte_identical_and_validates_clean() {
     assert_eq!(
         recheck
             .get("expect-exit")
-            .and_then(serde_yaml::Value::as_i64),
+            .and_then(rivet_yaml::Value::as_i64),
         Some(0)
     );
     assert!(

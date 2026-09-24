@@ -111,20 +111,20 @@ fn slug(s: &str) -> String {
 /// all others would have to invent a flattening convention, and doing
 /// that silently has bitten users before. Callers surface the error so
 /// the YAML author can choose an explicit representation.
-fn attr_scalar(feature: &str, key: &str, v: &serde_yaml::Value) -> Result<String, Error> {
+fn attr_scalar(feature: &str, key: &str, v: &rivet_yaml::Value) -> Result<String, Error> {
     match v {
-        serde_yaml::Value::Null => Ok(String::new()),
-        serde_yaml::Value::Bool(b) => Ok(if *b { "1".into() } else { "0".into() }),
-        serde_yaml::Value::Number(n) => Ok(n.to_string()),
-        serde_yaml::Value::String(s) => Ok(s.clone()),
-        serde_yaml::Value::Sequence(_) | serde_yaml::Value::Mapping(_) => {
+        rivet_yaml::Value::Null => Ok(String::new()),
+        rivet_yaml::Value::Bool(b) => Ok(if *b { "1".into() } else { "0".into() }),
+        rivet_yaml::Value::Number(n) => Ok(n.to_string()),
+        rivet_yaml::Value::String(s) => Ok(s.clone()),
+        rivet_yaml::Value::Sequence(_) | rivet_yaml::Value::Mapping(_) => {
             Err(Error::Schema(format!(
                 "feature `{feature}` attribute `{key}`: non-scalar values (lists/maps) are only \
                  supported in --format json; split into multiple scalar keys or use the JSON \
                  formatter"
             )))
         }
-        serde_yaml::Value::Tagged(t) => attr_scalar(feature, key, &t.value),
+        rivet_yaml::Value::Tagged(t) => attr_scalar(feature, key, &t.value),
     }
 }
 
@@ -151,8 +151,8 @@ fn sh_quote(s: &str) -> String {
 fn walk<'a>(
     model: &'a FeatureModel,
     resolved: &'a ResolvedVariant,
-) -> impl Iterator<Item = (&'a str, &'a BTreeMap<String, serde_yaml::Value>)> + 'a {
-    static EMPTY: std::sync::OnceLock<BTreeMap<String, serde_yaml::Value>> =
+) -> impl Iterator<Item = (&'a str, &'a BTreeMap<String, rivet_yaml::Value>)> + 'a {
+    static EMPTY: std::sync::OnceLock<BTreeMap<String, rivet_yaml::Value>> =
         std::sync::OnceLock::new();
     let empty = EMPTY.get_or_init(BTreeMap::new);
     resolved
@@ -190,11 +190,11 @@ fn emit_json(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String,
         .map_err(|e| Error::Schema(format!("json serialization: {e}")))
 }
 
-fn yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
+fn yaml_to_json(v: &rivet_yaml::Value) -> serde_json::Value {
     match v {
-        serde_yaml::Value::Null => serde_json::Value::Null,
-        serde_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
-        serde_yaml::Value::Number(n) => {
+        rivet_yaml::Value::Null => serde_json::Value::Null,
+        rivet_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),
+        rivet_yaml::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
                 serde_json::json!(i)
             } else if let Some(u) = n.as_u64() {
@@ -207,16 +207,16 @@ fn yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
                 serde_json::Value::Null
             }
         }
-        serde_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
-        serde_yaml::Value::Sequence(items) => {
+        rivet_yaml::Value::String(s) => serde_json::Value::String(s.clone()),
+        rivet_yaml::Value::Sequence(items) => {
             serde_json::Value::Array(items.iter().map(yaml_to_json).collect())
         }
-        serde_yaml::Value::Mapping(m) => {
+        rivet_yaml::Value::Mapping(m) => {
             let mut out = serde_json::Map::new();
             for (k, v) in m {
                 let key = match k {
-                    serde_yaml::Value::String(s) => s.clone(),
-                    other => serde_yaml::to_string(other)
+                    rivet_yaml::Value::String(s) => s.clone(),
+                    other => rivet_yaml::to_string(other)
                         .unwrap_or_default()
                         .trim()
                         .to_string(),
@@ -225,7 +225,7 @@ fn yaml_to_json(v: &serde_yaml::Value) -> serde_json::Value {
             }
             serde_json::Value::Object(out)
         }
-        serde_yaml::Value::Tagged(t) => yaml_to_json(&t.value),
+        rivet_yaml::Value::Tagged(t) => yaml_to_json(&t.value),
     }
 }
 
@@ -1006,7 +1006,7 @@ variants:
     fn load_matrix_fixture() -> (FMStruct, FeatureBinding) {
         let model = FeatureModel::from_yaml(matrix_model_yaml()).expect("parse model");
         let binding: FeatureBinding =
-            serde_yaml::from_str(matrix_binding_yaml()).expect("parse binding");
+            rivet_yaml::from_str(matrix_binding_yaml()).expect("parse binding");
         (model, binding)
     }
 
@@ -1108,7 +1108,7 @@ variants:
     selects: ["tiny"]
 "#;
         let model = FeatureModel::from_yaml(model_yaml).unwrap();
-        let binding: FeatureBinding = serde_yaml::from_str(binding_yaml).unwrap();
+        let binding: FeatureBinding = rivet_yaml::from_str(binding_yaml).unwrap();
         let filters = MatrixFilters {
             default_runner: Some("macos-latest".to_string()),
             ..Default::default()
@@ -1139,7 +1139,7 @@ variants:
         // Runner key at its own level.
         assert!(out.contains("runner: ubuntu-latest"));
         // Output must round-trip as valid YAML.
-        let _: serde_yaml::Value = serde_yaml::from_str(&out).expect("emitted YAML parses");
+        let _: rivet_yaml::Value = rivet_yaml::from_str(&out).expect("emitted YAML parses");
     }
 
     #[test]
@@ -1155,7 +1155,7 @@ variants:
         assert!(out.contains("build:"));
         assert!(out.contains("runs-on: ${{ matrix.runner }}"));
         assert!(out.contains("actions/checkout@v4"));
-        let _: serde_yaml::Value = serde_yaml::from_str(&out).expect("job-wrapped YAML parses");
+        let _: rivet_yaml::Value = rivet_yaml::from_str(&out).expect("job-wrapped YAML parses");
     }
 
     #[test]
@@ -1189,7 +1189,7 @@ variants:
         assert!(out.contains("ATTR_ASIL: \"QM\""));
         assert!(out.contains("RUNNER: ubuntu-latest"));
         // Round-trip parse.
-        let _: serde_yaml::Value = serde_yaml::from_str(&out).expect("gitlab YAML parses");
+        let _: rivet_yaml::Value = rivet_yaml::from_str(&out).expect("gitlab YAML parses");
     }
 
     #[test]
@@ -1208,7 +1208,7 @@ variants:
         assert!(out.contains("VARIANT: full-ci"));
         assert!(out.contains("ATTR_ASIL: \"QM\""));
         // Round-trip parse.
-        let _: serde_yaml::Value = serde_yaml::from_str(&out).expect("azure YAML parses");
+        let _: rivet_yaml::Value = rivet_yaml::from_str(&out).expect("azure YAML parses");
     }
 
     #[test]

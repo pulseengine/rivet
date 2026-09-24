@@ -733,7 +733,7 @@ pub fn generate_lockfile(
 /// Write lockfile to `rivet.lock`.
 pub fn write_lockfile(lock: &Lockfile, project_dir: &Path) -> Result<(), crate::error::Error> {
     let path = project_dir.join("rivet.lock");
-    let yaml = serde_yaml::to_string(lock)
+    let yaml = rivet_yaml::to_string(lock)
         .map_err(|e| crate::error::Error::Schema(format!("serialize lockfile: {e}")))?;
     std::fs::write(&path, yaml)
         .map_err(|e| crate::error::Error::Io(format!("write rivet.lock: {e}")))?;
@@ -748,7 +748,7 @@ pub fn read_lockfile(project_dir: &Path) -> Result<Option<Lockfile>, crate::erro
     }
     let content = std::fs::read_to_string(&path)
         .map_err(|e| crate::error::Error::Io(format!("read rivet.lock: {e}")))?;
-    let lock: Lockfile = serde_yaml::from_str(&content)
+    let lock: Lockfile = rivet_yaml::from_str(&content)
         .map_err(|e| crate::error::Error::Schema(format!("parse rivet.lock: {e}")))?;
     Ok(Some(lock))
 }
@@ -1526,8 +1526,8 @@ mod tests {
         );
 
         let lock = Lockfile { pins };
-        let yaml = serde_yaml::to_string(&lock).unwrap();
-        let parsed: Lockfile = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = rivet_yaml::to_string(&lock).unwrap();
+        let parsed: Lockfile = rivet_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed.pins.len(), 2);
         assert_eq!(parsed.pins["rivet"].commit, "abc123def456");
         assert!(parsed.pins["rivet"].git.is_some());

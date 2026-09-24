@@ -595,7 +595,7 @@ fn resolve_list(acc: &Accessor, artifact: &Artifact) -> Vec<String> {
                 .fields
                 .get(other)
                 .and_then(|v| match v {
-                    serde_yaml::Value::Sequence(seq) => {
+                    rivet_yaml::Value::Sequence(seq) => {
                         Some(seq.iter().map(yaml_value_to_string).collect())
                     }
                     _ => None,
@@ -616,12 +616,12 @@ fn resolve_field_exists(name: &str, artifact: &Artifact) -> bool {
     }
 }
 
-fn yaml_value_to_string(v: &serde_yaml::Value) -> String {
+fn yaml_value_to_string(v: &rivet_yaml::Value) -> String {
     match v {
-        serde_yaml::Value::String(s) => s.clone(),
-        serde_yaml::Value::Number(n) => n.to_string(),
-        serde_yaml::Value::Bool(b) => b.to_string(),
-        serde_yaml::Value::Null => String::new(),
+        rivet_yaml::Value::String(s) => s.clone(),
+        rivet_yaml::Value::Number(n) => n.to_string(),
+        rivet_yaml::Value::Bool(b) => b.to_string(),
+        rivet_yaml::Value::Null => String::new(),
         _ => format!("{v:?}"),
     }
 }
@@ -1528,14 +1528,14 @@ mod tests {
             ],
             fields: {
                 let mut m = BTreeMap::new();
-                m.insert("priority".into(), serde_yaml::Value::String("must".into()));
+                m.insert("priority".into(), rivet_yaml::Value::String("must".into()));
                 m.insert(
                     "category".into(),
-                    serde_yaml::Value::String("functional".into()),
+                    rivet_yaml::Value::String("functional".into()),
                 );
                 m.insert(
                     "baseline".into(),
-                    serde_yaml::Value::String("v0.1.0".into()),
+                    rivet_yaml::Value::String("v0.1.0".into()),
                 );
                 m
             },

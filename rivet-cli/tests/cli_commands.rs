@@ -11594,7 +11594,7 @@ fn add_assigns_a_release_in_one_step() {
         .expect("get yaml");
     assert!(get.status.success());
     let yaml = String::from_utf8_lossy(&get.stdout);
-    let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).expect("get output is valid YAML");
+    let doc: rivet_yaml::Value = rivet_yaml::from_str(&yaml).expect("get output is valid YAML");
     assert_eq!(
         doc.get("release").and_then(|v| v.as_str()),
         Some("v0.36.0"),

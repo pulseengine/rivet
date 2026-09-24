@@ -1023,7 +1023,7 @@ impl DocInvariant for ConfigExampleFreshness {
                     .to_ascii_lowercase();
                 match kind.as_str() {
                     "yaml" | "yml" => {
-                        if let Err(e) = serde_yaml::from_str::<serde_yaml::Value>(body) {
+                        if let Err(e) = rivet_yaml::from_str::<rivet_yaml::Value>(body) {
                             let line = line_for_offset(&doc.content, *start);
                             out.push(Violation {
                                 file: doc.rel_path.clone(),

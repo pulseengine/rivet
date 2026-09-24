@@ -1379,7 +1379,7 @@ fn check_fields_against_type(
     artifact_type: &str,
     description: Option<&str>,
     status: Option<&str>,
-    fields: &BTreeMap<String, serde_yaml::Value>,
+    fields: &BTreeMap<String, rivet_yaml::Value>,
     type_def: &ArtifactTypeDef,
     rule_suffix: &str,
     msg_suffix: &str,
@@ -1662,7 +1662,7 @@ mod tests {
     ) -> Artifact {
         let mut field_map = BTreeMap::new();
         for (k, v) in fields {
-            field_map.insert(k.to_string(), serde_yaml::Value::String(v.to_string()));
+            field_map.insert(k.to_string(), rivet_yaml::Value::String(v.to_string()));
         }
         let mut a = minimal_artifact(id, artifact_type);
         a.description = description.map(|s| s.to_string());
@@ -2041,7 +2041,7 @@ then:
   required-fields: [description]
 severity: warning
 "#;
-        let rule: ConditionalRule = serde_yaml::from_str(yaml).unwrap();
+        let rule: ConditionalRule = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(rule.name, "test-rule");
         assert!(matches!(rule.when, Condition::Equals { .. }));
         assert!(matches!(rule.then, Requirement::RequiredFields { .. }));
@@ -2060,7 +2060,7 @@ then:
   required-links: [mitigated_by]
 severity: error
 "#;
-        let rule: ConditionalRule = serde_yaml::from_str(yaml).unwrap();
+        let rule: ConditionalRule = rivet_yaml::from_str(yaml).unwrap();
         assert!(matches!(rule.when, Condition::Matches { .. }));
         assert!(matches!(rule.then, Requirement::RequiredLinks { .. }));
     }
@@ -2076,7 +2076,7 @@ when:
 then:
   required-fields: [alternatives]
 "#;
-        let rule: ConditionalRule = serde_yaml::from_str(yaml).unwrap();
+        let rule: ConditionalRule = rivet_yaml::from_str(yaml).unwrap();
         assert!(matches!(rule.when, Condition::Exists { .. }));
         // Default severity should be Error
         assert_eq!(rule.severity, Severity::Error);
@@ -2286,11 +2286,11 @@ then:
         Schema::merge(&[file])
     }
 
-    /// Helper: build an artifact whose field holds a raw `serde_yaml::Value`.
+    /// Helper: build an artifact whose field holds a raw `rivet_yaml::Value`.
     fn make_artifact_with_yaml_field(
         id: &str,
         field_name: &str,
-        value: serde_yaml::Value,
+        value: rivet_yaml::Value,
     ) -> Artifact {
         let mut a = minimal_artifact(id, "test");
         a.fields.insert(field_name.to_string(), value);
@@ -2308,7 +2308,7 @@ then:
             .insert(make_artifact_with_yaml_field(
                 "A-1",
                 "priority",
-                serde_yaml::Value::Bool(true),
+                rivet_yaml::Value::Bool(true),
             ))
             .unwrap();
         let graph = LinkGraph::build(&store, &schema);
@@ -2336,7 +2336,7 @@ then:
             .insert(make_artifact_with_yaml_field(
                 "A-1",
                 "enabled",
-                serde_yaml::Value::Bool(true),
+                rivet_yaml::Value::Bool(true),
             ))
             .unwrap();
         let graph = LinkGraph::build(&store, &schema);
@@ -2361,7 +2361,7 @@ then:
             .insert(make_artifact_with_yaml_field(
                 "A-1",
                 "enabled",
-                serde_yaml::Value::Bool(false),
+                rivet_yaml::Value::Bool(false),
             ))
             .unwrap();
         let graph = LinkGraph::build(&store, &schema);
@@ -2387,7 +2387,7 @@ then:
             .insert(make_artifact_with_yaml_field(
                 "A-1",
                 "level",
-                serde_yaml::Value::Number(serde_yaml::Number::from(99)),
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(99)),
             ))
             .unwrap();
         let graph = LinkGraph::build(&store, &schema);
@@ -2414,7 +2414,7 @@ then:
             .insert(make_artifact_with_yaml_field(
                 "A-1",
                 "level",
-                serde_yaml::Value::Number(serde_yaml::Number::from(2)),
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(2)),
             ))
             .unwrap();
         let graph = LinkGraph::build(&store, &schema);
@@ -2439,7 +2439,7 @@ then:
             .insert(make_artifact_with_yaml_field(
                 "A-1",
                 "enabled",
-                serde_yaml::Value::Bool(true),
+                rivet_yaml::Value::Bool(true),
             ))
             .unwrap();
         let graph = LinkGraph::build(&store, &schema);
@@ -2468,7 +2468,7 @@ then:
             .insert(make_artifact_with_yaml_field(
                 "A-1",
                 "level",
-                serde_yaml::Value::Number(serde_yaml::Number::from(2)),
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(2)),
             ))
             .unwrap();
         let graph = LinkGraph::build(&store, &schema);
@@ -2499,7 +2499,7 @@ then:
             .insert(make_artifact_with_yaml_field(
                 "A-1",
                 "flag",
-                serde_yaml::Value::Bool(true),
+                rivet_yaml::Value::Bool(true),
             ))
             .unwrap();
         let graph = LinkGraph::build(&store, &schema);
@@ -3061,7 +3061,7 @@ then:
         let mut store = Store::new();
         let mut art = minimal_artifact("V-1", "verification");
         art.fields
-            .insert("cited-source".into(), serde_yaml::Value::String("x".into()));
+            .insert("cited-source".into(), rivet_yaml::Value::String("x".into()));
         store.insert(art).unwrap();
 
         let graph = LinkGraph::build(&store, &schema);
@@ -4735,12 +4735,12 @@ then:
         let mut art = make_artifact("R-1", "test", None, None, vec![], vec![]);
         art.fields.insert(
             "priority".to_string(),
-            serde_yaml::Value::String("must".to_string()),
+            rivet_yaml::Value::String("must".to_string()),
         );
         let mut overlay = BTreeMap::new();
         overlay.insert(
             "priority".to_string(),
-            serde_yaml::Value::String("should".to_string()),
+            rivet_yaml::Value::String("should".to_string()),
         );
         art.fields_per_variant
             .insert("automotive".to_string(), overlay);
@@ -4797,7 +4797,7 @@ then:
         let mut overlay = BTreeMap::new();
         overlay.insert(
             "asil".to_string(),
-            serde_yaml::Value::String("D".to_string()),
+            rivet_yaml::Value::String("D".to_string()),
         );
         art.fields_per_variant
             .insert("automotive".to_string(), overlay);
@@ -4855,7 +4855,7 @@ then:
     fn variant_artifact() -> Artifact {
         let mut a = minimal_artifact("REQ-THERMAL-01", "requirement");
         a.fields
-            .insert("priority".into(), serde_yaml::Value::String("must".into()));
+            .insert("priority".into(), rivet_yaml::Value::String("must".into()));
         a
     }
 
@@ -4863,7 +4863,7 @@ then:
     fn validate_variants_flags_unknown_variant_keys_as_warning_by_default() {
         let mut a = variant_artifact();
         let mut overlay = BTreeMap::new();
-        overlay.insert("priority".into(), serde_yaml::Value::String("must".into()));
+        overlay.insert("priority".into(), rivet_yaml::Value::String("must".into()));
         a.fields_per_variant.insert("unknown-name".into(), overlay);
         let mut store = Store::default();
         store.upsert(a);
@@ -4895,7 +4895,7 @@ then:
     fn validate_variants_strict_promotes_unknown_variant_key_to_error() {
         let mut a = variant_artifact();
         let mut overlay = BTreeMap::new();
-        overlay.insert("priority".into(), serde_yaml::Value::String("must".into()));
+        overlay.insert("priority".into(), rivet_yaml::Value::String("must".into()));
         a.fields_per_variant.insert("unknown".into(), overlay);
         let mut store = Store::default();
         store.upsert(a);
@@ -4917,7 +4917,7 @@ then:
         // {must, should, could} — must fire as a warning.
         let mut a = variant_artifact();
         let mut overlay = BTreeMap::new();
-        overlay.insert("priority".into(), serde_yaml::Value::String("maybe".into()));
+        overlay.insert("priority".into(), rivet_yaml::Value::String("maybe".into()));
         a.fields_per_variant.insert("automotive".into(), overlay);
         let mut store = Store::default();
         store.upsert(a);
@@ -4944,7 +4944,7 @@ then:
         let mut overlay = BTreeMap::new();
         overlay.insert(
             "priority".into(),
-            serde_yaml::Value::String("should".into()),
+            rivet_yaml::Value::String("should".into()),
         );
         a.fields_per_variant.insert("automotive".into(), overlay);
         let mut store = Store::default();
@@ -4972,7 +4972,7 @@ then:
         // Overlay sets some unrelated key so the overlay is non-empty.
         overlay.insert(
             "title-override".into(),
-            serde_yaml::Value::String("auto title".into()),
+            rivet_yaml::Value::String("auto title".into()),
         );
         a.fields_per_variant.insert("automotive".into(), overlay);
         let mut store = Store::default();
@@ -5010,7 +5010,7 @@ then:
         // feature names. This test pins that contract.
         let mut a = variant_artifact();
         let mut overlay = BTreeMap::new();
-        overlay.insert("priority".into(), serde_yaml::Value::String("must".into()));
+        overlay.insert("priority".into(), rivet_yaml::Value::String("must".into()));
         // Pretend "electric" is a feature name, not a variant config.
         a.fields_per_variant.insert("electric".into(), overlay);
         let mut store = Store::default();

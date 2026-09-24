@@ -32,7 +32,7 @@ use std::collections::BTreeMap;
 fn parse_schema(name: &str) -> SchemaFile {
     let content =
         embedded_schema(name).unwrap_or_else(|| panic!("embedded schema `{name}` not found"));
-    serde_yaml::from_str(content)
+    rivet_yaml::from_str(content)
         .unwrap_or_else(|e| panic!("schema `{name}` failed to parse as SchemaFile: {e}"))
 }
 

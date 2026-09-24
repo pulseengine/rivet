@@ -530,7 +530,7 @@ fn extract_sequence_items_with_inherited(
                         // Non-link inherited field
                         sa.artifact
                             .fields
-                            .insert(field.clone(), serde_yaml::Value::String(value.clone()));
+                            .insert(field.clone(), rivet_yaml::Value::String(value.clone()));
                     }
                 }
 
@@ -539,7 +539,7 @@ fn extract_sequence_items_with_inherited(
                     if !sa.artifact.fields.contains_key("uca-type") {
                         sa.artifact
                             .fields
-                            .insert("uca-type".into(), serde_yaml::Value::String(gk.into()));
+                            .insert("uca-type".into(), rivet_yaml::Value::String(gk.into()));
                     }
                 }
             }
@@ -578,7 +578,7 @@ fn extract_section_item(
     let mut release: Option<String> = None;
     let mut tags: Vec<String> = Vec::new();
     let mut links: Vec<Link> = Vec::new();
-    let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
+    let mut fields: BTreeMap<String, rivet_yaml::Value> = BTreeMap::new();
     let mut field_spans: BTreeMap<String, Span> = BTreeMap::new();
     let mut provenance: Option<Provenance> = None;
 
@@ -655,7 +655,7 @@ fn extract_section_item(
                 if key_text == "description" || key_text == "scenario" {
                     description = Some(text);
                 } else {
-                    fields.insert(key_text.clone(), serde_yaml::Value::String(text));
+                    fields.insert(key_text.clone(), rivet_yaml::Value::String(text));
                 }
                 field_spans.insert(key_text.clone(), value_span);
             }
@@ -780,7 +780,7 @@ fn extract_text_value(value_node: &SyntaxNode) -> String {
     scalar_text(value_node).unwrap_or_default()
 }
 
-/// Extract a serde_yaml::Value from a schema-driven field's value node.
+/// Extract a rivet_yaml::Value from a schema-driven field's value node.
 ///
 /// REQ-365: this used to try `extract_string_list` first, which reads each
 /// sequence item's FIRST scalar token — for a list of mappings, the first KEY.
@@ -788,7 +788,7 @@ fn extract_text_value(value_node: &SyntaxNode) -> String {
 /// `["ca", "ca", "ca"]`, silently, on the production `stpa-yaml` path. The
 /// generic path already used `node_to_yaml_value`, which converts nested
 /// mappings and sequences structurally; both now share it.
-fn extract_field_value(value_node: &SyntaxNode) -> serde_yaml::Value {
+fn extract_field_value(value_node: &SyntaxNode) -> rivet_yaml::Value {
     node_to_yaml_value(value_node)
 }
 
@@ -816,8 +816,8 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
     let mut release: Option<String> = None;
     let mut tags: Vec<String> = Vec::new();
     let mut links: Vec<Link> = Vec::new();
-    let mut fields: BTreeMap<String, serde_yaml::Value> = BTreeMap::new();
-    let mut fields_per_variant: BTreeMap<String, BTreeMap<String, serde_yaml::Value>> =
+    let mut fields: BTreeMap<String, rivet_yaml::Value> = BTreeMap::new();
+    let mut fields_per_variant: BTreeMap<String, BTreeMap<String, rivet_yaml::Value>> =
         BTreeMap::new();
     let mut field_spans: BTreeMap<String, Span> = BTreeMap::new();
     let mut provenance: Option<Provenance> = None;
@@ -904,12 +904,12 @@ fn extract_artifact_from_item(item: &SyntaxNode, result: &mut ParsedYamlFile) {
                 // via the generic path, then unpacked into the typed
                 // shape.
                 let raw = node_to_yaml_value(&value_node);
-                if let serde_yaml::Value::Mapping(outer) = raw {
+                if let rivet_yaml::Value::Mapping(outer) = raw {
                     for (vk, vv) in outer {
                         let Some(variant_name) = vk.as_str() else {
                             continue;
                         };
-                        if let serde_yaml::Value::Mapping(inner) = vv {
+                        if let rivet_yaml::Value::Mapping(inner) = vv {
                             let mut overlay = std::collections::BTreeMap::new();
                             for (fk, fv) in inner {
                                 if let Some(field_name) = fk.as_str() {
@@ -1083,7 +1083,7 @@ fn extract_links(value_node: &SyntaxNode, diagnostics: &mut Vec<ParseDiagnostic>
                     if looks_like_mapping {
                         let dedented = dedent_block(&raw);
                         if let Ok(ext) =
-                            serde_yaml::from_str::<crate::model::ExternalLinkTarget>(&dedented)
+                            rivet_yaml::from_str::<crate::model::ExternalLinkTarget>(&dedented)
                         {
                             if !ext.anchor.is_empty() {
                                 target = ext.anchor.clone();
@@ -1119,7 +1119,7 @@ fn extract_links(value_node: &SyntaxNode, diagnostics: &mut Vec<ParseDiagnostic>
 /// `[{type: X, target: Y}, ...]`. Re-parses the value text via
 /// `serde_yaml` and converts `type` + `target` into `Link`s.
 ///
-/// Loud-fail on parse error (REQ-091): if `serde_yaml::from_str`
+/// Loud-fail on parse error (REQ-091): if `rivet_yaml::from_str`
 /// rejects the value text, push a parse diagnostic naming the
 /// underlying error and return an empty link list. The previous
 /// behaviour silently returned `Vec::new()`, which an outer
@@ -1139,7 +1139,7 @@ fn extract_links_via_serde(
     if trimmed.is_empty() {
         return Vec::new();
     }
-    match serde_yaml::from_str::<Vec<Link>>(trimmed) {
+    match rivet_yaml::from_str::<Vec<Link>>(trimmed) {
         Ok(raws) => raws
             .into_iter()
             .filter(|l| !l.link_type.is_empty() && !l.target.is_empty())
@@ -1273,7 +1273,7 @@ fn extract_string_list(value_node: &SyntaxNode) -> Vec<String> {
                     .and_then(|s| s.strip_suffix(']'))
                     .is_some_and(|inner| inner.trim().is_empty());
             if !is_empty_brackets {
-                if let Ok(parsed) = serde_yaml::from_str::<Vec<String>>(trimmed) {
+                if let Ok(parsed) = rivet_yaml::from_str::<Vec<String>>(trimmed) {
                     items = parsed;
                 }
             }
@@ -1296,34 +1296,34 @@ fn extract_string_list(value_node: &SyntaxNode) -> Vec<String> {
     items
 }
 
-// ── Scalar → serde_yaml::Value conversion (YAML 1.2) ──────────────────
+// ── Scalar → rivet_yaml::Value conversion (YAML 1.2) ──────────────────
 
-fn scalar_to_yaml_value(kind: SyntaxKind, raw: &str) -> serde_yaml::Value {
+fn scalar_to_yaml_value(kind: SyntaxKind, raw: &str) -> rivet_yaml::Value {
     match kind {
         SyntaxKind::SingleQuotedScalar => {
             let inner = &raw[1..raw.len() - 1];
-            serde_yaml::Value::String(unquote_single_quoted(inner))
+            rivet_yaml::Value::String(unquote_single_quoted(inner))
         }
         SyntaxKind::DoubleQuotedScalar => {
             let inner = &raw[1..raw.len() - 1];
-            serde_yaml::Value::String(unescape_double_quoted(inner))
+            rivet_yaml::Value::String(unescape_double_quoted(inner))
         }
         SyntaxKind::PlainScalar => plain_scalar_to_value(raw),
-        _ => serde_yaml::Value::String(raw.to_string()),
+        _ => rivet_yaml::Value::String(raw.to_string()),
     }
 }
 
-fn plain_scalar_to_value(s: &str) -> serde_yaml::Value {
+fn plain_scalar_to_value(s: &str) -> rivet_yaml::Value {
     // YAML 1.2 core schema rules
     match s {
-        "null" | "~" => serde_yaml::Value::Null,
-        "true" => serde_yaml::Value::Bool(true),
-        "false" => serde_yaml::Value::Bool(false),
+        "null" | "~" => rivet_yaml::Value::Null,
+        "true" => rivet_yaml::Value::Bool(true),
+        "false" => rivet_yaml::Value::Bool(false),
         _ => {
             // Integer?
             if s.bytes().all(|b| b.is_ascii_digit()) && !s.is_empty() {
                 if let Ok(n) = s.parse::<u64>() {
-                    return serde_yaml::Value::Number(n.into());
+                    return rivet_yaml::Value::Number(n.into());
                 }
             }
             // Float? pattern: digits.digits
@@ -1334,19 +1334,19 @@ fn plain_scalar_to_value(s: &str) -> serde_yaml::Value {
                     && frac_part.bytes().all(|b| b.is_ascii_digit())
                 {
                     if let Ok(f) = s.parse::<f64>() {
-                        return serde_yaml::Value::Number(serde_yaml::Number::from(f));
+                        return rivet_yaml::Value::Number(rivet_yaml::Number::from(f));
                     }
                 }
             }
-            serde_yaml::Value::String(s.to_string())
+            rivet_yaml::Value::String(s.to_string())
         }
     }
 }
 
-/// Convert a Value node to a serde_yaml::Value.
+/// Convert a Value node to a rivet_yaml::Value.
 /// Convert a `Mapping` node (block or flow) to a YAML mapping.
-fn mapping_node_to_yaml(map: &SyntaxNode) -> serde_yaml::Value {
-    let mut mapping = serde_yaml::Mapping::new();
+fn mapping_node_to_yaml(map: &SyntaxNode) -> rivet_yaml::Value {
+    let mut mapping = rivet_yaml::Mapping::new();
     for entry in map.children() {
         if node_kind(&entry) != SyntaxKind::MappingEntry {
             continue;
@@ -1360,9 +1360,9 @@ fn mapping_node_to_yaml(map: &SyntaxNode) -> serde_yaml::Value {
         let Some(v) = child_of_kind(&entry, SyntaxKind::Value) else {
             continue;
         };
-        mapping.insert(serde_yaml::Value::String(k_text), node_to_yaml_value(&v));
+        mapping.insert(rivet_yaml::Value::String(k_text), node_to_yaml_value(&v));
     }
-    serde_yaml::Value::Mapping(mapping)
+    rivet_yaml::Value::Mapping(mapping)
 }
 
 /// Convert a `FlowSequence` node item by item (REQ-365).
@@ -1371,7 +1371,7 @@ fn mapping_node_to_yaml(map: &SyntaxNode) -> serde_yaml::Value {
 /// mappings, and nested `FlowSequence` nodes. Walking all DESCENDANT tokens
 /// instead — as this used to — flattens `[a, {b: c}]` into `[a, b, c]`, keys
 /// and values alike.
-fn flow_sequence_to_yaml(flow: &SyntaxNode) -> serde_yaml::Value {
+fn flow_sequence_to_yaml(flow: &SyntaxNode) -> rivet_yaml::Value {
     let mut arr = Vec::new();
     for child in flow.children_with_tokens() {
         match child {
@@ -1393,10 +1393,10 @@ fn flow_sequence_to_yaml(flow: &SyntaxNode) -> serde_yaml::Value {
             },
         }
     }
-    serde_yaml::Value::Sequence(arr)
+    rivet_yaml::Value::Sequence(arr)
 }
 
-fn node_to_yaml_value(value_node: &SyntaxNode) -> serde_yaml::Value {
+fn node_to_yaml_value(value_node: &SyntaxNode) -> rivet_yaml::Value {
     // Check for nested mapping → convert to YAML mapping
     if let Some(map) = child_of_kind(value_node, SyntaxKind::Mapping) {
         return mapping_node_to_yaml(&map);
@@ -1412,7 +1412,7 @@ fn node_to_yaml_value(value_node: &SyntaxNode) -> serde_yaml::Value {
             // SequenceItem might contain a mapping or scalar
             arr.push(node_to_yaml_value(&item));
         }
-        return serde_yaml::Value::Sequence(arr);
+        return rivet_yaml::Value::Sequence(arr);
     }
 
     // Check for flow sequence
@@ -1422,7 +1422,7 @@ fn node_to_yaml_value(value_node: &SyntaxNode) -> serde_yaml::Value {
 
     // Check for block scalar
     if let Some(text) = block_scalar_text(value_node) {
-        return serde_yaml::Value::String(text);
+        return rivet_yaml::Value::String(text);
     }
 
     // Try plain/quoted scalar
@@ -1451,7 +1451,7 @@ fn node_to_yaml_value(value_node: &SyntaxNode) -> serde_yaml::Value {
         }
     }
 
-    serde_yaml::Value::Null
+    rivet_yaml::Value::Null
 }
 
 // ── Tree-walking helpers ───────────────────────────────────────────────
@@ -2080,7 +2080,7 @@ artifacts:
         assert_eq!(ext.anchor, "ANCHOR-ACME-001");
     }
 
-    /// 4. Custom fields stored as serde_yaml::Value correctly.
+    /// 4. Custom fields stored as rivet_yaml::Value correctly.
     #[test]
     fn custom_fields_typed_correctly() {
         let source = "\
@@ -2100,17 +2100,17 @@ artifacts:
 
         assert_eq!(
             fields.get("priority"),
-            Some(&serde_yaml::Value::String("must".into()))
+            Some(&rivet_yaml::Value::String("must".into()))
         );
         assert_eq!(
             fields.get("count"),
-            Some(&serde_yaml::Value::Number(42.into()))
+            Some(&rivet_yaml::Value::Number(42.into()))
         );
-        assert_eq!(fields.get("enabled"), Some(&serde_yaml::Value::Bool(true)));
+        assert_eq!(fields.get("enabled"), Some(&rivet_yaml::Value::Bool(true)));
         // Float comparison
         let ratio = fields.get("ratio").unwrap();
         match ratio {
-            serde_yaml::Value::Number(n) => {
+            rivet_yaml::Value::Number(n) => {
                 let f = n.as_f64().unwrap();
                 assert!((f - 1.23_f64).abs() < 1e-10, "expected 1.23, got {}", f);
             }
@@ -2214,15 +2214,15 @@ artifacts:
 
         assert_eq!(
             fields.get("num_str"),
-            Some(&serde_yaml::Value::String("42".into()))
+            Some(&rivet_yaml::Value::String("42".into()))
         );
         assert_eq!(
             fields.get("bool_str"),
-            Some(&serde_yaml::Value::String("true".into()))
+            Some(&rivet_yaml::Value::String("true".into()))
         );
         assert_eq!(
             fields.get("null_str"),
-            Some(&serde_yaml::Value::String("null".into()))
+            Some(&rivet_yaml::Value::String("null".into()))
         );
     }
 
@@ -2262,8 +2262,8 @@ artifacts:
         let hir = extract_generic_artifacts(source);
         assert_eq!(hir.artifacts.len(), 1);
         let fields = &hir.artifacts[0].artifact.fields;
-        assert_eq!(fields.get("a"), Some(&serde_yaml::Value::Null));
-        assert_eq!(fields.get("b"), Some(&serde_yaml::Value::Null));
+        assert_eq!(fields.get("a"), Some(&rivet_yaml::Value::Null));
+        assert_eq!(fields.get("b"), Some(&rivet_yaml::Value::Null));
     }
 
     // ── Schema-driven extraction tests ──────────────────────────────
@@ -2300,7 +2300,7 @@ link-types:
 
 traceability-rules: []
 ";
-        let file: crate::schema::SchemaFile = serde_yaml::from_str(yaml).unwrap();
+        let file: crate::schema::SchemaFile = rivet_yaml::from_str(yaml).unwrap();
         // Also load common schema for base fields
         let common = crate::embedded::load_embedded_schema("common").unwrap();
         crate::schema::Schema::merge(&[common, file])
@@ -3148,19 +3148,19 @@ artifacts:
 
     // ── REQ-365: structured field values on the schema-driven path ──────
 
-    fn s(v: &str) -> serde_yaml::Value {
-        serde_yaml::Value::String(v.into())
+    fn s(v: &str) -> rivet_yaml::Value {
+        rivet_yaml::Value::String(v.into())
     }
 
-    fn map(pairs: &[(&str, serde_yaml::Value)]) -> serde_yaml::Value {
-        let mut m = serde_yaml::Mapping::new();
+    fn map(pairs: &[(&str, rivet_yaml::Value)]) -> rivet_yaml::Value {
+        let mut m = rivet_yaml::Mapping::new();
         for (k, v) in pairs {
             m.insert(s(k), v.clone());
         }
-        serde_yaml::Value::Mapping(m)
+        rivet_yaml::Value::Mapping(m)
     }
 
-    fn hazard_field(body: &str, key: &str) -> serde_yaml::Value {
+    fn hazard_field(body: &str, key: &str) -> rivet_yaml::Value {
         let source = format!(
             "hazards:\n  - id: H-001\n    title: t\n    losses: [L-001]\n{body}    after: sentinel\n"
         );
@@ -3172,7 +3172,7 @@ artifacts:
             Some(&s("sentinel")),
             "next key must survive"
         );
-        f.get(key).cloned().unwrap_or(serde_yaml::Value::Null)
+        f.get(key).cloned().unwrap_or(rivet_yaml::Value::Null)
     }
 
     /// The reported shape: `safety/stpa/control-structure.yaml` controllers.
@@ -3186,7 +3186,7 @@ artifacts:
         );
         assert_eq!(
             got,
-            serde_yaml::Value::Sequence(vec![
+            rivet_yaml::Value::Sequence(vec![
                 map(&[("from", s("CTRL-CLI")), ("info", s("Validation results"))]),
                 map(&[("from", s("CTRL-DASH")), ("info", s("Coverage metrics"))]),
             ])
@@ -3204,10 +3204,10 @@ artifacts:
         );
         assert_eq!(
             got,
-            serde_yaml::Value::Sequence(vec![
+            rivet_yaml::Value::Sequence(vec![
                 map(&[("ca", s("CA-1")), ("target", s("PROC-A"))]),
                 s("plain"),
-                serde_yaml::Value::Sequence(vec![s("x"), s("y")]),
+                rivet_yaml::Value::Sequence(vec![s("x"), s("y")]),
             ])
         );
     }
@@ -3221,7 +3221,7 @@ artifacts:
             got,
             map(&[
                 ("owner", s("team-a")),
-                ("level", serde_yaml::Value::Number(2.into()))
+                ("level", rivet_yaml::Value::Number(2.into()))
             ])
         );
     }
@@ -3237,10 +3237,10 @@ artifacts:
         );
         assert_eq!(
             got,
-            serde_yaml::Value::Sequence(vec![
+            rivet_yaml::Value::Sequence(vec![
                 s("one"),
-                serde_yaml::Value::Number(2.into()),
-                serde_yaml::Value::Bool(true)
+                rivet_yaml::Value::Number(2.into()),
+                rivet_yaml::Value::Bool(true)
             ])
         );
     }

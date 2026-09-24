@@ -235,24 +235,24 @@ pub const KNOWN_RIVET_YAML_TOP_LEVEL_KEYS: &[&str] = &[
 pub fn load_project_config_with_report(path: &Path) -> Result<(ProjectConfig, Vec<String>), Error> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| Error::Io(format!("{}: {}", path.display(), e)))?;
-    let config: ProjectConfig = serde_yaml::from_str(&content)
+    let config: ProjectConfig = rivet_yaml::from_str(&content)
         .map_err(|e| Error::Schema(format!("{}: {}", path.display(), e)))?;
     // Post-parse: enumerate the raw top-level keys and note any that
     // aren't in the known-good set. Failure to re-parse as a plain
     // Value (already-succeeded typed parse implies re-parseability)
     // returns an empty list, so a race on the file can't invent a
     // spurious diagnostic — worst case it goes unreported this run.
-    let unknown_keys: Vec<String> = serde_yaml::from_str::<serde_yaml::Value>(&content)
+    let unknown_keys: Vec<String> = rivet_yaml::from_str::<rivet_yaml::Value>(&content)
         .ok()
         .and_then(|v| match v {
-            serde_yaml::Value::Mapping(m) => Some(m),
+            rivet_yaml::Value::Mapping(m) => Some(m),
             _ => None,
         })
         .map(|m| {
             let mut keys: Vec<String> = m
                 .into_iter()
                 .filter_map(|(k, _)| match k {
-                    serde_yaml::Value::String(s) => Some(s),
+                    rivet_yaml::Value::String(s) => Some(s),
                     _ => None,
                 })
                 .filter(|k| !KNOWN_RIVET_YAML_TOP_LEVEL_KEYS.contains(&k.as_str()))

@@ -221,7 +221,7 @@ mod tests {
         let mut a = minimal_artifact(id, art_type);
         a.fields.insert(
             "baseline".into(),
-            serde_yaml::Value::String(baseline.into()),
+            rivet_yaml::Value::String(baseline.into()),
         );
         a
     }

@@ -214,7 +214,7 @@ fn artifacts_referencing_file(store: &rivet_core::store::Store, file_rel: &str) 
             }
         }
         for value in a.fields.values() {
-            if let serde_yaml::Value::String(s) = value {
+            if let rivet_yaml::Value::String(s) = value {
                 if let Some((_file, line, end_line)) = extract_file_ref(s, file_rel) {
                     refs.push(FileRef {
                         id: a.id.clone(),
@@ -1003,10 +1003,10 @@ pub(crate) fn build_artifact_info(
         .iter()
         .map(|(k, v)| {
             let display = match v {
-                serde_yaml::Value::String(s) => s.clone(),
-                serde_yaml::Value::Bool(b) => b.to_string(),
-                serde_yaml::Value::Number(n) => n.to_string(),
-                serde_yaml::Value::Null => String::new(),
+                rivet_yaml::Value::String(s) => s.clone(),
+                rivet_yaml::Value::Bool(b) => b.to_string(),
+                rivet_yaml::Value::Number(n) => n.to_string(),
+                rivet_yaml::Value::Null => String::new(),
                 other => format!("{other:?}"),
             };
             (k.clone(), display)

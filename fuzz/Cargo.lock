@@ -171,7 +171,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "etch"
-version = "0.35.0"
+version = "0.39.0"
 dependencies = [
  "petgraph",
 ]
@@ -495,7 +495,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "rivet-core"
-version = "0.35.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "etch",
@@ -504,11 +504,11 @@ dependencies = [
  "pulldown-cmark",
  "quick-xml",
  "regex",
+ "rivet-yaml",
  "rowan",
  "salsa",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
  "thiserror",
 ]
@@ -520,7 +520,18 @@ dependencies = [
  "arbitrary",
  "libfuzzer-sys",
  "rivet-core",
+ "rivet-yaml",
  "serde_json",
+]
+
+[[package]]
+name = "rivet-yaml"
+version = "0.39.0"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
  "serde_yaml",
 ]
 

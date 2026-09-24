@@ -524,10 +524,10 @@ mod proofs {
     /// merely provides a concrete evaluation context.
     fn eval_test_artifact() -> Artifact {
         let mut fields = BTreeMap::new();
-        fields.insert("priority".into(), serde_yaml::Value::String("must".into()));
+        fields.insert("priority".into(), rivet_yaml::Value::String("must".into()));
         fields.insert(
             "category".into(),
-            serde_yaml::Value::String("functional".into()),
+            rivet_yaml::Value::String("functional".into()),
         );
 
         Artifact {

@@ -59,7 +59,7 @@ fn load_store_from_git_ref(pp: &std::path::Path, gr: &str) -> Result<Store, Stri
     let config_path = format!("{prefix}rivet.yaml");
     let cc = rg(&["show", &format!("{gr}:{config_path}")])?;
     let cfg: ProjectConfig =
-        serde_yaml::from_str(&cc).map_err(|e| format!("parse rivet.yaml@{gr}: {e}"))?;
+        rivet_yaml::from_str(&cc).map_err(|e| format!("parse rivet.yaml@{gr}: {e}"))?;
     let mut store = Store::new();
     let adp = GenericYamlAdapter::new();
     let ac = AdapterConfig::default();

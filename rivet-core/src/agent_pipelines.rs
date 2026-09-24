@@ -106,7 +106,7 @@ pub enum AppliesTo {
     /// List of type names, e.g. `["requirement", "design-decision"]`.
     TypeList(Vec<String>),
     /// Map form with type / tag / status / conditions predicates.
-    Map(BTreeMap<String, serde_yaml::Value>),
+    Map(BTreeMap<String, rivet_yaml::Value>),
 }
 
 /// Firing condition for the oracle's command.
@@ -202,7 +202,7 @@ pub struct RoutingRule {
 /// The `when:` clause — a bag of keys the parser keeps tolerant.
 /// Supported keys today: `oracle`, `rule`, `severity`, `fires-on`,
 /// `closure-kind`, `artifact-type`, `variant`, `tag`, `field`.
-pub type MatchClause = BTreeMap<String, serde_yaml::Value>;
+pub type MatchClause = BTreeMap<String, rivet_yaml::Value>;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -231,7 +231,7 @@ impl AgentPipelines {
     /// or by reading the schema top-level; this is the fallback when
     /// the block is standalone.
     pub fn from_yaml(yaml: &str) -> Result<Self, Error> {
-        serde_yaml::from_str(yaml).map_err(|e| Error::Schema(format!("agent-pipelines: {e}")))
+        rivet_yaml::from_str(yaml).map_err(|e| Error::Schema(format!("agent-pipelines: {e}")))
     }
 
     /// Validate internal consistency: every oracle referenced by
@@ -268,7 +268,7 @@ impl AgentPipelines {
 
             // when.oracle references
             let mut validate_when = |rule_kind: &str, idx: usize, when: &MatchClause| {
-                if let Some(serde_yaml::Value::String(oracle_ref)) = when.get("oracle") {
+                if let Some(rivet_yaml::Value::String(oracle_ref)) = when.get("oracle") {
                     if !known_oracles.contains(oracle_ref.as_str()) {
                         errors.push(format!(
                             "pipeline `{name}` {rule_kind}[{idx}] references unknown oracle `{oracle_ref}`"

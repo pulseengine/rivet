@@ -268,7 +268,7 @@ fn extends_of(name: &str, schemas_dir: &std::path::Path) -> Vec<String> {
     if path.exists() {
         if let Some(f) = std::fs::read_to_string(&path)
             .ok()
-            .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+            .and_then(|c| rivet_yaml::from_str::<SchemaFile>(&c).ok())
         {
             return f.schema.extends;
         }
@@ -357,7 +357,7 @@ pub fn undeclared_local_bridges(
         }
         let Some(file) = std::fs::read_to_string(&path)
             .ok()
-            .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+            .and_then(|c| rivet_yaml::from_str::<SchemaFile>(&c).ok())
         else {
             continue;
         };
@@ -410,7 +410,7 @@ pub fn unsatisfied_bridge_bases(
         let extends: Vec<String> = if path.exists() {
             match std::fs::read_to_string(&path)
                 .ok()
-                .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+                .and_then(|c| rivet_yaml::from_str::<SchemaFile>(&c).ok())
             {
                 Some(f) => f.schema.extends.clone(),
                 None => continue,
@@ -446,7 +446,7 @@ pub fn load_embedded_schema(name: &str) -> Result<SchemaFile, Error> {
     let content = embedded_schema(name)
         .or_else(|| embedded_bridge(name))
         .ok_or_else(|| Error::Schema(format!("unknown built-in schema: {name}")))?;
-    serde_yaml::from_str(content)
+    rivet_yaml::from_str(content)
         .map_err(|e| Error::Schema(format!("parsing embedded schema '{name}': {e}")))
 }
 
@@ -523,7 +523,7 @@ pub fn schema_version_of(name: &str, source: &SchemaSource) -> String {
     match source {
         SchemaSource::OnDisk(p) => std::fs::read_to_string(p)
             .ok()
-            .and_then(|c| serde_yaml::from_str::<SchemaFile>(&c).ok())
+            .and_then(|c| rivet_yaml::from_str::<SchemaFile>(&c).ok())
             .map(|s| s.schema.version)
             .unwrap_or_default(),
         SchemaSource::Embedded => load_embedded_schema(name)
@@ -640,7 +640,7 @@ pub fn load_schemas_with_fallback(
             let file = crate::schema::Schema::load_file(&path)?;
             files.push(file);
         } else if let Some(content) = embedded_schema(name) {
-            let file: SchemaFile = serde_yaml::from_str(content)
+            let file: SchemaFile = rivet_yaml::from_str(content)
                 .map_err(|e| Error::Schema(format!("embedded '{name}': {e}")))?;
             files.push(file);
         } else if let Some(content) = embedded_bridge(name) {
@@ -650,7 +650,7 @@ pub fn load_schemas_with_fallback(
             // embedded, but resolution only auto-discovered them from the loaded
             // schema set and never resolved them by explicit name — so a
             // consumer's `schemas: [stpa-dev.bridge]` failed as "not found".
-            let file: SchemaFile = serde_yaml::from_str(content)
+            let file: SchemaFile = rivet_yaml::from_str(content)
                 .map_err(|e| Error::Schema(format!("embedded bridge '{name}': {e}")))?;
             files.push(file);
         } else {
@@ -703,7 +703,7 @@ pub fn load_schemas_with_fallback(
                 Err(e) => log::warn!("failed to load bridge schema '{bridge_name}': {e}"),
             }
         } else if let Some(content) = embedded_bridge(bridge_name) {
-            match serde_yaml::from_str::<SchemaFile>(content) {
+            match rivet_yaml::from_str::<SchemaFile>(content) {
                 Ok(file) => {
                     log::info!("auto-loaded bridge schema: {bridge_name} (embedded)");
                     files.push(file);

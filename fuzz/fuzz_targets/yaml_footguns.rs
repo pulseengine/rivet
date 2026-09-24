@@ -94,8 +94,8 @@ fn probe(yaml: &str) {
     let hir = rivet_core::yaml_hir::extract_generic_artifacts(yaml);
 
     // 3. Full artifact-level deserialize (some adapters use this).
-    let _ = serde_yaml::from_str::<Artifact>(yaml);
-    let _ = serde_yaml::from_str::<Vec<Artifact>>(yaml);
+    let _ = rivet_yaml::from_str::<Artifact>(yaml);
+    let _ = rivet_yaml::from_str::<Vec<Artifact>>(yaml);
 
     // Oracle 1: if parse_generic_yaml returned Ok, every returned id must
     // literally appear in the source text.  A returned id that is NOT a

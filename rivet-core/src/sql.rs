@@ -283,12 +283,12 @@ fn lit(v: Option<&str>) -> String {
 
 /// Flatten a YAML field value to a SQL-friendly string: scalars become their
 /// natural text, complex values (sequences/maps) become compact JSON.
-fn yaml_value_to_sql(value: &serde_yaml::Value) -> Option<String> {
+fn yaml_value_to_sql(value: &rivet_yaml::Value) -> Option<String> {
     match value {
-        serde_yaml::Value::Null => None,
-        serde_yaml::Value::Bool(b) => Some(b.to_string()),
-        serde_yaml::Value::Number(n) => Some(n.to_string()),
-        serde_yaml::Value::String(s) => Some(s.clone()),
+        rivet_yaml::Value::Null => None,
+        rivet_yaml::Value::Bool(b) => Some(b.to_string()),
+        rivet_yaml::Value::Number(n) => Some(n.to_string()),
+        rivet_yaml::Value::String(s) => Some(s.clone()),
         other => serde_json::to_string(other).ok(),
     }
 }

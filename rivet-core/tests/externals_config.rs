@@ -42,7 +42,7 @@ externals:
     path: ../meld
     prefix: meld
 "#;
-    let config: ProjectConfig = serde_yaml::from_str(yaml).unwrap();
+    let config: ProjectConfig = rivet_yaml::from_str(yaml).unwrap();
     let ext = config.externals.as_ref().unwrap();
     assert_eq!(ext.len(), 2);
 
@@ -70,6 +70,6 @@ project:
   schemas: [common]
 sources: []
 "#;
-    let config: ProjectConfig = serde_yaml::from_str(yaml).unwrap();
+    let config: ProjectConfig = rivet_yaml::from_str(yaml).unwrap();
     assert!(config.externals.is_none());
 }

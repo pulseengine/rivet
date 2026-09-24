@@ -687,8 +687,8 @@ fn tool_get_cached(proj: &McpProject, id: &str) -> Result<Value> {
         .iter()
         .map(|(k, v)| {
             let val = match v {
-                serde_yaml::Value::String(s) => Value::String(s.clone()),
-                serde_yaml::Value::Number(n) => {
+                rivet_yaml::Value::String(s) => Value::String(s.clone()),
+                rivet_yaml::Value::Number(n) => {
                     if let Some(i) = n.as_i64() {
                         json!(i)
                     } else if let Some(f) = n.as_f64() {
@@ -697,9 +697,9 @@ fn tool_get_cached(proj: &McpProject, id: &str) -> Result<Value> {
                         Value::String(n.to_string())
                     }
                 }
-                serde_yaml::Value::Bool(b) => Value::Bool(*b),
+                rivet_yaml::Value::Bool(b) => Value::Bool(*b),
                 other => Value::String(
-                    serde_yaml::to_string(other)
+                    rivet_yaml::to_string(other)
                         .unwrap_or_default()
                         .trim()
                         .to_string(),
@@ -954,7 +954,7 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
         })
         .unwrap_or_default();
 
-    let fields: BTreeMap<String, serde_yaml::Value> = arguments
+    let fields: BTreeMap<String, rivet_yaml::Value> = arguments
         .get("fields")
         .and_then(Value::as_object)
         .map(|obj| {
@@ -1022,29 +1022,29 @@ fn tool_add(project_dir: &Path, arguments: &Value) -> Result<Value> {
     }))
 }
 
-fn json_to_yaml_value(v: &Value) -> serde_yaml::Value {
+fn json_to_yaml_value(v: &Value) -> rivet_yaml::Value {
     match v {
-        Value::Null => serde_yaml::Value::Null,
-        Value::Bool(b) => serde_yaml::Value::Bool(*b),
+        Value::Null => rivet_yaml::Value::Null,
+        Value::Bool(b) => rivet_yaml::Value::Bool(*b),
         Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                serde_yaml::Value::Number(serde_yaml::Number::from(i))
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(i))
             } else if let Some(f) = n.as_f64() {
-                serde_yaml::Value::Number(serde_yaml::Number::from(f))
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(f))
             } else {
-                serde_yaml::Value::String(n.to_string())
+                rivet_yaml::Value::String(n.to_string())
             }
         }
-        Value::String(s) => serde_yaml::Value::String(s.clone()),
+        Value::String(s) => rivet_yaml::Value::String(s.clone()),
         Value::Array(arr) => {
-            serde_yaml::Value::Sequence(arr.iter().map(json_to_yaml_value).collect())
+            rivet_yaml::Value::Sequence(arr.iter().map(json_to_yaml_value).collect())
         }
         Value::Object(obj) => {
-            let map: serde_yaml::Mapping = obj
+            let map: rivet_yaml::Mapping = obj
                 .iter()
-                .map(|(k, v)| (serde_yaml::Value::String(k.clone()), json_to_yaml_value(v)))
+                .map(|(k, v)| (rivet_yaml::Value::String(k.clone()), json_to_yaml_value(v)))
                 .collect();
-            serde_yaml::Value::Mapping(map)
+            rivet_yaml::Value::Mapping(map)
         }
     }
 }

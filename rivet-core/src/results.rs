@@ -262,7 +262,7 @@ pub fn load_results(dir: &Path) -> Result<Vec<TestRun>, crate::error::Error> {
         let path = entry.path();
         let content = std::fs::read_to_string(&path)
             .map_err(|e| crate::error::Error::Results(format!("{}: {e}", path.display())))?;
-        let file: TestRunFile = serde_yaml::from_str(&content)
+        let file: TestRunFile = rivet_yaml::from_str(&content)
             .map_err(|e| crate::error::Error::Results(format!("{}: {e}", path.display())))?;
         runs.push(TestRun {
             run: file.run,
@@ -563,8 +563,8 @@ mod tests {
             ],
         };
 
-        let yaml = serde_yaml::to_string(&run_file).unwrap();
-        let deserialized: TestRunFile = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = rivet_yaml::to_string(&run_file).unwrap();
+        let deserialized: TestRunFile = rivet_yaml::from_str(&yaml).unwrap();
 
         assert_eq!(deserialized.run.id, run_file.run.id);
         assert_eq!(deserialized.run.timestamp, run_file.run.timestamp);
