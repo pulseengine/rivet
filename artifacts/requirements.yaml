@@ -9080,3 +9080,18 @@ artifacts:
       model: claude-opus-5
       timestamp: 2026-09-24T15:33:28Z
     release: v0.40.0
+
+  - id: REQ-376
+    type: requirement
+    title: salsa use-after-free advisory (RUSTSEC-2026-0308) is unfixable in this repo alone — the upgrade is blocked behind spar's salsa pin
+    status: proposed
+    description: "RUSTSEC-2026-0308 reports a use-after-free through safe Rust APIs in salsa, the incremental computation engine rivet-core is built on. Reading an interned value's fields, or using one as input to a tracked function, could return references to storage that was subsequently freed; the advisory says attacker-controlled input may expose process memory or permit arbitrary code execution in a consuming application. Fixed in salsa 0.28.5 and newer. rivet pins salsa 0.26 at the workspace level. ASSESSED NOT APPLICABLE TO RIVET TODAY, on the advisory's own stated exemption: applications that disable garbage collection for all explicitly declared interned structs and do not use implicitly interned query arguments are not affected. Both clauses were checked against the tree rather than assumed. FIRST, rivet-core declares NO salsa interned struct at all: db.rs uses only salsa input and salsa tracked, so the clause about interned structs is vacuously satisfied. spar, the only other salsa consumer in the closure, declares none either. SECOND, all seventeen tracked functions in rivet-core db.rs take the database plus salsa INPUT structs only, namely SourceFile, SourceFileSet, SchemaInputSet, ExtraArtifactSet and FilterInput. Not one takes a plain value, so nothing is implicitly interned. THE UPGRADE IS BLOCKED CROSS-REPOSITORY, and this was measured rather than presumed. spar v0.10.0 pins salsa 0.26, and rivet-core shares salsa types with spar-hir and spar-analysis across the crate boundary. Changing rivet's workspace pin to 0.28 resolves to TWO salsa versions in one tree, 0.26.2 for spar and 0.28.5 for rivet-core, and rivet-core then fails to compile with a series of E0308 and E0271 type mismatches. So the fix is not a version bump in this repository: spar must move to salsa 0.28 and cut a tag, and rivet must then bump its spar pin and its salsa pin together. That is a cross-repository change in another project and belongs to whoever owns spar's release cadence. WHAT INVALIDATES THIS ASSESSMENT, and it is deliberately narrow. Adding any salsa interned struct, or any tracked function that takes a non-salsa argument, ends the exemption and makes this a live vulnerability in rivet rather than a dependency footnote. The deny.toml entry says so at the point of the ignore, because an ignore whose reasoning lives only in an issue is an ignore nobody will re-examine. This also sharpens REQ-374: the release record has no field for the advisory posture a release shipped under, so a future reader cannot tell which accepted advisories were in force at a given tag."
+    tags: [supply-chain, security, cross-repo, advisory]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-24T16:05:46Z
+    release: v0.40.0
