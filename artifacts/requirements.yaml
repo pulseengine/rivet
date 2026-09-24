@@ -8975,3 +8975,48 @@ artifacts:
       model: claude-opus-5
       timestamp: 2026-09-23T12:06:13Z
     release: v0.39.0
+
+  - id: REQ-369
+    type: requirement
+    title: the generated release note never reaches the release — the published body is a pull request list (REQ-327 half-delivered)
+    status: proposed
+    description: "REQ-327 shipped rivet release notes so that a release note is generated from the artifact store and the commit trailers rather than typed by hand, implementing Automotive SPICE PAM v4.1 information item 11-03 which SPL.2.BP6 requires accompany each release. THE GENERATED NOTE IS NOT PUBLISHED WITH THE RELEASE. Checked against v0.38.0: the GitHub release body is the output of gh release create --generate-notes, a flat list of merged pull requests. The generated note therefore exists only as a local command's output. It informed the CHANGELOG prose by hand, which is the very drift REQ-327 exists to remove. WHAT AN ASSESSOR CAN SEE TODAY is a pull request list. The 11-03 elements rivet computes reach nobody outside the repository: the delivered scope by artifact, the withheld scope, the verification evidence status, and the explicitly declared gaps. That last one is the point. Run against v0.38.0 the note says \"1 of 19 delivered artifact(s) have NO verification evidence\" and names REQ-351; a generated pull request list can never say that about itself. SCOPE OF THIS REQUIREMENT. Generate the note during the release workflow at the tag, with the previous tag as since so it carries both the committed scope and the commits that actually shipped. Publish it two ways. First as a release asset, collected BEFORE the checksum step so its digest lands in SHA256SUMS.txt and the cosign signature over that file transitively covers it, which is the same property the SBOM already has. Second as the release body, with the generated pull request list appended rather than replacing it. THE NOTE MUST BE GENERATED IN CI, not pasted from a local run, so that what ships is what the trace says at the tagged commit. THE BODY MUST BE ASSERTED, not assumed. Whether gh appends generated notes to a supplied body or silently prefers one of them is a property of the gh version on the runner, and if it ever prefers the generated notes the release body falls back to the pull request list, shipping this very defect in the shape of its fix. The workflow reads the body back after creating the release and fails if it does not carry the note's header. BOTH RELEASE PATHS must set the body. The workflow is idempotent by design: if a release already exists for the tag it uploads assets to it, and the maintainer's stated practice is to tag after main is green, so a hand created release is a live path rather than a hypothetical one. Setting the body only on the create path would leave this requirement doing nothing on the path actually used. Including the note in the compliance report bundle is tracked separately as REQ-371, because that needs new inputs on the reusable compliance action."
+    tags: [release, evidence, aspice]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-24T04:20:48Z
+    release: v0.39.0
+
+  - id: REQ-370
+    type: requirement
+    title: no way to enumerate the releases the store knows about — release status needs a version you must already know
+    status: verified
+    description: Maintainer request, raised twice. rivet release status answers whether ONE release is ready, which requires already knowing the version string. Nothing answered which releases exist. The question came up repeatedly during the v0.38.0 cut and each time it was re-derived by hand, either from rivet list --format json --full piped into a grouping script or guessed from git tags. GIT TAGS ARE A DIFFERENT SET. A tag exists only after a release ships; a release label exists as soon as work is scoped to it, so v0.39.0 is a real label with 16 artifacts and no tag, and backlog is a label that will never have one. Deriving the list from tags therefore answers a different question than the one being asked. rivet sql cannot answer it either, since the artifacts table exposes id, type, title, description, status and fields_json but NOT release, so the obvious select release, count(*) group by release fails with identifier not found. THE FIX IS A LIST SUBCOMMAND. rivet release list enumerates every label with its total, its ready count and whether it is cuttable, in VERSION order rather than string order so v0.9.0 precedes v0.10.0, with labels that do not parse as versions sorted last. It reuses the same ReadinessCtx that release status uses, so the two cannot disagree about what ready means, and it excludes external artifacts for the same reason release status excludes them from its verdict, namely that version labels collide across a multi-repo toolchain. It also reports the draft and proposed artifacts that carry no release at all and therefore appear in no row, which is REQ-345's number surfaced where someone is already asking about releases. THE OUTPUT TEACHES THE QUERY. The footer names the two follow-on commands, release status for one release's not-yet-ready set and list with an s-expression filter for its artifacts, because the second half of this request was to be told what query to run rather than to memorise it. A SHIPPED RELEASE MAY READ not cuttable. Older labels were scoped before the readiness rule existed and their artifacts never advanced past implemented; the footer says so, because a row that reads not cuttable next to a shipped version would otherwise be read as a broken release.
+    tags: [release, cli, usability]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-24T04:20:48Z
+    release: v0.39.0
+
+  - id: REQ-371
+    type: requirement
+    title: the compliance bundle — the audit deliverable — contains no release note, so an assessor handed it alone gets no 11-03 item
+    status: proposed
+    description: "The compliance report bundle is the audit deliverable: it carries the traceability matrix, coverage per rule, validation diagnostics, the rendered specs, a ReqIF 1.2 export and a generic-yaml export, and its own README tells a reviewer what each piece is. IT CARRIES NO RELEASE NOTE. Automotive SPICE PAM v4.1 information item 11-03 is a release note, and SPL.2.BP6 requires one accompany each release; rivet computes it from the trace with rivet release notes, and REQ-369 publishes it as a signed release asset and as the release body. An assessor who is handed the compliance bundle alone, which is the artifact the bundle exists to be, still gets no 11-03 item. WHY THIS IS SEPARATE FROM REQ-369. The bundle is produced by .github/actions/compliance, a composite action that other repositories consume, so the change is to reusable cross-repo surface rather than to this repository's workflow: the action needs an input naming the release and the ref the release builds on, or a generic extra-files input, and the build-compliance job needs fetch-depth 0 because rivet release notes --since reads git history and the job currently checks out shallow. That is a wider blast radius than the release body, and it should not ride along on it. WHAT DONE LOOKS LIKE. The bundle contains release-note.md, the bundle README's table names it and says what it is, and the note in the bundle is the same text as the published release asset rather than a second generation that could disagree with it."
+    tags: [release, evidence, aspice, compliance-report]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5
+      timestamp: 2026-09-24T04:38:14Z
+    release: v0.39.0

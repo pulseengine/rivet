@@ -7486,6 +7486,134 @@ fn list_release_flag_filters_by_release_scope() {
 /// cuttable, zero once every scoped artifact is verified/accepted.
 ///
 /// rivet: verifies REQ-233
+// rivet: verifies REQ-370
+#[test]
+fn release_list_enumerates_every_label_in_version_order() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    // `init --preset dev` scaffolds example artifacts that also carry no
+    // release; drop them so `unscoped_unstarted` can be asserted EXACTLY
+    // rather than with a `>= 1` that would pass however the scaffold changes.
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold artifact");
+        }
+    }
+    let reqs = dir.join("artifacts/reqs.yaml");
+    // The labels are written in an order that is WRONG under every ordering
+    // this test rejects, so a degenerate `version_key` cannot pass by luck.
+    // `by_release` is a BTreeMap and `sort_by` is stable, so if the key
+    // function collapses (constant, None, or a dropped component) the labels
+    // fall back to the BTreeMap's STRING order — which the chain below
+    // rejects. That covers major (v1.0.0), minor (v0.9.x vs v0.10.0), patch
+    // (v0.9.2 vs v0.9.10), the `v` prefix strip, and the too-many-components
+    // guard (v1.2.3.4 is not a version and must join `backlog` at the end).
+    std::fs::write(
+        &reqs,
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: A\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-2\n    type: requirement\n    title: B\n    status: verified\n    release: v0.10.0\n  \
+         - id: REQ-3\n    type: requirement\n    title: C\n    status: proposed\n    release: v0.10.0\n  \
+         - id: REQ-4\n    type: requirement\n    title: D\n    status: verified\n    release: v0.9.10\n  \
+         - id: REQ-5\n    type: requirement\n    title: E\n    status: draft\n    release: backlog\n  \
+         - id: REQ-6\n    type: requirement\n    title: F\n    status: verified\n    release: v0.9.2\n  \
+         - id: REQ-7\n    type: requirement\n    title: G\n    status: verified\n    release: v0.9.0\n  \
+         - id: REQ-8\n    type: requirement\n    title: H\n    status: verified\n    release: v1.2.3.4\n  \
+         - id: REQ-9\n    type: requirement\n    title: I\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "list"])
+        .output()
+        .expect("release list");
+    assert!(out.status.success(), "release list must exit zero");
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("no row for {needle}:\n{text}"))
+    };
+    // One chain, each link falsifying a different component of the key.
+    assert!(
+        at("v0.9.0") < at("v0.9.2"),
+        "patch order: v0.9.0 must precede v0.9.2:\n{text}"
+    );
+    assert!(
+        at("v0.9.2") < at("v0.9.10"),
+        "patch is NUMERIC: v0.9.2 must precede v0.9.10 (a string sort inverts these):\n{text}"
+    );
+    assert!(
+        at("v0.9.10") < at("v0.10.0"),
+        "minor is NUMERIC: v0.9.10 must precede v0.10.0 (a string sort inverts these):\n{text}"
+    );
+    assert!(
+        at("v0.10.0") < at("v1.0.0"),
+        "major order: v0.10.0 must precede v1.0.0:\n{text}"
+    );
+    assert!(
+        at("v1.0.0") < at("backlog"),
+        "a label that is not a version sorts last:\n{text}"
+    );
+    assert!(
+        at("backlog") < at("v1.2.3.4"),
+        "v1.2.3.4 has too many components to be a version, so it joins the \
+         non-version group and sorts by string after `backlog`:\n{text}"
+    );
+    assert!(
+        text.contains("cuttable"),
+        "each row must carry a readiness state:\n{text}"
+    );
+    assert!(
+        text.contains("carry NO release"),
+        "unscoped draft/proposed work must be reported, not silently omitted:\n{text}"
+    );
+
+    // The JSON form is what a script consumes, so it must carry the same facts.
+    let json_out = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "list", "--format", "json"])
+        .output()
+        .expect("release list json");
+    let v: serde_json::Value =
+        serde_json::from_slice(&json_out.stdout).expect("release list --format json emits JSON");
+    let rels = v["releases"].as_array().expect("releases array");
+    let order: Vec<&str> = rels
+        .iter()
+        .map(|r| r["release"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        order,
+        vec![
+            "v0.9.0", "v0.9.2", "v0.9.10", "v0.10.0", "v1.0.0", "backlog", "v1.2.3.4"
+        ],
+        "the JSON form carries the same order as the table"
+    );
+    assert_eq!(
+        rels[0]["cuttable"], true,
+        "v0.9.0 holds one verified artifact"
+    );
+    assert_eq!(rels[3]["release"], "v0.10.0");
+    assert_eq!(rels[3]["total"], 2);
+    assert_eq!(rels[3]["ready"], 1);
+    assert_eq!(
+        rels[3]["cuttable"], false,
+        "one of the two is still proposed"
+    );
+    assert_eq!(v["unscoped_unstarted"], 1, "REQ-9 carries no release");
+}
+
 #[test]
 fn release_status_reports_burn_down_and_exit_code() {
     let tmp = tempfile::tempdir().expect("temp dir");
