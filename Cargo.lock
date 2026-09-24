@@ -1057,7 +1057,7 @@ dependencies = [
 
 [[package]]
 name = "etch"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "petgraph 0.7.1",
 ]
@@ -3034,7 +3034,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-cli"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3048,6 +3048,7 @@ dependencies = [
  "petgraph 0.7.1",
  "regex",
  "rivet-core",
+ "rivet-yaml",
  "rmcp",
  "rowan 0.16.2",
  "serde",
@@ -3062,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-core"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3077,6 +3078,7 @@ dependencies = [
  "quick-xml",
  "regex",
  "reqwest",
+ "rivet-yaml",
  "rowan 0.16.2",
  "salsa",
  "serde",
@@ -3097,7 +3099,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-yaml"
-version = "0.38.0"
+version = "0.39.0"
 dependencies = [
  "indexmap 2.14.0",
  "itoa",

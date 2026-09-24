@@ -57,7 +57,7 @@ fn make_artifact(
     art_type: &str,
     title: &str,
     links: Vec<Link>,
-    fields: BTreeMap<String, serde_yaml::Value>,
+    fields: BTreeMap<String, rivet_yaml::Value>,
 ) -> Artifact {
     Artifact {
         id: id.into(),
@@ -121,11 +121,11 @@ fn test_add_valid_artifact_with_fields_succeeds() {
     let mut fields = BTreeMap::new();
     fields.insert(
         "priority".to_string(),
-        serde_yaml::Value::String("must".to_string()),
+        rivet_yaml::Value::String("must".to_string()),
     );
     fields.insert(
         "category".to_string(),
-        serde_yaml::Value::String("functional".to_string()),
+        rivet_yaml::Value::String("functional".to_string()),
     );
 
     let artifact = make_artifact("REQ-001", "requirement", "Valid req", vec![], fields);
@@ -173,7 +173,7 @@ fn test_add_with_invalid_field_value_is_rejected() {
     let mut fields = BTreeMap::new();
     fields.insert(
         "priority".to_string(),
-        serde_yaml::Value::String("critical".to_string()), // not in allowed-values
+        rivet_yaml::Value::String("critical".to_string()), // not in allowed-values
     );
 
     let artifact = make_artifact("REQ-001", "requirement", "Bad field", vec![], fields);

@@ -395,7 +395,7 @@ pub fn cmd_continue(project_root: &Path, schemas_dir: &Path) -> Result<bool> {
     }
 
     // Sanity-check that the file still parses as YAML.
-    serde_yaml::from_str::<serde_yaml::Value>(&content)
+    rivet_yaml::from_str::<rivet_yaml::Value>(&content)
         .with_context(|| format!("post-resolution {} is not valid YAML", path.display()))?;
 
     record_resolution(&layout, &current, ResolutionStatus::Resolved)?;
@@ -601,7 +601,7 @@ pub fn cmd_status(project_root: &Path) -> Result<bool> {
             println!("Migration:  {}", layout.root.display());
             println!("State:      {}", state.as_str());
             if let Ok(manifest_yaml) = std::fs::read_to_string(layout.manifest_path()) {
-                if let Ok(manifest) = serde_yaml::from_str::<MigrationManifest>(&manifest_yaml) {
+                if let Ok(manifest) = rivet_yaml::from_str::<MigrationManifest>(&manifest_yaml) {
                     println!("Recipe:     {}", manifest.recipe);
                     println!(
                         "Changes:    {} mechanical, {} decidable, {} conflicts",
@@ -675,7 +675,7 @@ pub fn cmd_finish(project_root: &Path) -> Result<bool> {
 // ── Plumbing helpers ────────────────────────────────────────────────────
 
 fn write_plan(layout: &MigrationLayout, rewrite: &RewriteMap) -> Result<()> {
-    let yaml = serde_yaml::to_string(rewrite).context("serializing plan")?;
+    let yaml = rivet_yaml::to_string(rewrite).context("serializing plan")?;
     std::fs::write(layout.plan_path(), yaml)
         .with_context(|| format!("writing {}", layout.plan_path().display()))?;
     Ok(())
@@ -684,7 +684,7 @@ fn write_plan(layout: &MigrationLayout, rewrite: &RewriteMap) -> Result<()> {
 fn read_plan(layout: &MigrationLayout) -> Result<RewriteMap> {
     let yaml = std::fs::read_to_string(layout.plan_path())
         .with_context(|| format!("reading {}", layout.plan_path().display()))?;
-    serde_yaml::from_str(&yaml).with_context(|| "parsing plan.yaml".to_string())
+    rivet_yaml::from_str(&yaml).with_context(|| "parsing plan.yaml".to_string())
 }
 
 fn write_manifest(
@@ -704,7 +704,7 @@ fn write_manifest(
         conflict_count: rewrite.count(ActionClass::Conflict),
         resolutions: std::collections::BTreeMap::new(),
     };
-    let yaml = serde_yaml::to_string(&manifest).context("serializing manifest")?;
+    let yaml = rivet_yaml::to_string(&manifest).context("serializing manifest")?;
     std::fs::write(layout.manifest_path(), yaml)
         .with_context(|| format!("writing {}", layout.manifest_path().display()))?;
     Ok(())
@@ -717,9 +717,9 @@ fn update_manifest_state(layout: &MigrationLayout, state: MigrationState) -> Res
     }
     let yaml = std::fs::read_to_string(&path).context("reading manifest")?;
     let mut manifest: MigrationManifest =
-        serde_yaml::from_str(&yaml).context("parsing manifest")?;
+        rivet_yaml::from_str(&yaml).context("parsing manifest")?;
     manifest.state = state;
-    let yaml = serde_yaml::to_string(&manifest).context("serializing manifest")?;
+    let yaml = rivet_yaml::to_string(&manifest).context("serializing manifest")?;
     std::fs::write(&path, yaml).context("writing manifest")?;
     Ok(())
 }
@@ -739,7 +739,7 @@ fn resolve_artifact_path(project_root: &Path, raw: &str) -> PathBuf {
 
 fn read_manifest(layout: &MigrationLayout) -> Result<MigrationManifest> {
     let yaml = std::fs::read_to_string(layout.manifest_path()).context("reading manifest")?;
-    serde_yaml::from_str(&yaml).context("parsing manifest")
+    rivet_yaml::from_str(&yaml).context("parsing manifest")
 }
 
 fn record_resolution(
@@ -753,9 +753,9 @@ fn record_resolution(
     }
     let yaml = std::fs::read_to_string(&path).context("reading manifest")?;
     let mut manifest: MigrationManifest =
-        serde_yaml::from_str(&yaml).context("parsing manifest")?;
+        rivet_yaml::from_str(&yaml).context("parsing manifest")?;
     manifest.resolutions.insert(artifact_id.to_string(), status);
-    let yaml = serde_yaml::to_string(&manifest).context("serializing manifest")?;
+    let yaml = rivet_yaml::to_string(&manifest).context("serializing manifest")?;
     std::fs::write(&path, yaml).context("writing manifest")?;
     Ok(())
 }

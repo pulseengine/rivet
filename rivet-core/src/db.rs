@@ -723,7 +723,7 @@ fn build_schema(db: &dyn salsa::Database, schema_set: SchemaInputSet) -> Schema 
         .iter()
         .filter_map(|s| {
             let content = s.content(db);
-            serde_yaml::from_str(&content).ok()
+            rivet_yaml::from_str(&content).ok()
         })
         .collect();
     Schema::merge(&files)
@@ -1775,7 +1775,7 @@ artifacts:
         direct_store.upsert(make_aadl_component());
         let direct_schema: Schema = {
             let file: crate::schema::SchemaFile =
-                serde_yaml::from_str(AADL_SCHEMA).expect("parse schema");
+                rivet_yaml::from_str(AADL_SCHEMA).expect("parse schema");
             Schema::merge(&[file])
         };
         let direct_graph = LinkGraph::build(&direct_store, &direct_schema);

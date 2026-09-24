@@ -77,13 +77,13 @@ fn agent_pipelines_for(schemas_dir: &Path, name: &str) -> Result<Option<AgentPip
 }
 
 fn extract_block(content: &str) -> Result<Option<AgentPipelines>> {
-    let raw: serde_yaml::Value = serde_yaml::from_str(content)
+    let raw: rivet_yaml::Value = rivet_yaml::from_str(content)
         .context("parsing schema YAML for agent-pipelines extraction")?;
     let Some(block) = raw.get("agent-pipelines") else {
         return Ok(None);
     };
     let typed: AgentPipelines =
-        serde_yaml::from_value(block.clone()).context("parsing agent-pipelines: block")?;
+        rivet_yaml::from_value(block.clone()).context("parsing agent-pipelines: block")?;
     Ok(Some(typed))
 }
 
@@ -243,10 +243,10 @@ pub fn cmd_validate(
     // references `{context.review-roles.X}` needs `X` defined in
     // review-roles.yaml.
     let review_roles_path = context_dir.join("review-roles.yaml");
-    let review_roles: Option<serde_yaml::Value> = if review_roles_path.exists() {
+    let review_roles: Option<rivet_yaml::Value> = if review_roles_path.exists() {
         std::fs::read_to_string(&review_roles_path)
             .ok()
-            .and_then(|c| serde_yaml::from_str(&c).ok())
+            .and_then(|c| rivet_yaml::from_str(&c).ok())
     } else {
         None
     };

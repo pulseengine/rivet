@@ -73,7 +73,7 @@ bindings:
       - "src/perception/common/**"
 "#;
     let binding: FeatureBinding =
-        serde_yaml::from_str(yaml).expect("legacy bare-string source must parse");
+        rivet_yaml::from_str(yaml).expect("legacy bare-string source must parse");
     let pd = &binding.bindings["pedestrian-detection"];
     assert_eq!(pd.source.len(), 2);
     assert_eq!(pd.source[0].glob, "src/perception/pedestrian/**");
@@ -94,7 +94,7 @@ bindings:
         when: '(has-tag "asil-d")'
 "#;
     let binding: FeatureBinding =
-        serde_yaml::from_str(yaml).expect("struct-form source must parse");
+        rivet_yaml::from_str(yaml).expect("struct-form source must parse");
     let pd = &binding.bindings["pedestrian-detection"];
     assert_eq!(pd.source.len(), 2);
     assert!(pd.source[0].when.is_none());
@@ -113,7 +113,7 @@ bindings:
       - "always-here.rs"
       - { glob: "conditional.rs", when: "(has-tag \"electric\")" }
 "#;
-    let binding: FeatureBinding = serde_yaml::from_str(yaml).expect("mixed shape");
+    let binding: FeatureBinding = rivet_yaml::from_str(yaml).expect("mixed shape");
     let f = &binding.bindings["feat"];
     assert_eq!(f.source[0].glob, "always-here.rs");
     assert!(f.source[0].when.is_none());
@@ -295,9 +295,9 @@ fn end_to_end_against_examples_variant_fixture() {
     let model_yaml = std::fs::read_to_string(&model_path).expect("read model");
     let model = FeatureModel::from_yaml(&model_yaml).expect("parse model");
     let bindings_yaml = std::fs::read_to_string(&bindings_path).expect("read bindings");
-    let binding: FeatureBinding = serde_yaml::from_str(&bindings_yaml).expect("parse bindings");
+    let binding: FeatureBinding = rivet_yaml::from_str(&bindings_yaml).expect("parse bindings");
     let variant_yaml = std::fs::read_to_string(&variant_path).expect("read variant");
-    let cfg: VariantConfig = serde_yaml::from_str(&variant_yaml).expect("parse variant");
+    let cfg: VariantConfig = rivet_yaml::from_str(&variant_yaml).expect("parse variant");
 
     let resolved = solve_with_bindings(&model, &cfg, &binding).expect("eu-adas-c must solve");
     assert!(

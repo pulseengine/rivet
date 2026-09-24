@@ -190,7 +190,7 @@ fn default_doc_type() -> String {
 pub fn parse_document(content: &str, source: Option<&Path>) -> Result<Document, Error> {
     let (frontmatter, body) = split_frontmatter(content)?;
 
-    let fm: Frontmatter = serde_yaml::from_str(&frontmatter)
+    let fm: Frontmatter = rivet_yaml::from_str(&frontmatter)
         .map_err(|e| Error::Schema(format!("document frontmatter: {e}")))?;
 
     let references = extract_references(&body);
@@ -2624,7 +2624,7 @@ See frontmatter.
     #[test]
     fn docs_entry_legacy_path_form() {
         let yaml = "- docs\n- arch\n";
-        let parsed: Vec<crate::model::DocsEntry> = serde_yaml::from_str(yaml).unwrap();
+        let parsed: Vec<crate::model::DocsEntry> = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].path(), "docs");
         assert!(parsed[0].exclude().is_empty());
@@ -2641,7 +2641,7 @@ See frontmatter.
     - "generated/**"
     - "*.draft.md"
 "#;
-        let parsed: Vec<crate::model::DocsEntry> = serde_yaml::from_str(yaml).unwrap();
+        let parsed: Vec<crate::model::DocsEntry> = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(parsed.len(), 2);
         assert_eq!(parsed[0].path(), "docs");
         assert_eq!(parsed[1].path(), "arch");

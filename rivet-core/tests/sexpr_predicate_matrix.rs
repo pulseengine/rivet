@@ -72,11 +72,11 @@ fn base_artifact() -> Artifact {
         ],
         fields: {
             let mut m = BTreeMap::new();
-            m.insert("priority".into(), serde_yaml::Value::String("must".into()));
-            m.insert("asil".into(), serde_yaml::Value::String("ASIL-D".into()));
+            m.insert("priority".into(), rivet_yaml::Value::String("must".into()));
+            m.insert("asil".into(), rivet_yaml::Value::String("ASIL-D".into()));
             m.insert(
                 "level".into(),
-                serde_yaml::Value::Number(serde_yaml::Number::from(3_i64)),
+                rivet_yaml::Value::Number(rivet_yaml::Number::from(3_i64)),
             );
             m
         },

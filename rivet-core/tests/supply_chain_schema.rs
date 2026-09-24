@@ -58,7 +58,7 @@ fn supply_chain_content_non_empty() {
 #[test]
 fn supply_chain_parses_as_schema_file() {
     let parsed: Result<rivet_core::schema::SchemaFile, _> =
-        serde_yaml::from_str(rivet_core::embedded::SCHEMA_SUPPLY_CHAIN);
+        rivet_yaml::from_str(rivet_core::embedded::SCHEMA_SUPPLY_CHAIN);
     assert!(
         parsed.is_ok(),
         "supply-chain schema must be valid YAML: {:?}",

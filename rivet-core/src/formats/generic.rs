@@ -146,7 +146,7 @@ impl Adapter for GenericYamlAdapter {
                 })
                 .collect(),
         };
-        let yaml = serde_yaml::to_string(&file)?;
+        let yaml = rivet_yaml::to_string(&file)?;
         Ok(yaml.into_bytes())
     }
 }
@@ -195,27 +195,27 @@ struct GenericArtifact {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     links: Vec<Link>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    fields: BTreeMap<String, serde_yaml::Value>,
+    fields: BTreeMap<String, rivet_yaml::Value>,
     #[serde(
         default,
         rename = "fields-per-variant",
         skip_serializing_if = "BTreeMap::is_empty"
     )]
-    fields_per_variant: BTreeMap<String, BTreeMap<String, serde_yaml::Value>>,
+    fields_per_variant: BTreeMap<String, BTreeMap<String, rivet_yaml::Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     provenance: Option<Provenance>,
     /// Every artifact key not named above. Merged into `fields` on load.
     #[serde(flatten, default, skip_serializing_if = "BTreeMap::is_empty")]
-    extra: BTreeMap<String, serde_yaml::Value>,
+    extra: BTreeMap<String, rivet_yaml::Value>,
 }
 
 /// Merge top-level domain keys into `fields`. The canonical `fields:` block
 /// wins on a collision: it is the shape `rivet add` / `rivet modify` write, so
 /// it is the more deliberate statement of the two.
 fn merged_fields(
-    mut fields: BTreeMap<String, serde_yaml::Value>,
-    extra: BTreeMap<String, serde_yaml::Value>,
-) -> BTreeMap<String, serde_yaml::Value> {
+    mut fields: BTreeMap<String, rivet_yaml::Value>,
+    extra: BTreeMap<String, rivet_yaml::Value>,
+) -> BTreeMap<String, rivet_yaml::Value> {
     for (k, v) in extra {
         fields.entry(k).or_insert(v);
     }
@@ -223,7 +223,7 @@ fn merged_fields(
 }
 
 pub fn parse_generic_yaml(content: &str, source: Option<&Path>) -> Result<Vec<Artifact>, Error> {
-    let file: GenericFile = serde_yaml::from_str(content)?;
+    let file: GenericFile = rivet_yaml::from_str(content)?;
 
     Ok(file
         .artifacts
@@ -353,7 +353,7 @@ pub struct SkippedFile {
 
 /// Classify a `.yaml`/`.yml` file that failed `import_generic_file`.
 ///
-/// Re-parses the raw content as a generic `serde_yaml::Value` and applies
+/// Re-parses the raw content as a generic `rivet_yaml::Value` and applies
 /// the REQ-062 classification rule:
 ///
 /// 1. Not valid YAML at all -> [`SkipKind::ParseError`] (F2a).
@@ -364,13 +364,13 @@ pub struct SkippedFile {
 ///    `artifacts:` wrapper — the exact F2a reproducer).
 /// 4. Anything else -> [`SkipKind::NotArtifactFile`] (F2b — skip silently).
 fn classify_skip(content: &str) -> SkipKind {
-    let value: serde_yaml::Value = match serde_yaml::from_str(content) {
+    let value: rivet_yaml::Value = match rivet_yaml::from_str(content) {
         Ok(v) => v,
         // Case 1: not valid YAML at all.
         Err(_) => return SkipKind::ParseError,
     };
-    if let serde_yaml::Value::Mapping(map) = value {
-        let has_key = |k: &str| map.contains_key(serde_yaml::Value::String(k.to_string()));
+    if let rivet_yaml::Value::Mapping(map) = value {
+        let has_key = |k: &str| map.contains_key(rivet_yaml::Value::String(k.to_string()));
         // Case 2: a top-level `artifacts:` key means this was intended as
         // an artifact-list file; if `import_generic_file` rejected it, the
         // list itself is malformed.

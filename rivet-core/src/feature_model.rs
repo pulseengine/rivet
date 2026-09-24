@@ -120,12 +120,12 @@ pub struct Feature {
     /// Typed key-value attributes attached to this feature. Looked up
     /// by `rivet variant attr FEATURE KEY` and by the formatters when
     /// emitting build-system-specific outputs. Values are kept as
-    /// `serde_yaml::Value` so a feature can carry strings, integers,
+    /// `rivet_yaml::Value` so a feature can carry strings, integers,
     /// booleans, or small sub-maps without a schema change up front.
     ///
     /// Example: `asil-c` might declare `{ asil-numeric: 3, reqs: "fmea-dfa" }`
     /// so a release script can emit `-DASIL_NUMERIC=3 -DREQS=fmea-dfa`.
-    pub attributes: BTreeMap<String, serde_yaml::Value>,
+    pub attributes: BTreeMap<String, rivet_yaml::Value>,
 }
 
 /// Group semantics governing child selection.
@@ -160,8 +160,8 @@ impl VariantConfig {
     /// `variant:` key alongside `bindings:`. Accepting both lets `rivet
     /// variant check --variant <file>` work on the file `init` actually writes
     /// (#514): the two used to disagree (init wrapped, check expected flat).
-    pub fn from_yaml_str(yaml: &str) -> Result<Self, serde_yaml::Error> {
-        match serde_yaml::from_str::<VariantConfig>(yaml) {
+    pub fn from_yaml_str(yaml: &str) -> Result<Self, rivet_yaml::Error> {
+        match rivet_yaml::from_str::<VariantConfig>(yaml) {
             Ok(vc) => Ok(vc),
             Err(flat_err) => {
                 #[derive(Deserialize)]
@@ -171,7 +171,7 @@ impl VariantConfig {
                 // Fall back to the wrapped form; if that also fails, surface the
                 // flat error — it's the more direct diagnostic for a config the
                 // caller likely intended as flat.
-                serde_yaml::from_str::<Wrapped>(yaml)
+                rivet_yaml::from_str::<Wrapped>(yaml)
                     .map(|w| w.variant)
                     .map_err(|_| flat_err)
             }
@@ -325,7 +325,7 @@ struct FeatureYaml {
     #[serde(default)]
     children: Vec<String>,
     #[serde(default)]
-    attributes: BTreeMap<String, serde_yaml::Value>,
+    attributes: BTreeMap<String, rivet_yaml::Value>,
 }
 
 /// On-disk YAML shape for an attribute-schema entry.
@@ -340,7 +340,7 @@ struct AttributeTypeDeclYaml {
     #[serde(rename = "type")]
     ty: String,
     #[serde(default)]
-    range: Option<Vec<serde_yaml::Value>>,
+    range: Option<Vec<rivet_yaml::Value>>,
     #[serde(default)]
     values: Option<Vec<String>>,
     #[serde(default)]
@@ -445,7 +445,7 @@ fn load_and_splice(
     let full = resolve_model_path(model_path, base_dir, externals)?;
     let src = std::fs::read_to_string(&full)
         .map_err(|e| Error::Schema(format!("feature-model file `{}`: {e}", full.display())))?;
-    let mut raw: FeatureModelYaml = serde_yaml::from_str(&src)
+    let mut raw: FeatureModelYaml = rivet_yaml::from_str(&src)
         .map_err(|e| Error::Schema(format!("feature-model file `{}`: {e}", full.display())))?;
 
     if let Some(entry) = entries.get(model_path) {
@@ -675,16 +675,16 @@ fn build_attribute_decl(
     })
 }
 
-fn yaml_to_i64(v: &serde_yaml::Value) -> Option<i64> {
+fn yaml_to_i64(v: &rivet_yaml::Value) -> Option<i64> {
     match v {
-        serde_yaml::Value::Number(n) => n.as_i64(),
+        rivet_yaml::Value::Number(n) => n.as_i64(),
         _ => None,
     }
 }
 
-fn yaml_to_f64(v: &serde_yaml::Value) -> Option<f64> {
+fn yaml_to_f64(v: &rivet_yaml::Value) -> Option<f64> {
     match v {
-        serde_yaml::Value::Number(n) => n.as_f64(),
+        rivet_yaml::Value::Number(n) => n.as_f64(),
         _ => None,
     }
 }
@@ -698,16 +698,16 @@ fn check_attribute_value(
     feature: &str,
     key: &str,
     decl: &AttributeTypeDecl,
-    value: &serde_yaml::Value,
+    value: &rivet_yaml::Value,
 ) -> Option<String> {
     match (&decl.kind, value) {
-        (AttributeKind::Bool, serde_yaml::Value::Bool(_)) => None,
+        (AttributeKind::Bool, rivet_yaml::Value::Bool(_)) => None,
         (AttributeKind::Bool, other) => Some(format!(
             "feature `{feature}` attribute `{key}`: schema declares type=bool, got {}",
             describe_yaml(other)
         )),
-        (AttributeKind::Int { range }, serde_yaml::Value::Number(n)) if n.is_i64() => {
-            // serde_yaml::Number::is_i64 also returns true for u64s that
+        (AttributeKind::Int { range }, rivet_yaml::Value::Number(n)) if n.is_i64() => {
+            // rivet_yaml::Number::is_i64 also returns true for u64s that
             // fit in i64; the as_i64 below normalises both.
             let v = n.as_i64()?;
             if let Some((lo, hi)) = range {
@@ -724,7 +724,7 @@ fn check_attribute_value(
             "feature `{feature}` attribute `{key}`: schema declares type=int, got {}",
             describe_yaml(other)
         )),
-        (AttributeKind::Float { range }, serde_yaml::Value::Number(n)) => {
+        (AttributeKind::Float { range }, rivet_yaml::Value::Number(n)) => {
             let v = n.as_f64()?;
             if let Some((lo, hi)) = range {
                 if v < *lo || v > *hi {
@@ -740,12 +740,12 @@ fn check_attribute_value(
             "feature `{feature}` attribute `{key}`: schema declares type=float, got {}",
             describe_yaml(other)
         )),
-        (AttributeKind::Str, serde_yaml::Value::String(_)) => None,
+        (AttributeKind::Str, rivet_yaml::Value::String(_)) => None,
         (AttributeKind::Str, other) => Some(format!(
             "feature `{feature}` attribute `{key}`: schema declares type=string, got {}",
             describe_yaml(other)
         )),
-        (AttributeKind::Enum { values }, serde_yaml::Value::String(s)) => {
+        (AttributeKind::Enum { values }, rivet_yaml::Value::String(s)) => {
             if values.iter().any(|v| v == s) {
                 None
             } else {
@@ -765,21 +765,21 @@ fn check_attribute_value(
     }
 }
 
-fn describe_yaml(v: &serde_yaml::Value) -> String {
+fn describe_yaml(v: &rivet_yaml::Value) -> String {
     match v {
-        serde_yaml::Value::Null => "null".into(),
-        serde_yaml::Value::Bool(b) => format!("bool({b})"),
-        serde_yaml::Value::Number(n) => {
+        rivet_yaml::Value::Null => "null".into(),
+        rivet_yaml::Value::Bool(b) => format!("bool({b})"),
+        rivet_yaml::Value::Number(n) => {
             if n.is_i64() {
                 format!("int({n})")
             } else {
                 format!("float({n})")
             }
         }
-        serde_yaml::Value::String(s) => format!("string({s:?})"),
-        serde_yaml::Value::Sequence(_) => "sequence".into(),
-        serde_yaml::Value::Mapping(_) => "mapping".into(),
-        serde_yaml::Value::Tagged(_) => "tagged".into(),
+        rivet_yaml::Value::String(s) => format!("string({s:?})"),
+        rivet_yaml::Value::Sequence(_) => "sequence".into(),
+        rivet_yaml::Value::Mapping(_) => "mapping".into(),
+        rivet_yaml::Value::Tagged(_) => "tagged".into(),
     }
 }
 
@@ -839,7 +839,7 @@ impl FeatureModel {
     /// Parse a feature model from a YAML string.
     pub fn from_yaml(yaml: &str) -> Result<Self, Error> {
         let raw: FeatureModelYaml =
-            serde_yaml::from_str(yaml).map_err(|e| Error::Schema(format!("feature model: {e}")))?;
+            rivet_yaml::from_str(yaml).map_err(|e| Error::Schema(format!("feature model: {e}")))?;
         Self::from_yaml_struct(raw)
     }
 
@@ -997,7 +997,7 @@ impl FeatureModel {
                 binding_path.display()
             ))
         })?;
-        let binding: FeatureModelBindingYaml = serde_yaml::from_str(&binding_src).map_err(|e| {
+        let binding: FeatureModelBindingYaml = rivet_yaml::from_str(&binding_src).map_err(|e| {
             Error::Schema(format!(
                 "feature-model-binding `{}`: {e}",
                 binding_path.display()
@@ -1101,7 +1101,7 @@ impl FeatureModel {
         struct KindProbe {
             kind: Option<String>,
         }
-        let probe: KindProbe = serde_yaml::from_str(&src)
+        let probe: KindProbe = rivet_yaml::from_str(&src)
             .map_err(|e| Error::Schema(format!("feature model `{}`: {e}", path.display())))?;
         if probe.kind.as_deref() == Some("feature-model-binding") {
             Self::load_composed_with_externals(path, externals)
@@ -1817,7 +1817,7 @@ pub fn load_variant_configs_from_dir(dir: &std::path::Path) -> Result<Vec<Varian
         if is_feature_binding_file(&yaml) {
             continue;
         }
-        let vc: VariantConfig = serde_yaml::from_str(&yaml).map_err(|e| {
+        let vc: VariantConfig = rivet_yaml::from_str(&yaml).map_err(|e| {
             Error::Schema(format!("parsing variant config {}: {e}", path.display()))
         })?;
         if !seen.insert(vc.name.clone()) {
@@ -1839,13 +1839,13 @@ pub fn load_variant_configs_from_dir(dir: &std::path::Path) -> Result<Vec<Varian
 /// with the variant configs they bind (#532). Unparseable YAML returns
 /// `false` so the caller's existing error path still fires.
 fn is_feature_binding_file(yaml: &str) -> bool {
-    let Ok(value) = serde_yaml::from_str::<serde_yaml::Value>(yaml) else {
+    let Ok(value) = rivet_yaml::from_str::<rivet_yaml::Value>(yaml) else {
         return false;
     };
-    let serde_yaml::Value::Mapping(map) = value else {
+    let rivet_yaml::Value::Mapping(map) = value else {
         return false;
     };
-    let key = |k: &str| serde_yaml::Value::String(k.to_string());
+    let key = |k: &str| rivet_yaml::Value::String(k.to_string());
     map.contains_key(key("bindings"))
         && !map.contains_key(key("name"))
         && !map.contains_key(key("variant"))
@@ -2144,7 +2144,7 @@ bindings:
     artifacts: ["REQ-ABS-001"]
     source: []
 "#;
-        let binding: FeatureBinding = serde_yaml::from_str(yaml).unwrap();
+        let binding: FeatureBinding = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(binding.bindings.len(), 2);
         assert_eq!(
             binding.bindings["pedestrian-detection"].artifacts,
@@ -2165,7 +2165,7 @@ selects:
   - eu
   - abs
 "#;
-        let config: VariantConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: VariantConfig = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(config.name, "eu-electric");
         assert_eq!(config.selects, vec!["electric", "eu", "abs"]);
     }
@@ -2843,7 +2843,7 @@ bindings:
     source:
       - "src/pd/**"
 "#;
-        let binding: FeatureBinding = serde_yaml::from_str(binding_yaml).unwrap();
+        let binding: FeatureBinding = rivet_yaml::from_str(binding_yaml).unwrap();
         let config = VariantConfig {
             name: "eu".into(),
             selects: vec!["electric".into(), "eu".into()],
@@ -2870,7 +2870,7 @@ bindings:
       - glob: src/pd/petrol/**
         when: (has-tag "petrol")
 "#;
-        let binding: FeatureBinding = serde_yaml::from_str(binding_yaml).unwrap();
+        let binding: FeatureBinding = rivet_yaml::from_str(binding_yaml).unwrap();
         let config = VariantConfig {
             name: "eu-electric".into(),
             selects: vec!["electric".into(), "eu".into()],

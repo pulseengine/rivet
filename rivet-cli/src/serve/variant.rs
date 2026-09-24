@@ -158,7 +158,7 @@ impl ProjectVariants {
             .find(|p| p.is_file())
         {
             Some(p) => match std::fs::read_to_string(&p) {
-                Ok(y) => match serde_yaml::from_str::<FeatureBinding>(&y) {
+                Ok(y) => match rivet_yaml::from_str::<FeatureBinding>(&y) {
                     Ok(b) => (Some(p), Some(b)),
                     Err(e) => {
                         diagnostics.push(format!("binding {} failed to parse: {e}", p.display()));
@@ -197,7 +197,7 @@ impl ProjectVariants {
                     // REQ-262: accept BOTH the flat shape and the
                     // `variant:`-wrapped shape that `rivet variant init`
                     // scaffolds (feature-model-bindings form). Raw
-                    // `serde_yaml::from_str::<VariantConfig>` only accepted
+                    // `rivet_yaml::from_str::<VariantConfig>` only accepted
                     // the flat shape, so init-scaffolded variant files were
                     // silently invisible on the serve dashboard (#514
                     // regression on the serve path).
@@ -210,7 +210,7 @@ impl ProjectVariants {
                                 // model). Capture it so scope resolves without
                                 // a separate bindings.yaml — mirrors the CLI's
                                 // `variant solve --binding <variant-file>`.
-                                if let Ok(fb) = serde_yaml::from_str::<FeatureBinding>(&yaml) {
+                                if let Ok(fb) = rivet_yaml::from_str::<FeatureBinding>(&yaml) {
                                     if !fb.bindings.is_empty() {
                                         variant_bindings.insert(vc.name.clone(), fb);
                                     }
@@ -567,7 +567,7 @@ mod tests {
 
     /// REQ-262: a `variant:`-WRAPPED variant file — the shape `rivet variant
     /// init` scaffolds — must be discovered. Raw
-    /// `serde_yaml::from_str::<VariantConfig>` only accepted the flat shape,
+    /// `rivet_yaml::from_str::<VariantConfig>` only accepted the flat shape,
     /// so init-scaffolded files were silently invisible on the dashboard
     /// (#514 regression on the serve path).
     #[test]

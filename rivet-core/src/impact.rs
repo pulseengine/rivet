@@ -75,8 +75,8 @@ pub fn content_hash(artifact: &Artifact) -> u64 {
     fields.sort_by_key(|(k, _)| *k);
     for (k, v) in &fields {
         k.hash(&mut hasher);
-        // serde_yaml::Value doesn't implement Hash, so we serialize to string
-        let v_str = serde_yaml::to_string(v).unwrap_or_default();
+        // rivet_yaml::Value doesn't implement Hash, so we serialize to string
+        let v_str = rivet_yaml::to_string(v).unwrap_or_default();
         v_str.hash(&mut hasher);
     }
     // Hash links sorted by (link_type, target) for determinism

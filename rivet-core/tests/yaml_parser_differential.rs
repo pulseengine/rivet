@@ -187,7 +187,7 @@ fn fingerprint_carries_every_component_it_claims() {
         }),
         fields: [(
             "priority".to_owned(),
-            serde_yaml::Value::String("a-distinctive-priority".to_owned()),
+            rivet_yaml::Value::String("a-distinctive-priority".to_owned()),
         )]
         .into_iter()
         .collect(),
@@ -500,7 +500,11 @@ fn index_ids<'a>(
     }
 }
 
-fn json(v: &serde_yaml::Value) -> serde_json::Value {
+/// Compare through a neutral representation. The reference values are
+/// `serde_yaml::Value` (the independent oracle) and rivet's are
+/// `rivet_yaml::Value` (REQ-346), so the two sides are no longer the same
+/// type — which is the point of the oracle. Both serialize to the same JSON.
+fn json<T: serde::Serialize>(v: &T) -> serde_json::Value {
     serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
 }
 

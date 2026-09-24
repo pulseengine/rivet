@@ -331,7 +331,7 @@ pub struct Artifact {
 
     /// Domain-specific fields (validated against schema).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub fields: BTreeMap<String, serde_yaml::Value>,
+    pub fields: BTreeMap<String, rivet_yaml::Value>,
 
     /// Per-variant field overrides (issue #255, single-master overlay).
     ///
@@ -356,7 +356,7 @@ pub struct Artifact {
         rename = "fields-per-variant",
         skip_serializing_if = "BTreeMap::is_empty"
     )]
-    pub fields_per_variant: BTreeMap<String, BTreeMap<String, serde_yaml::Value>>,
+    pub fields_per_variant: BTreeMap<String, BTreeMap<String, rivet_yaml::Value>>,
 
     /// AI provenance metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -445,7 +445,7 @@ impl Artifact {
     pub fn fields_for_variant(
         &self,
         variant: Option<&str>,
-    ) -> std::borrow::Cow<'_, BTreeMap<String, serde_yaml::Value>> {
+    ) -> std::borrow::Cow<'_, BTreeMap<String, rivet_yaml::Value>> {
         let Some(name) = variant else {
             return std::borrow::Cow::Borrowed(&self.fields);
         };
@@ -500,16 +500,16 @@ impl AcceptanceCriterion {
 /// or a mapping with no non-empty `text`. Callers should treat `None` as
 /// "nothing to render", not as "skip silently": the whole point of REQ-313 is
 /// that a criterion which cannot be read must not vanish without a word.
-pub fn parse_acceptance_criterion(value: &serde_yaml::Value) -> Option<AcceptanceCriterion> {
+pub fn parse_acceptance_criterion(value: &rivet_yaml::Value) -> Option<AcceptanceCriterion> {
     match value {
-        serde_yaml::Value::String(s) if !s.trim().is_empty() => Some(AcceptanceCriterion {
+        rivet_yaml::Value::String(s) if !s.trim().is_empty() => Some(AcceptanceCriterion {
             text: s.clone(),
             status: None,
             blocked_by: None,
         }),
-        serde_yaml::Value::Mapping(m) => {
+        rivet_yaml::Value::Mapping(m) => {
             let get = |k: &str| {
-                m.get(serde_yaml::Value::String(k.to_string()))
+                m.get(rivet_yaml::Value::String(k.to_string()))
                     .and_then(|v| v.as_str())
                     .map(str::to_string)
             };
@@ -537,7 +537,7 @@ mod tests {
         let mut a = minimal_artifact("A-1", "req");
         a.fields.insert(
             "baseline".into(),
-            serde_yaml::Value::String("v0.2.0".into()),
+            rivet_yaml::Value::String("v0.2.0".into()),
         );
         assert_eq!(a.baseline(), Some("v0.2.0"));
     }
@@ -552,7 +552,7 @@ mod tests {
     fn artifact_baseline_returns_none_for_non_string() {
         let mut a = minimal_artifact("A-1", "req");
         a.fields
-            .insert("baseline".into(), serde_yaml::Value::Bool(true));
+            .insert("baseline".into(), rivet_yaml::Value::Bool(true));
         assert_eq!(a.baseline(), None);
     }
 
@@ -606,21 +606,21 @@ mod tests {
     fn art_with_variant_overrides() -> Artifact {
         let mut a = minimal_artifact("REQ-THERMAL-01", "requirement");
         a.fields
-            .insert("max-temp-c".into(), serde_yaml::Value::Number(80.into()));
+            .insert("max-temp-c".into(), rivet_yaml::Value::Number(80.into()));
         a.fields
-            .insert("priority".into(), serde_yaml::Value::String("must".into()));
+            .insert("priority".into(), rivet_yaml::Value::String("must".into()));
         a.fields_per_variant.insert("automotive".into(), {
             let mut m = BTreeMap::new();
-            m.insert("max-temp-c".into(), serde_yaml::Value::Number(80.into()));
+            m.insert("max-temp-c".into(), rivet_yaml::Value::Number(80.into()));
             m.insert(
                 "min-temp-c".into(),
-                serde_yaml::Value::Number((-40i64).into()),
+                rivet_yaml::Value::Number((-40i64).into()),
             );
             m
         });
         a.fields_per_variant.insert("industrial".into(), {
             let mut m = BTreeMap::new();
-            m.insert("max-temp-c".into(), serde_yaml::Value::Number(100.into()));
+            m.insert("max-temp-c".into(), rivet_yaml::Value::Number(100.into()));
             m
         });
         a
@@ -653,12 +653,12 @@ mod tests {
         // priority — priority must inherit from default.
         assert_eq!(
             f.get("max-temp-c"),
-            Some(&serde_yaml::Value::Number(100.into())),
+            Some(&rivet_yaml::Value::Number(100.into())),
             "industrial overrides max-temp-c to 100"
         );
         assert_eq!(
             f.get("priority"),
-            Some(&serde_yaml::Value::String("must".into())),
+            Some(&rivet_yaml::Value::String("must".into())),
             "priority inherits from default"
         );
     }
@@ -670,7 +670,7 @@ mod tests {
         // Automotive adds min-temp-c which the default doesn't have.
         assert_eq!(
             f.get("min-temp-c"),
-            Some(&serde_yaml::Value::Number((-40i64).into()))
+            Some(&rivet_yaml::Value::Number((-40i64).into()))
         );
     }
 
@@ -679,8 +679,8 @@ mod tests {
         // Serialise an artifact with fields-per-variant, parse it back,
         // confirm the typed field survives the round-trip via serde.
         let a = art_with_variant_overrides();
-        let yaml = serde_yaml::to_string(&a).unwrap();
-        let parsed: Artifact = serde_yaml::from_str(&yaml).unwrap();
+        let yaml = rivet_yaml::to_string(&a).unwrap();
+        let parsed: Artifact = rivet_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed.fields_per_variant.len(), 2);
         assert!(parsed.fields_per_variant.contains_key("automotive"));
         assert!(parsed.fields_per_variant.contains_key("industrial"));
@@ -688,7 +688,7 @@ mod tests {
         let f = parsed.fields_for_variant(Some("industrial"));
         assert_eq!(
             f.get("max-temp-c"),
-            Some(&serde_yaml::Value::Number(100.into()))
+            Some(&rivet_yaml::Value::Number(100.into()))
         );
     }
 
@@ -698,7 +698,7 @@ mod tests {
 name: v0.1.0
 description: Initial release
 "#;
-        let config: BaselineConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: BaselineConfig = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(config.name, "v0.1.0");
         assert_eq!(config.description.as_deref(), Some("Initial release"));
     }
@@ -706,7 +706,7 @@ description: Initial release
     #[test]
     fn baseline_config_deserializes_without_description() {
         let yaml = "name: v0.2.0\n";
-        let config: BaselineConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: BaselineConfig = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(config.name, "v0.2.0");
         assert_eq!(config.description, None);
     }
@@ -720,7 +720,7 @@ description: Initial release
 - name: v0.3.0
   description: Third baseline
 "#;
-        let configs: Vec<BaselineConfig> = serde_yaml::from_str(yaml).unwrap();
+        let configs: Vec<BaselineConfig> = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(configs.len(), 3);
         assert_eq!(configs[0].name, "v0.1.0");
         assert_eq!(configs[1].description, None);
@@ -737,7 +737,7 @@ description: Initial release
     #[test]
     fn link_flat_target_yaml_roundtrip() {
         let l = Link::new("satisfies", "REQ-001");
-        let yaml = serde_yaml::to_string(&l).unwrap();
+        let yaml = rivet_yaml::to_string(&l).unwrap();
         assert!(
             yaml.contains("type: satisfies"),
             "flat-link YAML should include type, got: {yaml}"
@@ -747,7 +747,7 @@ description: Initial release
             "flat-link YAML should include scalar target, got: {yaml}"
         );
         // Round-trip parse.
-        let parsed: Link = serde_yaml::from_str(&yaml).unwrap();
+        let parsed: Link = rivet_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed.link_type, "satisfies");
         assert_eq!(parsed.target, "REQ-001");
         assert!(parsed.external.is_none(), "no structured external");
@@ -770,7 +770,7 @@ target:
   sha256: 7f3c0000
   anchor: ANCHOR-ACME-001
 ";
-        let parsed: Link = serde_yaml::from_str(yaml).unwrap();
+        let parsed: Link = rivet_yaml::from_str(yaml).unwrap();
         assert_eq!(parsed.link_type, "derives-from-external");
         assert_eq!(
             parsed.target, "ANCHOR-ACME-001",
@@ -806,7 +806,7 @@ target:
                 anchor: "ANCHOR-X".into(),
             }),
         };
-        let yaml = serde_yaml::to_string(&original).unwrap();
+        let yaml = rivet_yaml::to_string(&original).unwrap();
         // The output MUST be the structured mapping form, not `target: ANCHOR-X`.
         assert!(
             yaml.contains("anchor: ANCHOR-X"),
@@ -817,7 +817,7 @@ target:
             "serialized YAML should carry org:, got: {yaml}"
         );
         // Round-trip back.
-        let parsed: Link = serde_yaml::from_str(&yaml).unwrap();
+        let parsed: Link = rivet_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, original, "structured link must round-trip exactly");
     }
 
@@ -836,7 +836,7 @@ target:
   contract: PO-1
   anchor: \"\"
 ";
-        let err = serde_yaml::from_str::<Link>(yaml).unwrap_err();
+        let err = rivet_yaml::from_str::<Link>(yaml).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("anchor"),
@@ -861,7 +861,7 @@ target:
             source_hash: "deadbeef".into(),
             mapping_recipe: None,
         };
-        let yaml = serde_yaml::to_string(&fp).unwrap();
+        let yaml = rivet_yaml::to_string(&fp).unwrap();
         assert!(yaml.contains("source-org: acme-electronics"));
         assert!(yaml.contains("source-tool: reqif-1.2"));
         assert!(yaml.contains("source-id: REQ-SW-022"));
@@ -872,7 +872,7 @@ target:
                 || yaml.contains("fetched-at: 2026-05-16T08:00:00Z")
         );
         assert!(yaml.contains("source-hash: deadbeef"));
-        let parsed: FederationProvenance = serde_yaml::from_str(&yaml).unwrap();
+        let parsed: FederationProvenance = rivet_yaml::from_str(&yaml).unwrap();
         assert_eq!(parsed, fp);
     }
 
@@ -891,7 +891,7 @@ target:
             reviewed_by: None,
             federation: None,
         };
-        let yaml = serde_yaml::to_string(&prov).unwrap();
+        let yaml = rivet_yaml::to_string(&prov).unwrap();
         assert!(
             !yaml.contains("federation"),
             "federation: None should not appear in YAML, got: {yaml}"
@@ -909,17 +909,17 @@ target:
             }),
             ..prov.clone()
         };
-        let yaml2 = serde_yaml::to_string(&prov_fed).unwrap();
+        let yaml2 = rivet_yaml::to_string(&prov_fed).unwrap();
         assert!(
             yaml2.contains("federation:"),
             "federation: Some(...) must surface, got: {yaml2}"
         );
         assert!(yaml2.contains("source-org: acme"));
-        let parsed: Provenance = serde_yaml::from_str(&yaml2).unwrap();
+        let parsed: Provenance = rivet_yaml::from_str(&yaml2).unwrap();
         assert_eq!(parsed.federation, prov_fed.federation);
     }
-    fn yaml(src: &str) -> serde_yaml::Value {
-        serde_yaml::from_str(src).expect("yaml")
+    fn yaml(src: &str) -> rivet_yaml::Value {
+        rivet_yaml::from_str(src).expect("yaml")
     }
 
     /// REQ-313: both shapes parse, and a bare string carries no blocked claim.

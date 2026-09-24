@@ -21,7 +21,7 @@ sql = ["dep:gluesql-core", "dep:gluesql_memory_storage", "dep:futures"]
 
 [dependencies]
 serde = { workspace = true }
-serde_yaml = { workspace = true }
+rivet-yaml = { path = "../rivet-yaml" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 sha2 = { workspace = true }
@@ -54,6 +54,11 @@ spar-hir = { workspace = true, optional = true }
 spar-analysis = { workspace = true, optional = true }
 
 [dev-dependencies]
+# serde_yaml stays as the INDEPENDENT ORACLE for tests that check rivet's own
+# YAML (REQ-346). Production code reads and writes through rivet-yaml; once
+# rivet-yaml owns its parser and emitter, an oracle on the same stack could only
+# agree with itself. Do not rename these call sites to rivet_yaml.
+serde_yaml = { workspace = true }
 proptest = "1.5"
 criterion = { workspace = true }
 wiremock = "0.6"

@@ -452,7 +452,7 @@ fn known_type(diag: &Diagnostic, schema: &Schema, store: &Store) -> Option<Remed
 
 /// Render a YAML scalar the way validate.rs compares it against `allowed-values`
 /// (string / bool / number → canonical string). Returns `None` for non-scalars.
-fn yaml_scalar_string(value: &serde_yaml::Value) -> Option<String> {
+fn yaml_scalar_string(value: &rivet_yaml::Value) -> Option<String> {
     if let Some(s) = value.as_str() {
         return Some(s.to_string());
     }
@@ -885,7 +885,7 @@ mod tests {
         };
         for (k, v) in fields {
             a.fields
-                .insert(k.to_string(), serde_yaml::Value::String(v.to_string()));
+                .insert(k.to_string(), rivet_yaml::Value::String(v.to_string()));
         }
         a
     }

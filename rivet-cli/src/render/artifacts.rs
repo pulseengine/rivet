@@ -680,13 +680,13 @@ pub(crate) fn render_artifact_preview(ctx: &RenderContext, id: &str) -> String {
 /// sequences as `<ul>`, mappings as a nested `<dl>`. Recursive so a
 /// sequence-of-mappings (the reported shape) renders as a real list of
 /// key/value blocks.
-fn render_field_value(value: &serde_yaml::Value) -> String {
+fn render_field_value(value: &rivet_yaml::Value) -> String {
     match value {
-        serde_yaml::Value::Null => "<em>null</em>".to_string(),
-        serde_yaml::Value::Bool(b) => html_escape(&b.to_string()),
-        serde_yaml::Value::Number(n) => html_escape(&n.to_string()),
-        serde_yaml::Value::String(s) => linkify_source_refs(&html_escape(s)),
-        serde_yaml::Value::Sequence(items) => {
+        rivet_yaml::Value::Null => "<em>null</em>".to_string(),
+        rivet_yaml::Value::Bool(b) => html_escape(&b.to_string()),
+        rivet_yaml::Value::Number(n) => html_escape(&n.to_string()),
+        rivet_yaml::Value::String(s) => linkify_source_refs(&html_escape(s)),
+        rivet_yaml::Value::Sequence(items) => {
             if items.is_empty() {
                 return "<em>(empty list)</em>".to_string();
             }
@@ -699,14 +699,14 @@ fn render_field_value(value: &serde_yaml::Value) -> String {
             out.push_str("</ul>");
             out
         }
-        serde_yaml::Value::Mapping(map) => {
+        rivet_yaml::Value::Mapping(map) => {
             if map.is_empty() {
                 return "<em>(empty)</em>".to_string();
             }
             let mut out = String::from("<dl class=\"field-map\">");
             for (k, v) in map {
                 let key_str = match k {
-                    serde_yaml::Value::String(s) => s.clone(),
+                    rivet_yaml::Value::String(s) => s.clone(),
                     other => format!("{other:?}"),
                 };
                 out.push_str(&format!(
@@ -719,7 +719,7 @@ fn render_field_value(value: &serde_yaml::Value) -> String {
             out
         }
         // Tagged values are rare in rivet artifacts; show the inner value.
-        serde_yaml::Value::Tagged(t) => render_field_value(&t.value),
+        rivet_yaml::Value::Tagged(t) => render_field_value(&t.value),
     }
 }
 
@@ -878,7 +878,7 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
             continue;
         }
         let val = match value {
-            serde_yaml::Value::String(s) => linkify_source_refs(&html_escape(s)),
+            rivet_yaml::Value::String(s) => linkify_source_refs(&html_escape(s)),
             other => render_field_value(other),
         };
         html.push_str(&format!("<dt>{}</dt><dd>{}</dd>", html_escape(key), val));
@@ -889,7 +889,7 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
     // Wraps in .svg-viewer so the toolbar (zoom-fit / fullscreen / popout)
     // applies uniformly to artifact diagrams, graph views, and doc-linkage —
     // same visual language regardless of where the diagram is shown.
-    if let Some(serde_yaml::Value::String(diagram)) = artifact.fields.get("diagram") {
+    if let Some(rivet_yaml::Value::String(diagram)) = artifact.fields.get("diagram") {
         html.push_str("<div class=\"card artifact-diagram\">");
         html.push_str("<h3>Diagram</h3>");
         html.push_str(
@@ -1296,7 +1296,7 @@ mod tests {
     #[test]
     fn sequence_of_mappings_renders_structurally_not_debug() {
         let yaml = "- kind: e\n  page_id: e\n  version: 2\n  section: eee\n";
-        let value: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let value: rivet_yaml::Value = rivet_yaml::from_str(yaml).unwrap();
         let out = render_field_value(&value);
         // Structured markup, readable values.
         assert!(out.contains("<ul class=\"field-seq\">"), "{out}");
@@ -1314,10 +1314,10 @@ mod tests {
     // rivet: verifies REQ-107
     #[test]
     fn scalar_field_values_render_plainly() {
-        use serde_yaml::Value;
+        use rivet_yaml::Value;
         assert_eq!(render_field_value(&Value::Bool(true)), "true");
         assert_eq!(
-            render_field_value(&serde_yaml::from_str::<Value>("42").unwrap()),
+            render_field_value(&rivet_yaml::from_str::<Value>("42").unwrap()),
             "42"
         );
         assert_eq!(render_field_value(&Value::Null), "<em>null</em>");

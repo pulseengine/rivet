@@ -44,7 +44,7 @@ commits:
   trace-exempt-artifacts:
     - FEAT-099
 "#;
-    let config: ProjectConfig = serde_yaml::from_str(yaml).unwrap();
+    let config: ProjectConfig = rivet_yaml::from_str(yaml).unwrap();
     let commits = config.commits.expect("commits should parse");
     assert_eq!(commits.format, "trailers");
     assert_eq!(commits.trailers.len(), 2);
@@ -59,6 +59,6 @@ commits:
 #[test]
 fn commits_config_optional() {
     let yaml = "project:\n  name: test\n  schemas: [common]\nsources: []\n";
-    let config: ProjectConfig = serde_yaml::from_str(yaml).unwrap();
+    let config: ProjectConfig = rivet_yaml::from_str(yaml).unwrap();
     assert!(config.commits.is_none());
 }

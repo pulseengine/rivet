@@ -629,7 +629,7 @@ mod tests {
         };
         a.fields.insert(
             "source-ref".into(),
-            serde_yaml::Value::String(value.to_owned()),
+            rivet_yaml::Value::String(value.to_owned()),
         );
         a
     }

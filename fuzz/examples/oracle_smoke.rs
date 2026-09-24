@@ -232,8 +232,8 @@ fn probe(yaml: &str) -> Option<String> {
     let hir = rivet_core::yaml_hir::extract_generic_artifacts(yaml);
 
     // Also run the plain serde paths to catch panics.
-    let _ = serde_yaml::from_str::<Artifact>(yaml);
-    let _ = serde_yaml::from_str::<Vec<Artifact>>(yaml);
+    let _ = rivet_yaml::from_str::<Artifact>(yaml);
+    let _ = rivet_yaml::from_str::<Vec<Artifact>>(yaml);
 
     if let Ok(artifacts) = &serde_result {
         for a in artifacts {

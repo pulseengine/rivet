@@ -201,7 +201,7 @@ pub fn render(entries: &[BundleEntry], format: BundleFormat) -> String {
 }
 
 /// YAML rendering with inline `# <link-type> -> <target>` annotations on
-/// each link. We render by hand rather than using `serde_yaml::to_string`
+/// each link. We render by hand rather than using `rivet_yaml::to_string`
 /// because comments can't round-trip through serde and the annotations
 /// are the whole point of the format ("an LLM reading top-to-bottom
 /// resolves references without a second lookup").

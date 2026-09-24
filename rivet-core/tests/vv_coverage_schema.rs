@@ -65,7 +65,7 @@ fn vv_coverage_content_non_empty() {
 #[test]
 fn vv_coverage_parses_as_schema_file() {
     let parsed: Result<rivet_core::schema::SchemaFile, _> =
-        serde_yaml::from_str(rivet_core::embedded::SCHEMA_VV_COVERAGE);
+        rivet_yaml::from_str(rivet_core::embedded::SCHEMA_VV_COVERAGE);
     assert!(
         parsed.is_ok(),
         "vv-coverage schema must be valid YAML: {:?}",
