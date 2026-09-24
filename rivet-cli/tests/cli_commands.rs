@@ -2362,6 +2362,96 @@ fn sql_join_and_json_over_the_store() {
     );
 }
 
+// rivet: verifies REQ-373
+#[test]
+fn sql_json_preserves_cell_types_and_null() {
+    // `--format json` exists to be consumed by a program, so erasing types in
+    // it defeats the format. Before this, every cell crossed
+    // `SqlResult.rows: Vec<Vec<String>>` and COUNT(*) arrived as the string
+    // "2" — `jq 'map(.n) | add'` failed with "string and number cannot be
+    // added" on rivet's own machine-readable output.
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold artifact");
+        }
+    }
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: A\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-2\n    type: requirement\n    title: B\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "sql",
+            "SELECT id, release, COUNT(*) AS n FROM artifacts GROUP BY id, release ORDER BY id",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet sql");
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let rows = v.as_array().expect("array");
+    assert_eq!(rows.len(), 2);
+
+    // A count is a JSON number. `is_number` alone would pass on a string in
+    // some parsers, so take the value.
+    assert_eq!(
+        rows[0]["n"].as_i64(),
+        Some(1),
+        "COUNT(*) must be a JSON number, not a quoted string:\n{v:#}"
+    );
+    // Text stays text.
+    assert_eq!(rows[0]["id"].as_str(), Some("REQ-1"));
+    assert_eq!(rows[0]["release"].as_str(), Some("v1.0.0"));
+    // SQL NULL is `null`, distinct from the empty string it used to become.
+    // A consumer can now tell "no release" from "release is empty".
+    assert!(
+        rows[1]["release"].is_null(),
+        "a NULL cell must serialize as JSON null, not \"\":\n{v:#}"
+    );
+
+    // The text formats are unaffected — stringifying is correct there, and
+    // NULL still renders as empty rather than the word "null".
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "sql",
+            "SELECT id, release FROM artifacts ORDER BY id",
+            "--format",
+            "csv",
+        ])
+        .output()
+        .expect("rivet sql csv");
+    assert!(out.status.success());
+    let csv = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        csv.trim(),
+        "id,release\nREQ-1,v1.0.0\nREQ-2,",
+        "csv stringifies at the edge and renders NULL as empty"
+    );
+}
+
 // rivet: verifies REQ-372
 #[test]
 fn sql_projects_release_so_scope_can_be_grouped() {
@@ -2423,16 +2513,12 @@ fn sql_projects_release_so_scope_can_be_grouped() {
         .map(|r| {
             (
                 r["release"].as_str().unwrap_or("").to_string(),
-                // Every SQL cell crosses `SqlResult.rows: Vec<Vec<String>>`,
-                // so COUNT(*) arrives as the STRING "2", not the number 2 —
-                // `jq 'map(.n) | add'` fails on this output. Tracked as
-                // REQ-373; this test pins the current shape rather than
-                // pretending it is already typed.
+                // REQ-373: a JSON number, not the string "2". This
+                // assertion is why REQ-373 could not be quietly skipped —
+                // it named the requirement while the defect was still live.
                 r["n"]
-                    .as_str()
-                    .expect("aggregates come back as strings today (REQ-373)")
-                    .parse::<i64>()
-                    .expect("and that string is a number"),
+                    .as_i64()
+                    .expect("COUNT(*) is a JSON number (REQ-373)"),
             )
         })
         .collect();

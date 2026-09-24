@@ -28,11 +28,92 @@ use futures::executor::block_on;
 use gluesql_core::prelude::{Glue, Payload, Value};
 use gluesql_memory_storage::MemoryStorage;
 
-/// Tabular result of a SQL query: column names plus stringified rows.
+/// One cell of a SQL result, with its gluesql type preserved.
+///
+/// REQ-373: every cell used to cross this boundary as a `String`, so
+/// `SELECT COUNT(*)` reached `--format json` as the string `"2"` and
+/// `jq 'map(.n) | add'` failed on rivet's own machine-readable output. A
+/// format whose purpose is to be consumed by a program is the wrong place to
+/// erase types.
+///
+/// `Null` is a distinct variant rather than an empty string because the
+/// write-diff depends on telling them apart (see [`value_opt`]). The
+/// `untagged` representation means a number serializes as a number and a
+/// null as `null`, with no wrapper object.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum SqlValue {
+    /// SQL NULL — distinct from the empty string.
+    Null,
+    /// A boolean.
+    Bool(bool),
+    /// A signed integer, e.g. what `COUNT(*)` returns.
+    Int(i64),
+    /// A floating-point number.
+    Float(f64),
+    /// Text, and the fallback for gluesql types rivet does not model.
+    Str(String),
+}
+
+/// `PartialEq`/`Eq` are written by hand rather than derived because the
+/// `Float` variant holds an `f64`, which is not `Eq` — and `SqlResult` is a
+/// public type that already derives `Eq`, so dropping it would be a breaking
+/// change to spare an internal detail.
+///
+/// Floats compare by BIT PATTERN. That makes the relation reflexive, which
+/// `Eq` requires and `f64`'s own `PartialEq` does not provide (`NaN != NaN`).
+/// Two `SqlValue::Float(f64::NAN)` produced by the same query therefore
+/// compare equal, which is what a result-set comparison should say.
+impl PartialEq for SqlValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Null, Self::Null) => true,
+            (Self::Bool(a), Self::Bool(b)) => a == b,
+            (Self::Int(a), Self::Int(b)) => a == b,
+            (Self::Float(a), Self::Float(b)) => a.to_bits() == b.to_bits(),
+            (Self::Str(a), Self::Str(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for SqlValue {}
+
+impl std::fmt::Display for SqlValue {
+    /// The text form used by the `table` and `csv` output formats, where
+    /// stringification is correct because those formats are text by
+    /// definition. NULL renders as the empty string, as it always has.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Null => Ok(()),
+            Self::Bool(b) => write!(f, "{b}"),
+            Self::Int(n) => write!(f, "{n}"),
+            Self::Float(x) => write!(f, "{x}"),
+            Self::Str(s) => write!(f, "{s}"),
+        }
+    }
+}
+
+/// Convert a gluesql `Value` into a typed [`SqlValue`].
+#[allow(clippy::wildcard_enum_match_arm)]
+fn value_to_sql_value(v: &Value) -> SqlValue {
+    match v {
+        Value::Null => SqlValue::Null,
+        Value::Bool(b) => SqlValue::Bool(*b),
+        Value::I64(n) => SqlValue::Int(*n),
+        Value::F64(x) => SqlValue::Float(*x),
+        Value::Str(s) => SqlValue::Str(s.clone()),
+        // Everything rivet does not model keeps the previous text form, so a
+        // new gluesql type degrades to a string rather than disappearing.
+        other => SqlValue::Str(value_to_string(other)),
+    }
+}
+
+/// Tabular result of a SQL query: column names plus typed rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SqlResult {
     pub columns: Vec<String>,
-    pub rows: Vec<Vec<String>>,
+    pub rows: Vec<Vec<SqlValue>>,
 }
 
 /// Run a read-only SQL query against the artifact store.
@@ -54,7 +135,7 @@ pub fn query(store: &Store, sql: &str) -> Result<SqlResult, String> {
         columns: labels,
         rows: rows
             .into_iter()
-            .map(|r| r.iter().map(value_to_string).collect())
+            .map(|r| r.iter().map(value_to_sql_value).collect())
             .collect(),
     })
 }
@@ -391,7 +472,10 @@ mod tests {
         assert_eq!(r.columns, vec!["id"]);
         assert_eq!(
             r.rows,
-            vec![vec!["REQ-1".to_string()], vec!["REQ-2".to_string()]]
+            vec![
+                vec![SqlValue::Str("REQ-1".to_string())],
+                vec![SqlValue::Str("REQ-2".to_string())]
+            ]
         );
     }
 
@@ -411,7 +495,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             r.rows,
-            vec![vec!["REQ-2".to_string()]],
+            vec![vec![SqlValue::Str("REQ-2".to_string())]],
             "only REQ-2 lacks a verify"
         );
     }

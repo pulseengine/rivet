@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Changed
+- **`rivet sql --format json` now emits typed cells** (REQ-373) — every cell
+  used to cross `SqlResult.rows: Vec<Vec<String>>`, so `SELECT COUNT(*)`
+  arrived as the string `"2"` and `jq 'map(.n) | add'` failed on rivet's own
+  machine-readable output. Counts are now JSON numbers, booleans are booleans,
+  and **SQL `NULL` is `null` rather than `""`** — so a consumer can finally
+  tell "no release" from "release is empty". The `table` and `csv` formats are
+  unchanged: they are text by definition and stringify at the edge, and NULL
+  still renders as empty there rather than as the word `null`. `SqlResult.rows`
+  is now `Vec<Vec<SqlValue>>`, a breaking change to a rivet-core public type
+  that the 0.x minor bump permits.
+
 ### Added
 - **`release` is now a column in `rivet sql`** (REQ-372) — the artifacts table
   projected `id`, `type`, `title`, `description`, `status` and `fields_json`

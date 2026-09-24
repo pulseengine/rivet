@@ -19495,7 +19495,15 @@ fn cmd_sql(cli: &Cli, query: &str, format: &str) -> Result<bool> {
                         .columns
                         .iter()
                         .zip(row)
-                        .map(|(c, v)| (c.clone(), serde_json::Value::String(v.clone())))
+                        // REQ-373: serialize the TYPED cell. Wrapping it in
+                        // Value::String is what made `COUNT(*)` arrive as the
+                        // string "2" in rivet's own machine-readable format.
+                        .map(|(c, v)| {
+                            (
+                                c.clone(),
+                                serde_json::to_value(v).unwrap_or(serde_json::Value::Null),
+                            )
+                        })
                         .collect();
                     serde_json::Value::Object(map)
                 })
@@ -19516,7 +19524,7 @@ fn cmd_sql(cli: &Cli, query: &str, format: &str) -> Result<bool> {
                 println!(
                     "{}",
                     row.iter()
-                        .map(|c| csv_escape(c))
+                        .map(|c| csv_escape(&c.to_string()))
                         .collect::<Vec<_>>()
                         .join(",")
                 );
@@ -19525,7 +19533,12 @@ fn cmd_sql(cli: &Cli, query: &str, format: &str) -> Result<bool> {
         _ => {
             // Aligned text table.
             let mut widths: Vec<usize> = result.columns.iter().map(|c| c.chars().count()).collect();
-            for row in &result.rows {
+            let cells: Vec<Vec<String>> = result
+                .rows
+                .iter()
+                .map(|row| row.iter().map(ToString::to_string).collect())
+                .collect();
+            for row in &cells {
                 for (i, cell) in row.iter().enumerate() {
                     if let Some(w) = widths.get_mut(i) {
                         *w = (*w).max(cell.chars().count());
@@ -19551,7 +19564,7 @@ fn cmd_sql(cli: &Cli, query: &str, format: &str) -> Result<bool> {
                     .collect::<Vec<_>>()
                     .join("  ")
             );
-            for row in &result.rows {
+            for row in &cells {
                 println!("{}", render(row));
             }
             eprintln!("\n{} row(s)", result.rows.len());

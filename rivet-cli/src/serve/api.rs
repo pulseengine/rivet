@@ -846,7 +846,9 @@ pub(crate) struct SqlRequest {
 #[derive(Serialize)]
 struct SqlResponse {
     columns: Vec<String>,
-    rows: Vec<Vec<String>>,
+    // REQ-373: typed cells, so the /sql endpoint's JSON carries numbers
+    // as numbers rather than as quoted strings.
+    rows: Vec<Vec<rivet_core::sql::SqlValue>>,
     row_count: usize,
 }
 
