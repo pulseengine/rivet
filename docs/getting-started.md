@@ -942,7 +942,7 @@ Four virtual tables are projected:
 
 | Table        | Columns                                                                  |
 |--------------|--------------------------------------------------------------------------|
-| `artifacts`  | `id`, `type`, `title`, `description`, `status`, `fields_json`            |
+| `artifacts`  | `id`, `type`, `title`, `description`, `status`, `release`, `fields_json` |
 | `links`      | `source`, `link_type`, `target`, `external`                              |
 | `fields`     | `artifact_id`, `key`, `value` (EAV — one row per field, for JOINs)       |
 | `provenance` | `artifact_id`, `created_by`, `model`, `session_id`, `timestamp`, `reviewed_by` |

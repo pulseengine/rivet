@@ -1390,7 +1390,7 @@ enum Command {
     ///
     /// Projects the artifacts as virtual tables and runs read-only SQL — no
     /// server and no MCP required. Tables: `artifacts(id, type, title,
-    /// description, status, fields_json)`, `links(source, link_type, target,
+    /// description, status, release, fields_json)`, `links(source, link_type, target,
     /// external)`, `fields(artifact_id, key, value)`, `provenance(...)`. SQL
     /// gives JOINs/aggregations the s-expression filter can't express, e.g. the
     /// V-closure set:

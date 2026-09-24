@@ -2362,6 +2362,115 @@ fn sql_join_and_json_over_the_store() {
     );
 }
 
+// rivet: verifies REQ-372
+#[test]
+fn sql_projects_release_so_scope_can_be_grouped() {
+    // The query the maintainer actually tried, which failed with
+    // `identifier not found: release` because the artifacts table projected
+    // every field EXCEPT the one release planning is organised around.
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold artifact");
+        }
+    }
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: A\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-2\n    type: requirement\n    title: B\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-3\n    type: requirement\n    title: C\n    status: draft\n    release: v2.0.0\n  \
+         - id: REQ-4\n    type: requirement\n    title: D\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "sql",
+            "SELECT release, COUNT(*) AS n FROM artifacts GROUP BY release ORDER BY n DESC",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet sql");
+    assert!(
+        out.status.success(),
+        "grouping by release must work, not fail with `identifier not found`. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let rows: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("sql JSON must be valid");
+    let rows = rows.as_array().expect("array of rows");
+    // Exact counts, not merely "the column resolves": a projection that
+    // emitted release as a constant would still parse and still group.
+    let mut got: Vec<(String, i64)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r["release"].as_str().unwrap_or("").to_string(),
+                // Every SQL cell crosses `SqlResult.rows: Vec<Vec<String>>`,
+                // so COUNT(*) arrives as the STRING "2", not the number 2 —
+                // `jq 'map(.n) | add'` fails on this output. Tracked as
+                // REQ-373; this test pins the current shape rather than
+                // pretending it is already typed.
+                r["n"]
+                    .as_str()
+                    .expect("aggregates come back as strings today (REQ-373)")
+                    .parse::<i64>()
+                    .expect("and that string is a number"),
+            )
+        })
+        .collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![
+            ("".to_string(), 1),
+            ("v1.0.0".to_string(), 2),
+            ("v2.0.0".to_string(), 1),
+        ],
+        "two artifacts in v1.0.0, one in v2.0.0, one carrying no release at all"
+    );
+
+    // The column must also be selectable per-row and JOINable, which is the
+    // point of putting it in the table rather than only in `release list`.
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "sql",
+            "SELECT id FROM artifacts WHERE release = 'v1.0.0' AND status = 'verified' ORDER BY id",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet sql");
+    assert!(out.status.success());
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let ids: Vec<&str> = rows
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|r| r["id"].as_str().expect("id"))
+        .collect();
+    assert_eq!(ids, vec!["REQ-1", "REQ-2"], "release filters per row");
+}
+
 /// A throwaway dev project with one implemented requirement carrying sibling
 /// fields, for SQL write tests (REQ-230).
 fn sql_write_project() -> tempfile::TempDir {

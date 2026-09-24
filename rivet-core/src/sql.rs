@@ -6,7 +6,7 @@
 //! results are never stale — DD-068's "no stale snapshot" guarantee.
 //!
 //! Tables projected from the [`Store`]:
-//! - `artifacts(id, type, title, description, status, fields_json)`
+//! - `artifacts(id, type, title, description, status, release, fields_json)`
 //! - `links(source, link_type, target, external)`
 //! - `fields(artifact_id, key, value)`   — EAV; one row per field, for JOINs
 //! - `provenance(artifact_id, created_by, model, session_id, timestamp, reviewed_by)`
@@ -197,7 +197,7 @@ fn staging(store: &Store) -> Result<Glue<MemoryStorage>, String> {
 fn build_setup_sql(store: &Store) -> String {
     let mut s = String::new();
     s.push_str(
-        "CREATE TABLE artifacts (id TEXT, type TEXT, title TEXT, description TEXT, status TEXT, fields_json TEXT);\n\
+        "CREATE TABLE artifacts (id TEXT, type TEXT, title TEXT, description TEXT, status TEXT, release TEXT, fields_json TEXT);\n\
          CREATE TABLE links (source TEXT, link_type TEXT, target TEXT, external TEXT);\n\
          CREATE TABLE fields (artifact_id TEXT, key TEXT, value TEXT);\n\
          CREATE TABLE provenance (artifact_id TEXT, created_by TEXT, model TEXT, session_id TEXT, timestamp TEXT, reviewed_by TEXT);\n",
@@ -211,12 +211,13 @@ fn build_setup_sql(store: &Store) -> String {
     for a in store.iter_sorted() {
         let fields_json = serde_json::to_string(&a.fields).ok();
         artifacts.push(format!(
-            "({}, {}, {}, {}, {}, {})",
+            "({}, {}, {}, {}, {}, {}, {})",
             lit(Some(&a.id)),
             lit(Some(&a.artifact_type)),
             lit(Some(&a.title)),
             lit(a.description.as_deref()),
             lit(a.status.as_deref()),
+            lit(a.release.as_deref()),
             lit(fields_json.as_deref()),
         ));
         for l in &a.links {
