@@ -243,6 +243,13 @@ jobs:
       # they are documentation rather than a gate.
       - name: CI-diagnose classifier tests (REQ-316, REQ-317)
         run: bash tools/ci-diagnose/diagnose_test.sh
+      # REQ-369: release.yml fires ONLY on tag push, so nothing in a pull
+      # request can reach the release-note publishing logic. Extracted into a
+      # sourceable script and exercised here, or it would ship having never
+      # run — which is the class of defect that put the generated 11-03 note
+      # nowhere near the release in the first place.
+      - name: Release-note publishing tests (REQ-369)
+        run: bash tools/release/release-note_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its

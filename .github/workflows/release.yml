@@ -382,11 +382,13 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/}"
           BARE="${VERSION#v}"
           OUT="rivet-${BARE}-release-note.md"
-          # The tag immediately preceding this one ON THIS HISTORY.
-          # Deliberately not `git tag --sort=-v:refname | head -1`: that
-          # reads the whole tag namespace and would pick a tag that is
-          # newer, or on another branch, whenever one exists.
-          PREV="$(git describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || true)"
+          # REQ-369: the logic lives in a sourceable script with its own
+          # oracle (tools/release/release-note_test.sh, run by CI's YAML
+          # Lint job). This workflow fires only on tag push, so inline
+          # shell here is unreachable by any pull request and would ship
+          # having never run once.
+          . tools/release/release-note.sh
+          PREV="$(previous_release_tag "$VERSION")"
           if [ -n "$PREV" ]; then
             echo "::notice::Generating release note for $VERSION since $PREV"
             cargo run --release -p rivet-cli -- release notes "$VERSION" --since "$PREV" > "$OUT"
@@ -570,18 +572,13 @@ jobs:
           # endpoint is read-only and returns exactly what --generate-notes
           # would have produced, so asking for it explicitly and pasting it
           # under the trace-derived note is deterministic.
+          . tools/release/release-note.sh
           GEN="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
                    -f tag_name="$VERSION" --jq .body 2>/dev/null || true)"
           if [ -z "$GEN" ]; then
             echo "::warning::generate-notes returned nothing; the body carries the release note alone"
           fi
-          {
-            cat "$NOTE"
-            if [ -n "$GEN" ]; then
-              printf '\n\n---\n\n'
-              printf '%s\n' "$GEN"
-            fi
-          } > release-body.md
+          compose_release_body "$NOTE" "$GEN" > release-body.md
 
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "::notice::Release $VERSION already exists; uploading assets"
@@ -592,14 +589,10 @@ jobs:
             # this requirement doing nothing where it counts. Anything they
             # wrote is PRESERVED below the generated note rather than lost.
             EXISTING="$(gh release view "$VERSION" --json body -q .body)"
-            if printf '%s' "$EXISTING" | grep -q '^# Release note'; then
+            if body_carries_note "$EXISTING"; then
               echo "::notice::existing body already carries the generated note"
             else
-              {
-                cat "$NOTE"
-                printf '\n\n---\n\n'
-                printf '%s\n' "$EXISTING"
-              } > release-body.md
+              compose_release_body "$NOTE" "$EXISTING" > release-body.md
               gh release edit "$VERSION" --notes-file release-body.md
             fi
           else
@@ -615,7 +608,7 @@ jobs:
           # guard rather than a bet — but a release published without its
           # 11-03 item is exactly the defect being closed, and absence is
           # not success, so the check is positive and by name.
-          if ! gh release view "$VERSION" --json body -q .body | grep -q '^# Release note'; then
+          if ! body_carries_note "$(gh release view "$VERSION" --json body -q .body)"; then
             echo "::error::release body does not carry the generated 11-03 note"
             exit 1
           fi
