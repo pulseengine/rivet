@@ -441,6 +441,69 @@ mod tests {
     use super::*;
     use crate::test_helpers::{artifact_with_links, minimal_artifact};
 
+    // rivet: verifies REQ-373
+    //
+    // `PartialEq for SqlValue` is hand-written, and the mutation gate proved
+    // it was entirely untested: seven mutants survived, one per match arm and
+    // one per `==`. The integration tests in rivet-cli exercise the JSON
+    // output but `cargo mutants -- --lib` cannot see them, so the equality
+    // that `SqlResult: Eq` rests on had no oracle at all. These live in the
+    // module for that reason.
+    #[test]
+    fn sql_value_equality_compares_within_a_variant() {
+        // Each arm, positively and negatively — deleting any one arm makes
+        // that variant fall through to the catch-all and compare unequal.
+        assert_eq!(SqlValue::Null, SqlValue::Null);
+        assert_eq!(SqlValue::Bool(true), SqlValue::Bool(true));
+        assert_ne!(SqlValue::Bool(true), SqlValue::Bool(false));
+        assert_eq!(SqlValue::Int(2), SqlValue::Int(2));
+        assert_ne!(SqlValue::Int(2), SqlValue::Int(3));
+        assert_eq!(SqlValue::Float(1.5), SqlValue::Float(1.5));
+        assert_ne!(SqlValue::Float(1.5), SqlValue::Float(2.5));
+        assert_eq!(SqlValue::Str("a".into()), SqlValue::Str("a".into()));
+        assert_ne!(SqlValue::Str("a".into()), SqlValue::Str("b".into()));
+    }
+
+    // rivet: verifies REQ-373
+    #[test]
+    fn sql_value_does_not_compare_across_variants() {
+        // The whole point of the type: `1` and `"1"` render identically and
+        // must not be equal. An implementation that compared `to_string()`
+        // would pass every test above and fail here.
+        assert_ne!(SqlValue::Int(1), SqlValue::Str("1".into()));
+        assert_ne!(SqlValue::Bool(true), SqlValue::Str("true".into()));
+        assert_ne!(SqlValue::Float(2.0), SqlValue::Int(2));
+        // NULL is not the empty string. The write-diff depends on this.
+        assert_ne!(SqlValue::Null, SqlValue::Str(String::new()));
+    }
+
+    // rivet: verifies REQ-373
+    #[test]
+    fn sql_value_float_equality_is_reflexive_so_eq_is_lawful() {
+        // `Eq` requires reflexivity and `f64`'s own `PartialEq` does not
+        // provide it, so floats compare by BIT PATTERN. Without this test the
+        // claim in the impl's doc comment is unverified — and `SqlResult`
+        // derives `Eq` on the strength of it.
+        let nan = SqlValue::Float(f64::NAN);
+        assert_eq!(nan, nan.clone(), "NaN must equal itself or Eq is unlawful");
+        // Bit-pattern comparison also distinguishes the two zeroes, which
+        // plain `==` does not.
+        assert_ne!(SqlValue::Float(0.0), SqlValue::Float(-0.0));
+        assert_eq!(SqlValue::Float(0.0), SqlValue::Float(0.0));
+    }
+
+    // rivet: verifies REQ-373
+    #[test]
+    fn sql_value_display_is_the_text_form_and_null_is_empty() {
+        // `table` and `csv` render through Display; NULL must be empty there,
+        // never the word "null", or a CSV consumer reads a literal string.
+        assert_eq!(SqlValue::Null.to_string(), "");
+        assert_eq!(SqlValue::Bool(false).to_string(), "false");
+        assert_eq!(SqlValue::Int(-7).to_string(), "-7");
+        assert_eq!(SqlValue::Float(1.5).to_string(), "1.5");
+        assert_eq!(SqlValue::Str("x".into()).to_string(), "x");
+    }
+
     fn store_with_v_model() -> Store {
         let mut store = Store::new();
         // REQ-1: implemented + verified (closed). REQ-2: implemented, no verify.
