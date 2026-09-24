@@ -7486,6 +7486,98 @@ fn list_release_flag_filters_by_release_scope() {
 /// cuttable, zero once every scoped artifact is verified/accepted.
 ///
 /// rivet: verifies REQ-233
+// rivet: verifies REQ-370
+#[test]
+fn release_list_enumerates_every_label_in_version_order() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    // `init --preset dev` scaffolds example artifacts that also carry no
+    // release; drop them so `unscoped_unstarted` can be asserted EXACTLY
+    // rather than with a `>= 1` that would pass however the scaffold changes.
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold artifact");
+        }
+    }
+    let reqs = dir.join("artifacts/reqs.yaml");
+    // v0.9.0 must sort BEFORE v0.10.0: a string sort puts "v0.10.0" first,
+    // which is the defect this ordering exists to avoid. `backlog` does not
+    // parse as a version and sorts last. One release is fully ready, one is
+    // not, and one artifact carries no release at all.
+    std::fs::write(
+        &reqs,
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: A\n    status: verified\n    release: v0.10.0\n  \
+         - id: REQ-2\n    type: requirement\n    title: B\n    status: verified\n    release: v0.9.0\n  \
+         - id: REQ-3\n    type: requirement\n    title: C\n    status: proposed\n    release: v0.10.0\n  \
+         - id: REQ-4\n    type: requirement\n    title: D\n    status: draft\n    release: backlog\n  \
+         - id: REQ-5\n    type: requirement\n    title: E\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "list"])
+        .output()
+        .expect("release list");
+    assert!(out.status.success(), "release list must exit zero");
+    let text = String::from_utf8_lossy(&out.stdout);
+
+    let i9 = text.find("v0.9.0").expect("v0.9.0 row");
+    let i10 = text.find("v0.10.0").expect("v0.10.0 row");
+    let ib = text.find("backlog").expect("backlog row");
+    assert!(
+        i9 < i10,
+        "v0.9.0 must precede v0.10.0 (version order, not string order):\n{text}"
+    );
+    assert!(
+        i10 < ib,
+        "a label that is not a version sorts last:\n{text}"
+    );
+    assert!(
+        text.contains("cuttable"),
+        "each row must carry a readiness state:\n{text}"
+    );
+    assert!(
+        text.contains("carry NO release"),
+        "unscoped draft/proposed work must be reported, not silently omitted:\n{text}"
+    );
+
+    // The JSON form is what a script consumes, so it must carry the same facts.
+    let json_out = Command::new(rivet_bin())
+        .args(["--project", dirs, "release", "list", "--format", "json"])
+        .output()
+        .expect("release list json");
+    let v: serde_json::Value =
+        serde_json::from_slice(&json_out.stdout).expect("release list --format json emits JSON");
+    let rels = v["releases"].as_array().expect("releases array");
+    assert_eq!(rels.len(), 3, "three labels: v0.9.0, v0.10.0, backlog");
+    assert_eq!(rels[0]["release"], "v0.9.0");
+    assert_eq!(
+        rels[0]["cuttable"], true,
+        "v0.9.0 holds one verified artifact"
+    );
+    assert_eq!(rels[1]["release"], "v0.10.0");
+    assert_eq!(rels[1]["total"], 2);
+    assert_eq!(rels[1]["ready"], 1);
+    assert_eq!(
+        rels[1]["cuttable"], false,
+        "one of the two is still proposed"
+    );
+    assert_eq!(v["unscoped_unstarted"], 1, "REQ-5 carries no release");
+}
+
 #[test]
 fn release_status_reports_burn_down_and_exit_code() {
     let tmp = tempfile::tempdir().expect("temp dir");

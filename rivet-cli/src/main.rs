@@ -1646,6 +1646,20 @@ enum ReleaseAction {
         #[arg(long)]
         since: Option<String>,
     },
+    /// List every release the artifact store knows about, with counts.
+    ///
+    /// `release status` answers "is THIS release ready", which requires
+    /// already knowing the version. Nothing answered "which releases exist",
+    /// so the question was repeatedly re-derived by hand from
+    /// `rivet list --format json --full` plus a grouping script, or guessed
+    /// from git tags — which is a different set: a tag exists only after a
+    /// release ships, while a release label exists as soon as work is
+    /// scoped to it.
+    List {
+        /// Output format: "text" (default) or "json"
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
     /// Readiness burn-down for a release: per-status counts and the not-yet-ready set.
     ///
     /// Reports each status count for artifacts scoped to `release:
@@ -2749,6 +2763,7 @@ fn run(cli: Cli) -> Result<bool> {
                 format,
                 since,
             } => cmd_release_notes(&cli, version, format, since.as_deref()),
+            ReleaseAction::List { format } => cmd_release_list(&cli, format),
             ReleaseAction::Status { version, format } => cmd_release_status(&cli, version, format),
             ReleaseAction::Move { id, version } => cmd_release_move(&cli, id, version),
             ReleaseAction::Check {
@@ -8305,6 +8320,115 @@ fn collect_release_changes(
         out.push((c.hash.clone(), c.subject.clone(), issues));
     }
     Ok(out)
+}
+
+/// List every release label in the store, with per-release counts.
+///
+/// REQ-370. Sorted by version order where the label parses as `vMAJOR.MINOR.PATCH`,
+/// so v0.9.0 precedes v0.10.0 rather than following it as a string sort would.
+/// Labels that do not parse (e.g. `backlog`) sort last, by name.
+fn cmd_release_list(cli: &Cli, format: &str) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let ctx = ProjectContext::load(cli)?;
+    ctx.warn_parse_error_skips(cli);
+    let readiness = ReadinessCtx::compute(&ctx);
+
+    // Externals are excluded for the same reason `release status` excludes
+    // them from its verdict (#907): version labels collide across a
+    // multi-repo toolchain, so another project's v0.5.0 must not appear as
+    // one of ours.
+    let mut by_release: std::collections::BTreeMap<String, Vec<&rivet_core::model::Artifact>> =
+        std::collections::BTreeMap::new();
+    for a in ctx.store.iter().filter(|a| !a.id.contains(':')) {
+        if let Some(r) = a.release.as_deref() {
+            by_release.entry(r.to_string()).or_default().push(a);
+        }
+    }
+
+    // Version order, not string order: v0.9.0 before v0.10.0.
+    fn version_key(label: &str) -> Option<(u64, u64, u64)> {
+        let v = label.strip_prefix('v').unwrap_or(label);
+        let mut it = v.split('.');
+        let major = it.next()?.parse().ok()?;
+        let minor = it.next()?.parse().ok()?;
+        let patch = it.next().unwrap_or("0").parse().ok()?;
+        if it.next().is_some() {
+            return None;
+        }
+        Some((major, minor, patch))
+    }
+    let mut labels: Vec<String> = by_release.keys().cloned().collect();
+    labels.sort_by(|a, b| match (version_key(a), version_key(b)) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.cmp(b),
+    });
+
+    let unscoped_unstarted = ctx
+        .store
+        .iter()
+        .filter(|a| !a.id.contains(':'))
+        .filter(|a| a.release.is_none())
+        .filter(|a| matches!(a.status.as_deref(), Some("draft" | "proposed")))
+        .count();
+
+    let rows: Vec<(String, usize, usize, bool)> = labels
+        .iter()
+        .map(|label| {
+            let arts = &by_release[label];
+            let ready = arts.iter().filter(|a| readiness.is_ready(a)).count();
+            let cuttable = !arts.is_empty() && ready == arts.len();
+            (label.clone(), arts.len(), ready, cuttable)
+        })
+        .collect();
+
+    if format == "json" {
+        let obj = serde_json::json!({
+            "releases": rows.iter().map(|(label, total, ready, cuttable)| serde_json::json!({
+                "release": label,
+                "total": total,
+                "ready": ready,
+                "cuttable": cuttable,
+            })).collect::<Vec<_>>(),
+            "unscoped_unstarted": unscoped_unstarted,
+        });
+        println!("{}", serde_json::to_string_pretty(&obj)?);
+    } else if rows.is_empty() {
+        println!(
+            "No release labels in the store. Scope work with \
+             `rivet modify <ID> --set-release <version>`."
+        );
+    } else {
+        println!("{} release label(s)", rows.len());
+        println!();
+        println!("  {:<12} {:>7} {:>7}  STATE", "RELEASE", "TOTAL", "READY");
+        for (label, total, ready, cuttable) in &rows {
+            let state = if *cuttable {
+                "cuttable"
+            } else {
+                "not cuttable"
+            };
+            println!("  {label:<12} {total:>7} {ready:>7}  {state}");
+        }
+        println!();
+        // A SHIPPED release can read "not cuttable": its artifacts were
+        // scoped before the readiness rule existed and never advanced past
+        // `implemented`. That is history, not a regression, and saying so
+        // here stops the row being read as a broken release.
+        println!(
+            "  `not cuttable` on an already-shipped label means its artifacts predate the \
+             current readiness rule, not that the release is broken."
+        );
+        println!("  `rivet release status <version>` for the not-yet-ready set of one release.");
+        println!("  `rivet list --filter '(= release \"<version>\")'` for its artifacts.");
+        if unscoped_unstarted > 0 {
+            println!(
+                "  {unscoped_unstarted} draft/proposed artifact(s) carry NO release and appear in no row above."
+            );
+        }
+    }
+    Ok(true)
 }
 
 fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {

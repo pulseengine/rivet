@@ -5,6 +5,21 @@
 
 ## [Unreleased]
 
+### Added
+- **`rivet release list`** (REQ-370) — enumerates every release label the store
+  knows about with its artifact total, its verified count and whether it is
+  cuttable. `rivet release status` already answered "is this one release ready",
+  but only if you knew the version string; nothing answered "which releases are
+  there". Git tags are a different set — a label exists as soon as work is
+  scoped to it, so an unreleased version and a non-version label like `backlog`
+  have no tag and never show up in `git tag`. Labels sort in version order, so
+  v0.9.0 precedes v0.10.0, and labels that do not parse as versions sort last.
+  The readiness verdict is computed by the same code path `release status` uses,
+  so the two cannot disagree. The footer names the two follow-on queries, since
+  the other half of the request was to be told the query rather than memorise
+  it. A shipped release may legitimately read "not cuttable": its artifacts were
+  scoped before the readiness rule existed, and the output says so.
+
 ## [0.38.0] - 2026-09-23
 
 v0.37.0 collected diagnostics that lied about themselves. This release is about
