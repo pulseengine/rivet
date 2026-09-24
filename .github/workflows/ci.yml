@@ -243,6 +243,13 @@ jobs:
       # they are documentation rather than a gate.
       - name: CI-diagnose classifier tests (REQ-316, REQ-317)
         run: bash tools/ci-diagnose/diagnose_test.sh
+      # REQ-369: release.yml fires ONLY on tag push, so nothing in a pull
+      # request can reach the release-note publishing logic. Extracted into a
+      # sourceable script and exercised here, or it would ship having never
+      # run — which is the class of defect that put the generated 11-03 note
+      # nowhere near the release in the first place.
+      - name: Release-note publishing tests (REQ-369)
+        run: bash tools/release/release-note_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
@@ -707,6 +714,28 @@ jobs:
       - name: Install cargo-semver-checks
         run: cargo install --locked cargo-semver-checks
       - name: Check rivet-core public API
+        # rivet: verifies REQ-368
+        # Measured 2026-09-24 on this repository, both invocations exiting 0:
+        #   --baseline-rev origin/main -> "Checking rivet-core v0.39.0 ->
+        #     v0.39.0 (no change; assume minor) ... 196 checks: 196 pass,
+        #     58 skip"
+        #   no --baseline-rev (the pre-fix form, resolving the SQUATTED
+        #     crates.io rivet-core) -> "Checking rivet-core v0.1.0 -> v0.39.0
+        #     (major change) ... 0 checks: 0 pass, 254 skip ... Summary no
+        #     semver update required"
+        # The second exits 0 having verified nothing. That is the whole defect
+        # (#968): the gate was green because it compared against a stranger's
+        # crate, not because the API was compatible.
+        #
+        # HONEST BOUNDARY — a pass here is not "no breaking change".
+        # cargo-semver-checks 0.45 ships 256 lints and NONE of them detects a
+        # public field whose TYPE changed. The lints cover fields added,
+        # removed, renamed, deprecated and doc(hidden) — not retyped. Measured:
+        # changing `SqlResult.rows` from Vec<Vec<String>> to Vec<Vec<SqlValue>>
+        # (REQ-373), an unambiguously breaking change, still reports
+        # "196 checks: 196 pass". Read this gate as "the checks it has, ran" —
+        # a retyped public field still needs a human reading the API diff.
+        #
         # A PR that bumps rivet-core's version legitimately runs zero checks
         # (the bump permits breaking changes). That output is the same shape
         # as the vacuous comparison #968 fixed, so say so loudly rather than

@@ -2362,6 +2362,201 @@ fn sql_join_and_json_over_the_store() {
     );
 }
 
+// rivet: verifies REQ-373
+#[test]
+fn sql_json_preserves_cell_types_and_null() {
+    // `--format json` exists to be consumed by a program, so erasing types in
+    // it defeats the format. Before this, every cell crossed
+    // `SqlResult.rows: Vec<Vec<String>>` and COUNT(*) arrived as the string
+    // "2" — `jq 'map(.n) | add'` failed with "string and number cannot be
+    // added" on rivet's own machine-readable output.
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold artifact");
+        }
+    }
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: A\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-2\n    type: requirement\n    title: B\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "sql",
+            "SELECT id, release, COUNT(*) AS n FROM artifacts GROUP BY id, release ORDER BY id",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet sql");
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let rows = v.as_array().expect("array");
+    assert_eq!(rows.len(), 2);
+
+    // A count is a JSON number. `is_number` alone would pass on a string in
+    // some parsers, so take the value.
+    assert_eq!(
+        rows[0]["n"].as_i64(),
+        Some(1),
+        "COUNT(*) must be a JSON number, not a quoted string:\n{v:#}"
+    );
+    // Text stays text.
+    assert_eq!(rows[0]["id"].as_str(), Some("REQ-1"));
+    assert_eq!(rows[0]["release"].as_str(), Some("v1.0.0"));
+    // SQL NULL is `null`, distinct from the empty string it used to become.
+    // A consumer can now tell "no release" from "release is empty".
+    assert!(
+        rows[1]["release"].is_null(),
+        "a NULL cell must serialize as JSON null, not \"\":\n{v:#}"
+    );
+
+    // The text formats are unaffected — stringifying is correct there, and
+    // NULL still renders as empty rather than the word "null".
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "sql",
+            "SELECT id, release FROM artifacts ORDER BY id",
+            "--format",
+            "csv",
+        ])
+        .output()
+        .expect("rivet sql csv");
+    assert!(out.status.success());
+    let csv = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        csv.trim(),
+        "id,release\nREQ-1,v1.0.0\nREQ-2,",
+        "csv stringifies at the edge and renders NULL as empty"
+    );
+}
+
+// rivet: verifies REQ-372
+#[test]
+fn sql_projects_release_so_scope_can_be_grouped() {
+    // The query the maintainer actually tried, which failed with
+    // `identifier not found: release` because the artifacts table projected
+    // every field EXCEPT the one release planning is organised around.
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold artifact");
+        }
+    }
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: A\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-2\n    type: requirement\n    title: B\n    status: verified\n    release: v1.0.0\n  \
+         - id: REQ-3\n    type: requirement\n    title: C\n    status: draft\n    release: v2.0.0\n  \
+         - id: REQ-4\n    type: requirement\n    title: D\n    status: draft\n",
+    )
+    .unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "sql",
+            "SELECT release, COUNT(*) AS n FROM artifacts GROUP BY release ORDER BY n DESC",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet sql");
+    assert!(
+        out.status.success(),
+        "grouping by release must work, not fail with `identifier not found`. stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let rows: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("sql JSON must be valid");
+    let rows = rows.as_array().expect("array of rows");
+    // Exact counts, not merely "the column resolves": a projection that
+    // emitted release as a constant would still parse and still group.
+    let mut got: Vec<(String, i64)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r["release"].as_str().unwrap_or("").to_string(),
+                // REQ-373: a JSON number, not the string "2". This
+                // assertion is why REQ-373 could not be quietly skipped —
+                // it named the requirement while the defect was still live.
+                r["n"]
+                    .as_i64()
+                    .expect("COUNT(*) is a JSON number (REQ-373)"),
+            )
+        })
+        .collect();
+    got.sort();
+    assert_eq!(
+        got,
+        vec![
+            ("".to_string(), 1),
+            ("v1.0.0".to_string(), 2),
+            ("v2.0.0".to_string(), 1),
+        ],
+        "two artifacts in v1.0.0, one in v2.0.0, one carrying no release at all"
+    );
+
+    // The column must also be selectable per-row and JOINable, which is the
+    // point of putting it in the table rather than only in `release list`.
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "sql",
+            "SELECT id FROM artifacts WHERE release = 'v1.0.0' AND status = 'verified' ORDER BY id",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("rivet sql");
+    assert!(out.status.success());
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).expect("valid JSON");
+    let ids: Vec<&str> = rows
+        .as_array()
+        .expect("array")
+        .iter()
+        .map(|r| r["id"].as_str().expect("id"))
+        .collect();
+    assert_eq!(ids, vec!["REQ-1", "REQ-2"], "release filters per row");
+}
+
 /// A throwaway dev project with one implemented requirement carrying sibling
 /// fields, for SQL write tests (REQ-230).
 fn sql_write_project() -> tempfile::TempDir {
