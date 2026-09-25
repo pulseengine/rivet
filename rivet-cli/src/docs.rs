@@ -346,6 +346,16 @@ const TOPICS: &[DocTopic] = &[
         content: ORDEAL_CERTIFICATE_DOC,
     },
     DocTopic {
+        // #1002: `rivet release status --help` has pointed here since the
+        // precision note was written, and the topic was never embedded — so
+        // it printed "Unknown topic" on exactly the air-gapped installs the
+        // embedded docs exist for.
+        slug: "release-status",
+        title: "Release readiness — rivet release status",
+        category: "Reference",
+        content: RELEASE_STATUS_DOC,
+    },
+    DocTopic {
         slug: "tool-qualification",
         title: "Tool qualification dossier — rivet (ISO 26262-8 §11.4.7)",
         category: "Reference",
@@ -424,6 +434,11 @@ const ORDEAL_CERTIFICATE_DOC: &str = concat!(
 const TOOL_QUALIFICATION_DOC: &str =
     include_str!("../../docs/design/tool-qualification-dossier.md");
 
+/// Embedded so `rivet docs release-status` works offline (#1002). The file is
+/// also a rivet document (`DOC-RELEASE-STATUS`), so it carries YAML
+/// frontmatter; `show_topic` strips that for display.
+const RELEASE_STATUS_DOC: &str = include_str!("../../docs/release-status.md");
+
 // Registered bridge topics — the source of truth for the overview and
 // for the `all_registered_bridges_have_a_topic` test. Kept in sync with
 // `rivet_core::embedded::BRIDGE_SCHEMAS`.
@@ -485,7 +500,7 @@ returns both the failing tally and its remediation info.
 
 ## See also
 
-- `rivet docs coverage` — coverage output format and flags.
+- `rivet coverage --help` — coverage output format and flags.
 - `rivet docs schema/common` — how link types, backlinks, and
   `required-link` / `required-backlink` semantics work.
 "#;
@@ -1664,6 +1679,26 @@ pub fn list_embeds(format: &str) -> String {
     out
 }
 
+/// Whether `slug` names an embedded topic. The caller uses this to exit
+/// non-zero on an unknown topic: previously "Unknown topic" was printed with
+/// exit 0, so no script could detect a dangling `rivet docs <topic>` pointer.
+pub fn topic_exists(slug: &str) -> bool {
+    TOPICS.iter().any(|t| t.slug == slug)
+}
+
+/// Drop a leading YAML frontmatter block (`---` … `---`) from embedded
+/// content. Documents that are also rivet artifacts carry one; it is metadata
+/// for the store, not text for a reader.
+fn strip_frontmatter(content: &str) -> &str {
+    let Some(rest) = content.strip_prefix("---\n") else {
+        return content;
+    };
+    match rest.find("\n---\n") {
+        Some(end) => rest[end + "\n---\n".len()..].trim_start_matches('\n'),
+        None => content,
+    }
+}
+
 /// Show a specific topic.
 pub fn show_topic(slug: &str, format: &str) -> String {
     let Some(topic) = TOPICS.iter().find(|t| t.slug == slug) else {
@@ -1680,14 +1715,14 @@ pub fn show_topic(slug: &str, format: &str) -> String {
             "topic": topic.slug,
             "title": topic.title,
             "category": topic.category,
-            "content": topic.content,
+            "content": strip_frontmatter(topic.content),
         }))
         .unwrap_or_default();
     }
 
     let mut out = String::new();
     out.push_str(&format!("# {} — {}\n\n", topic.slug, topic.title));
-    out.push_str(topic.content);
+    out.push_str(strip_frontmatter(topic.content));
     out
 }
 
@@ -3741,8 +3776,8 @@ and renders them as PR review comments without failing the job.
 
 A subcommand path X (e.g. `schema/show`) is covered if any of:
 
-1. A topic with the same slug exists (`rivet docs schema-show` — slashes
-   become dashes for slug lookup).
+1. A topic with the same slug exists — slashes become dashes for slug
+   lookup, so `schema/show` is covered by a topic slugged `schema-show`.
 2. The path itself is a top-level subcommand whose name has a topic
    (e.g. `mcp` is covered by the `mcp` topic).
 3. The parent subcommand has a topic, found by walking up the path (e.g.
@@ -4070,6 +4105,97 @@ mod bridge_topic_tests {
         assert!(
             stpa_dev.contains("required-backlink") || stpa_dev.contains("required-link"),
             "stpa-dev bridge topic must name the required link; got:\n{stpa_dev}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod docs_pointer_tests {
+    // #1002, fixed as a class rather than an instance. `rivet release status
+    // --help` pointed at `rivet docs release-status` and an embedded topic
+    // pointed at `rivet docs coverage`; neither topic existed, and an unknown
+    // topic exited 0, so nothing noticed. This scans everything a user reads —
+    // every embedded topic and the CLI's `///` help text — and requires each
+    // `rivet docs <topic>` pointer to resolve.
+    use super::*;
+
+    // rivet: verifies REQ-382
+    #[test]
+    fn every_rivet_docs_pointer_in_user_facing_text_resolves() {
+        // `rivet docs` also accepts these, which are not topics.
+        const NON_TOPIC_TARGETS: &[&str] = &["check", "embeds"];
+
+        let help: String = include_str!("main.rs")
+            .lines()
+            .filter(|l| l.trim_start().starts_with("///"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut sources: Vec<(String, &str)> = TOPICS
+            .iter()
+            .map(|t| (format!("topic `{}`", t.slug), t.content))
+            .collect();
+        sources.push(("rivet-cli --help text".to_string(), help.as_str()));
+
+        let mut checked = 0usize;
+        let mut dangling = Vec::new();
+        for (origin, text) in &sources {
+            let mut rest = *text;
+            while let Some(i) = rest.find("rivet docs ") {
+                rest = &rest[i + "rivet docs ".len()..];
+                let token: String = rest
+                    .chars()
+                    .take_while(|c| {
+                        c.is_ascii_alphanumeric() || matches!(c, '-' | '/' | '_' | '.' | '<' | '>')
+                    })
+                    .collect();
+                let token = token.trim_end_matches('.');
+                // Flags (`--grep`) and placeholders — `schema/<bridge>`, or an
+                // uppercase metavariable like `TOPIC` in clap's usage style —
+                // are not pointers to a specific topic.
+                let metavar = token.chars().all(|c| c.is_ascii_uppercase() || c == '_');
+                if token.is_empty() || token.starts_with('-') || token.contains('<') || metavar {
+                    continue;
+                }
+                checked += 1;
+                if !topic_exists(token) && !NON_TOPIC_TARGETS.contains(&token) {
+                    dangling.push(format!("{origin}: `rivet docs {token}`"));
+                }
+            }
+        }
+        // A scanner that found nothing would pass vacuously.
+        assert!(
+            checked >= 10,
+            "expected many `rivet docs` pointers, found {checked} — the scan is broken"
+        );
+        assert!(
+            dangling.is_empty(),
+            "these point at topics that do not exist, and print `Unknown topic` \
+             on an air-gapped install:\n  {}",
+            dangling.join("\n  ")
+        );
+    }
+
+    // rivet: verifies REQ-382
+    #[test]
+    fn frontmatter_is_stripped_for_display_and_only_when_present() {
+        assert_eq!(strip_frontmatter("---\nid: X\n---\n# Title\n"), "# Title\n");
+        assert_eq!(
+            strip_frontmatter("# No frontmatter\n"),
+            "# No frontmatter\n"
+        );
+        // An unterminated block is left alone rather than eating the document.
+        assert_eq!(
+            strip_frontmatter("---\nid: X\n# Title\n"),
+            "---\nid: X\n# Title\n"
+        );
+        let shown = show_topic("release-status", "text");
+        assert!(
+            shown.contains("Release readiness"),
+            "the embedded release-status topic must render"
+        );
+        assert!(
+            !shown.contains("id: DOC-RELEASE-STATUS"),
+            "frontmatter must not reach the reader"
         );
     }
 }

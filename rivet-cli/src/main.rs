@@ -13418,8 +13418,15 @@ fn cmd_docs(
         // the existing --help tree and stays near `docs embed-syntax`.
         if slug == "embeds" {
             print!("{}", docs::list_embeds(format));
-        } else {
+        } else if docs::topic_exists(slug) {
             print!("{}", docs::show_topic(slug, format));
+        } else {
+            // #1002: an unknown topic used to print its message and exit 0,
+            // so a dangling `rivet docs <topic>` pointer could not be detected
+            // by any script. The message (with the topic list) now goes to
+            // stderr and the command fails.
+            eprint!("{}", docs::show_topic(slug, format));
+            return Ok(false);
         }
     } else {
         print!("{}", docs::list_topics(format));
