@@ -132,7 +132,26 @@ with no ontology to reconcile them against.
 
 ## 5. Decision
 
-**ACKNOWLEDGE.** Record the technique, do not pursue it now.
+> **Maintainer decision (2026-09-25): run a bounded, pre-registered spike —
+> REQ-380.** The assessment below recommended ACKNOWLEDGE. After reviewing it,
+> the maintainer preferred first-hand evidence on rivet's own requirements over
+> reasoning from a four-requirement paper. The recommendation is kept as written
+> so the record shows what was advised and what was chosen. DD-080 carries the
+> decision and `reviewed-by`.
+>
+> The spike reproduces the paper's pipeline and **adds the fidelity check the
+> paper lacked**. Its negative control seeds one pair with the paper's own
+> error — `≥` formalized as `>` — and the fidelity check must catch it, or every
+> other result is void. Its success criterion is fixed in REQ-380 *before* any
+> formalization runs.
+>
+> A separate route to the issue's underlying goal also remains open: linking
+> gale's existing human-written Lean proofs (8 files) to the requirements they
+> discharge, now that #997 lets a `.lean` file carry a `rivet: verifies`
+> marker. That delivers Lean proofs as traced certification evidence without
+> autoformalization.
+
+**Assessment recommendation: ACKNOWLEDGE.** Record the technique, do not pursue it now.
 
 - **Not ADOPT**: the precondition — a typed signal vocabulary that the
   formalizer is restricted to — does not exist in rivet, and the published
