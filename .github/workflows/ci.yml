@@ -250,6 +250,12 @@ jobs:
       # nowhere near the release in the first place.
       - name: Release-note publishing tests (REQ-369)
         run: bash tools/release/release-note_test.sh
+      # REQ-371: same reasoning — the compliance action runs only on a tag, so
+      # its bundle-assembly shell is unreachable from a pull request. A bundle
+      # that silently lacks a document it advertises is the defect being
+      # closed; the oracle asserts a missing entry FAILS rather than skips.
+      - name: Compliance bundle extra-files tests (REQ-371)
+        run: bash .github/actions/compliance/copy_extra_files_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its

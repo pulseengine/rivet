@@ -119,6 +119,22 @@ inputs:
     required: false
     default: 'false'
 
+  # ── Caller-supplied bundle contents (REQ-371) ──────────────────────
+  extra-files:
+    description: >
+      Newline-separated paths copied into the report directory before it is
+      archived, each under its basename. Added for REQ-371: the bundle is the
+      audit deliverable, and it carried no RELEASE NOTE — so an assessor handed
+      the bundle alone got no Automotive SPICE 11-03 item, even though rivet
+      generates one (REQ-327) and ships it as a release asset (REQ-369).
+
+      A named entry that does not exist is an ERROR, not a skip: a bundle that
+      silently lacks a document it advertises is the very defect this closes.
+      An empty or whitespace-only value is a clean no-op, so existing callers
+      see no behaviour change.
+    required: false
+    default: ''
+
 outputs:
   report-dir:
     description: 'Path to the directory containing the generated HTML files.'
@@ -269,6 +285,7 @@ runs:
         | \`_assets/\`          | Shared CSS + JS (one copy, referenced by every page — REQ-088). |
         | \`requirements.reqif\` | OMG ReqIF 1.2 export — importable into DOORS / Polarion / codeBeamer. |
         | \`artifacts.yaml\`    | generic-yaml export — diff-friendly, complete.    |
+        | \`*-release-note.md\` | Automotive SPICE 11-03 release note, generated from the trace at the tagged commit (present when the caller supplies one). |
 
         ## Importing into a requirements-management tool
 
@@ -286,6 +303,16 @@ runs:
         per REQ-090.
         EOF
         echo "Audit bundle additions emitted to ${REPORT_OUTPUT}/"
+
+    - name: Copy caller-supplied files into the bundle (REQ-371)
+      if: inputs.extra-files != ''
+      shell: bash
+      working-directory: ${{ inputs.project-dir }}
+      env:
+        REPORT_OUTPUT: ${{ inputs.output }}
+        EXTRA_FILES: ${{ inputs.extra-files }}
+      run: |
+        "${GITHUB_ACTION_PATH}/copy_extra_files.sh" "$REPORT_OUTPUT" "$EXTRA_FILES"
 
     - name: Create archive
       id: archive

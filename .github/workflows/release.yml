@@ -158,11 +158,35 @@ jobs:
   # just captured). The new snapshot is for future release comparisons.
   build-compliance:
     name: Build compliance report
+    # REQ-371: the bundle is the audit deliverable and carried no release
+    # note, so an assessor handed it alone got no 11-03 item. The note is
+    # generated once, at the tag, by build-release-note — regenerating it here
+    # could disagree with the copy that ships as a release asset, which is the
+    # drift REQ-327 exists to remove.
+    needs: [build-release-note]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+
+      - name: Fetch the generated release note
+        uses: actions/download-artifact@v4
+        with:
+          name: release-note
+          path: release-note
+
+      - name: Resolve the release-note path
+        id: note
+        run: |
+          set -euo pipefail
+          f="$(find release-note -name 'rivet-*-release-note.md' | head -1)"
+          # A note that is absent here would produce a bundle silently missing
+          # its 11-03 item — the defect being closed. Fail instead.
+          test -n "$f"
+          test -s "$f"
+          echo "path=$(realpath "$f")" >> "$GITHUB_OUTPUT"
+          echo "::notice::bundle will carry $(basename "$f")"
 
       - name: Generate compliance report
         id: report
@@ -188,6 +212,10 @@ jobs:
           # the same tarball so DOORS / Polarion / codeBeamer users
           # get importable data alongside the rendered docs.
           include-data-formats: true
+          # REQ-371: the same generated 11-03 release note that ships as a
+          # signed release asset, so the bundle stands alone as an audit
+          # deliverable.
+          extra-files: ${{ steps.note.outputs.path }}
 
       - uses: actions/upload-artifact@v4
         with:
