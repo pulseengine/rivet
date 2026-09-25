@@ -60,9 +60,18 @@ artifacts:
           no independent confirmation reviewer; unverified
           DO-330/IEC 62304/EN 50128 cross-walks; unproven five-layer
           independence; 29-mutant testing; one `Admitted` Rocq theorem;
-          one `assume`'d Verus obligation; unsigned SHA256SUMS;
-          unsigned git tag; no validate-time enforcement of DPIA
-          linkage from `ai-session.invoker`-bearing artifacts.
+          one `assume`'d Verus obligation; no validate-time
+          enforcement of DPIA linkage from `ai-session.invoker`-bearing
+          artifacts.
+
+        CORRECTED 2026-09-25: "unsigned SHA256SUMS" and "unsigned git
+          tag" were listed here and are DEFENDED. SHA256SUMS.txt ships
+          with a keyless cosign bundle, certificate and signature on
+          every release checked (v0.34.0 to v0.38.0), and every release
+          tag checked (v0.32.0 to v0.38.0) carries a signature that
+          `git tag -v` verifies as good. This list understated the claim
+          while section 4 of the dossier overstated what
+          --qualification-mode enforced; both are corrected (REQ-381).
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7

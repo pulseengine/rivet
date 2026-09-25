@@ -2653,6 +2653,183 @@ fn bulk_modify_applies_to_every_matching_artifact_when_it_succeeds() {
     assert_eq!(b.matches("v9.9.9").count(), 1, "{b}");
 }
 
+/// A one-requirement dev project at `implemented`, for REQ-381 tests.
+fn req381_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    for entry in std::fs::read_dir(dir.join("artifacts"))
+        .expect("artifacts dir")
+        .flatten()
+    {
+        if entry.path().extension().is_some_and(|e| e == "yaml") {
+            std::fs::remove_file(entry.path()).expect("remove scaffold");
+        }
+    }
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: A\n    status: implemented\n",
+    )
+    .unwrap();
+    tmp
+}
+
+// rivet: verifies REQ-381
+#[test]
+fn verified_can_only_be_set_by_rivet_verify() {
+    // #952: `modify --set-status verified` and `sql UPDATE ... status='verified'`
+    // both wrote `verified` with NO evidence, bypassing the one command that
+    // checks it. Asserted on the MESSAGE and on the file's bytes, not only the
+    // exit code — an exit code two paths share says nothing about which ran.
+    let tmp = req381_project();
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let reqs = dir.join("artifacts/reqs.yaml");
+    let before = std::fs::read(&reqs).unwrap();
+
+    for args in [
+        vec!["modify", "REQ-1", "--set-status", "verified"],
+        vec![
+            "sql",
+            "UPDATE artifacts SET status='verified' WHERE id='REQ-1'",
+        ],
+    ] {
+        let mut full = vec!["--project", dirs];
+        full.extend(args.iter().copied());
+        let out = Command::new(rivet_bin()).args(&full).output().expect("run");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{args:?} must fail");
+        assert!(
+            err.contains("only `rivet verify REQ-1` checks that evidence exists"),
+            "{args:?} must be refused for the evidence reason, got: {err}"
+        );
+        assert_eq!(
+            std::fs::read(&reqs).unwrap(),
+            before,
+            "{args:?} was refused but the file was still rewritten"
+        );
+    }
+
+    // `rivet verify` still works — with evidence.
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("tests/t.rs"),
+        "// rivet: verifies REQ-1\n#[test]\nfn t() {}\n",
+    )
+    .unwrap();
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "verify", "REQ-1"])
+        .output()
+        .expect("verify");
+    assert!(
+        out.status.success(),
+        "verify with evidence must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        std::fs::read_to_string(&reqs)
+            .unwrap()
+            .contains("status: verified")
+    );
+}
+
+// rivet: verifies REQ-381
+#[test]
+fn accepted_stays_settable_because_it_is_a_human_decision() {
+    // The refusal is specific to `verified`. `accepted` records a person's
+    // decision (with reviewed-by) and must not be caught by it.
+    let tmp = req381_project();
+    let dirs = tmp.path().to_str().unwrap();
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "modify",
+            "REQ-1",
+            "--set-status",
+            "accepted",
+        ])
+        .output()
+        .expect("modify");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+// rivet: verifies REQ-381
+#[test]
+fn qualification_mode_is_an_allowlist_not_a_one_item_denylist() {
+    // #952: the gate refused exactly `sync`, while the tool-confidence claim
+    // declares five things out of scope and `--help` promises it refuses
+    // anything out of scope. It also ran AFTER the early dispatch, so `mcp` —
+    // write tools, explicitly not qualified — was never seen by it.
+    let tmp = req381_project();
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let reqs = dir.join("artifacts/reqs.yaml");
+    let before = std::fs::read(&reqs).unwrap();
+
+    let refused: &[&[&str]] = &[
+        &["modify", "REQ-1", "--set-title", "x"],
+        &["sql", "UPDATE artifacts SET title='x' WHERE id='REQ-1'"],
+        &["supplier", "pull", "ANCHOR-X-001"],
+        &["export", "--format", "html"],
+        &["context"],
+        &["sync"],
+        &["mcp"],
+    ];
+    for args in refused {
+        let mut full = vec!["--qualification-mode", "--project", dirs];
+        full.extend(args.iter().copied());
+        let out = Command::new(rivet_bin()).args(&full).output().expect("run");
+        let err = String::from_utf8_lossy(&out.stderr);
+        // Exit 2 is clap rejecting the arguments BEFORE the gate runs — that
+        // would make this test pass without exercising anything.
+        assert_ne!(
+            out.status.code(),
+            Some(2),
+            "{args:?} failed argument parsing, so the gate was never reached: {err}"
+        );
+        assert!(
+            err.contains("--qualification-mode: refusing"),
+            "{args:?} must be refused BY THE GATE, got exit {:?}: {err}",
+            out.status.code()
+        );
+    }
+    assert_eq!(
+        std::fs::read(&reqs).unwrap(),
+        before,
+        "a refused command still wrote to the project"
+    );
+
+    // In scope, and read-and-print commands, still run.
+    let allowed: &[&[&str]] = &[
+        &["validate"],
+        &["list"],
+        &["sql", "SELECT id FROM artifacts"],
+        &["context", "--stdout"],
+    ];
+    for args in allowed {
+        let mut full = vec!["--qualification-mode", "--project", dirs];
+        full.extend(args.iter().copied());
+        let out = Command::new(rivet_bin()).args(&full).output().expect("run");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !err.contains("--qualification-mode: refusing"),
+            "{args:?} must be allowed in qualification mode, got: {err}"
+        );
+    }
+}
+
 // rivet: verifies REQ-373
 #[test]
 fn sql_json_preserves_cell_types_and_null() {
@@ -2877,6 +3054,12 @@ fn sql_write_project() -> tempfile::TempDir {
 // rivet: verifies REQ-230
 #[test]
 fn sql_write_updates_status_and_preserves_siblings() {
+    // REQ-381: this used `verified` as its example status, which made it an
+    // accidental test OF the bypass — a SQL write setting `verified` with no
+    // evidence. The property under test here is sibling preservation (REQ-230),
+    // which does not depend on the status chosen, so `approved` keeps it intact.
+    // The refusal of `verified` is covered by
+    // `verified_can_only_be_set_by_rivet_verify`.
     let tmp = sql_write_project();
     let dir = tmp.path();
     let out = Command::new(rivet_bin())
@@ -2884,7 +3067,7 @@ fn sql_write_updates_status_and_preserves_siblings() {
             "--project",
             dir.to_str().unwrap(),
             "sql",
-            "UPDATE artifacts SET status='verified' WHERE id='REQ-001'",
+            "UPDATE artifacts SET status='approved' WHERE id='REQ-001'",
         ])
         .output()
         .expect("sql write");
@@ -2894,7 +3077,7 @@ fn sql_write_updates_status_and_preserves_siblings() {
         String::from_utf8_lossy(&out.stderr)
     );
     let content = std::fs::read_to_string(dir.join("artifacts").join("requirements.yaml")).unwrap();
-    assert!(content.contains("status: verified"), "status updated");
+    assert!(content.contains("status: approved"), "status updated");
     assert!(
         content.contains("priority: must") && content.contains("category: functional"),
         "sibling fields must survive the SQL UPDATE (allowlist-drop guard):\n{content}"

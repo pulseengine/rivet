@@ -67,13 +67,23 @@ The five layers are independent (catch different defect classes), so the residua
 - `rivet supplier list`, `rivet supplier check` — read-only boundary reporting.
 - `rivet stats --qualification` — configuration baseline manifest emission.
 - `rivet --qualification-mode` — disables features outside the qualified set.
+  **Enforced as an allowlist since REQ-381.** Before that it refused
+  exactly one subcommand, `sync`, and ran after `init`, `context`, `lsp` and
+  `mcp` had already been dispatched — so this line described intent, not
+  behaviour. It now permits only the in-scope commands above and commands that
+  only read and print, and is checked before any dispatch.
+- `verified` can be written only by `rivet verify`, which requires verifying
+  evidence (REQ-381). `rivet modify`, `rivet batch`, `rivet sql UPDATE` and the
+  MCP modify tool previously wrote it with no evidence at all.
 
 **Out of scope (NOT qualified by this claim):**
 
 - `rivet sync`, `rivet supplier pull` (Phase 2 federation — qualified separately when shipped).
 - `rivet migrate` (importers — pre-Phase 2, semantic distortion possible).
 - `rivet serve` (read-only web UI — not part of the toolchain output).
-- MCP write tools that bypass validate (`--qualification-mode` disables these).
+- MCP write tools that bypass validate (`--qualification-mode` disables these —
+  **true only since REQ-381**: before it, `rivet mcp` was dispatched before
+  the qualification check ran, so it was never refused).
 
 The scope split lives in the typed artifact `TQ-CONF-RIVET.fields.scope` and is machine-readable by `rivet stats --qualification`.
 

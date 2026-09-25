@@ -5,6 +5,30 @@
 
 ## [Unreleased]
 
+### Fixed — safety
+- **`verified` can no longer be written without evidence** (REQ-381, #952) —
+  `rivet verify` refuses to advance an artifact without a `verifies` link or a
+  source marker, and that refusal is what `verified` means. But `rivet modify
+  --set-status verified`, `rivet sql UPDATE … SET status='verified'`,
+  `rivet batch` and the MCP modify tool all wrote it with no evidence at all.
+  They now refuse and name `rivet verify` as the path. `accepted` stays
+  directly settable: it records a human decision, with `reviewed-by`.
+- **`--qualification-mode` is now an allowlist** (REQ-381, #952) — it promised
+  to refuse anything outside the tool-confidence claim, which declares five
+  things out of scope, and refused exactly one: `sync`. It also ran after
+  `init`, `context`, `lsp` and `mcp` were dispatched, so it never saw them —
+  and `mcp` exposes write tools the claim explicitly declares not qualified.
+  It now runs before any dispatch and permits only the covered commands plus
+  those that only read and print. **Behaviour change:** in this mode, `modify`,
+  `sql` writes, `export`, `context` (without `--stdout`), `verify`, `mcp` and
+  the other writers are refused.
+
+### Fixed
+- **`rivet sql` help no longer says it is read-only** (#952) — it said "runs
+  read-only SQL" and "writes are a planned follow-up slice" while `UPDATE`
+  wrote to the project. It also named an in-memory SQLite; the engine has been
+  gluesql since REQ-231.
+
 ## [0.39.0] - 2026-09-25
 
 v0.38.0 fixed a parser that was wrong five ways. This release is about the
