@@ -6,6 +6,18 @@
 ## [Unreleased]
 
 ### Fixed
+- **The compliance bundle now carries the generated release note** (REQ-371) —
+  the bundle is the audit deliverable, holding the traceability matrix,
+  coverage, validation, rendered specs and the ReqIF/generic-yaml exports, and
+  it contained no release note. An assessor handed the bundle alone therefore
+  got no Automotive SPICE 11-03 item, even though rivet generates one from the
+  trace and now ships it as a signed release asset. The bundle receives the
+  **same** generated note rather than a regenerated one, so the two copies
+  cannot disagree. A requested file that does not exist fails the build rather
+  than being skipped — a bundle silently lacking a document it advertises is
+  the defect being closed.
+
+### Fixed
 - **Bulk mutations are no longer half-applied** (REQ-366, REQ-367 — #965, #955)
   — `modify --where` and `batch` both validated every target up front, which
   reads as all-or-nothing, and then wrote one file at a time. Reproduced on a
