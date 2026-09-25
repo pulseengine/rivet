@@ -1388,8 +1388,12 @@ enum Command {
 
     /// Run a SQL query over the artifact store.
     ///
-    /// Projects the artifacts as virtual tables and runs read-only SQL — no
-    /// server and no MCP required. Tables: `artifacts(id, type, title,
+    /// Projects the artifacts as virtual tables — no server and no MCP required.
+    /// SELECT and WITH only read. `UPDATE artifacts SET status|title|description`
+    /// WRITES to the project, through the same validated path as `rivet modify`;
+    /// writes to `fields`/`links`, INSERT and DELETE are refused. A write cannot
+    /// set `verified` (use `rivet verify`), and every write is refused under
+    /// `--qualification-mode`. Tables: `artifacts(id, type, title,
     /// description, status, release, fields_json)`, `links(source, link_type, target,
     /// external)`, `fields(artifact_id, key, value)`, `provenance(...)`. SQL
     /// gives JOINs/aggregations the s-expression filter can't express, e.g. the
@@ -1397,8 +1401,8 @@ enum Command {
     ///   rivet sql "SELECT id FROM artifacts WHERE status='implemented'
     ///     AND id NOT IN (SELECT target FROM links WHERE link_type='verifies')"
     Sql {
-        /// The SQL query (must start with SELECT or WITH; writes are a planned
-        /// follow-up slice).
+        /// The SQL query. SELECT/WITH read; UPDATE on `artifacts` writes to the
+        /// project (see above).
         #[arg(value_name = "QUERY")]
         query: String,
 
@@ -2413,7 +2417,161 @@ fn main() -> ExitCode {
     }
 }
 
+/// REQ-381 / #952: the `--qualification-mode` gate, as an ALLOWLIST.
+///
+/// Returns `Some(reason)` when `cmd` must be refused. The flag documents that it
+/// "refuses to run subcommands that are out-of-scope for the typed
+/// tool-confidence claim" and that "read-only commands are always allowed". It
+/// used to refuse exactly one subcommand — `sync` — while the claim itself
+/// declares five out of scope (sync, supplier pull, migrate, serve, MCP write
+/// tools), and nothing stopped `modify` or `sql` writing to the project.
+///
+/// The rule is the documented one: a command is allowed if the claim covers it
+/// or if it only reads and prints. Anything that writes to the project or the
+/// network is refused.
+///
+/// EXHAUSTIVE ON PURPOSE — no wildcard arm at the top level. A subcommand added
+/// later fails to compile until someone decides which side it belongs on,
+/// which is the same guard `render_artifact_yaml` uses against silently-dropped
+/// fields. A wildcard would let a new write command run in qualification mode
+/// by default, which is the failure this replaces.
+///
+/// Honest boundary: classification is per subcommand. A read command with an
+/// optional output-file flag is allowed even when that flag is used.
+fn qualification_refusal(cmd: &Command) -> Option<&'static str> {
+    const WRITES: &str = "it writes to the project, which the tool-confidence claim does not cover";
+    match cmd {
+        // ── In scope: the set the tool-confidence claim covers ─────────────
+        Command::Validate { .. } | Command::Commits { .. } | Command::Coverage { .. } => None,
+        Command::Supplier { action } => match action {
+            SupplierAction::List { .. } | SupplierAction::Check { .. } => None,
+            SupplierAction::Pull { .. } => {
+                Some("`supplier pull` is Phase 2 and declared not qualified")
+            }
+        },
+        // Every `check` reads; `ai-defects-open` is itself in scope.
+        Command::Check { .. } => None,
+
+        // ── Read-only: they read the store and print ────────────────────────
+        Command::Get { .. }
+        | Command::Trace { .. }
+        | Command::TraceResults { .. }
+        | Command::Bundle { .. }
+        | Command::List { .. }
+        | Command::Stats { .. }
+        | Command::Matrix { .. }
+        | Command::Stpa { .. }
+        | Command::Diff { .. }
+        | Command::Docs { .. }
+        | Command::Quickstart { .. }
+        | Command::CommitMsgCheck { .. }
+        | Command::Audit { .. }
+        | Command::Impact { .. }
+        | Command::Query { .. }
+        | Command::NextId { .. }
+        | Command::Runs { .. }
+        | Command::Pipelines { .. }
+        | Command::Baseline { .. } => None,
+        Command::Context { stdout, .. } => {
+            if *stdout {
+                None
+            } else {
+                Some("`context` writes .rivet/agent-context.md; pass --stdout to only print it")
+            }
+        }
+        Command::Sql { query, .. } => {
+            let head = query
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_ascii_uppercase();
+            if matches!(head.as_str(), "SELECT" | "WITH") {
+                None
+            } else {
+                Some("a SQL write modifies the project; only SELECT/WITH run in this mode")
+            }
+        }
+        Command::Schema { action } => match action {
+            SchemaAction::Migrate { .. } => Some("`schema migrate` rewrites artifacts"),
+            _ => None,
+        },
+        Command::Externals { action } => match action {
+            ExternalsAction::Discover { .. } => None,
+        },
+        Command::Release { action } => match action {
+            ReleaseAction::Move { .. } => Some("`release move` rewrites artifacts"),
+            _ => None,
+        },
+        Command::Variant { action } => match action {
+            VariantAction::Init { .. } => Some("`variant init` writes variant files"),
+            _ => None,
+        },
+        Command::Templates { action } => match action {
+            TemplatesAction::CopyToProject { .. } => Some(WRITES),
+            _ => None,
+        },
+
+        // ── Refused: writes to the project, reaches the network, or is ──────
+        // ── declared not qualified by the claim itself ─────────────────────
+        // `export` is refused rather than treated as read-only: under a flag
+        // named qualification mode, a compliance report the claim does not
+        // cover would carry authority it has not earned.
+        Command::Export { .. } => {
+            Some("`export` produces an evidence document the tool-confidence claim does not cover")
+        }
+        Command::Sync { .. } => Some("`sync` is Phase 2 federation and declared not qualified"),
+        Command::Init { .. }
+        | Command::Lock { .. }
+        | Command::Shard { .. }
+        | Command::Consolidate { .. }
+        | Command::CloseGaps { .. }
+        | Command::ImportResults { .. }
+        | Command::Add { .. }
+        | Command::Link { .. }
+        | Command::Unlink { .. }
+        | Command::Modify { .. }
+        | Command::Remove { .. }
+        | Command::Batch { .. }
+        | Command::Stamp { .. }
+        | Command::Verify { .. } => Some(WRITES),
+        #[cfg(feature = "serve")]
+        Command::Serve { .. } => Some("`serve` is declared not qualified"),
+        #[cfg(feature = "serve")]
+        Command::Snapshot { action } => match action {
+            SnapshotAction::Capture { .. } => Some(WRITES),
+            _ => None,
+        },
+        #[cfg(feature = "serve")]
+        Command::Embed { .. } => None,
+        #[cfg(feature = "wasm")]
+        Command::Import { .. } => Some(WRITES),
+        #[cfg(feature = "lsp")]
+        Command::Lsp => {
+            Some("the LSP server is an interactive editing surface, not a qualified operation")
+        }
+        #[cfg(feature = "mcp")]
+        Command::Mcp { .. } => {
+            Some("the MCP server exposes write tools, which are declared not qualified")
+        }
+    }
+}
+
 fn run(cli: Cli) -> Result<bool> {
+    // REQ-381 / #952: the qualification gate runs FIRST. It used to sit after
+    // the early dispatch below, so `init`, `context`, `lsp` and `mcp` were never
+    // seen by it — and `mcp` exposes write tools the tool-confidence claim
+    // explicitly declares not qualified.
+    if cli.qualification_mode {
+        if let Some(reason) = qualification_refusal(&cli.command) {
+            anyhow::bail!(
+                "--qualification-mode: refusing this command — {reason}. \
+                 Only the commands the tool-confidence claim covers, and commands \
+                 that only read and print, run in this mode. See \
+                 `rivet docs tool-qualification`."
+            );
+        }
+    }
+
     // Commands that don't need a loaded project.
     if let Command::Init {
         name,
@@ -2494,15 +2652,6 @@ fn run(cli: Cli) -> Result<bool> {
     // in-scope set (see docs/design/tool-qualification-dossier.md §4).
     // Read-only commands and the qualification stats command stay
     // allowed; this list deliberately starts narrow.
-    if cli.qualification_mode {
-        if let Command::Sync { .. } = &cli.command {
-            anyhow::bail!(
-                "--qualification-mode: refusing `sync` — Phase 2 federation \
-                 not yet qualified. See `rivet docs tool-qualification` for \
-                 the in/out-of-scope split."
-            );
-        }
-    }
 
     match &cli.command {
         Command::Init { .. }
@@ -9726,8 +9875,10 @@ fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> 
         );
     }
 
-    // Advance via the shared modify write-path (validation + YAML edit).
-    cmd_modify(
+    // Advance via the shared modify write-path (validation + YAML edit). This is
+    // the ONLY privileged caller: the evidence check above is what entitles it
+    // to write `verified`, which every other writer is refused (REQ-381).
+    cmd_modify_inner(
         cli,
         Some(id),
         None,
@@ -9739,6 +9890,7 @@ fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> 
         &[],
         &[],
         &[],
+        ModifyCaller::VerifyAfterEvidenceCheck,
     )
 }
 
@@ -18677,6 +18829,48 @@ fn cmd_modify(
     remove_tags: &[String],
     set_fields: &[(String, String)],
 ) -> Result<bool> {
+    cmd_modify_inner(
+        cli,
+        id,
+        where_filter,
+        dry_run,
+        set_status,
+        set_release,
+        set_title,
+        set_description,
+        add_tags,
+        remove_tags,
+        set_fields,
+        ModifyCaller::User,
+    )
+}
+
+/// Who is driving a modify. REQ-381: only `rivet verify` may write `verified`,
+/// because only it checks the evidence first. An enum rather than a bare bool
+/// so the privileged call site reads as a decision in review.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ModifyCaller {
+    /// `rivet modify` and anything else a user can point at a status.
+    User,
+    /// `rivet verify`, after it has confirmed verifying evidence exists.
+    VerifyAfterEvidenceCheck,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_modify_inner(
+    cli: &Cli,
+    id: Option<&str>,
+    where_filter: Option<&str>,
+    dry_run: bool,
+    set_status: Option<&str>,
+    set_release: Option<&str>,
+    set_title: Option<&str>,
+    set_description: Option<&str>,
+    add_tags: &[String],
+    remove_tags: &[String],
+    set_fields: &[(String, String)],
+    caller: ModifyCaller,
+) -> Result<bool> {
     use rivet_core::mutate::{self, ModifyParams};
 
     let ctx = ProjectContext::load(cli)?;
@@ -18748,8 +18942,13 @@ fn cmd_modify(
     // all-or-nothing on validation rather than leaving a half-applied set
     // (DD-028). A single invalid target aborts the whole batch.
     for tid in &target_ids {
-        mutate::validate_modify(tid, &params, &store, &schema)
-            .with_context(|| format!("validation failed for '{tid}'"))?;
+        match caller {
+            ModifyCaller::User => mutate::validate_modify(tid, &params, &store, &schema),
+            ModifyCaller::VerifyAfterEvidenceCheck => {
+                mutate::validate_modify_for_verify(tid, &params, &store, &schema)
+            }
+        }
+        .with_context(|| format!("validation failed for '{tid}'"))?;
     }
 
     // Apply in a single in-process pass: load once (above), write each
@@ -19503,9 +19702,11 @@ fn cmd_mcp(cli: &Cli, list_tools: bool, probe: bool, format: &str) -> Result<boo
 /// Three output formats: `text` (one line per match, id + title + status),
 /// `json` (MCP-shape: `{filter, count, total, truncated, artifacts[]}`),
 /// or `ids` (newline-separated IDs — handy for shell pipelines).
-/// `rivet sql` — read-only SQL over the artifact store (REQ-229 / DD-068).
+/// `rivet sql` — SQL over the artifact store (REQ-229 / DD-068). SELECT/WITH
+/// read; UPDATE writes through the validated mutate path (REQ-230).
 ///
-/// Loads the project, projects it into an in-memory SQLite (tables backed by
+/// Loads the project, projects it into an in-memory gluesql database (REQ-231;
+/// no bundled SQLite C) with tables backed by
 /// the live store, rebuilt per invocation so results are never stale), runs the
 /// query, and prints `table` / `json` / `csv`. No server and no MCP required.
 fn cmd_sql(cli: &Cli, query: &str, format: &str) -> Result<bool> {

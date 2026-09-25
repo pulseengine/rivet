@@ -124,8 +124,9 @@ pub fn query(store: &Store, sql: &str) -> Result<SqlResult, String> {
     let head = first_word_upper(sql);
     if head != "SELECT" && head != "WITH" {
         return Err(format!(
-            "only read-only queries are supported (must start with SELECT or WITH; got `{head}`). \
-             SQL writes (INSERT/UPDATE/DELETE -> mutate) are a planned follow-up slice of REQ-229."
+            "`query` only reads (must start with SELECT or WITH; got `{head}`). \
+             Writes go through `plan_write`, which `rivet sql` routes UPDATE statements to \
+             (REQ-230); INSERT and DELETE are refused."
         ));
     }
 
@@ -567,7 +568,14 @@ mod tests {
     fn writes_are_refused() {
         let store = Store::new();
         let err = query(&store, "UPDATE artifacts SET status='x'").unwrap_err();
-        assert!(err.contains("read-only"), "got: {err}");
+        // The message must say this function only reads AND point at where
+        // writes actually go, since writes did ship (REQ-230) — the old text
+        // called them "a planned follow-up slice".
+        assert!(err.contains("only reads"), "got: {err}");
+        assert!(
+            err.contains("plan_write"),
+            "must name the write path, got: {err}"
+        );
     }
 
     // rivet: verifies REQ-230

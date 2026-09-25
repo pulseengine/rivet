@@ -365,6 +365,37 @@ pub fn validate_modify(
     store: &Store,
     schema: &Schema,
 ) -> Result<(), Error> {
+    // REQ-381 / #952: `verified` is the one status whose meaning is an EVIDENCE
+    // claim, and `rivet verify` is the only path that checks the evidence. Every
+    // other writer — `rivet modify`, `rivet batch`, `rivet sql UPDATE`, and the
+    // MCP modify tool — funnels through here, and each could set `verified` with
+    // no evidence at all, even under `--qualification-mode`. Refusing here closes
+    // all four at once; `rivet verify` uses `validate_modify_for_verify`.
+    if params.set_status.as_deref() == Some("verified") {
+        return Err(Error::Validation(format!(
+            "refusing to set '{id}' to `verified` directly: `verified` is an evidence \
+             claim, and only `rivet verify {id}` checks that evidence exists. \
+             Add a `verifies` link or a `rivet: verifies {id}` marker, then run \
+             `rivet verify {id}`."
+        )));
+    }
+    validate_modify_for_verify(id, params, store, schema)
+}
+
+/// [`validate_modify`] without the `verified` refusal — for `rivet verify` only.
+///
+/// `rivet verify` checks for verifying evidence BEFORE it gets here and then
+/// advances the status through the shared modify write-path. That is the one
+/// caller entitled to write `verified`; every other writer must go through
+/// [`validate_modify`], which refuses it. Kept separate rather than as a boolean
+/// parameter so that a new caller cannot opt out of the refusal by passing
+/// `true` without it being visible in review.
+pub fn validate_modify_for_verify(
+    id: &str,
+    params: &ModifyParams,
+    store: &Store,
+    schema: &Schema,
+) -> Result<(), Error> {
     // REQ-366 / #965: refuse an external before anything is written. Externals
     // are a vendored copy of another project's tree; a write here is discarded
     // on the next `rivet sync`, and previously it failed deep inside the write
@@ -995,6 +1026,59 @@ mod tests {
         assert_eq!(staged.commit().unwrap(), 2, "commit reports files written");
         assert_eq!(std::fs::read_to_string(&a).unwrap(), "a2\n");
         assert_eq!(std::fs::read_to_string(&b).unwrap(), "b1\n");
+    }
+
+    // rivet: verifies REQ-381
+    #[test]
+    fn validate_modify_refuses_verified_and_only_the_verify_path_allows_it() {
+        // #952: `modify`, `batch`, `sql UPDATE` and the MCP modify tool all
+        // funnel through `validate_modify`, and each could write `verified` with
+        // no evidence. `verified` is an evidence claim; only `rivet verify`
+        // checks the evidence, and it alone uses `validate_modify_for_verify`.
+        let mut sf = minimal_schema("test");
+        sf.artifact_types = vec![ArtifactTypeDef {
+            name: "requirement".to_string(),
+            ..Default::default()
+        }];
+        let schema = Schema::merge(&[sf]);
+        let mut store = Store::new();
+        store
+            .insert(minimal_artifact("REQ-1", "requirement"))
+            .unwrap();
+
+        let to = |s: &str| ModifyParams {
+            set_status: Some(s.to_string()),
+            ..Default::default()
+        };
+
+        let err = validate_modify("REQ-1", &to("verified"), &store, &schema)
+            .expect_err("a direct write of `verified` must be refused");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("rivet verify REQ-1"),
+            "the refusal must point at the path that checks evidence: {msg}"
+        );
+
+        // The privileged path accepts exactly what the public one refuses.
+        assert!(
+            validate_modify_for_verify("REQ-1", &to("verified"), &store, &schema).is_ok(),
+            "`rivet verify` must still be able to advance to verified"
+        );
+
+        // Only `verified` is special. `accepted` is a human decision recorded
+        // with reviewed-by, and every other status stays writable.
+        for s in ["draft", "proposed", "approved", "implemented", "accepted"] {
+            assert!(
+                validate_modify("REQ-1", &to(s), &store, &schema).is_ok(),
+                "`{s}` must remain directly settable"
+            );
+        }
+        // A modify that does not touch status is unaffected.
+        let title_only = ModifyParams {
+            set_title: Some("renamed".to_string()),
+            ..Default::default()
+        };
+        assert!(validate_modify("REQ-1", &title_only, &store, &schema).is_ok());
     }
 
     // rivet: verifies REQ-366
