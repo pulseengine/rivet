@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790315308037,
+  "lastUpdate": 1790338425152,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "6ab55ac1163193d8e71f0bc20e173129103c9fb3",
-          "message": "fix(render): raise the serve/export palette to WCAG AA (REQ-276) (#842)\n\nCustomer-reported low contrast in the dashboard and the static compliance\nexport, which share rivet-cli/src/render/styles.rs.\n\nOracle first: six unit tests compute WCAG 2.1 relative luminance over the\npalette and assert 4.5:1 for body text, 3:1 for large text and UI. They parse\nhex values OUT OF the live CSS constant instead of copying them, so a\nstylesheet edit cannot drift away from its own audit. The suite was red on\nthree pairs before any colour changed -- accent on --bg 3.20:1, accent on\n--surface 3.48:1, white-on-accent 3.48:1 -- matching the values measured when\nthe requirement was triaged.\n\nFix: accent #3a86ff -> #2059b8, accent-hover #2568d6 -> #18458d, hue preserved\nand chosen for headroom rather than the bare minimum (worst pair 5.07:1, not\n4.60:1). 27 translucent rgba washes reshaded to the new rgb so tints match the\ncolour they tint. .stat-orange #e67e22 -> #c66c1d.\n\nThree findings the requirement's own audit did not have:\n\n  1. The reported pair does not occur. No element paints white text on --bg.\n     What a reader actually saw is the white label on the primary button\n     (3.48:1) and every link (3.20:1). Both real, both fixed.\n  2. Accent text sits on rgba(accent,.08/.12) washes in id chips, inline mono\n     tags and source-line highlights. Composited, three of those measured\n     4.08-4.42:1 and failed. A naive fg/bg audit cannot see them because the\n     background is translucent rather than a palette variable, so the test\n     composites alpha.\n  3. .stat-orange measured 2.85:1 on --surface, failing even the 3:1\n     large-text bar.\n\nRemoved the drift class behind (2) and (3) rather than fixing instances: five\nhand-copied hex literals of the accent lived OUTSIDE the CSS -- in stats.rs,\nsource.rs, doc_linkage.rs and serve/layout.rs -- still painting the old blue\nafter the palette moved. styles::ACCENT_HEX is now the source of truth, one\ntest asserts the CSS agrees with it, and a static scan fails if the retired\nvalue reappears anywhere.\n\nThe scan's first version listed only render/ modules and missed\nserve/layout.rs, which was the one file still painting the retired tint under\nnew-accent text. Widened, and the scan is negative-controlled: injecting\n#3a86ff into stats.rs turns it red and names the file; removing it turns it\ngreen.\n\nVerified in rendered output rather than in source alone: `rivet export --format\nhtml` and `rivet serve` both emit --accent #2059b8 with zero retired\nreferences. (One match remains in artifacts/REQ-276.html, where the\nrequirement's own prose quotes the old hex.)\n\nConfirmed with cargo fmt --check, clippy --all-targets -D warnings on 1.97.0,\ncargo test --workspace (exit 0, 65 ok), rivet validate and rivet docs check --\nall exit 0.\n\nImplements: REQ-276\nVerifies: REQ-276",
-          "timestamp": "2026-08-22T10:40:41+02:00",
-          "tree_id": "d66ecadff4f502d0d87cabb5e3e839b2bad385a5",
-          "url": "https://github.com/pulseengine/rivet/commit/6ab55ac1163193d8e71f0bc20e173129103c9fb3"
-        },
-        "date": 1787388667943,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 67629,
-            "range": "± 2912",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 738715,
-            "range": "± 2984",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13024659,
-            "range": "± 1380431",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1473,
-            "range": "± 65",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 17970,
-            "range": "± 661",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 251833,
-            "range": "± 12449",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 74,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 74,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 74,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1167816,
-            "range": "± 43304",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 126478,
-            "range": "± 885",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1486732,
-            "range": "± 29512",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 30560062,
-            "range": "± 1587461",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 356229,
-            "range": "± 29454",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 11595257,
-            "range": "± 127171",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 828365146,
-            "range": "± 8650155",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3283,
-            "range": "± 44",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 35250,
-            "range": "± 188",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 566762,
-            "range": "± 9543",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 47909,
-            "range": "± 126",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 529057,
-            "range": "± 2786",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6255974,
-            "range": "± 250553",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 859,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 11226,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 184013,
-            "range": "± 892",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 16510,
-            "range": "± 33",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 112486,
-            "range": "± 954",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1042829,
-            "range": "± 6111",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1546382,
             "range": "± 22855",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3554f468335c9229033d9262fcb4abe22dec4232",
+          "message": "fix(docs): no help text may point at a docs topic that does not exist (REQ-382) (#1004)\n\nCloses #1002, fixed as a class. Two help pointers led to docs topics that did\nnot exist, and an unknown topic exited 0 so nothing could notice.\ndocs/release-status.md is embedded, the dead pointer is corrected, an unknown\ntopic exits 1, and a test requires every `rivet docs <topic>` pointer in the\nhelp text and embedded topics to resolve.\n\nImplements: REQ-382\nVerifies: REQ-382",
+          "timestamp": "2026-09-25T13:54:39+02:00",
+          "tree_id": "bc8ee1b00c55f20d9dc28ce4fc22ab5f6c324389",
+          "url": "https://github.com/pulseengine/rivet/commit/3554f468335c9229033d9262fcb4abe22dec4232"
+        },
+        "date": 1790338423548,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 57803,
+            "range": "± 2176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 688811,
+            "range": "± 13269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 9808117,
+            "range": "± 449615",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1171,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 13923,
+            "range": "± 623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 334707,
+            "range": "± 3741",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 53,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 57,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 57,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1026367,
+            "range": "± 51905",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 116558,
+            "range": "± 3135",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1392852,
+            "range": "± 60273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 30647776,
+            "range": "± 2418358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 303265,
+            "range": "± 10653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 10210383,
+            "range": "± 735923",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 691431790,
+            "range": "± 21953980",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 2721,
+            "range": "± 24",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 30087,
+            "range": "± 526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 707744,
+            "range": "± 40470",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 40119,
+            "range": "± 444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 417306,
+            "range": "± 11234",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 5564908,
+            "range": "± 143836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 589,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7895,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 255947,
+            "range": "± 13940",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 14656,
+            "range": "± 756",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 103220,
+            "range": "± 7907",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 945353,
+            "range": "± 10058",
             "unit": "ns/iter"
           }
         ]
