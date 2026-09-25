@@ -1801,3 +1801,54 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-16T00:00:00Z
+
+  - id: DD-078
+    type: design-decision
+    title: "Open Knowledge Format: acknowledge now, one-way export only on demand"
+    status: proposed
+    release: v0.39.0
+    fields:
+      alternatives: "ADOPT rejected: carrying rivet's link types, constraints and rules as OKF extension keys would be rivet's own format with a .md suffix, invisible to every generic OKF consumer. INTEROPERATE viable one-way (export fits well, import is weak because third-party bundles have untyped links) but premature against a spec still breaking."
+      decision: ACKNOWLEDGE. Record OKF; build no importer or exporter now. Revisit when OKF tags a 1.0, or when a user asks to feed rivet artifacts to an OKF-consuming agent, at which point a one-way export is small and understood. Separately, borrow OKF's provenance model (generated-by separate from a sequence of verified-by events) as a rivet improvement of its own.
+      rationale: "Read from SPEC.md v0.2 rather than the README. Five of the nine constructs that make a rivet trace machine-checkable have no OKF representation and the spec takes the opposite position on each: links are untyped, broken links are not malformed, only type is required, conformance beyond parseable frontmatter is soft guidance, and there is no schema layer. OKF is also a v0.2 draft with no tagged release that broke compatibility within six weeks, and it targets data-catalog knowledge for AI agents rather than engineering traceability. See docs/design/okf-fidelity.md."
+    links:
+      - type: satisfies
+        target: REQ-341
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-25T04:40:50Z
+
+  - id: DD-079
+    type: design-decision
+    title: "Supply-chain bridge: fold the SBOM and attestation half into REQ-374, keep AIBOM separate"
+    status: proposed
+    release: v0.39.0
+    fields:
+      alternatives: "One feature covering both halves rejected: the AIBOM half has no schema and no existing evidence, so bundling it would hold the ready half hostage to the unready one. Leaving the bridge as its own requirement rejected for the duplication above."
+      decision: "SPLIT. The SBOM, attestation and signature bridge is the emitter half of REQ-327 and is the same work as REQ-374, the release record: one emitter, run once per release, producing release-artifact, build-attestation and sbom-component artifacts alongside the record. The AIBOM half from issue 104 is genuinely new, since no type models an AI bill of materials, and stays its own item."
+      rationale: "supply-chain.yaml already declares all four types, and rivet's own release already produces every piece of the evidence as signed release assets: a CycloneDX SBOM, SLSA provenance, per-asset SHA256 digests and a cosign signature. Nothing turns those assets into artifacts: zero instances exist, rivet does not even load its own supply-chain schema, and the only code references are a colour map and documentation. Building this separately from REQ-374 would mean two jobs parsing the same SBOM and the same digests into two differently-shaped records. See docs/design/supply-chain-bridge-assessment.md."
+    links:
+      - type: satisfies
+        target: REQ-344
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-25T04:40:50Z
+
+  - id: DD-080
+    type: design-decision
+    title: "Autoformalizing requirements to Lean: acknowledge, do not pursue now"
+    status: proposed
+    release: v0.39.0
+    fields:
+      alternatives: "ADOPT rejected: the precondition, a typed signal vocabulary the formalizer is restricted to, does not exist in rivet. INTEROPERATE not applicable: this is a technique, not an external format or tool."
+      decision: ACKNOWLEDGE. Do not pursue. Revisit only when rivet has typed process-model variables that artifacts reference by id, and a fidelity check between each requirement and its formalization exists.
+      rationale: "The lead rested on the claim that rivet's typed, pre-grounded requirements largely solve the paper's grounding bottleneck. Measured on rivet's corpus that is false: no schema declares a variable, signal or quantity type; 62 of 67 STPA unsafe control actions name their control action in free text resolving to nothing; all 8 controller process models are prose. Rivet grounds artifact identity, not what a predicate is about. Of the issue's four literature claims, two are absent from their cited sources. The paper itself is four requirements on a 7B prover and carries an unreported fidelity error: R1 says greater-or-equal and was formalized as strictly greater, yet the two requirements were proved equivalent. See docs/design/autoformalization-assessment.md."
+    links:
+      - type: satisfies
+        target: REQ-340
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-25T04:40:51Z
