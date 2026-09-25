@@ -8629,7 +8629,7 @@ artifacts:
   - id: REQ-340
     type: requirement
     title: "assess autoformalizing NL requirements to Lean with a proved biconditional as certification evidence (#508)"
-    status: draft
+    status: accepted
     description: "Triage of an untracked research lead open since 2026-06-06 (#508), filed from a web-research pass. THE TECHNIQUE: translate a natural-language requirement into a Lean proposition and PROVE the biconditional PA <-> PB, which decides requirement equivalence and consistency mechanically rather than by review. Demonstrated on automotive safety requirements with DeepSeek-Prover-V2. THE CLAIM WORTH TESTING, and the reason this is a lead rather than a curiosity: that work's largest manual bottleneck is VARIABLE GROUNDING — establishing that differently-named symbols in two requirements denote the same thing — and rivet's requirements are already typed and pre-grounded, which would turn their bottleneck into an automated step. If that holds, rivet is ahead of the published state of the art on the expensive half of the problem, and the gap the report identifies as publishable is that nobody packages autoformalized requirements as certification evidence. SCOPE OF THIS ARTIFACT: assessment, not adoption. The deliverable is a recorded decision — whether rivet pursues this, interoperates with it, or acknowledges it — with the grounding claim actually tested on rivet artifacts rather than assumed. Deliberately NOT scoped to v0.38.0: a research outcome cannot gate a release, and putting it in the cutting scope would make the release wait on a decision rather than on verified work. Assigned to v0.39.0 as a commitment to decide by then. Note the standing rule that this kind of work must be grounded in SOURCE rather than in a summary — the claim about the bottleneck comes from the linked paper and should be checked against it before any effort is committed."
     release: v0.39.0
     tags: [research, formal-methods, certification]
@@ -8637,10 +8637,11 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-09T00:00:00Z
+      reviewed-by: avrabe
   - id: REQ-341
     type: requirement
     title: "assess Google's Open Knowledge Format — adopt, interoperate, or acknowledge (#549)"
-    status: draft
+    status: accepted
     description: "Triage of an untracked research request open since 2026-06-19 (#549). The maintainer's question: whether Google's Open Knowledge Format is a format rivet could use, or could converge on, or whether it is not structured enough for the purpose. SCOPE: an assessment producing a recorded decision among adopt, interoperate, and acknowledge — the same three-way outcome used for other external-format questions. The comparison must be against what rivet's schemas actually express — typed link predicates with cardinality and target-type constraints, traceability rules with severities, and the base-field mechanism — rather than against a description of them, because a format that looks adjacent at the level of README prose may be unable to carry the constraints that make a trace checkable. Prior art in this repository is the reqif and Polarion fidelity analyses under docs/design, which state field by field what survives a round trip and what does not; that is the shape this should take. Deliberately NOT scoped to v0.38.0, for the same reason as the other research triage: a decision is not a verifiable release artifact, and scoping it to the cutting release would make the release wait on a judgement. Assigned to v0.39.0."
     release: v0.39.0
     tags: [research, interop, formats]
@@ -8648,6 +8649,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-09T00:00:00Z
+      reviewed-by: avrabe
   - id: REQ-342
     type: requirement
     title: "the liveness probe reports pool-offline for every self-hosted stall, because a failed runner lookup is substituted with an empty pool (#919)"
@@ -8673,7 +8675,7 @@ artifacts:
   - id: REQ-344
     type: requirement
     title: "no artifact tracks the sigil-attestation / SBOM / AIBOM traceability bridge (#107)"
-    status: draft
+    status: accepted
     description: "Triage of an issue open since 2026-04-02 and genuinely untracked — verified by reading artifact titles for sigil, supply-chain and SBOM rather than by pattern-matching the issue number, which produces both false positives and false negatives. The nearest existing artifacts are SL-5 and SLS-5, which are supply-chain HAZARDS in the STPA model rather than the integration, and REQ-327, which is release notes. THE ASK: three regulatory deadlines converge and require overlapping evidence that currently lives in separate places — EU AI Act (2026-08-02) for AI system documentation and traceability, EU Cyber Resilience Act (2026-09-11) for vulnerability reporting with machine-readable SBOMs mandated from December 2027, and IEC 62304 Ed.2 for AI lifecycle in health software. The issue proposes bridging sigil attestations, SBOM/AIBOM and rivet traceability so one body of evidence serves all three rather than three parallel ones. WHAT ALREADY EXISTS AND SHOULD BE READ BEFORE DESIGNING: rivet already ships supply-chain.yaml with release-artifact, build-attestation and vulnerability types, and REQ-327 records that rivet's own releases produce exactly this evidence and discard it — a CycloneDX SBOM, a cosign bundle, per-asset SHA256 digests and cargo-audit ignore entries each carrying a written rationale. The v0.37.0 release published all of those as assets. So the gap is not that the schema is missing; it is that nothing consumes or emits it, which makes this closely related to REQ-327's unshipped supply-chain half rather than a separate build. SCOPED to v0.39.0 rather than left unassigned, which is the condition that let this sit for five months: an artifact with no release field never appears in a readiness query, so nothing ever surfaces it for a decision. Deliberately draft rather than proposed — the first deliverable is a decision on whether this is one feature or the completion of REQ-327, and that should be made after reading supply-chain.yaml against the three standards rather than assumed now."
     release: v0.39.0
     tags: [supply-chain, compliance, aibom, eu-ai-act]
@@ -8681,6 +8683,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-10T00:00:00Z
+      reviewed-by: avrabe
   - id: REQ-345
     type: requirement
     title: "601 of 706 artifacts carry no release field, so 165 pieces of unstarted work are invisible to every readiness query"
@@ -9110,3 +9113,51 @@ artifacts:
       model: claude-opus-5
       timestamp: 2026-09-24T21:09:51Z
     release: v0.40.0
+
+  - id: REQ-378
+    type: requirement
+    title: 62 of 67 unsafe control actions name their control action in free text that resolves to nothing, and validate passes
+    status: proposed
+    release: v0.40.0
+    description: "Found while testing REQ-340's grounding claim on rivet's own corpus, and a defect in its own right independent of any formalization work. STPA's analytical value depends on each unsafe control action being attributable to a SPECIFIC control action issued by a specific controller. In rivet that attribution is prose. Measured through the store with rivet list --format json --full, guarded by an assertion that fields are populated: of 67 unsafe control actions, 62 name their control action in FREE TEXT THAT RESOLVES TO NOTHING, and only 5 use a string that is an artifact id. UCA-C-1, for example, names its action as Build link graph, validate artifacts, generate metrics, a sentence that matches none of the 20 control-action artifacts that exist. rivet validate passes over all of it, because uca.control-action is declared as a plain string field rather than a link, so there is nothing for validation to resolve. The same holds one level up: all 8 controller process models are lists of English phrases such as Current state of local artifact files, with no ids, so a UCA's context can only reference the controller belief it invalidates by paraphrase. TWO CHANGES, in order. First, make the UCA-to-control-action relation a typed link to a control-action artifact, so an unresolvable reference becomes a broken-link error rather than silently passing, and migrate the 62 existing references, most of which will need a human to choose which of the 20 actions each one means. Second, give process-model entries ids so a UCA can cite the belief it is about. Both improve STPA rigour on their own merits, and both are the groundwork REQ-340 identified as the precondition for ever revisiting autoformalization. Note the migration is itself a grounding exercise of exactly the kind the paper describes: reconciling differently-worded references to the same thing, and it should be done by a person rather than by string similarity."
+    tags: [stpa, traceability, weak-green, grounding]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-25T04:41:28Z
+
+  - id: REQ-379
+    type: requirement
+    title: no AI bill of materials — per-artifact model provenance exists but is never aggregated or emitted in a standard form
+    status: proposed
+    release: v0.41.0
+    description: "Split out of REQ-344 by DD-079. Issue 104 asks for an AI bill of materials: which models were used, at which versions, and which artifacts and code each generated, emitted in a standard form such as CycloneDX ML-BOM. No type in any rivet schema models this. The nearest existing mechanism is per-artifact provenance, which records created-by, model, session-id and timestamp, and therefore records THAT a model was involved in one artifact, but it is not a bill of materials, it is not aggregated across a release, and it emits nothing in a standard format. DD-079 separated this from the supply-chain bridge deliberately: that half has a complete schema and evidence the release already produces, while this half has neither, and bundling them would hold the ready half hostage to the unready one. Scoped with REQ-059, AI provenance with model id and session context, since an AIBOM is the release-level aggregate of exactly that per-artifact provenance. The provenance model assessed for REQ-341, which separates generated-by from a sequence of verified-by events, is the relevant prior art: an AIBOM that cannot say which AI output was subsequently checked, and by whom, is a list of models rather than evidence."
+    tags: [aibom, supply-chain, ai-provenance, eu-ai-act]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-25T04:41:29Z
+
+  - id: REQ-380
+    type: requirement
+    title: bounded, pre-registered autoformalization spike on rivet requirement pairs, with the fidelity check and negative control the paper lacked
+    status: proposed
+    release: v0.40.0
+    description: "The bounded spike decided by DD-080 after the maintainer reviewed REQ-340's assessment. PURPOSE: first-hand evidence on whether autoformalizing rivet requirements into Lean yields anything a reviewer would not already see, to inform a later adopt-or-not decision. It is a spike: its output is a findings document and a measurement, not production code or a new command. PRE-REGISTERED, so the spike cannot grade its own homework. The procedure, the measurements and the success criterion are fixed here BEFORE any formalization is run. CORPUS: four to six PAIRS of rivet requirements chosen because they plausibly constrain the same behaviour, so that equivalence, implication or inconsistency is a meaningful question for each pair. Each pair's selection rationale is recorded before formalizing. PROCEDURE, the paper's pipeline plus the step it lacked. One, an LLM formalizes each requirement into a Lean 4 proposition using core Lean only, no Mathlib, matching the paper's encodings. Two, a human writes the grounding hypotheses equating differently-named symbols, and every one is counted. Three, attempt to prove equivalence or implication between the pair, recording proved, refuted by counterexample, or search failed; a failed search is NOT a disproof and must not be reported as one, which the paper did. Four, THE FIDELITY CHECK THE PAPER LACKED: back-translate each Lean proposition into English and have a human compare it with the original requirement, recording any mismatch. MEASURED PER PAIR: compiles or not; number of grounding hypotheses; proof outcome; fidelity-check outcome; whether the proof went through only because the grounding made the two sides syntactically identical, as in the paper's own showcase. NEGATIVE CONTROL, and the most important element: one pair is deliberately seeded with the exact error the paper shipped, a greater-or-equal formalized as a strict greater-than. The fidelity check MUST catch it. If it does not, the procedure cannot be trusted to catch real mis-formalizations and every other result is void. SUCCESS CRITERION, fixed now: the spike SUCCEEDS if it surfaces at least one equivalence, implication or inconsistency between real rivet requirements that a human reviewer confirms is genuine and was not already recorded, AND the negative control is caught. It FAILS USEFULLY if every proof is carried by the grounding, which would replicate the paper's result on rivet's corpus and settle the adoption question in the negative. Either outcome is a result. TIME-BOXED; if the time-box expires, whatever was measured is reported as it stands."
+    tags: [research, formal-methods, spike, lean]
+    fields:
+      category: functional
+      priority: could
+    links:
+      - type: derives-from
+        target: REQ-340
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-25T04:53:07Z
