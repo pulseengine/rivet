@@ -5,7 +5,58 @@
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-25
+
+v0.38.0 fixed a parser that was wrong five ways. This release is about the
+layer above it: **places where rivet said one thing and did another** — and
+most were found by measuring rivet against its own claims rather than by a
+report.
+
+- The release note existed and **reached nobody**. Since v0.37.0 rivet has
+  generated an Automotive SPICE 11-03 note from the trace, while every release
+  still shipped a flat pull-request list as its body. It is now generated in CI at
+  the tag, signed alongside the binaries, used as the release body, and placed
+  in the compliance bundle — the one artefact meant to stand alone.
+- Bulk mutations **looked atomic and were not**. `modify --where` and `batch`
+  validated everything first and then wrote one file at a time; reproduced on
+  this repository, a failing bulk modify exited 1 with eleven files already
+  rewritten.
+- The semver gate **passed having checked nothing** — "0 checks: 0 pass, 254
+  skip" against a squatted crate — and, once pointed at the right baseline,
+  turned out to have no lint for a retyped public field. Both are now on the
+  record beside the gate.
+
+Three long-open research questions also closed by recorded decision rather
+than by code — Google's Open Knowledge Format, autoformalizing requirements to
+Lean, and a supply-chain evidence bridge — each read from source, and each
+**accepted by the maintainer**, not by the tool. They carry `reviewed-by`,
+making them the first human-reviewed records in rivet's own store.
+
+**One caveat in this release's own note.** The generated 11-03 note reports six
+artifacts as having "NO verification evidence". Those six are the accepted
+decisions above: their evidence is a named human's acceptance, which is the
+correct evidence for a decision, not a test. The generator does not yet
+distinguish *accepted by a reviewer* from *unevidenced*; that is a known gap,
+not a finding against these six.
+
 ### Fixed
+- **The generated release note now ships with the release** (REQ-369) — the
+  release body was `gh release create --generate-notes`, a flat list of merged
+  pull requests. The 11-03 note is now generated in CI at the tag, collected
+  before the checksum step so the cosign signature over `SHA256SUMS.txt` covers
+  it, and used as the release body with GitHub's list appended underneath. The
+  body is composed explicitly rather than by combining `--notes-file` with
+  `--generate-notes`, whose interaction gh does not document, and is read back
+  after publishing — the job fails if the note is not in it. Because
+  `release.yml` only runs on a tag, the logic lives in a sourceable script with
+  its own oracle, or it would have shipped never having run.
+- **The semver gate verified by measurement, with its limit recorded**
+  (REQ-368) — against `origin/main` it runs "196 checks: 196 pass"; the pre-fix
+  form ran "0 checks: 0 pass, 254 skip" against a squatted crates.io
+  placeholder — and **both exit 0**. Recorded beside the gate: a green Semver
+  Checks is not "no breaking change". cargo-semver-checks has no lint for a
+  public field whose type changed, shown on this release's own `SqlResult`
+  change.
 - **The compliance bundle now carries the generated release note** (REQ-371) —
   the bundle is the audit deliverable, holding the traceability matrix,
   coverage, validation, rendered specs and the ReqIF/generic-yaml exports, and
@@ -17,7 +68,6 @@
   than being skipped — a bundle silently lacking a document it advertises is
   the defect being closed.
 
-### Fixed
 - **Bulk mutations are no longer half-applied** (REQ-366, REQ-367 — #965, #955)
   — `modify --where` and `batch` both validated every target up front, which
   reads as all-or-nothing, and then wrote one file at a time. Reproduced on a
@@ -86,6 +136,25 @@
   fires for SAT bundles that carry no witness; this changes what
   `rivet validate` reports on downstream corpora that ingest TR-038
   bundles.
+
+### Decided
+Three research questions open since April–June closed by a recorded decision,
+each read from source and accepted by the maintainer (`reviewed-by`), not by
+the tool.
+- **Google's Open Knowledge Format — acknowledge** (REQ-341, DD-078, #549) —
+  five of the nine constructs that make a rivet trace checkable have no OKF
+  representation, and its spec takes the opposite position on each. See
+  `docs/design/okf-fidelity.md`.
+- **Autoformalizing requirements to Lean — a bounded spike** (REQ-340, DD-080,
+  #508) — the lead's premise that rivet's requirements are "pre-grounded" is
+  false on rivet's own corpus, and two of its four citations are not in their
+  sources. The maintainer chose a pre-registered spike over the
+  recommendation to acknowledge. See `docs/design/autoformalization-assessment.md`.
+- **Supply-chain evidence bridge — split** (REQ-344, DD-079, #107) — the
+  schema exists and every release already produces the evidence as signed
+  assets; nothing turns them into artifacts. The SBOM and attestation half
+  folds into the release record; the AI bill of materials stays separate. See
+  `docs/design/supply-chain-bridge-assessment.md`.
 
 ## [0.38.0] - 2026-09-23
 
