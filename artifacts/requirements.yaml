@@ -9175,3 +9175,18 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-25T05:09:54Z
+
+  - id: REQ-382
+    type: requirement
+    title: help text pointed at docs topics that do not exist, and an unknown topic exited 0 so nothing noticed
+    status: verified
+    release: v0.40.0
+    description: "Issue 1002, reproduced, and fixed as a class rather than an instance. rivet release status --help tells the reader the precision note on require coverage is at rivet docs release-status. That topic was never embedded: the command printed Unknown topic followed by the topic list, while the document itself exists in the repository as docs/release-status.md, a rivet document with id DOC-RELEASE-STATUS. So it failed on exactly the air-gapped installs the embedded docs exist for, and the reporter had to read the file from GitHub. THE CLASS, measured. Scanning the source for every rivet docs pointer produced seven candidates, and checking each against the real CLI showed FIVE WERE FALSE POSITIVES: check and embeds are subcommands rather than topics, schema and diagnostics are prefixes of path-style topics such as schema/common that do resolve, and schema-show appeared in an illustrative example of the slug rule. TWO WERE REAL: release-status in the release status help, and a See also entry in an embedded topic pointing at rivet docs coverage, for which no topic or document exists. AND THE FAILURE WAS INVISIBLE, because rivet docs with an unknown topic exited 0, so no script could detect a dangling pointer by its exit code. THE FIX. docs/release-status.md is embedded as the release-status topic, with its YAML frontmatter stripped for display since it is store metadata rather than text for a reader. The dead coverage pointer now names rivet coverage --help, which is what its own description said it was for. The illustrative example is rephrased so it states the rule without a runnable dead command. And an unknown topic now exits 1 with its message on stderr. PREVENTING THE CLASS: a test scans everything a user reads, every embedded topic and the CLI's triple-slash help text, and requires each rivet docs pointer to resolve to a topic or to one of the two non-topic targets. It skips flags and placeholders, both the angle-bracket form and uppercase metavariables in clap's usage style, and it asserts it found at least ten pointers, since a scanner that found nothing would pass vacuously. Negative controls: restoring the dead coverage pointer, un-embedding release-status, and dropping the frontmatter strip each fail the tests by a named assertion."
+    tags: [docs, cli, air-gapped, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-25T05:51:27Z

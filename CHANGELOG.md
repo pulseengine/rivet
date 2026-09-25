@@ -28,6 +28,14 @@
   read-only SQL" and "writes are a planned follow-up slice" while `UPDATE`
   wrote to the project. It also named an in-memory SQLite; the engine has been
   gluesql since REQ-231.
+- **Help text no longer points at docs topics that do not exist** (REQ-382,
+  #1002) — `rivet release status --help` sent readers to `rivet docs
+  release-status`, which printed "Unknown topic" on every install even though
+  the document existed in the repository; an embedded topic likewise pointed at
+  `rivet docs coverage`. The release-status note is now embedded, and **an
+  unknown topic now exits 1** — it exited 0, so no script could detect a
+  dangling pointer. A test now requires every `rivet docs <topic>` pointer in
+  the help text and embedded topics to resolve.
 
 ## [0.39.0] - 2026-09-25
 
