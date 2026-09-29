@@ -7674,7 +7674,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-01T00:00:00Z
-    release: backlog
+    release: v0.40.0
 
   - id: REQ-248
     type: requirement
@@ -8147,7 +8147,7 @@ artifacts:
     title: "Mutation-safety property harness for the YAML write path — one invariant, four data-loss bugs, no property test (#809)"
     status: proposed
     description: "Every mutating command writes through `rivet-core/src/yaml_edit.rs`, a ~2000-line line-oriented editor built on indentation heuristics. Hand-rolled deliberately (it preserves comments, key order and human formatting, which a serde round-trip destroys in version-controlled files) — but it has produced four data-loss bugs, each found by a user rather than a test: #573 flow-style `fields:` maps, #618/#625 block-list orphaning, REQ-287 unquoted tag emission, and #806 multi-line values in `fields:`. All four violate one invariant: replacing a key must consume that key's ENTIRE on-disk extent and change nothing else. #806 is the proof that examples are not enough — `set_field` upholds the invariant via `field_block_end` + `splice` and its comment names the history, while the custom-fields loop 700 lines below did a single-line assignment and had no multi-line-value test at all. The property must be stated as EXACT equality: parse before, mutate, parse after must succeed, every path except the target must be byte-identical, and the target must equal the intended value. 'It parses' is only a precondition — #806 mode 1 produced a perfectly parseable file whose value silently became 'short first body line second body line', so a parse-only assertion would green on the data loss. Corpus axis is scalar STYLE, not field name: plain, single/double-quoted, folded, literal, |- / |+ / |2, empty value, flow map, flow seq, block seq, nested block map, body containing colon / hash / leading dash, internal blank line, anchors, CRLF, tabs, last-field-of-last-artifact, unicode. Mutations: every --set-* flag, --add-tag/--remove-tag, --where bulk, plus `rivet add` and the MCP/batch writers. Lands as a proptest in rivet-core (fast, shrinks, runs in CI) plus a thin CLI-level test for flag wiring. Deliberately does NOT include migrating the writer to the in-tree rowan-yaml CST: that is an architecture decision with real cost for the maintainer to weigh, and the harness is the right thing to have in place BEFORE such a migration so it can prove behavior is preserved."
-    release: backlog
+    release: v0.40.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8202,7 +8202,7 @@ artifacts:
     title: "Humans have no assisted way to author artifacts — YAML editing is the only path (#546)"
     status: draft
     description: "User-reported and the largest gap in the v0.34 customer-UI theme, missed in the first triage pass. rivet's mutation surface is excellent for agents (add, modify, link, batch, next-id, MCP) and its read surface is excellent for everyone (serve, query, sql, trace, export), but a human authoring or correcting an artifact has exactly one option: hand-edit YAML. The reporter's words are the requirement — the editing is cumbersome, and we are missing the UI for helping humans work with it. Note the irony this repo has just paid for: hand-editing is also the path with no guard rails, and the write path underneath has produced four data-loss bugs (#573, #618/#625, REQ-287, #806), so the humans doing it by hand are the ones least protected. DESIGN-FIRST — this must not go straight to implementation. At least three plausible shapes exist and they differ enormously in cost and in who they serve: (a) extend the vscode-rivet VSIX with form-based editing and completion, which meets people where the YAML already is but is limited to VS Code users and the webview has no htmx; (b) make `rivet serve` writable, which reaches any browser and reuses the existing dashboard but turns a read-only viewer into a mutating service with all the authz questions that implies; (c) a guided terminal flow (`rivet add --interactive`) which is cheap and composes with the existing CLI but does not address the reporter's likely mental model of a UI. A design decision artifact must land before any REQ is scoped for implementation, and it must state which of these it is NOT doing and why."
-    release: backlog
+    release: v0.40.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8290,7 +8290,7 @@ artifacts:
     title: "`rivet verify` advances on the existence of evidence, not its sufficiency (#838)"
     status: proposed
     description: "Reported from varve, where rivet is the release-readiness gate, and reproduced in rivet's own v0.34.0 cut the same day. `rivet verify REQ-X` correctly refuses when there is NO evidence — that guard works and stopped the reporter twice. But when a `verifies` marker exists it advances unconditionally, and a marker is cheap: one comment line above one `#[test]`. The structural problem is granularity: a requirement is a set of clauses, a marker attaches to the requirement, so the evidence link is coarser than the claim and the gap is invisible. The failure is not a missing check but a graph that LOOKS complete, which is worse — readers stop reading the requirement text once status says `verified`. In varve three requirements had markers and undischarged clauses (a gate that cannot detect the failure mode its clause names; a clause implemented for one transport but not another; a clause parsing a field nothing consumes). In rivet, REQ-298 was flipped to `verified` during the v0.34.0 release with its third clause ('tighten the top-level command list so the common path is legible') knowingly undischarged — 52 flat top-level commands remain — and `coverage --tests` reported `REQ-298  1 test marker`, indistinguishable from full discharge. The residual was hand-carried into REQ-307 plus commit prose, i.e. the reporter's option (3) improvised manually, and crucially the trace graph does NOT carry that caveat, so the caveat is not traceable. Degenerate variant found the same day: a marker that matches nothing is reported as neither present nor broken — the scanner regex accepts only word characters and hyphens after `verifies`, and `#` is neither, so `rivet: verifies #808` silently is not a marker at all; six such markers existed against 593 valid ones. Options in cost order: (1) per-clause markers `rivet: verifies REQ-X clause 3`, the real fix, but needs clauses addressable rather than prose inside `description` — a schema migration across every artifact; (2) make `partially-verifies` BLOCK rather than annotate, so `verify` refuses to advance past `implemented` without explicit override — no schema change, converts the common case into a refusal, and is therefore the right first move; (3) record the human judgement explicitly (`--clauses-discharged 1,2,4 --note ...`) so an unexamined default becomes a stated claim — cheap, but only meaningful if clause numbering is stable, and prose clauses renumber on any description edit, so record clause TEXT alongside the index or do (1) first."
-    release: backlog
+    release: v0.40.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8401,7 +8401,7 @@ artifacts:
     title: "Externally-owned verification: a criterion only another project can run has no home but prose (#800)"
     status: proposed
     description: "A requirement can carry a verification criterion that only a DIFFERENT project can run. `rivet verify` already refuses to promote without evidence, which is the correct block, so the mechanism is present; what is missing is a way to say WHY it is unrun and WHO owns it, so the set is queryable rather than living in a description field. `external-anchor` is not it — that models the INBOUND boundary, requirements handed to us by a supplier, with `source-of-truth`, `expected-derived-types` and `received-status`. This is the outbound direction: evidence we are waiting on from someone else. Same family as REQ-313, which gave a declared-blocked acceptance criterion a machine-readable home instead of shouty caps inside the string, and as REQ-308, which is about `verify` advancing on the existence of evidence rather than its sufficiency. Deliberately NOT scheduled into a release yet: the three overlap enough that solving them piecemeal risks three near-identical mechanisms for 'this obligation is declared, owned elsewhere, and not yet discharged'. REQ-308 already needs clauses to become addressable, which is a schema migration across every artifact; this should be designed alongside it rather than bolted on first. Backlog pending that design decision."
-    release: backlog
+    release: v0.40.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -9220,3 +9220,153 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-29T18:17:58Z
+
+  - id: REQ-385
+    type: requirement
+    title: "rivet modify --set-field writes a boolean-declared field as the string \"true\", so exempt-when-field silently does not apply (#1008)"
+    status: proposed
+    release: v0.40.0
+    description: "Reported from ordeal. rivet modify TR-032 --set-field backlog=true wrote backlog: \"true\" although the schema declares the field boolean, and with the string the traceability rule's exempt-when-field exemption is not applied, so rivet coverage still counts the parked requirement as uncovered. ACCEPTANCE: --set-field coerces the value to the field's declared type (boolean, integer, number, list) and refuses a value that does not parse as that type, naming the field and type. A validate diagnostic flags a string where a boolean is declared, so files written by older versions are found rather than silently ignored. The same coercion applies to rivet batch and the MCP modify tool, which share the write path."
+    tags: [cli, schema, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-386
+    type: requirement
+    title: "the scheduled mutation run leaves 20 mutants alive in the conditional-rule and variant field checks (#1009)"
+    status: proposed
+    release: v0.40.0
+    description: "Scheduled full mutation run 36549638304 on commit 3554f46, shard 10 of 16: 19 survivors in schema.rs (conditions_equivalent 7, get_field_value_for_variant 6, and one each in yaml_value_to_cow, requirements_overlap and check_conditional_consistency) and 1 in sexpr.rs lex. Deleting the status and description match arms of get_field_value_for_variant survives, so no test checks which field the conditional-rule machinery reads. Shard 13 failed in tool installation and 14 shards were cancelled, so the count is a lower bound. ACCEPTANCE: in-module unit tests kill every listed mutant (the gate runs --lib); a clean rerun of the full sharded job reports its surviving set; survivors outside the listed functions are killed or filed."
+    tags: [testing, mutation, schema]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-387
+    type: requirement
+    title: "surfaces disagree about the same fact: coverage percentage, unmodelled rules and the validate verdict differ between CLI, serve, MCP, export and snapshot (#956)"
+    status: proposed
+    release: v0.40.0
+    description: "Umbrella from the equivalence audit: eight items reported with file and line evidence, each confirmed by reproduction before it is fixed. Headline items: coverage.rs documents that display code MUST render n/a for an empty scope and only CLI call sites do, so a sources glob that stops matching reads n/a in the CLI and 100 percent in the dashboard, static export, MCP tool and JSON API; mark_unmodelled is applied by rivet coverage and by release readiness but not by render, serve, MCP or snapshot, so a project declaring unmodelled rules sees two percentages. ACCEPTANCE: every item of the issue is either fixed with a test asserting two surfaces agree on one fixture, or recorded as not reproducing with the command that shows it. The fix routes each fact through one shared function rather than patching each surface."
+    tags: [consistency, serve, mcp, export, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-388
+    type: requirement
+    title: "documented behaviour the code does not have: link-type source and target restrictions are never enforced, among other claims in the audit (#958)"
+    status: proposed
+    release: v0.40.0
+    description: "Umbrella from the claim-versus-code audit: six items, each confirmed by reproduction first. Headline: schemas/common.yaml documents link-types source-types and target-types as restrictions for every shipped schema, but no validation path reads them, so a link from a disallowed source type validates clean; the only reader uses them to suppress a prose-mention lint. rivet docs check passes over all of these, which is itself the pattern. ACCEPTANCE: each item is either implemented as documented (source-types and target-types become validate diagnostics, introduced at a severity that does not break existing corpora without notice) or its documentation is corrected to what the code does; the fixed claims are machine-checked by a test or a docs check where feasible."
+    tags: [docs, schema, validation, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-389
+    type: requirement
+    title: "gates that pass vacuously: the traceability gate cannot fail on a traceability regression, and the WASM render tests skip themselves (#957)"
+    status: proposed
+    release: v0.40.0
+    description: "Umbrella from the weak-green audit. Items include: ci.yml runs rivet validate, which exits 0 on the real corpus because every traceability finding is warning or info, so appending an implemented requirement with no links still passes; the WASM adapter tests render_aadl_via_wasm and load_spar_wasm_component skip on a hardcoded path that exists nowhere and one swallows Err, so call_render never executes (confirmed by two MISSED mutants on a72637c), leaving the read-only preopen and the fuel limit untested. REQ-375, the oracle dispatcher, carries its own item. ACCEPTANCE: each item has a negative control that now reddens its gate; the WASM tests run a real component in CI and fail rather than skip when it is absent there; a probe guest demonstrates a refused write through the preopen and a trap on fuel exhaustion."
+    tags: [ci, testing, weak-green, wasm]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-390
+    type: requirement
+    title: "two spar revisions ship in one binary, native pinned to a tag and wasm cloned from HEAD, and the drift guard can never fire (#951)"
+    status: proposed
+    release: v0.40.0
+    description: "The native spar-hir and spar-analysis dependencies are pinned by tag in Cargo.toml, while release.yml clones spar's default-branch HEAD, with no tag or rev, to build the wasm renderer embedded in rivet serve. rivet-cli/build.rs searches for a spar-hir line containing rev, but the pin uses tag, so the guard never matches and never fires. ACCEPTANCE: the wasm build checks out exactly the revision Cargo.lock resolves for the native crates, and the build fails if the two differ; the guard is exercised by a test or CI step that feeds it a mismatching pin and sees it fail. The same pinned component then backs the REQ-389 WASM tests and the REQ-247 export."
+    tags: [build, release, spar, wasm, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-391
+    type: requirement
+    title: "Kani Proofs dies with exit 143 before any proof runs; find and fix the cause instead of merging past it (#839)"
+    status: proposed
+    release: v0.40.0
+    description: "Kani is continue-on-error and outside CI Gate, so it blocks nothing. As measured in the issue, failures die in the kani-github-action step before cargo kani runs. On 2026-09-29 it died with the runner's shutdown signal on #1006 and on main da945d3, and on a72637c it sat without an assigned runner for over an hour, while successes take about six minutes. ACCEPTANCE: the cause is established from runner and job evidence rather than guessed; Kani then passes on consecutive pushes to main, or moves to a runner class where it does, so that only a proof regression, not an infrastructure kill, turns it red; its success rate over the next ten main pushes is reported."
+    tags: [ci, kani, formal]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-392
+    type: requirement
+    title: "self-hosted runner disk exhaustion fails every compile gate, and the post-job cleanup hook frees nothing (#567)"
+    status: proposed
+    release: v0.40.0
+    description: "On the self-hosted pool a full disk makes every compile gate fail at once, and the post-job cleanup hook that exists for this reclaims no space. ACCEPTANCE: the hook's reclaim is measured with df before and after on a real runner, and it frees the per-job build output; a low-disk precondition fails a job early with a clear message rather than as a compile error; the fix holds across at least three consecutive runs on the same runner."
+    tags: [ci, runners]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-393
+    type: requirement
+    title: "Linux release binaries require glibc 2.39, which excludes Ubuntu 22.04, Debian 12, RHEL 9 and every static image; ship musl builds (#980)"
+    status: proposed
+    release: v0.40.0
+    description: "Measured on v0.37.0's Linux x86_64 asset: dynamically linked, with GLIBC_2.39 as its highest symbol version. varve's pulseengine realm ingests these binaries, and a layer is only as portable as its highest floor, so rivet alone sets it for the whole toolchain. ACCEPTANCE: the release publishes statically linked musl builds for x86_64 and aarch64 Linux alongside the existing assets, listed in SHA256SUMS and covered by the cosign signature; the release verifier confirms each is static and runs rivet --version inside a musl or distroless container; the release notes name the asset to use on older distributions."
+    tags: [release, portability, varve]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-394
+    type: requirement
+    title: "no VEX: a consumer cannot tell whether a published advisory affects the rivet release they run (#983)"
+    status: proposed
+    release: v0.40.0
+    description: "An SBOM says what is in a release, not what an advisory means for it. rivet already publishes a CycloneDX SBOM inside the signed sums, runs cargo-audit, and records not-applicable assessments as artifacts (REQ-376 for the salsa advisory). varve is adding ingestion of each payload's supply-chain documents. ACCEPTANCE: each release publishes a CycloneDX VEX document whose vulnerabilities carry analysis.state and a justification, generated from cargo-audit findings plus the recorded assessments, listed in SHA256SUMS and signed; an advisory published after a release can be answered by re-issuing that release's VEX without rebuilding it; an advisory with no recorded assessment is published as under investigation, never omitted."
+    tags: [release, supply-chain, security, varve]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T20:39:49Z
