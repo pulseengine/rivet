@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Added
+- **`release: require: evidence`** (REQ-384) — a mode that makes "cuttable"
+  stricter instead of looser: an artifact is release-ready only when its
+  status is ready **and** no `error`-severity traceability rule for its type
+  is missing. `accepted` alone is no longer enough; warning and info rules
+  stay advisory. `rivet release status` names the rule that blocks each
+  withheld artifact. `rivet docs release-status` now says where cuttable is
+  defined: the `release:` block per project, rule severity per type (DD-081).
+  **Behaviour change:** `release.require` accepts only `status`, `coverage`
+  or `evidence`; any other value — `coverag` was silently ignored — now fails
+  the release commands.
+
 ### Fixed — safety
 - **`verified` can no longer be written without evidence** (REQ-381, #952) —
   `rivet verify` refuses to advance an artifact without a `verifies` link or a
@@ -24,6 +36,15 @@
   the other writers are refused.
 
 ### Fixed
+- **The release note no longer reports design decisions as unevidenced**
+  (REQ-383) — it asked every artifact type for a `verifies` link, so the
+  v0.39.0 note listed 6 of 14 delivered artifacts, all accepted and reviewed,
+  as having "NO verification evidence". It now judges each artifact by the
+  traceability rules its schema declares for its type, lists every rule's
+  state per artifact, counts advisory misses, and adds an **Approval** section
+  with the `reviewed-by` records. The JSON keeps every existing field and adds
+  `rules`, `has_evidence`, `reviewed_by`, `without_evidence` and
+  `missing_error_rules`.
 - **`rivet sql` help no longer says it is read-only** (#952) — it said "runs
   read-only SQL" and "writes are a planned follow-up slice" while `UPDATE`
   wrote to the project. It also named an in-memory SQLite; the engine has been

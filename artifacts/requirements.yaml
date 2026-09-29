@@ -9190,3 +9190,33 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-25T05:51:27Z
+
+  - id: REQ-383
+    type: requirement
+    title: the release note judged every artifact type by one verifies test, so it reported accepted design decisions as having no verification evidence
+    status: verified
+    release: v0.40.0
+    description: "Found on the v0.39.0 release note. Its Result of verification measures section asked every delivered artifact one question, is there a verifies link or a source marker, and listed 6 of 14 delivered artifacts as having NO verification evidence: three design decisions and three assessment requirements, all accepted and all reviewed. The dev schema's own rule for a design decision is decision-justification, satisfies to a requirement, at error severity, and all three met it; no schema asks a decision for a verifies link. THE FIX. A shared evaluator in rivet-core, rule_outcomes, gives every artifact whose type a traceability rule governs the state of each such rule: met, met by source marker, missing, exempt, delegated to a supplier, or not modelled. The note now judges each delivered artifact by its type's rules, lists every artifact with its link and marker counts and its per-rule states, counts the advisory misses so a green headline does not hide them, and names delivered artifacts that miss an error-severity rule. An artifact counts as evidenced when it has a verifies link or marker, or meets at least one rule of its type. A verifies source marker meets a rule whose required backlink is verifies, because traceability coverage alone ignores markers and would contradict the marker count on the same line; a test asserts the marker meets nothing else. THE APPROVAL ELEMENT of ASPICE 11-03 is now partly filled: a new Approval section counts delivered artifacts carrying a reviewed-by record, per reviewer. The declared gap is narrowed to what is still true, that no release-level sign-off by a responsible role is recorded. JSON consumers keep every existing field, including the verifies-only without_verification_evidence list, and gain rules, has_evidence and reviewed_by per delivered artifact plus without_evidence and missing_error_rules. On rivet's own v0.39.0 scope the no-evidence list goes from 6 artifacts to none, and all 11 advisory misses remain visible. Negative controls: judging by verifies evidence alone fails the release-note test by name, and disabling the marker route fails the in-module marker test."
+    tags: [release, compliance, aspice, 11-03, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T18:17:58Z
+
+  - id: REQ-384
+    type: requirement
+    title: a project could not make "cuttable" require the evidence its schema declares, and a misspelled release.require was silently ignored
+    status: verified
+    release: v0.40.0
+    description: "The maintainer asked where cuttable is defined and whether a project can require more than a status, for instance only verified. Every existing release knob loosened the gate: ready-when adds statuses and require coverage adds V-closed artifacts, so an accepted artifact was always ready whatever evidence it lacked. AND release.require took any string: require coverag, a typo, was accepted and ignored, so the project gated on status while believing it gated on coverage. THE FIX. release.require accepts exactly status, coverage, or evidence, and any other value makes the release commands exit 1 naming the bad value and the valid ones. The value stays a string in the configuration so a typo does not break unrelated commands such as rivet list. The new evidence mode makes an artifact ready only when its status is ready AND no error-severity traceability rule for its type is missing. Warning and info rules stay advisory, so raising a rule's severity in the schema is how a project makes it part of cuttable. A verifies source marker meets a verifies-backlink rule, and a rule declared unmodelled under coverage.unmodelled-rules does not block. rivet release status prints the blocking rule under each withheld artifact and emits it as missing_error_rules in the JSON. rivet release check shares the predicate and the same output lines, but only release status is covered by a test. The ReleaseConfig documentation and docs/release-status.md now say where cuttable is defined, the release block per project and rule severities per type, and that evidence is the one mode that can make a previously cuttable release non-cuttable. rivet's own rivet.yaml is unchanged; opting in is the maintainer's call. Negative controls: letting the evidence arm ignore the rules, and accepting the typo, each fail a test by name."
+    tags: [release, cuttability, config, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-29T18:17:58Z

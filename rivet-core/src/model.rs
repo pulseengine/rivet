@@ -1123,6 +1123,12 @@ pub struct ReleaseConfig {
     ///   Purely additive: a `verified`/`accepted`/`ready-when` artifact still
     ///   counts, so switching to `coverage` never makes a release *less*
     ///   cuttable.
+    /// - `"evidence"` (REQ-384): the status must be ready AND no
+    ///   `error`-severity traceability rule for the artifact's type may be
+    ///   missing. The one mode that tightens the gate.
+    ///
+    /// Any other value is rejected by the release commands rather than
+    /// silently read as `"status"`.
     #[serde(default)]
     pub require: Option<String>,
 }

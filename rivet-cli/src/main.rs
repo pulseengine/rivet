@@ -8109,35 +8109,100 @@ fn cmd_release_move(cli: &Cli, id: &str, version: &str) -> Result<bool> {
 /// drifting a copy-pasted closure.
 ///
 /// Release-ready statuses: the built-in `verified`/`accepted`, plus any the
-/// project declares via `release.ready-when` (#612). And, when
-/// `release.require: coverage` is set, an artifact whose V is closed (every
-/// validate coverage rule that applies to its type is satisfied) also counts
-/// as ready regardless of its status string — so V-model / ASPICE projects
-/// that verify via links, not a status flip, can green the gate. Coverage is
-/// purely additive: a verified/accepted/ready-when artifact still counts.
+/// project declares via `release.ready-when` (#612). `release.require` then
+/// picks one of three modes:
+///
+/// - `status` (default): the status alone decides.
+/// - `coverage`: ALSO count an artifact whose V is closed (every traceability
+///   rule that applies to its type is satisfied) regardless of its status —
+///   so V-model / ASPICE projects that verify via links can green the gate.
+///   Purely additive.
+/// - `evidence` (REQ-384): the status must be ready AND no `error`-severity
+///   traceability rule for the artifact's type may be missing. `warning` and
+///   `info` rules stay advisory. The only mode that makes a release *harder*
+///   to cut: "accepted" stops being enough on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReadinessMode {
+    Status,
+    Coverage,
+    Evidence,
+}
+
+impl ReadinessMode {
+    const KNOWN: &'static str = "status, coverage, evidence";
+
+    /// An unknown value is an error, not a silent fall-back to `status`: a
+    /// typo such as `coverag` used to be accepted and ignored, so the project
+    /// believed it gated on something it did not (REQ-384).
+    fn parse(v: Option<&str>) -> Result<Self> {
+        match v {
+            None | Some("status") => Ok(Self::Status),
+            Some("coverage") => Ok(Self::Coverage),
+            Some("evidence") => Ok(Self::Evidence),
+            Some(other) => anyhow::bail!(
+                "rivet.yaml: release.require: unknown value '{other}' (expected one of: {})",
+                Self::KNOWN
+            ),
+        }
+    }
+
+    /// How "cuttable" is phrased in the text output for this mode.
+    fn ready_phrase(self) -> &'static str {
+        match self {
+            Self::Status => "release-ready",
+            Self::Coverage => "release-ready (verified/accepted, ready-when, or V-closed)",
+            Self::Evidence => {
+                "release-ready (ready status and every error-severity traceability rule satisfied)"
+            }
+        }
+    }
+}
+
 struct ReadinessCtx {
     extra_ready: std::collections::BTreeSet<String>,
-    coverage_mode: bool,
+    mode: ReadinessMode,
     // In coverage mode, `covered_types` are the artifact types governed by at
     // least one traceability rule, and `uncovered_ids` are the artifacts
     // strictly missing on some applicable rule. An artifact is V-closed when
     // its type is governed AND it is not in `uncovered_ids`.
     covered_types: std::collections::BTreeSet<String>,
     uncovered_ids: std::collections::BTreeSet<String>,
+    // Every governed artifact's per-rule outcome (REQ-383). Computed in every
+    // mode: evidence mode gates on it and the release note reports it.
+    outcomes: std::collections::BTreeMap<String, Vec<rivet_core::coverage::RuleOutcome>>,
+    markers: Vec<rivet_core::test_scanner::TestMarker>,
 }
 
 impl ReadinessCtx {
-    fn compute(ctx: &ProjectContext) -> Self {
+    fn compute(cli: &Cli, ctx: &ProjectContext) -> Result<Self> {
         let rel = ctx.config.release.as_ref();
         let extra_ready: std::collections::BTreeSet<String> = rel
             .map(|r| r.ready_when.iter().cloned().collect())
             .unwrap_or_default();
-        let coverage_mode = rel.and_then(|r| r.require.as_deref()) == Some("coverage");
-        let (covered_types, uncovered_ids): (
-            std::collections::BTreeSet<String>,
-            std::collections::BTreeSet<String>,
-        ) = if coverage_mode {
-            let cov = rivet_core::coverage::compute_coverage(&ctx.store, &ctx.schema, &ctx.graph);
+        let mode = ReadinessMode::parse(rel.and_then(|r| r.require.as_deref()))?;
+        let mut cov = rivet_core::coverage::compute_coverage(&ctx.store, &ctx.schema, &ctx.graph);
+        // A rule the project declares it does not model must not block a
+        // release in evidence mode — the same REQ-320 declaration `rivet
+        // coverage` honours. A stale declaration is `rivet coverage`'s error
+        // to report, so its problems are not repeated here.
+        if let Some(cov_cfg) = ctx.config.coverage.as_ref() {
+            let _ = rivet_core::coverage::mark_unmodelled(&mut cov, &cov_cfg.unmodelled_rules);
+        }
+        // Source markers are `verifies` evidence by another route (REQ-329);
+        // without them a marker-verified requirement would read as missing
+        // its verification rule.
+        let markers = rivet_core::test_scanner::scan_source_files(
+            &default_marker_scan_paths(&cli.project),
+            &rivet_core::test_scanner::default_patterns(),
+        );
+        let marker_verified: std::collections::BTreeSet<String> = markers
+            .iter()
+            .filter(|m| m.link_type == "verifies")
+            .map(|m| m.target_id.clone())
+            .collect();
+        let outcomes =
+            rivet_core::coverage::rule_outcomes(&ctx.store, &ctx.schema, &cov, &marker_verified);
+        let (covered_types, uncovered_ids) = if mode == ReadinessMode::Coverage {
             (
                 cov.entries.iter().map(|e| e.source_type.clone()).collect(),
                 cov.entries
@@ -8148,21 +8213,52 @@ impl ReadinessCtx {
         } else {
             (Default::default(), Default::default())
         };
-        Self {
+        Ok(Self {
             extra_ready,
-            coverage_mode,
+            mode,
             covered_types,
             uncovered_ids,
-        }
+            outcomes,
+            markers,
+        })
     }
 
-    fn is_ready(&self, a: &rivet_core::model::Artifact) -> bool {
+    fn status_ready(&self, a: &rivet_core::model::Artifact) -> bool {
         let s = a.status.as_deref();
         matches!(s, Some("verified") | Some("accepted"))
             || s.is_some_and(|x| self.extra_ready.contains(x))
-            || (self.coverage_mode
-                && self.covered_types.contains(&a.artifact_type)
-                && !self.uncovered_ids.contains(&a.id))
+    }
+
+    /// The `error`-severity rules this artifact is missing — what blocks it in
+    /// evidence mode. Empty for ungoverned types.
+    fn missing_error_rules(&self, a: &rivet_core::model::Artifact) -> Vec<&str> {
+        self.outcomes
+            .get(&a.id)
+            .map(|v| {
+                v.iter()
+                    .filter(|o| rivet_core::coverage::fails_an_error_rule(std::slice::from_ref(*o)))
+                    .map(|o| o.rule.as_str())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn is_ready(&self, a: &rivet_core::model::Artifact) -> bool {
+        match self.mode {
+            ReadinessMode::Status => self.status_ready(a),
+            ReadinessMode::Coverage => {
+                self.status_ready(a)
+                    || (self.covered_types.contains(&a.artifact_type)
+                        && !self.uncovered_ids.contains(&a.id))
+            }
+            ReadinessMode::Evidence => {
+                self.status_ready(a)
+                    && !self
+                        .outcomes
+                        .get(&a.id)
+                        .is_some_and(|v| rivet_core::coverage::fails_an_error_rule(v))
+            }
+        }
     }
 }
 
@@ -8191,7 +8287,8 @@ const RELEASE_NOTE_GAPS: &[(&str, &str)] = &[
     ),
     (
         "approval for delivery by responsible roles",
-        "`rivet check review-signoff` enforces it but emits no record (REQ-333)",
+        "per-artifact reviewers are listed under Approval; a release-level sign-off \
+         by a responsible role is not recorded (REQ-333)",
     ),
     ("dependencies to other linked products", "not modelled"),
 ];
@@ -8221,7 +8318,7 @@ fn cmd_release_notes(cli: &Cli, version: &str, format: &str, since: Option<&str>
         );
     }
 
-    let readiness = ReadinessCtx::compute(&ctx);
+    let readiness = ReadinessCtx::compute(cli, &ctx)?;
     let schema = ctx.schema.clone();
     let graph = LinkGraph::build(&ctx.store, &schema);
 
@@ -8237,10 +8334,7 @@ fn cmd_release_notes(cli: &Cli, version: &str, format: &str, since: Option<&str>
     // Counting only links reproduces #788 (REQ-329), where the same evidence
     // read 0% through the link rules and 100% through the marker scan — this
     // surface would have reported every verified artifact as unverified.
-    let markers = rivet_core::test_scanner::scan_source_files(
-        &default_marker_scan_paths(&cli.project),
-        &rivet_core::test_scanner::default_patterns(),
-    );
+    let markers = &readiness.markers;
     let evidence_for = |id: &str| -> (usize, usize) {
         let links = graph.backlinks_of_type(id, "verifies").len();
         let marks = markers
@@ -8254,6 +8348,37 @@ fn cmd_release_notes(cli: &Cli, version: &str, format: &str, since: Option<&str>
         .filter(|a| evidence_for(&a.id) == (0, 0))
         .map(|a| a.id.as_str())
         .collect();
+
+    // REQ-383: judge each delivered artifact by the rules its schema declares
+    // for its TYPE. The `verifies` test above stays (and stays in the JSON)
+    // but is no longer the note's verdict: a design decision's schema rule is
+    // `satisfies -> requirement`, and asking it for a `verifies` link reported
+    // every decision in a release as unevidenced.
+    use rivet_core::coverage::RuleState;
+    let no_rule_outcomes: Vec<rivet_core::coverage::RuleOutcome> = Vec::new();
+    let rules_of = |id: &str| readiness.outcomes.get(id).unwrap_or(&no_rule_outcomes);
+    let has_evidence = |a: &rivet_core::model::Artifact| {
+        evidence_for(&a.id) != (0, 0)
+            || rules_of(&a.id).iter().any(|o| {
+                matches!(
+                    o.state,
+                    RuleState::Satisfied | RuleState::SatisfiedByMarker | RuleState::Delegated
+                )
+            })
+    };
+    let without_evidence: Vec<&str> = delivered
+        .iter()
+        .filter(|a| !has_evidence(a))
+        .map(|a| a.id.as_str())
+        .collect();
+    let missing_error: Vec<(&str, Vec<&str>)> = delivered
+        .iter()
+        .map(|a| (a.id.as_str(), readiness.missing_error_rules(a)))
+        .filter(|(_, r)| !r.is_empty())
+        .collect();
+    fn reviewer_of(a: &rivet_core::model::Artifact) -> Option<&str> {
+        a.provenance.as_ref().and_then(|p| p.reviewed_by.as_deref())
+    }
 
     // Changes since the previous release, restricted to commits that name an
     // artifact in THIS release. Issue numbers are read from the subject only
@@ -8292,12 +8417,19 @@ fn cmd_release_notes(cli: &Cli, version: &str, format: &str, since: Option<&str>
                 "verifies_links": evidence_for(&a.id).0,
                 "verifies_markers": evidence_for(&a.id).1,
                 "has_verification_evidence": evidence_for(&a.id) != (0, 0),
+                "rules": rules_of(&a.id),
+                "has_evidence": has_evidence(a),
+                "reviewed_by": reviewer_of(a),
             })).collect::<Vec<_>>(),
             "withheld": withheld.iter().map(|a| serde_json::json!({
                 "id": a.id, "title": a.title,
                 "status": a.status.as_deref().unwrap_or("(none)"),
             })).collect::<Vec<_>>(),
             "without_verification_evidence": unverified,
+            "without_evidence": without_evidence,
+            "missing_error_rules": missing_error.iter().map(|(id, r)| serde_json::json!({
+                "id": id, "rules": r,
+            })).collect::<Vec<_>>(),
             "changes": changes.iter().map(|(h, s, i)| serde_json::json!({
                 "hash": h, "subject": s, "refs": i,
             })).collect::<Vec<_>>(),
@@ -8360,26 +8492,109 @@ fn cmd_release_notes(cli: &Cli, version: &str, format: &str, since: Option<&str>
 
     println!("{h2}Result of verification measures");
     println!();
-    if unverified.is_empty() {
-        println!("Every delivered artifact carries verification evidence:");
-        println!();
-        for a in &delivered {
-            let (links, marks) = evidence_for(&a.id);
-            println!(
-                "{bullet}`{}` — {links} link(s), {marks} source marker(s)",
-                a.id
-            );
-        }
+    println!(
+        "Each delivered artifact is judged by the traceability rules its schema \
+         declares for its type. A `verifies` link or source marker is evidence \
+         for any type."
+    );
+    println!();
+    if without_evidence.is_empty() {
+        println!("Every delivered artifact carries evidence.");
     } else {
         println!(
-            "{} of {} delivered artifact(s) have NO verification evidence \
-             (neither a `verifies` link nor a source marker):",
-            unverified.len(),
+            "{} of {} delivered artifact(s) carry NO evidence (no `verifies` link, \
+             no source marker, and no traceability rule of their type met):",
+            without_evidence.len(),
             delivered.len()
         );
         println!();
-        for id in &unverified {
+        for id in &without_evidence {
             println!("{bullet}`{id}`");
+        }
+    }
+    println!();
+    let advisory = delivered
+        .iter()
+        .filter(|a| {
+            rules_of(&a.id).iter().any(|o| {
+                o.state == RuleState::Missing && o.severity != rivet_core::schema::Severity::Error
+            })
+        })
+        .count();
+    if advisory > 0 {
+        println!(
+            "{advisory} delivered artifact(s) miss a warning- or info-severity rule \
+             (advisory; listed per artifact below)."
+        );
+        println!();
+    }
+    if !missing_error.is_empty() {
+        println!(
+            "{} delivered artifact(s) miss an error-severity rule of their type \
+             (`release: require: evidence` would withhold them):",
+            missing_error.len()
+        );
+        println!();
+        for (id, rules) in &missing_error {
+            println!("{bullet}`{id}` — {}", rules.join(", "));
+        }
+        println!();
+    }
+    for a in &delivered {
+        let (links, marks) = evidence_for(&a.id);
+        let rules: Vec<String> = rules_of(&a.id)
+            .iter()
+            .map(|o| {
+                let state = match o.state {
+                    RuleState::Satisfied => "met".to_string(),
+                    RuleState::SatisfiedByMarker => "met by source marker".to_string(),
+                    RuleState::Missing => {
+                        format!(
+                            "missing ({})",
+                            serde_json::to_value(o.severity)
+                                .ok()
+                                .and_then(|v| v.as_str().map(str::to_string))
+                                .unwrap_or_default()
+                        )
+                    }
+                    RuleState::Exempt => "exempt".to_string(),
+                    RuleState::Delegated => "delegated to supplier".to_string(),
+                    RuleState::Unmodelled => "not modelled".to_string(),
+                };
+                format!("{} {state}", o.rule)
+            })
+            .collect();
+        let rules = if rules.is_empty() {
+            "no rule governs its type".to_string()
+        } else {
+            rules.join(", ")
+        };
+        println!(
+            "{bullet}`{}` — {links} link(s), {marks} source marker(s); {rules}",
+            a.id
+        );
+    }
+    println!();
+
+    // 11-03 "approval for delivery by responsible roles", per artifact. The
+    // release-level sign-off is still a declared gap (see below).
+    println!("{h2}Approval");
+    println!();
+    let mut reviewers: std::collections::BTreeMap<&str, usize> = Default::default();
+    for a in &delivered {
+        if let Some(r) = reviewer_of(a) {
+            *reviewers.entry(r).or_default() += 1;
+        }
+    }
+    let reviewed: usize = reviewers.values().sum();
+    println!(
+        "{reviewed} of {} delivered artifact(s) carry a `reviewed-by` record.",
+        delivered.len()
+    );
+    if !reviewers.is_empty() {
+        println!();
+        for (who, n) in &reviewers {
+            println!("{bullet}{who} — {n} artifact(s)");
         }
     }
     println!();
@@ -8480,7 +8695,7 @@ fn cmd_release_list(cli: &Cli, format: &str) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
     ctx.warn_parse_error_skips(cli);
-    let readiness = ReadinessCtx::compute(&ctx);
+    let readiness = ReadinessCtx::compute(cli, &ctx)?;
 
     // Externals are excluded for the same reason `release status` excludes
     // them from its verdict (#907): version labels collide across a
@@ -8626,8 +8841,8 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
         .filter(|a| matches!(a.status.as_deref(), Some("draft" | "proposed")))
         .count();
 
-    let readiness = ReadinessCtx::compute(&ctx);
-    let coverage_mode = readiness.coverage_mode;
+    let readiness = ReadinessCtx::compute(cli, &ctx)?;
+    let mode = readiness.mode;
     let is_ready = |a: &rivet_core::model::Artifact| -> bool { readiness.is_ready(a) };
     let mut by_status: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
@@ -8653,6 +8868,7 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
                 "id": a.id,
                 "status": a.status.as_deref().unwrap_or("(none)"),
                 "title": a.title,
+                "missing_error_rules": readiness.missing_error_rules(a),
             })).collect::<Vec<_>>(),
             "cuttable": cuttable,
             "external": external.iter().map(|a| serde_json::json!({
@@ -8674,11 +8890,7 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
             println!("  {status:<12} {count}");
         }
         if cuttable {
-            let how = if coverage_mode {
-                "release-ready (verified/accepted, ready-when, or V-closed)"
-            } else {
-                "release-ready"
-            };
+            let how = mode.ready_phrase();
             println!("\n\u{2713} Cuttable — every artifact is {how}.");
         } else {
             println!("\nNot yet release-ready ({}):", not_done.len());
@@ -8689,6 +8901,14 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
                     a.status.as_deref().unwrap_or("(none)"),
                     a.title
                 );
+                let missing = readiness.missing_error_rules(a);
+                if !missing.is_empty() {
+                    println!(
+                        "  {:<10} missing error-severity rule(s): {}",
+                        "",
+                        missing.join(", ")
+                    );
+                }
             }
             println!(
                 "\n\u{2717} NOT cuttable — {} artifact(s) not yet verified.",
@@ -8885,8 +9105,8 @@ fn cmd_release_check(
         bound_ids.difference(&release_ids).cloned().collect();
 
     // Cuttability: readiness predicate scoped to the intersection set.
-    let readiness = ReadinessCtx::compute(&ctx);
-    let coverage_mode = readiness.coverage_mode;
+    let readiness = ReadinessCtx::compute(cli, &ctx)?;
+    let mode = readiness.mode;
     let mut in_scope_arts: Vec<&rivet_core::model::Artifact> = ctx
         .store
         .iter()
@@ -8921,6 +9141,7 @@ fn cmd_release_check(
                 "id": a.id,
                 "status": a.status.as_deref().unwrap_or("(none)"),
                 "title": a.title,
+                "missing_error_rules": readiness.missing_error_rules(a),
             })).collect::<Vec<_>>(),
             "in_scope": in_scope.iter().cloned().collect::<Vec<_>>(),
             "out_of_scope": out_of_scope.iter().cloned().collect::<Vec<_>>(),
@@ -8978,11 +9199,7 @@ fn cmd_release_check(
                 println!("  {status:<12} {count}");
             }
             if cuttable {
-                let how = if coverage_mode {
-                    "release-ready (verified/accepted, ready-when, or V-closed)"
-                } else {
-                    "release-ready"
-                };
+                let how = mode.ready_phrase();
                 println!("\n\u{2713} Cuttable — every in-scope artifact is {how}.");
             } else {
                 println!("\nNot yet release-ready ({}):", not_done.len());
@@ -8993,6 +9210,14 @@ fn cmd_release_check(
                         a.status.as_deref().unwrap_or("(none)"),
                         a.title
                     );
+                    let missing = readiness.missing_error_rules(a);
+                    if !missing.is_empty() {
+                        println!(
+                            "  {:<10} missing error-severity rule(s): {}",
+                            "",
+                            missing.join(", ")
+                        );
+                    }
                 }
                 println!(
                     "\n\u{2717} NOT cuttable — {} in-scope artifact(s) not yet release-ready.",

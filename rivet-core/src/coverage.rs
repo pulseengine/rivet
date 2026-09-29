@@ -281,6 +281,104 @@ impl CoverageReport {
     }
 }
 
+/// How one artifact stands against one traceability rule that governs its type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RuleState {
+    /// The artifact has the link the rule requires.
+    Satisfied,
+    /// The rule requires a `verifies` backlink and none exists, but a
+    /// `// rivet: verifies <ID>` source marker names the artifact. Counted as
+    /// met: the marker is the same evidence by another route (REQ-329).
+    SatisfiedByMarker,
+    /// The artifact lacks the required link.
+    Missing,
+    /// The artifact declared itself exempt via the rule's `exempt-when-field`.
+    Exempt,
+    /// The obligation is delegated across a supplier boundary (`external-anchor`).
+    Delegated,
+    /// The project declares it does not model this rule (REQ-320).
+    Unmodelled,
+}
+
+/// One rule's verdict on one artifact.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RuleOutcome {
+    /// Rule name from the schema.
+    pub rule: String,
+    /// The rule's declared severity.
+    pub severity: crate::schema::Severity,
+    /// Where the artifact stands against it.
+    pub state: RuleState,
+}
+
+/// REQ-383 / REQ-384: for every artifact whose type is governed by at least one
+/// traceability rule, the outcome of each such rule — so that "does this
+/// artifact carry the evidence its type needs?" is answered from the schema
+/// rather than by a single hard-coded test.
+///
+/// The release note used to answer that for every type with one question — is
+/// there a `verifies` link or marker? — and so reported design decisions as
+/// having "NO verification evidence" when the schema's own rule for a decision
+/// is `satisfies → requirement`, which they met. The readiness gate and the
+/// release note both read from this, so the two cannot disagree.
+///
+/// Artifacts whose type no rule governs are absent from the map: an empty
+/// outcome list would read as "passed every rule" when it means "no rule asked".
+#[must_use]
+pub fn rule_outcomes(
+    store: &Store,
+    schema: &Schema,
+    report: &CoverageReport,
+    marker_verified: &std::collections::BTreeSet<String>,
+) -> std::collections::BTreeMap<String, Vec<RuleOutcome>> {
+    let mut out: std::collections::BTreeMap<String, Vec<RuleOutcome>> = Default::default();
+    for entry in &report.entries {
+        let rule = schema
+            .traceability_rules
+            .iter()
+            .find(|r| r.name == entry.rule_name);
+        let severity = rule.map(|r| r.severity).unwrap_or_default();
+        let wants_verifies =
+            rule.is_some_and(|r| r.required_backlink.as_deref() == Some("verifies"));
+        for a in store
+            .iter()
+            .filter(|a| a.artifact_type == entry.source_type)
+        {
+            let state = if entry.unmodelled.is_some() {
+                RuleState::Unmodelled
+            } else if entry.exempt_ids.iter().any(|x| x == &a.id) {
+                RuleState::Exempt
+            } else if entry.external_boundary_ids.iter().any(|x| x == &a.id) {
+                RuleState::Delegated
+            } else if entry.uncovered_ids.iter().any(|x| x == &a.id) {
+                if wants_verifies && marker_verified.contains(&a.id) {
+                    RuleState::SatisfiedByMarker
+                } else {
+                    RuleState::Missing
+                }
+            } else {
+                RuleState::Satisfied
+            };
+            out.entry(a.id.clone()).or_default().push(RuleOutcome {
+                rule: entry.rule_name.clone(),
+                severity,
+                state,
+            });
+        }
+    }
+    out
+}
+
+/// Whether any `error`-severity rule is `Missing` — the REQ-384 readiness test.
+/// `warning` and `info` rules are advisory and never block.
+#[must_use]
+pub fn fails_an_error_rule(outcomes: &[RuleOutcome]) -> bool {
+    outcomes
+        .iter()
+        .any(|o| o.severity == crate::schema::Severity::Error && o.state == RuleState::Missing)
+}
+
 /// Compute coverage for every traceability rule in the schema.
 pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> CoverageReport {
     let mut entries = Vec::new();
@@ -679,6 +777,141 @@ mod tests {
         assert_eq!(dd_entry.total, 1);
 
         assert!((report.overall_coverage() - 100.0).abs() < f64::EPSILON);
+    }
+
+    // rivet: verifies REQ-383
+    #[test]
+    fn rule_outcomes_judge_each_type_by_its_own_rules() {
+        let schema = test_schema();
+        let mut store = Store::new();
+        store
+            .insert(minimal_artifact("REQ-001", "requirement"))
+            .unwrap();
+        store
+            .insert(minimal_artifact("REQ-002", "requirement"))
+            .unwrap();
+        store
+            .insert(artifact_with_links(
+                "DD-001",
+                "design-decision",
+                &[("satisfies", "REQ-001")],
+            ))
+            .unwrap();
+        store
+            .insert(minimal_artifact("DD-002", "design-decision"))
+            .unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let out = rule_outcomes(&store, &schema, &report, &Default::default());
+
+        let one = |id: &str| {
+            let v = &out[id];
+            assert_eq!(v.len(), 1, "{id}: {v:?}");
+            v[0].clone()
+        };
+        assert_eq!(
+            one("DD-001"),
+            RuleOutcome {
+                rule: "dd-justification".into(),
+                severity: Severity::Error,
+                state: RuleState::Satisfied,
+            }
+        );
+        assert_eq!(one("DD-002").state, RuleState::Missing);
+        assert_eq!(one("DD-002").severity, Severity::Error);
+        assert_eq!(one("REQ-001").state, RuleState::Satisfied);
+        assert_eq!(one("REQ-001").severity, Severity::Warning);
+        assert_eq!(one("REQ-002").state, RuleState::Missing);
+        assert_eq!(out.len(), 4);
+
+        assert!(!fails_an_error_rule(&out["DD-001"]));
+        assert!(fails_an_error_rule(&out["DD-002"]));
+        // a missing warning-severity rule is advisory, never blocking
+        assert!(!fails_an_error_rule(&out["REQ-002"]));
+    }
+
+    // rivet: verifies REQ-383
+    #[test]
+    fn rule_outcomes_omit_ungoverned_types_and_report_exempt_delegated_unmodelled() {
+        let schema = test_schema();
+        let mut store = Store::new();
+        store.insert(minimal_artifact("X-1", "other")).unwrap();
+        for id in ["DD-1", "DD-2", "DD-3"] {
+            store
+                .insert(minimal_artifact(id, "design-decision"))
+                .unwrap();
+        }
+        let graph = LinkGraph::build(&store, &schema);
+        let mut report = compute_coverage(&store, &schema, &graph);
+        let dd = report
+            .entries
+            .iter_mut()
+            .find(|e| e.rule_name == "dd-justification")
+            .unwrap();
+        dd.uncovered_ids.retain(|x| x == "DD-3");
+        dd.exempt_ids = vec!["DD-1".into()];
+        dd.external_boundary_ids = vec!["DD-2".into()];
+        let out = rule_outcomes(&store, &schema, &report, &Default::default());
+        assert!(!out.contains_key("X-1"), "ungoverned type must be absent");
+        assert_eq!(out["DD-1"][0].state, RuleState::Exempt);
+        assert_eq!(out["DD-2"][0].state, RuleState::Delegated);
+        assert_eq!(out["DD-3"][0].state, RuleState::Missing);
+        assert!(!fails_an_error_rule(&out["DD-1"]));
+        assert!(!fails_an_error_rule(&out["DD-2"]));
+
+        let dd = report
+            .entries
+            .iter_mut()
+            .find(|e| e.rule_name == "dd-justification")
+            .unwrap();
+        dd.unmodelled = Some("not modelled here".into());
+        let out = rule_outcomes(&store, &schema, &report, &Default::default());
+        assert_eq!(out["DD-3"][0].state, RuleState::Unmodelled);
+        assert!(!fails_an_error_rule(&out["DD-3"]));
+    }
+
+    // rivet: verifies REQ-383
+    #[test]
+    fn a_verifies_marker_meets_a_verifies_backlink_rule_and_nothing_else() {
+        let mut file = minimal_schema("test");
+        let rule = |name: &str, backlink: &str| TraceabilityRule {
+            name: name.into(),
+            description: String::new(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some(backlink.into()),
+            target_types: vec![],
+            from_types: vec![],
+            severity: Severity::Error,
+            alternate_backlinks: vec![],
+            exempt_when_field: None,
+        };
+        file.traceability_rules =
+            vec![rule("verified", "verifies"), rule("satisfied", "satisfies")];
+        let schema = Schema::merge(&[file]);
+        let mut store = Store::new();
+        store
+            .insert(minimal_artifact("REQ-1", "requirement"))
+            .unwrap();
+        store
+            .insert(minimal_artifact("REQ-2", "requirement"))
+            .unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let marked: std::collections::BTreeSet<String> = ["REQ-1".to_string()].into();
+        let out = rule_outcomes(&store, &schema, &report, &marked);
+        let state = |id: &str, r: &str| out[id].iter().find(|o| o.rule == r).unwrap().state;
+        assert_eq!(state("REQ-1", "verified"), RuleState::SatisfiedByMarker);
+        // the marker is `verifies` evidence only — it must not meet a satisfies rule
+        assert_eq!(state("REQ-1", "satisfied"), RuleState::Missing);
+        assert_eq!(state("REQ-2", "verified"), RuleState::Missing);
+        assert!(fails_an_error_rule(&out["REQ-1"]));
+        let only_verified: Vec<RuleOutcome> = out["REQ-1"]
+            .iter()
+            .filter(|o| o.rule == "verified")
+            .cloned()
+            .collect();
+        assert!(!fails_an_error_rule(&only_verified));
     }
 
     // rivet: verifies REQ-004

@@ -15,7 +15,8 @@ scope. It reports a per-status burn-down for every artifact carrying
 
 Two `rivet.yaml` knobs (REQ-240, [#612]) widen what counts as ready so
 V-model / ASPICE projects — which verify via links, not a status flip —
-can green the gate. This page pins the semantics of those knobs, in
+can green the gate. A third mode, `require: evidence` (REQ-384), tightens
+it instead. This page pins the semantics of those knobs, in
 particular the subtle one: `require: coverage` greens when the configured
 **coverage-rules are satisfied**, which is not the same thing as "every
 verification level is present".
@@ -28,7 +29,24 @@ verification level is present".
 release:
   ready-when: [approved]      # extend the ready status set
   require: coverage           # OR: derive readiness from validate V-closure
+                              # OR: evidence — see below
 ```
+
+## Where "cuttable" is defined
+
+Two places, and nowhere else:
+
+1. **Per project** — the `release:` block above: which statuses count as
+   done, and which `require` mode applies.
+2. **Per artifact type** — the schema's `traceability-rules` and their
+   `severity`. A rule at `severity: error` is a type's non-negotiable
+   evidence (in the dev schema: a design decision must `satisfy` a
+   requirement); `warning` and `info` rules are advisory.
+
+`require` accepts exactly `status` (the default), `coverage`, or
+`evidence`. Any other value is an error — a typo such as `coverag` used
+to be accepted and ignored, leaving the project gating on status alone
+while believing otherwise.
 
 ### `ready-when: [<status>, ...]`
 
@@ -121,13 +139,34 @@ Both keep readiness derived from the schema — the intended shape — rather
 than embedding "every level" into the tool. Projects that keep the ≥ 1
 warning-severity rule opt in to that meaning of green.
 
+### `require: evidence`
+
+The tightening mode (REQ-384). An artifact is release-ready only when its
+status is ready (the built-ins plus `ready-when`) **and** no
+`error`-severity traceability rule for its type is missing. `accepted`
+stops being enough on its own: an accepted design decision with no
+`satisfies` link is withheld, and `rivet release status` names the rule
+that blocks it (`missing error-severity rule(s): decision-justification`;
+`missing_error_rules` in the JSON).
+
+`warning` and `info` rules never block — raising a rule to `error` in
+the schema is how a project makes it part of "cuttable". A
+`// rivet: verifies <ID>` source marker meets a rule that requires a
+`verifies` backlink, since it is the same evidence by another route. A
+rule the project declares unmodelled under `coverage.unmodelled-rules`
+does not block.
+
+`rivet release notes` reports the same per-rule outcomes in every mode
+(REQ-383), so the note shows what `require: evidence` would withhold
+before a project opts in.
+
 ## Backwards compatibility
 
 The default mode is unchanged: no `release:` block in `rivet.yaml` means
 `rivet release status` gates on `status ∈ {verified, accepted}` exactly
-as before. The knobs are strictly additive; a project can adopt
-`ready-when` and `require: coverage` without ever making a previously
-cuttable release non-cuttable.
+as before. `ready-when` and `require: coverage` are strictly additive; a
+project can adopt them without ever making a previously cuttable release
+non-cuttable. `require: evidence` is the one opt-in that can.
 
 The `--format json` output continues to expose `cuttable` as a boolean
 under a stable key; the exit code stays consistent with that verdict
@@ -141,6 +180,8 @@ untouched.
   ASPICE SWE.4 / SWE.5 / SWE.6.
 - [REQ-240](../artifacts/requirements.yaml) — the requirement anchoring
   the `ready-when` + `require: coverage` widening.
+- [REQ-383 / REQ-384](../artifacts/requirements.yaml) — evidence judged
+  by each type's schema rules, and the `require: evidence` mode.
 - [#612](https://github.com/pulseengine/rivet/issues/612) — the original
   friction report against a link-verification project (gale).
 
