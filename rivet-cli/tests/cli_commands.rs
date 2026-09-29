@@ -12613,7 +12613,7 @@ fn release_notes_counts_source_markers_as_verification_evidence() {
     // entirely. The negative control (reverting to links-only) did not
     // redden, which is how the vacuity was found.
     assert!(
-        text.contains("Every delivered artifact carries verification evidence"),
+        text.contains("Every delivered artifact carries evidence."),
         "REQ-001's `// rivet: verifies` marker is its only evidence, so a \
          marker-aware note must find the delivered scope fully evidenced. \
          Got:\n{text}"
@@ -13190,5 +13190,197 @@ fn unscoped_work_does_not_block_the_verdict() {
     assert!(
         text.contains("Cuttable"),
         "verdict must still read cuttable. Got:\n{text}"
+    );
+}
+
+// ── REQ-383 / REQ-384: evidence judged by each type's schema rules ───────
+
+/// A dev-schema project scoped to v1.0.0 with:
+/// - REQ-001 accepted, satisfied by DD-001 (its `requirement-coverage` rule is
+///   met; `requirement-verification`, a warning, is not);
+/// - DD-001 accepted, reviewed by `alice`, satisfying REQ-001 — its type's
+///   error-severity `decision-justification` rule is met;
+/// - DD-002 accepted with NO satisfies link — it misses that error rule.
+fn evidence_fixture(release_block: &str) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        format!(
+            "project:\n  name: p\n  schemas: [common, dev]\n\
+             sources:\n  - path: artifacts\n    format: generic-yaml\n{release_block}"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: need\n    \
+             status: accepted\n    release: v1.0.0\n  \
+         - id: DD-001\n    type: design-decision\n    title: justified\n    \
+             status: accepted\n    release: v1.0.0\n    \
+             provenance:\n      created-by: human\n      reviewed-by: alice\n    \
+             links:\n      - type: satisfies\n        target: REQ-001\n  \
+         - id: DD-002\n    type: design-decision\n    title: unjustified\n    \
+             status: accepted\n    release: v1.0.0\n",
+    )
+    .unwrap();
+    tmp
+}
+
+/// The note judges a design decision by ITS rule (`satisfies -> requirement`),
+/// not by the `verifies` test that used to report every decision in a release
+/// as having "NO verification evidence".
+///
+// rivet: verifies REQ-383
+#[test]
+fn release_notes_judge_each_type_by_its_schema_rules() {
+    let tmp = evidence_fixture("");
+    let out = Command::new(rivet_bin())
+        .args(["release", "notes", "v1.0.0"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("rivet release notes");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("`DD-001` — 0 link(s), 0 source marker(s); decision-justification met"),
+        "DD-001 meets its type's rule with no `verifies` evidence at all. Got:\n{text}"
+    );
+    assert!(
+        text.contains("`DD-002` — decision-justification"),
+        "DD-002 misses an error-severity rule and must be named for it. Got:\n{text}"
+    );
+    assert!(
+        text.contains("1 of 3 delivered artifact(s) carry NO evidence"),
+        "exactly DD-002 has no evidence of any kind. Got:\n{text}"
+    );
+    assert!(
+        text.contains("1 delivered artifact(s) miss a warning- or info-severity rule"),
+        "REQ-001 misses requirement-verification (a warning); the headline must \
+         not hide it. Got:\n{text}"
+    );
+    assert!(
+        text.contains("1 of 3 delivered artifact(s) carry a `reviewed-by` record.")
+            && text.contains("alice — 1 artifact(s)"),
+        "the approval section reports DD-001's reviewer. Got:\n{text}"
+    );
+
+    let out = Command::new(rivet_bin())
+        .args(["release", "notes", "v1.0.0", "--format", "json"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("rivet release notes --format json");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    assert_eq!(v["without_evidence"], serde_json::json!(["DD-002"]));
+    // the old verifies-only field is kept unchanged for existing consumers
+    assert_eq!(
+        v["without_verification_evidence"],
+        serde_json::json!(["DD-001", "DD-002", "REQ-001"])
+    );
+    assert_eq!(
+        v["missing_error_rules"],
+        serde_json::json!([{"id": "DD-002", "rules": ["decision-justification"]}])
+    );
+    let dd1 = v["delivered"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == "DD-001")
+        .unwrap();
+    assert_eq!(dd1["reviewed_by"], "alice");
+    assert_eq!(
+        dd1["rules"],
+        serde_json::json!([{"rule": "decision-justification", "severity": "error", "state": "satisfied"}])
+    );
+}
+
+/// `require: evidence` withholds an accepted artifact that misses an
+/// error-severity rule of its type; a missing warning rule does not block.
+///
+// rivet: verifies REQ-384
+#[test]
+fn release_status_require_evidence_gates_on_error_rules_only() {
+    let tmp = evidence_fixture("release:\n  require: evidence\n");
+    let out = Command::new(rivet_bin())
+        .args(["release", "status", "v1.0.0", "--format", "json"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("rivet release status");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    assert_eq!(v["cuttable"], false);
+    assert_eq!(
+        v["not_verified"],
+        serde_json::json!([{
+            "id": "DD-002", "status": "accepted", "title": "unjustified",
+            "missing_error_rules": ["decision-justification"],
+        }]),
+        "only DD-002 is withheld; REQ-001 misses only a warning rule"
+    );
+    assert!(
+        !out.status.success(),
+        "a withheld artifact must fail the gate"
+    );
+
+    let out = Command::new(rivet_bin())
+        .args(["release", "status", "v1.0.0"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("rivet release status");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("missing error-severity rule(s): decision-justification"),
+        "the text output says WHY an accepted artifact is not ready. Got:\n{text}"
+    );
+
+    // A rule the project declares unmodelled (REQ-320) does not block.
+    let tmp = evidence_fixture(
+        "release:\n  require: evidence\n\
+         coverage:\n  unmodelled-rules:\n    - rule: decision-justification\n      \
+         reason: decisions are traced in another project\n",
+    );
+    let out = Command::new(rivet_bin())
+        .args(["release", "status", "v1.0.0", "--format", "json"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("rivet release status");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    assert_eq!(
+        v["cuttable"], true,
+        "an unmodelled error rule must not withhold DD-002: {v}"
+    );
+
+    // Default mode: the same project is cuttable — status alone decides.
+    let tmp = evidence_fixture("");
+    let out = Command::new(rivet_bin())
+        .args(["release", "status", "v1.0.0", "--format", "json"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("rivet release status");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON");
+    assert_eq!(v["cuttable"], true);
+    assert!(out.status.success());
+}
+
+/// An unknown `release.require` value is an error, not a silent fall-back to
+/// `status` — a typo used to leave the project believing it gated on
+/// something it did not.
+///
+// rivet: verifies REQ-384
+#[test]
+fn release_status_rejects_an_unknown_require_value() {
+    let tmp = evidence_fixture("release:\n  require: coverag\n");
+    let out = Command::new(rivet_bin())
+        .args(["release", "status", "v1.0.0"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("rivet release status");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a typo must fail the command");
+    assert!(
+        err.contains(
+            "release.require: unknown value 'coverag' (expected one of: status, coverage, evidence)"
+        ),
+        "the error names the bad value and the valid ones. Got:\n{err}"
     );
 }
