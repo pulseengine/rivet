@@ -17,6 +17,15 @@
   or `evidence`; any other value — `coverag` was silently ignored — now fails
   the release commands.
 
+### Security
+- **wasmtime 47.0.4 → 48.0.3** (RUSTSEC-2026-0315, RUSTSEC-2026-0316) — two
+  advisories let a guest escape its fuel budget: `call_ref` and exception
+  `catch` drop fuel accounting, and dynamic record lifting allocates past the
+  limit. rivet's WASM adapter runtime bounds guests with fuel. The 47 line has
+  no fixed release. Preopened adapter directories stay read-only
+  (`FsPerms::ReadOnly`, 48's merge of the former directory and file
+  permissions).
+
 ### Fixed — safety
 - **`verified` can no longer be written without evidence** (REQ-381, #952) —
   `rivet verify` refuses to advance an artifact without a `verifies` link or a
