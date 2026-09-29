@@ -583,4 +583,28 @@ mod tests {
             .collect();
         assert_eq!(kinds, vec![SyntaxKind::Symbol, SyntaxKind::Symbol]);
     }
+
+    // rivet: verifies REQ-386
+    /// `+`/`-` start a number only when a digit follows. A bare sign is not a
+    /// number: the language has no `+`/`-` operator, so it lexes as an error
+    /// token (and `-x` as an error then a symbol) rather than as `IntLit`.
+    #[test]
+    fn lex_sign_without_digit_is_a_symbol() {
+        let kinds: Vec<_> = lex("- -x + 5 -5")
+            .iter()
+            .filter(|t| !t.kind.is_trivia())
+            .map(|t| t.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                SyntaxKind::Error,
+                SyntaxKind::Error,
+                SyntaxKind::Symbol,
+                SyntaxKind::Error,
+                SyntaxKind::IntLit,
+                SyntaxKind::IntLit,
+            ]
+        );
+    }
 }
