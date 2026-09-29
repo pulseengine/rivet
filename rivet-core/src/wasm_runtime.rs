@@ -358,8 +358,9 @@ impl WasmAdapter {
                 .preopened_dir(
                     dir,
                     ".",
-                    wasmtime_wasi::DirPerms::READ,
-                    wasmtime_wasi::FilePerms::READ,
+                    // wasmtime-wasi 48 folds DirPerms + FilePerms into one
+                    // enum; ReadOnly is the old READ/READ pair.
+                    wasmtime_wasi::FsPerms::ReadOnly,
                 )
                 .map_err(|e| WasmError::Instantiation(format!("preopened dir: {}", e)))?;
         }
