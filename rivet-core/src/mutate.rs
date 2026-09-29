@@ -359,6 +359,57 @@ pub struct ModifyParams {
 }
 
 /// Validate that a modify operation is valid.
+/// REQ-385 / #1008: the YAML scalar a `set_fields` value must be written as,
+/// given the type the schema declares for that field on `artifact_type`.
+///
+/// `Ok(Some(s))` — the field is declared `boolean`/`bool`, `integer` or
+/// `number`; `s` is the canonical plain scalar (`true`, `42`, `1.5`) to write
+/// UNQUOTED so it parses back as that type. `Ok(None)` — any other declared
+/// type, or no declaration: the value is a string and is quoted as before.
+///
+/// Without this, `--set-field backlog=true` wrote `backlog: "true"` — a
+/// string — and `exempt-when-field`, which only honours a boolean `true`,
+/// silently did not apply.
+///
+/// # Errors
+/// [`Error::Validation`] when the value does not parse as the declared type,
+/// naming the field, the type and the value.
+pub fn typed_field_scalar(
+    schema: &Schema,
+    artifact_type: &str,
+    key: &str,
+    value: &str,
+) -> Result<Option<String>, Error> {
+    let Some(field) = schema
+        .artifact_type(artifact_type)
+        .and_then(|t| t.fields.iter().find(|f| f.name == key))
+    else {
+        return Ok(None);
+    };
+    let v = value.trim();
+    let bad = |what: &str| {
+        Error::Validation(format!(
+            "field '{key}' is declared {} for type '{artifact_type}'; '{value}' is not {what}",
+            field.field_type
+        ))
+    };
+    match field.field_type.as_str() {
+        "boolean" | "bool" => match v {
+            "true" | "false" => Ok(Some(v.to_string())),
+            _ => Err(bad("a boolean (use true or false)")),
+        },
+        "integer" => v
+            .parse::<i64>()
+            .map(|n| Some(n.to_string()))
+            .map_err(|_| bad("an integer")),
+        "number" => match v.parse::<f64>() {
+            Ok(n) if n.is_finite() => Ok(Some(v.to_string())),
+            _ => Err(bad("a finite number")),
+        },
+        _ => Ok(None),
+    }
+}
+
 pub fn validate_modify(
     id: &str,
     params: &ModifyParams,
@@ -437,6 +488,11 @@ pub fn validate_modify_for_verify(
                  `set_fields` (which targets the `fields:` sub-map){hint}"
             )));
         }
+    }
+
+    // REQ-385: a value must parse as its field's declared type.
+    for (key, value) in &params.set_fields {
+        typed_field_scalar(schema, &artifact.artifact_type, key, value)?;
     }
 
     // Validate field allowed values
@@ -758,8 +814,9 @@ pub fn modify_artifact_in_file(
     params: &ModifyParams,
     file_path: &Path,
     store: &Store,
+    schema: &Schema,
 ) -> Result<(), Error> {
-    crate::yaml_edit::modify_artifact_in_file(id, params, file_path, store)
+    crate::yaml_edit::modify_artifact_in_file(id, params, file_path, store, schema)
 }
 
 /// A set of file rewrites computed in full BEFORE any of them is written.
@@ -874,8 +931,9 @@ pub fn modify_artifact_yaml(
     id: &str,
     params: &ModifyParams,
     store: &Store,
+    schema: &Schema,
 ) -> Result<String, Error> {
-    crate::yaml_edit::modify_artifact_yaml(content, id, params, store)
+    crate::yaml_edit::modify_artifact_yaml(content, id, params, store, schema)
 }
 
 /// Whether an id refers to an artifact owned by another project.
@@ -1715,5 +1773,74 @@ mod tests {
              `federation:` now appears, flip this assertion and emit the \
              sub-block. Got:\n{body}"
         );
+    }
+
+    // rivet: verifies REQ-385
+    #[test]
+    fn typed_field_scalar_canonicalises_declared_types_and_refuses_the_rest() {
+        let schema = crate::test_helpers::schema_with_fields(
+            "requirement",
+            &[
+                ("backlog", "boolean"),
+                ("legacy", "bool"),
+                ("count", "integer"),
+                ("ratio", "number"),
+                ("note", "string"),
+            ],
+        );
+        let ok = |k: &str, v: &str| typed_field_scalar(&schema, "requirement", k, v).unwrap();
+        assert_eq!(ok("backlog", "true"), Some("true".into()));
+        assert_eq!(ok("backlog", " false "), Some("false".into()));
+        assert_eq!(ok("legacy", "true"), Some("true".into()));
+        assert_eq!(ok("count", "42"), Some("42".into()));
+        assert_eq!(ok("count", "-7"), Some("-7".into()));
+        assert_eq!(ok("ratio", "1.5"), Some("1.5".into()));
+        assert_eq!(ok("note", "true"), None, "a string field stays a string");
+        assert_eq!(ok("undeclared", "true"), None);
+        assert_eq!(
+            typed_field_scalar(&schema, "other-type", "backlog", "true").unwrap(),
+            None,
+            "the declaration is per type"
+        );
+
+        let err = |k: &str, v: &str| {
+            typed_field_scalar(&schema, "requirement", k, v)
+                .unwrap_err()
+                .to_string()
+        };
+        let e = err("backlog", "yes");
+        assert!(
+            e.contains("field 'backlog' is declared boolean for type 'requirement'")
+                && e.contains("'yes' is not a boolean"),
+            "{e}"
+        );
+        assert!(err("backlog", "True").contains("not a boolean"));
+        assert!(err("count", "1.5").contains("not an integer"));
+        assert!(err("ratio", "NaN").contains("not a finite number"));
+        assert!(err("ratio", "inf").contains("not a finite number"));
+        assert!(err("ratio", "abc").contains("not a finite number"));
+    }
+
+    // rivet: verifies REQ-385
+    #[test]
+    fn validate_modify_refuses_a_value_of_the_wrong_declared_type() {
+        let schema =
+            crate::test_helpers::schema_with_fields("requirement", &[("backlog", "boolean")]);
+        let mut store = Store::new();
+        store
+            .insert(crate::test_helpers::minimal_artifact(
+                "REQ-1",
+                "requirement",
+            ))
+            .unwrap();
+        let with = |v: &str| ModifyParams {
+            set_fields: vec![("backlog".into(), v.into())],
+            ..Default::default()
+        };
+        assert!(validate_modify("REQ-1", &with("true"), &store, &schema).is_ok());
+        let e = validate_modify("REQ-1", &with("yes"), &store, &schema)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("'yes' is not a boolean"), "{e}");
     }
 }

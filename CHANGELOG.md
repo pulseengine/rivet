@@ -45,6 +45,13 @@
   the other writers are refused.
 
 ### Fixed
+- **`--set-field` writes the type the schema declares** (REQ-385, #1008) —
+  `rivet modify --set-field backlog=true` wrote the string `"true"` for a
+  field declared boolean, so `exempt-when-field`, which honours only a boolean,
+  silently did not apply. `modify`, `batch` and the MCP modify tool now write
+  boolean, integer and number fields as unquoted typed values, and refuse a
+  value that doesn't parse (`'yes' is not a boolean`). `rivet validate` warns
+  (`field-type-mismatch`) on strings older versions already wrote.
 - **The release note no longer reports design decisions as unevidenced**
   (REQ-383) — it asked every artifact type for a `verifies` link, so the
   v0.39.0 note listed 6 of 14 delivered artifacts, all accepted and reviewed,
