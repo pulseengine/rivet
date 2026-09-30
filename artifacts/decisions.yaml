@@ -1208,7 +1208,7 @@ artifacts:
   - id: DD-066
     type: design-decision
     title: Delete NeedsJsonAdapter trait wrapper + format-dispatch arm
-    status: draft
+    status: implemented
     description: >
       Mythos v2.2 follow-up audit (foreshadowed in DD-065 notes) confirmed
       that the entire NeedsJsonAdapter wrapper around the live
@@ -1218,7 +1218,10 @@ artifacts:
       adapter trait method has no other callers. The standalone
       `import_needs_json` (used by the live CLI command
       `cmd_import_results_needs_json` and the fuzz target) remains
-      untouched. ~129 LOC removed across two files.
+      untouched. ~129 LOC removed across two files. IMPLEMENTED in 48ff990
+      (2026-04-25): the NeedsJsonAdapter struct, its Adapter impl and the
+      load_artifacts dispatch arm are gone; import_needs_json remains the
+      only entry point. The status had been left at draft (REQ-399).
     tags: [audit, slop-hunt, orphan-slop]
     links:
       - type: satisfies
@@ -1873,3 +1876,20 @@ artifacts:
       model: claude-opus-5-5
       timestamp: 2026-09-29T18:17:58Z
       reviewed-by: avrabe
+
+  - id: DD-082
+    type: design-decision
+    title: "rivet's lane beside sphinx-needs and useblocks: deterministic evidence, standard interchange, and no S-CORE-specific tooling before S-CORE decides"
+    status: proposed
+    release: v0.40.0
+    fields:
+      decision: "Three things rivet does not build now. (1) No LLM-based quality scoring or autonomous engineering agent as a product feature: rivet's value is deterministic, re-checkable evidence, and a non-deterministic score would undercut the tool-qualification claim; AI stays bounded and pre-registered as in DD-080. (2) No proprietary ALM connectors (DOORS, Polarion, Jama, Codebeamer): ReqIF is the interchange, and those connectors are useblocks' commercial product. (3) No further Eclipse S-CORE-specific tooling, such as the REQ-092 source-code linker or a deep RST adapter, until S-CORE's own tool decision is known; the generic needs.json importer stays and is re-validated under REQ-398."
+      rationale: "The 2026-09-30 comparison, grounded in release notes and git history: useblocks shipped an agentic engineer, LLM requirement scoring and an openCypher MCP query language in ubCode, which is closed source and free only for open-source use; ubConnect covers the ALM connectors; and useblocks built score2ubtrace, which feeds S-CORE's existing sphinx-needs documentation into ubTrace every night. rivet leads where evidence is generated and gated: release readiness, the ASPICE 11-03 release note, signed evidence bundles, and Kani, Verus and Rocq proofs. Building in useblocks' lane spends a single maintainer's capacity where a funded team is ahead, and in the S-CORE case on a decision neither project controls."
+      alternatives: "COMPETE FEATURE FOR FEATURE with ubCode: rejected, for capacity and because it dilutes the determinism claim. BUILD S-CORE TOOLING SPECULATIVELY: rejected until S-CORE decides, since rivet already tried a deep adapter and archived it (archive/sphinx-needs-2026-06). IGNORE SPHINX-NEEDS ENTIRELY: rejected; the importer and the cheap interoperability items (REQ-396, REQ-397, REQ-398) keep a migration path open at low cost."
+    links:
+      - type: satisfies
+        target: REQ-398
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z

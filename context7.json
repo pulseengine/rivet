@@ -1,0 +1,34 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "rivet (PulseEngine SDLC traceability)",
+  "description": "Typed, schema-driven traceability for safety-critical software: YAML artifacts, validation, coverage, release gating and compliance evidence. Rust CLI, MCP server, VS Code.",
+  "folders": [],
+  "excludeFolders": [
+    "docs/historical",
+    "docs/research",
+    "docs/plans",
+    "docs/design",
+    "target",
+    "node_modules",
+    "fuzz",
+    "tools",
+    "tests",
+    "rivet-core/tests",
+    "rivet-cli/tests",
+    "vscode-rivet/src",
+    "safety",
+    "artifacts"
+  ],
+  "excludeFiles": [
+    "CHANGELOG.md",
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "rules": [
+    "The full reference is in docs/reference, one file per topic; `rivet docs <topic>` prints the same text offline and `rivet docs --list` lists the topics.",
+    "Artifacts are YAML files under the paths listed in `sources:` of rivet.yaml. Create and change them with `rivet add` and `rivet modify` rather than by hand, then run `rivet validate`, which exits non-zero on errors.",
+    "Filters are s-expressions whose head is an operator, never a field name: `rivet list --filter '(= type \"requirement\")'`.",
+    "Only `rivet verify <ID>` sets an artifact's status to verified, and it refuses without a `verifies` link or a `// rivet: verifies <ID>` source marker.",
+    "A release is the set of artifacts with a `release:` field; `rivet release status <version>` exits non-zero until every one is release-ready."
+  ]
+}

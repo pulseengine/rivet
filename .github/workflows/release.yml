@@ -116,6 +116,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # REQ-399: released CHANGELOG sections are checked against their tags
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p rivet-cli -- docs check
@@ -685,3 +687,47 @@ jobs:
             exit 0
           fi
           npx @vscode/vsce publish --packagePath vsix/*.vsix
+
+  # REQ-397: Open VSX is the registry VSCodium, Cursor, Windsurf and other
+  # VS Code forks install from. Same VSIX as the Marketplace (the artifact
+  # covered by SHA256SUMS), same failure isolation.
+  publish-vsix-openvsx:
+    name: Publish VSIX to Open VSX
+    needs: [create-release]
+    runs-on: ubuntu-latest
+    continue-on-error: true   # a separate channel; must not block release-npm.yml (see above)
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vsix
+          path: vsix
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Publish to Open VSX
+        id: publish
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then
+            echo "::warning::OVSX_PAT secret is not configured. VSIX is attached to the GitHub Release but WILL NOT be published to Open VSX."
+            echo "::warning::See https://github.com/eclipse/openvsx/wiki/Publishing-Extensions for the namespace and token setup."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          npx --yes ovsx publish vsix/*.vsix -p "$OVSX_PAT"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+      # A publish command exiting 0 is not the same as the version being
+      # installable: ask the registry for exactly this version.
+      - name: Confirm the version is listed on Open VSX
+        if: steps.publish.outputs.published == 'true'
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          url="https://open-vsx.org/api/pulseengine/rivet-sdlc/${ver}"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+            [ "$code" = 200 ] && { echo "Open VSX lists pulseengine.rivet-sdlc ${ver}"; exit 0; }
+            sleep 30
+          done
+          echo "::error::Open VSX does not list pulseengine.rivet-sdlc ${ver} after publishing (last HTTP ${code})"
+          exit 1

@@ -814,6 +814,12 @@ enum Command {
         #[arg(long)]
         fix: bool,
 
+        /// Write every topic as Markdown under DIR (REQ-396), e.g.
+        /// `rivet docs --export docs/reference`. `rivet docs check` then fails
+        /// when a committed export differs from this binary's topics.
+        #[arg(long, value_name = "DIR", conflicts_with_all = ["list", "grep"])]
+        export: Option<std::path::PathBuf>,
+
         /// (check only) walk the clap subcommand tree and report which
         /// subcommands have a documented topic in the embedded docs
         /// registry.
@@ -2463,7 +2469,6 @@ fn qualification_refusal(cmd: &Command) -> Option<&'static str> {
         | Command::Matrix { .. }
         | Command::Stpa { .. }
         | Command::Diff { .. }
-        | Command::Docs { .. }
         | Command::Quickstart { .. }
         | Command::CommitMsgCheck { .. }
         | Command::Audit { .. }
@@ -2473,6 +2478,17 @@ fn qualification_refusal(cmd: &Command) -> Option<&'static str> {
         | Command::Runs { .. }
         | Command::Pipelines { .. }
         | Command::Baseline { .. } => None,
+        // `docs` prints, except `check --fix` (rewrites doc files in place)
+        // and `--export` (writes the reference export).
+        Command::Docs { fix, export, .. } => {
+            if *fix {
+                Some("`docs check --fix` rewrites documentation files in place")
+            } else if export.is_some() {
+                Some("`docs --export` writes files")
+            } else {
+                None
+            }
+        }
         Command::Context { stdout, .. } => {
             if *stdout {
                 None
@@ -2607,11 +2623,15 @@ fn run(cli: Cli) -> Result<bool> {
         format,
         context,
         fix,
+        export,
         coverage,
         warn_only,
         strict,
     } = &cli.command
     {
+        if let Some(dir) = export {
+            return cmd_docs_export(dir);
+        }
         if matches!(topic.as_deref(), Some("check")) {
             if *coverage {
                 return cmd_docs_coverage(format, *warn_only, *strict);
@@ -13719,6 +13739,14 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
     let (docs, scan_summary) =
         rivet_core::doc_check::collect_docs_with_summary(&project_root, &scan_roots)
             .with_context(|| format!("scanning docs under {}", project_root.display()))?;
+    // REQ-396: files written by `rivet docs --export` are generated copies of
+    // the embedded topics, which the embedded-topic invariants already check.
+    // Scanning them again as hand-written docs applies the wrong rules to
+    // them; ReferenceExportFresh below checks that they match the binary.
+    let docs: Vec<rivet_core::doc_check::DocFile> = docs
+        .into_iter()
+        .filter(|d| !d.content.starts_with(crate::docs::REFERENCE_EXPORT_BANNER))
+        .collect();
     // Print the per-root scan summary so the user sees how many files
     // were silently allowlisted under each docs entry.
     for rs in &scan_summary.roots {
@@ -13813,12 +13841,133 @@ fn cmd_docs_check(cli: &Cli, format: &str, fix: bool) -> Result<bool> {
         }
     }
 
+    // REQ-396: a committed reference export must be what this binary prints.
+    report.violations.extend(reference_export_violations(
+        &cli.project.join("docs/reference"),
+    ));
+
     match format {
         "json" => print!("{}", render_docs_check_json(&report)),
         _ => print!("{}", render_docs_check_text(&report)),
     }
 
     Ok(!report.has_violations())
+}
+
+/// `rivet docs --export DIR` (REQ-396): write every topic as Markdown, remove
+/// generated files for topics that no longer exist, and leave other files.
+fn cmd_docs_export(dir: &std::path::Path) -> Result<bool> {
+    let files = docs::reference_export();
+    let wanted: std::collections::BTreeSet<std::path::PathBuf> =
+        files.iter().map(|(rel, _)| dir.join(rel)).collect();
+    let mut removed = 0usize;
+    if dir.exists() {
+        for path in walk_md_files(dir) {
+            let generated = std::fs::read_to_string(&path)
+                .is_ok_and(|c| c.starts_with(docs::REFERENCE_EXPORT_BANNER));
+            if generated && !wanted.contains(&path) {
+                std::fs::remove_file(&path)
+                    .with_context(|| format!("removing stale {}", path.display()))?;
+                removed += 1;
+            }
+        }
+    }
+    for (rel, content) in &files {
+        let path = dir.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        std::fs::write(&path, content).with_context(|| format!("writing {}", path.display()))?;
+    }
+    println!(
+        "exported {} topic file(s) to {}{}",
+        files.len(),
+        dir.display(),
+        if removed > 0 {
+            format!(", removed {removed} stale")
+        } else {
+            String::new()
+        }
+    );
+    Ok(true)
+}
+
+fn walk_md_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "md") {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Violations for a committed reference export that is missing a topic,
+/// differs from it, or keeps a generated file for a topic that is gone.
+/// Nothing is checked when DIR has no generated index: a project that never
+/// exported is not asked to.
+fn reference_export_violations(dir: &std::path::Path) -> Vec<rivet_core::doc_check::Violation> {
+    let index = dir.join("README.md");
+    let exported =
+        std::fs::read_to_string(&index).is_ok_and(|c| c.starts_with(docs::REFERENCE_EXPORT_BANNER));
+    if !exported {
+        return Vec::new();
+    }
+    let v =
+        |path: &std::path::Path, claim: String, reality: &str| rivet_core::doc_check::Violation {
+            file: path.to_path_buf(),
+            line: 1,
+            invariant: "ReferenceExportFresh".to_string(),
+            claim,
+            reality: format!(
+                "{reality}; regenerate with `rivet docs --export {}`",
+                dir.display()
+            ),
+            auto_fixable: false,
+        };
+    let files = docs::reference_export();
+    let mut out = Vec::new();
+    let wanted: std::collections::BTreeSet<std::path::PathBuf> =
+        files.iter().map(|(rel, _)| dir.join(rel)).collect();
+    for (rel, content) in &files {
+        let path = dir.join(rel);
+        match std::fs::read_to_string(&path) {
+            Err(_) => out.push(v(
+                &path,
+                format!("topic file {rel}"),
+                "missing from the export",
+            )),
+            Ok(c) if c != *content => out.push(v(
+                &path,
+                format!("topic file {rel}"),
+                "differs from what this binary prints",
+            )),
+            Ok(_) => {}
+        }
+    }
+    for path in walk_md_files(dir) {
+        let generated = std::fs::read_to_string(&path)
+            .is_ok_and(|c| c.starts_with(docs::REFERENCE_EXPORT_BANNER));
+        if generated && !wanted.contains(&path) {
+            out.push(v(
+                &path,
+                "generated file".to_string(),
+                "no longer matches any topic",
+            ));
+        }
+    }
+    out
 }
 
 fn render_docs_check_text(report: &rivet_core::doc_check::CheckReport) -> String {

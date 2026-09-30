@@ -9385,3 +9385,63 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-30T04:37:33Z
+
+  - id: REQ-396
+    type: requirement
+    title: "rivet is not discoverable by AI coding assistants through Context7, and its best reference documentation is invisible to any docs indexer"
+    status: implemented
+    release: v0.40.0
+    description: "Found by the 2026-09-30 sphinx-needs comparison. Context7 is a documentation service with an MCP server that coding assistants query for current library docs; sphinx-needs registered in May 2026 (their #1720). A Context7 search for rivet returns five unrelated projects and not pulseengine/rivet, so an assistant asking about rivet receives the wrong library's documentation. Context7 indexes Markdown and reStructuredText, not source code, and rivet's authoritative reference, the rivet docs topics, is compiled into the binary as Rust string constants, so an indexer would see only design notes and historical plans. ACCEPTANCE: the embedded rivet docs topics are generated as Markdown under docs/reference, and rivet docs check fails when that export is stale; a context7.json at the repository root sets a distinct projectTitle naming PulseEngine and traceability, restricts folders to the reference export, getting-started material and the README, excludes docs/historical, docs/research, docs/plans and docs/design, and states only rules that a test checks against the CLI; submitting the repository to Context7 and claiming it are the maintainer's actions and are recorded here once done. IMPLEMENTED: rivet docs --export DIR writes all 59 topics as Markdown, byte-identical to what rivet docs <topic> prints, plus an index, each file marked by a generated banner; docs/reference is committed. rivet docs check reports ReferenceExportFresh when an exported topic is missing, differs, or no longer exists, and skips generated files in its hand-written-docs scan because the embedded-topic invariants already check that text; it passes on a fresh export and fails after an edit or a deletion. context7.json validates against Context7's published schema (the description was cut to its 200-character limit) and scans the repository minus history, research, plans, design notes, build and test trees and contributor-only files. A test checks that every rivet command in its rules is a real subcommand, every flag exists on it and every filter parses; a wrong flag, a missing subcommand and a malformed filter each fail it. Found in passing and fixed: --qualification-mode treated every docs invocation as read-only, although docs check --fix rewrites documentation files; --fix and --export are now refused in that mode. PENDING, maintainer: submit pulseengine/rivet at context7.com/add-library and claim it."
+    tags: [docs, discoverability, ai]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z
+
+  - id: REQ-397
+    type: requirement
+    title: "the VS Code extension is published only to the Microsoft Marketplace, so VSCodium, Cursor and Windsurf users cannot install it from their registry"
+    status: implemented
+    release: v0.40.0
+    description: "Found by the 2026-09-30 sphinx-needs comparison: useblocks' ubCode began publishing to Open VSX on 2026-09-28. rivet's release workflow publishes vscode-rivet to the Microsoft Marketplace only; no Open VSX reference exists in .github or the extension. ACCEPTANCE: the release workflow publishes the same VSIX to Open VSX under the pulseengine namespace, from the SHA256SUMS-covered artifact; a missing token is a visible warning, as for the Marketplace; the release verification confirms the version is listed on Open VSX after a release. The Open VSX account, namespace and token secret are the maintainer's to create. IMPLEMENTED in release.yml as publish-vsix-openvsx: it publishes the same VSIX artifact as the Marketplace job with ovsx, is continue-on-error like that job so it cannot block release-npm.yml, warns visibly when OVSX_PAT is not configured, and after publishing polls https://open-vsx.org/api/pulseengine/rivet-sdlc/<version> until it answers 200, failing the job otherwise. The URL scheme was checked against a listed extension (useblocks/ubcode 0.36.0 answers 200, a missing version 404). NOT YET VERIFIED: that needs the maintainer's pulseengine namespace and OVSX_PAT secret and a release run; the status stays implemented until the listing check passes on a real release."
+    tags: [release, vscode, distribution]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z
+
+  - id: REQ-398
+    type: requirement
+    title: "the needs.json importer has never been checked against real sphinx-needs output, and the format changed three times since its last fix"
+    status: verified
+    release: v0.40.0
+    description: "The needs.json adapter is rivet's migration path from sphinx-needs. Its last fix was REQ-081 at v0.11.1, found by an agent re-run rather than by importing real output; its tests use synthetic fixtures. Since then sphinx-needs changed its needs.json shape in 8.2.0 (sorted, deduplicated links), 8.4.0 (corrected lineno, content embedding removed) and 8.5.0 (schema-validation messages). ACCEPTANCE: a fixture generated from a real sphinx-needs 8.5 project, useblocks' public sphinx-needs-demo, is checked in with the sphinx-needs version and source commit that produced it; a test imports it and asserts exact artifact counts, types, and link targets against values read independently from the fixture; any field the importer drops or misreads is fixed or recorded as a declared gap. IMPLEMENTED. Built useblocks' sphinx-needs-demo at commit 3c602bf with sphinx-needs 8.5.0 and read its needs.json independently: 362 needs, 15 link fields in use, 809 forward links. The importer produced the 362 artifacts but only 331 links, all typed satisfies whatever they meant; the other 478 (59 percent) arrived as untyped strings in fields, together with every _back reverse list. The fix treats every key with a _back twin as a link field and imports its targets as links typed by the field name, underscores to dashes, and keeps link fields and reverse lists out of fields. Re-run on the full output: 809 of 809 links, correctly typed, none missing, none extra, no link data left in fields. The one dangling target (REQ_1_1_ext) dangles in the source as well. The generic links option keeps its default type. A 34-need subset of the real output that covers all 15 link fields and every type is checked in with its provenance, and an in-module test derives its expectations from needs_schema, not from the importer's own detection. Negative controls: disabling the typed-link import and letting reverse lists into fields each fail the test by name."
+    tags: [import, sphinx-needs, migration, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z
+
+  - id: REQ-399
+    type: requirement
+    title: "CHANGELOG structure is unchecked: a release section can appear twice and headings duplicate without any gate noticing"
+    status: verified
+    release: v0.40.0
+    description: "Found by the 2026-09-30 comparison: CHANGELOG.md carries two sections headed 0.33.0. Duplicate section headings under Unreleased from clean merges have recurred at least six times, and rebasing across a release cut once moved an entry into an already-released section. rivet docs check passes on all of it. ACCEPTANCE: rivet docs check fails on a release section heading that appears twice, on a subsection heading repeated inside one release section, and on a change to a released section relative to its tag when run in a release-aware mode; the existing duplicate 0.33.0 section is resolved from the tag's own content; DD-066, still draft, is settled. IMPLEMENTED as the ChangelogStructure docs-check invariant, which fails on (1) a release heading appearing twice, (2) a subsection heading repeated inside one release section that is not yet tagged, and (3) a released section that differs from the same section at its tag, ignoring only the Closed issues block that rivet release inserts by design. Clause 2 is narrowed on purpose: [0.16.0] and [0.38.0] already repeated subsection headings at their tags, and folding them would violate rule 3, so a tagged section is left as recorded. When released sections exist but no tag resolves, as in a shallow clone, the check reports that it could not run instead of passing; both Docs Check jobs now fetch full history. Run over the original CHANGELOG it named every defect found by hand: the duplicate [0.33.0], and three released sections edited after their tags. Those were repaired from the tags: the second [0.33.0] held v0.34.0 work already recorded under [0.34.0], and [0.31.0] and [0.16.0] carried entries for fixes that first shipped in v0.34.0 and v0.17.0, both already recorded there; the genuine [0.33.0] is byte-identical to its tag, and all 51 checkable released sections now match their tags. DD-066's change had landed in 48ff990 and its status is now implemented."
+    tags: [docs, changelog, release, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z
