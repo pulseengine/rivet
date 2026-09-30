@@ -288,6 +288,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+        with:
+          # REQ-399: ChangelogStructure compares each released CHANGELOG
+          # section with the same section at its tag, so the tags must exist.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run rivet docs check

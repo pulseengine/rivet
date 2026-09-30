@@ -153,8 +153,9 @@ struct NeedsItem {
 
 /// Parse a `needs.json` string and return Rivet artifacts.
 ///
-/// This is the standalone entry point.  The [`NeedsJsonAdapter`] trait impl
-/// delegates here.
+/// The only entry point: the `NeedsJsonAdapter` trait wrapper was deleted
+/// under DD-066 (48ff990); `rivet import-results --format needs-json` and the
+/// fuzz target call this directly.
 pub fn import_needs_json(content: &str, config: &NeedsJsonConfig) -> Result<Vec<Artifact>, Error> {
     import_needs_json_inner(content, config, None)
 }

@@ -116,6 +116,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # REQ-399: released CHANGELOG sections are checked against their tags
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo run --release -p rivet-cli -- docs check

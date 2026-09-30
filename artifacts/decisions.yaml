@@ -1208,7 +1208,7 @@ artifacts:
   - id: DD-066
     type: design-decision
     title: Delete NeedsJsonAdapter trait wrapper + format-dispatch arm
-    status: draft
+    status: implemented
     description: >
       Mythos v2.2 follow-up audit (foreshadowed in DD-065 notes) confirmed
       that the entire NeedsJsonAdapter wrapper around the live
@@ -1218,7 +1218,10 @@ artifacts:
       adapter trait method has no other callers. The standalone
       `import_needs_json` (used by the live CLI command
       `cmd_import_results_needs_json` and the fuzz target) remains
-      untouched. ~129 LOC removed across two files.
+      untouched. ~129 LOC removed across two files. IMPLEMENTED in 48ff990
+      (2026-04-25): the NeedsJsonAdapter struct, its Adapter impl and the
+      load_artifacts dispatch arm are gone; import_needs_json remains the
+      only entry point. The status had been left at draft (REQ-399).
     tags: [audit, slop-hunt, orphan-slop]
     links:
       - type: satisfies

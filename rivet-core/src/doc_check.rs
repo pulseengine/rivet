@@ -435,6 +435,7 @@ pub fn default_invariants() -> Vec<Box<dyn DocInvariant>> {
         Box::new(EmbeddedVersionLiterals),
         Box::new(EmbeddedFlagReferences),
         Box::new(EmbeddedTodoMarkers),
+        Box::new(ChangelogStructure),
     ]
 }
 
@@ -1534,6 +1535,216 @@ pub fn apply_fixes(ctx: &DocCheckContext<'_>, report: &CheckReport) -> std::io::
 // Tests
 // ────────────────────────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────────────────────────
+// ChangelogStructure (REQ-399)
+// ────────────────────────────────────────────────────────────────────────
+
+/// REQ-399: `CHANGELOG.md` is release evidence, and three defects in it went
+/// unnoticed by every other gate:
+/// 1. a release heading appearing twice (two `## [0.33.0]` sections, one of
+///    them holding v0.34.0 work);
+/// 2. a subsection heading repeated inside one release — clean merges of two
+///    branches that each add `### Fixed` produce it silently;
+/// 3. a released section edited after its tag — rebasing across a release
+///    cut moves an `[Unreleased]` entry into the released section above it.
+///
+/// Rule 3 compares each `## [X.Y.Z]` section with the same section in
+/// `git show vX.Y.Z:CHANGELOG.md`, ignoring only the `### Closed issues`
+/// block that `rivet release` inserts after the fact (#926). It is skipped
+/// when git or the tag is unavailable, never guessed.
+pub struct ChangelogStructure;
+
+impl DocInvariant for ChangelogStructure {
+    fn name(&self) -> &'static str {
+        "ChangelogStructure"
+    }
+
+    fn check(&self, ctx: &DocCheckContext<'_>) -> Vec<Violation> {
+        let mut out = Vec::new();
+        for doc in ctx.docs {
+            if doc.rel_path.file_name().and_then(|n| n.to_str()) != Some("CHANGELOG.md") {
+                continue;
+            }
+            let rel = doc.rel_path.to_string_lossy().replace('\\', "/");
+            let at_tag = |ver: &str| {
+                let r = std::process::Command::new("git")
+                    .args(["show", &format!("v{ver}:{rel}")])
+                    .current_dir(ctx.project_root)
+                    .output()
+                    .ok()?;
+                r.status
+                    .success()
+                    .then(|| String::from_utf8_lossy(&r.stdout).into_owned())
+            };
+            out.extend(changelog_structure_violations(
+                &doc.rel_path,
+                &doc.content,
+                |v| at_tag(v).is_some(),
+            ));
+            out.extend(changelog_released_drift(
+                &doc.rel_path,
+                &doc.content,
+                at_tag,
+            ));
+        }
+        out
+    }
+}
+
+fn changelog_violation(rel: &Path, line: usize, claim: String, reality: String) -> Violation {
+    Violation {
+        file: rel.to_path_buf(),
+        line,
+        invariant: "ChangelogStructure".to_string(),
+        claim,
+        reality,
+        auto_fixable: false,
+    }
+}
+
+/// Rules 1 and 2: duplicate release headings, and duplicate subsection
+/// headings within one release section. Rule 2 applies only to sections that
+/// are not yet tagged (`[Unreleased]`, a release being prepared): a tagged
+/// section is the historical record and is governed by rule 3, which forbids
+/// editing it — so a repeat already present at its tag is left as recorded.
+pub fn changelog_structure_violations(
+    rel: &Path,
+    content: &str,
+    is_tagged: impl Fn(&str) -> bool,
+) -> Vec<Violation> {
+    let mut out = Vec::new();
+    let mut releases: BTreeMap<String, usize> = BTreeMap::new();
+    let mut subsections: BTreeMap<String, usize> = BTreeMap::new();
+    let mut current = String::new();
+    for (i, line) in content.lines().enumerate() {
+        let n = i + 1;
+        if let Some(rest) = line.strip_prefix("## [") {
+            let name = rest.split(']').next().unwrap_or("").to_string();
+            if let Some(first) = releases.get(&name) {
+                out.push(changelog_violation(
+                    rel,
+                    n,
+                    format!("section `## [{name}]`"),
+                    format!("`## [{name}]` already heads a section at line {first}"),
+                ));
+            } else {
+                releases.insert(name.clone(), n);
+            }
+            current = name;
+            subsections.clear();
+        } else if let Some(h) = line.strip_prefix("### ") {
+            if is_tagged(&current) {
+                continue;
+            }
+            let h = h.trim().to_string();
+            if let Some(first) = subsections.get(&h) {
+                out.push(changelog_violation(
+                    rel,
+                    n,
+                    format!("`### {h}` in `[{current}]`"),
+                    format!("`### {h}` already appears in this section at line {first}"),
+                ));
+            } else {
+                subsections.insert(h, n);
+            }
+        }
+    }
+    out
+}
+
+/// A release section: from its `## [ver]` heading to the next `## [`.
+fn changelog_section<'a>(content: &'a str, ver: &str) -> Option<(usize, &'a str)> {
+    let head = format!("## [{ver}]");
+    let mut start = None;
+    let mut offset = 0;
+    for line in content.split_inclusive('\n') {
+        if start.is_none() && line.starts_with(&head) {
+            start = Some(offset);
+        } else if start.is_some() && line.starts_with("## [") {
+            let s = start?;
+            return Some((content[..s].lines().count() + 1, &content[s..offset]));
+        }
+        offset += line.len();
+    }
+    let s = start?;
+    Some((content[..s].lines().count() + 1, &content[s..]))
+}
+
+/// The section with any `### Closed issues` block removed — the one addition
+/// `rivet release` makes to a released section by design (#926).
+fn without_closed_issues(section: &str) -> String {
+    let mut out = String::new();
+    let mut skipping = false;
+    for line in section.split_inclusive('\n') {
+        if line.starts_with("### ") {
+            skipping = line.trim_end() == "### Closed issues";
+        }
+        if !skipping {
+            out.push_str(line);
+        }
+    }
+    out.trim_end().to_string()
+}
+
+/// Rule 3: every released section equals the same section at its tag.
+/// `at_tag(ver)` returns the file's content at tag `v<ver>`, or `None` when
+/// that cannot be determined — the section is then skipped.
+pub fn changelog_released_drift(
+    rel: &Path,
+    content: &str,
+    at_tag: impl Fn(&str) -> Option<String>,
+) -> Vec<Violation> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut versions = 0usize;
+    let mut resolved = 0usize;
+    for line in content.lines() {
+        let Some(rest) = line.strip_prefix("## [") else {
+            continue;
+        };
+        let ver = rest.split(']').next().unwrap_or("");
+        let is_version = !ver.is_empty() && ver.split('.').all(|p| p.parse::<u64>().is_ok());
+        if !is_version || !seen.insert(ver.to_string()) {
+            continue;
+        }
+        versions += 1;
+        let Some(tagged) = at_tag(ver) else {
+            continue;
+        };
+        resolved += 1;
+        let (Some((line_no, now)), Some((_, then))) = (
+            changelog_section(content, ver),
+            changelog_section(&tagged, ver),
+        ) else {
+            continue;
+        };
+        if without_closed_issues(now) != without_closed_issues(then) {
+            out.push(changelog_violation(
+                rel,
+                line_no,
+                format!("released section `[{ver}]`"),
+                format!(
+                    "differs from the same section at tag v{ver}; a released section \
+                     changes only by its `### Closed issues` block"
+                ),
+            ));
+        }
+    }
+    // A check that could not run must not read as a pass: released sections
+    // exist, but not one tag resolved (typically a shallow clone).
+    if versions > 0 && resolved == 0 {
+        out.push(changelog_violation(
+            rel,
+            1,
+            format!("{versions} released section(s)"),
+            "none could be checked against its tag: no release tag resolved \
+             (shallow clone? fetch tags, e.g. `fetch-depth: 0`)"
+                .to_string(),
+        ));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2308,5 +2519,74 @@ jobs:
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].0, "yaml");
         assert_eq!(blocks[1].0, "rust");
+    }
+
+    // ── ChangelogStructure (REQ-399) ────────────────────────────────────
+
+    // rivet: verifies REQ-399
+    #[test]
+    fn changelog_duplicate_release_and_subsection_headings_are_violations() {
+        let content = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- a\n\n### Added\n- b\n\n\
+                       ### Fixed\n- c\n\n## [0.2.0] - 2026-01-02\n\n### Fixed\n- d\n\n\
+                       ## [0.2.0] - 2026-01-01\n\n### Fixed\n- e\n";
+        let v = changelog_structure_violations(Path::new("CHANGELOG.md"), content, |_| false);
+        let lines: Vec<usize> = v.iter().map(|x| x.line).collect();
+        assert_eq!(lines, vec![11, 19], "{v:#?}");
+        assert!(
+            v[0].reality
+                .contains("already appears in this section at line 5")
+        );
+        assert!(v[1].reality.contains("already heads a section at line 14"));
+        assert!(v.iter().all(|x| x.invariant == "ChangelogStructure"));
+        // The same subsection name in DIFFERENT releases is fine.
+        let ok = "## [0.2.0]\n### Fixed\n- a\n## [0.1.0]\n### Fixed\n- b\n";
+        assert!(
+            changelog_structure_violations(Path::new("CHANGELOG.md"), ok, |_| false).is_empty()
+        );
+        // A repeat inside a TAGGED section is the recorded history (rule 3
+        // forbids editing it); a duplicate release heading is always reported.
+        let v = changelog_structure_violations(Path::new("CHANGELOG.md"), content, |v| {
+            v != "Unreleased"
+        });
+        assert_eq!(v.iter().map(|x| x.line).collect::<Vec<_>>(), vec![11, 19]);
+        let v = changelog_structure_violations(Path::new("CHANGELOG.md"), content, |_| true);
+        assert_eq!(v.iter().map(|x| x.line).collect::<Vec<_>>(), vec![19]);
+    }
+
+    // rivet: verifies REQ-399
+    #[test]
+    fn changelog_released_section_must_match_its_tag_but_closed_issues_may_be_added() {
+        let tagged = "## [Unreleased]\n\n## [0.2.0] - d\n\nIntro.\n\n### Fixed\n- x\n\n## [0.1.0] - d\n\n- y\n";
+        let at = |v: &str| (v == "0.2.0" || v == "0.1.0").then(|| tagged.to_string());
+        let rel = Path::new("CHANGELOG.md");
+        // Identical, and identical plus an inserted Closed-issues block: no drift.
+        assert!(changelog_released_drift(rel, tagged, at).is_empty());
+        let with_ci = tagged.replace(
+            "Intro.\n\n### Fixed",
+            "Intro.\n\n### Closed issues\n\n- **#1** — done\n\n### Fixed",
+        );
+        assert!(
+            changelog_released_drift(rel, &with_ci, at).is_empty(),
+            "the addendum is allowed"
+        );
+        // An entry that leaked into a released section is drift.
+        let leaked = tagged.replace("- x\n", "- x\n- leaked from a later release\n");
+        let v = changelog_released_drift(rel, &leaked, at);
+        assert_eq!(v.len(), 1, "{v:#?}");
+        assert_eq!(v[0].line, 3);
+        assert!(
+            v[0].reality
+                .contains("differs from the same section at tag v0.2.0")
+        );
+        // One tag missing: that section is skipped, never guessed.
+        let only_old = |v: &str| (v == "0.1.0").then(|| tagged.to_string());
+        assert!(changelog_released_drift(rel, &leaked, only_old).is_empty());
+        // NO tag resolvable at all: the check could not run, and says so.
+        let v = changelog_released_drift(rel, &leaked, |_| None);
+        assert_eq!(v.len(), 1, "{v:#?}");
+        assert!(v[0].reality.contains("no release tag resolved"));
+        // [Unreleased] is never compared.
+        let unreleased_edit = tagged.replace("## [Unreleased]\n", "## [Unreleased]\n\n- new\n");
+        assert!(changelog_released_drift(rel, &unreleased_edit, at).is_empty());
     }
 }

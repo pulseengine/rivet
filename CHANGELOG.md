@@ -45,6 +45,14 @@
   the other writers are refused.
 
 ### Fixed
+- **The CHANGELOG told a wrong release history, and no gate noticed**
+  (REQ-399) — a second `[0.33.0]` section listed v0.34.0 work, and the
+  `[0.31.0]` and `[0.16.0]` sections carried fixes that first shipped in later
+  releases. All three are restored from their tags. `rivet docs check` now
+  fails on a repeated release heading, a repeated subsection heading in an
+  untagged section, and a released section that no longer matches its tag,
+  apart from the `Closed issues` block `rivet release` adds. It reports when it
+  could not compare any section because no tag was available.
 - **Cross-repo backlinks are no longer invented from ID collisions**
   (REQ-395, #1015) — an external artifact's unprefixed link target, which
   names its own artifact, was counted as a backlink to whichever artifact of
@@ -829,49 +837,6 @@ externally against v0.32.0 and reproduced on `main`.
   write surface — is tracked in #809 for the next minor release.
 
 ## [0.33.0] - 2026-08-18
-### Added
-- **`rivet context --stdout` and `--brief`** (#811) — `rivet context` always
-  wrote `.rivet/agent-context.md`. That made it unusable from a Claude Code
-  `SessionStart` hook: the hook wants to *read* the document, and the command
-  turned that read into a working-tree mutation (untracked `.rivet/` in every
-  consumer repo — most don't gitignore it). `--stdout` prints the document
-  without creating the directory or writing any file, and suppresses the
-  `Generated …` banner so a downstream consumer gets only the document.
-  `--brief` drops the schema / link-type / traceability-rule / commands
-  reference — that material is stable and better fetched on demand via
-  `rivet docs` — and lists coverage rules below 100% rather than the full
-  table, cutting a 24 KB dump to ~3 KB for per-session context injection.
-### Fixed
-- **Silent empty load: config typos and empty sources scored green** (REQ-294, #808)
-  — for a compliance tool, `validate` PASS and `coverage` `100.0%` over a
-  zero-artifact load is the worst possible failure direction. Two independent
-  triggers demonstrated it: (1) a `generic-yaml` artifact file with a near-miss
-  root key (`requirements:` instead of `artifacts:`) silently classified as
-  non-artifact YAML and dropped; (2) a mis-keyed `sources:` at the top level of
-  `rivet.yaml` (or an explicitly empty `sources: []`) disabled every input, and
-  the per-source diagnostic loop had nothing to iterate. Four new diagnostics
-  close the gap — `artifact-root-key-near-miss` names the offending root key
-  and suggests `artifacts:`; `empty-source` fires per source that yielded zero
-  artifacts; `no-sources` fires when the config declares zero sources at all;
-  `unknown-config-key` warns on any top-level `rivet.yaml` key not in the
-  `ProjectConfig` schema. All four are Warning by default and Error under
-  `--strict`. `coverage` now renders `n/a` (never `100.0%`) for empty-scope
-  rules and gains a `--strict-empty` flag that exits non-zero on an empty load;
-  `--fail-under` also exits non-zero when the load was empty.
-
-### Changed (potentially breaking for machine consumers)
-- **`rivet coverage --format json` gains an `empty_scope: bool` field** on every
-  per-rule entry, every V-closure entry, and the `overall` block; when it is
-  true, the corresponding `percentage` (and `accounted_percentage` on rule
-  entries) emits `null` instead of `100.0`. Consumers that parsed `percentage`
-  as a required number must handle `null` for empty scopes — but doing so is
-  now the difference between a satisfied gate and an empty one.
-- **`rivet coverage` text output renders empty-scope rules as `n/a%`** rather
-  than `100.0%`, with a leading "No artifacts loaded — every rule scores n/a
-  (0/0)" banner when the whole report is empty. A screen scraper matching
-  the exact `100.0%` string will need to accept `n/a%` as a value.
-
-## [0.33.0] - 2026-08-11
 
 Gate potency — *a gate that cannot fail is not a gate*. Four required CI checks
 ran, reported green, and could not go red. Ported from spar's gate audit
@@ -976,34 +941,6 @@ deliberate audit of rivet's own "green that proves less than it appears."
   of `rust_decimal` that rivet does not enable (never compiled into any binary).
 
 ## [0.31.0] - 2026-08-05
-### Fixed
-- **Overlapping `rivet.yaml` `sources` no longer bury real duplicate-id
-  errors** (#746) — a config that listed both a directory source AND
-  individual file sources inside it (typically to override per-file
-  format, since directory sources apply one format to every file) used
-  to load each covered file twice, then surface N `duplicate-artifact-id`
-  errors — one per id in the overlapped file, all with the SAME resolved
-  path on both sides of the "declared more than once: A and B" message.
-  In the reproducer (spar) 184 phantom errors buried 6 genuine cross-file
-  collisions, and the whole error class had been written off in CI as
-  "phantom." `rivet validate` now emits ONE `overlapping-source` warning
-  per pair pointing at `rivet.yaml`, suppresses only the self-collisions
-  that provably come from the overlap (a within-file duplicate in a
-  non-overlapped file is still a real bug and still fires), and leaves
-  cross-file collisions and REQ-081's needs.json guard fully intact.
-
-- **`rivet validate` output is byte-stable across runs** (#746) — the
-  same repo state used to emit `missing: design-decision, feature` on
-  one run and `missing: feature, design-decision` on the next, because
-  the `LifecycleGap.missing` list came from a `HashSet` and the
-  diagnostic vec picked up ids in `HashMap` iteration order via
-  `store.iter()` at eight sites in `validate.rs`. Both surfaces are now
-  deterministic — `missing` is sorted at construction, and every one of
-  those `iter()` calls is now `iter_sorted()` (the pattern established
-  by REQ-159/#415 for export/matrix/coverage). `--format text` and
-  `--format json` now diff cleanly between two runs of `rivet validate`,
-  which is what turned the reproducer's `grep -c` into a wrong number
-  in the issue body.
 
 ### Added
 - **`rivet validate --strict` — compliance-gate mode** (REQ-283) — `validate`
@@ -1724,19 +1661,6 @@ friction that blocked declaring verification artifacts.
   PASSes with 0 shown.
 
 ### Fixed
-
-- **REQ-162 / #522 — restore `accepted` to the canonical status enum.** v0.16.0
-  declared the canonical lifecycle (`draft → … → released` + `deprecated` /
-  `rejected`) but dropped `accepted`, the documented terminal state for
-  `design-decision` / `external-anchor` / requirement-meta artifacts. Downstream
-  stores that followed the documented chain (e.g. the jess hardware-integration
-  store, 12 of 21 errors on upgrade) flipped from PASS to FAIL on the 0.15 → 0.16
-  bump with no migration path. `accepted` is now re-admitted in
-  `schemas/common.yaml`, so stores upgrade cleanly; the `status-allowed-values`
-  guard still fires on genuinely typo'd values (covered by
-  `common_status_accepts_accepted_and_still_rejects_typos`). The wider
-  migration / per-schema enum questions raised in #522 (slices 1 and 3) are
-  tracked separately.
 
 - **REQ-168 / #428 — `rivet bundle --incoming`.** `bundle` built the closure
   from *outgoing* links only, so bundling a requirement (a graph sink —
