@@ -81,6 +81,10 @@
   that exited 1. All now say `n/a` / `null`, and all honour
   `coverage.unmodelled-rules` with the declared reason. New
   `percentage_opt()`-style methods replace the deprecated ones that return 100.
+  **Behaviour change for API consumers:** `/api/v1/coverage`, `/api/v1/stats`
+  and the MCP coverage tool return `"percentage": null` for a rule with nothing
+  to score (`total: 0`); a Grafana panel reading the field should treat null as
+  no data rather than zero.
 - **Cross-repo backlinks are no longer invented from ID collisions**
   (REQ-395, #1015) — an external artifact's unprefixed link target, which
   names its own artifact, was counted as a backlink to whichever artifact of

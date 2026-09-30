@@ -1,5 +1,21 @@
 import { test, expect } from "@playwright/test";
 
+// REQ-387 / #956: a rule with nothing to score has `percentage: null`; it
+// used to report 100, which a Grafana panel then rendered as full coverage.
+// Otherwise the percentage is a number in [0, 100].
+function expectPercentageContract(rule: {
+  total: number;
+  percentage: number | null;
+}) {
+  if (rule.total === 0) {
+    expect(rule.percentage).toBeNull();
+  } else {
+    expect(typeof rule.percentage).toBe("number");
+    expect(rule.percentage).toBeGreaterThanOrEqual(0);
+    expect(rule.percentage).toBeLessThanOrEqual(100);
+  }
+}
+
 // ── Health ────────────────────────────────────────────────────────────────
 
 test.describe("API v1: Health", () => {
@@ -90,8 +106,7 @@ test.describe("API v1: Stats — Grafana dashboard data", () => {
 
     expect(stats.coverage.length).toBeGreaterThan(0);
     for (const rule of stats.coverage) {
-      expect(rule.percentage).toBeGreaterThanOrEqual(0);
-      expect(rule.percentage).toBeLessThanOrEqual(100);
+      expectPercentageContract(rule);
       expect(rule.covered).toBeLessThanOrEqual(rule.total);
     }
   });
@@ -236,11 +251,14 @@ test.describe("API v1: Coverage — traceability rules", () => {
     expect(rule.link_type).toBeTruthy();
     expect(["forward", "backward"]).toContain(rule.direction);
     expect(Array.isArray(rule.target_types)).toBe(true);
-    expect(rule.percentage).toBeGreaterThanOrEqual(0);
-    expect(rule.percentage).toBeLessThanOrEqual(100);
-    expect(rule.covered).toBeLessThanOrEqual(rule.total);
-    expect(Array.isArray(rule.uncovered)).toBe(true);
-    expect(rule.uncovered.length).toBe(rule.total - rule.covered);
+    // Every rule, not only the first: an empty-scope rule is the case
+    // that used to read 100.
+    for (const r of data.rules) {
+      expectPercentageContract(r);
+      expect(r.covered).toBeLessThanOrEqual(r.total);
+      expect(Array.isArray(r.uncovered)).toBe(true);
+      expect(r.uncovered.length).toBe(r.total - r.covered);
+    }
   });
 
   test("coverage data matches the coverage dashboard page", async ({
