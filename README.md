@@ -86,7 +86,7 @@ mcp` without a Rust install.
 ## 30-second demo
 
 ```bash
-rivet init --preset dev          # 1. scaffold rivet.yaml + schemas/ + artifacts/
+rivet init --preset dev          # 1. scaffold rivet.yaml + artifacts/ (add --vendor-schemas for a schemas/ copy)
 rivet add -t requirement --title "DB write returns ack"   # 2. add a typed atom
 rivet validate                   # 3. oracle: PASS (no diagnostics)
 rivet serve --port 3099          # 4. dashboard at http://localhost:3099

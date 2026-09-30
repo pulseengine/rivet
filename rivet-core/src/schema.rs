@@ -659,12 +659,35 @@ impl Condition {
 /// Supports dotted paths (e.g., `provenance.created-by`) to traverse into
 /// nested YAML mappings stored in the artifact's `fields` map.
 #[inline]
+/// REQ-388 / #958 item 5: `provenance.<key>` resolves against the artifact's
+/// provenance record. Dotted paths otherwise read only the `fields` map, where
+/// provenance never lives — so the shipped `ai-generated-needs-review` rule,
+/// whose condition is `provenance.created-by` and whose requirement is
+/// `provenance.reviewed-by`, could never see either value.
+fn provenance_value<'a>(artifact: &'a Artifact, key: &str) -> Option<Cow<'a, str>> {
+    let p = artifact.provenance.as_ref()?;
+    let v = match key {
+        "created-by" => Some(p.created_by.as_str()),
+        "model" => p.model.as_deref(),
+        "session-id" => p.session_id.as_deref(),
+        "timestamp" => p.timestamp.as_deref(),
+        "reviewed-by" => p.reviewed_by.as_deref(),
+        _ => None,
+    };
+    v.filter(|s| !s.is_empty()).map(Cow::Borrowed)
+}
+
 fn get_field_value<'a>(artifact: &'a Artifact, field: &str) -> Option<Cow<'a, str>> {
     // Fast path: check for dotted path first
     if let Some(dot_pos) = field.find('.') {
         let root = &field[..dot_pos];
         let rest = &field[dot_pos + 1..];
-        // Dotted paths only apply to the fields map
+        if root == "provenance" {
+            if let Some(v) = provenance_value(artifact, rest) {
+                return Some(v);
+            }
+        }
+        // Otherwise dotted paths read the fields map.
         let root_val = artifact.fields.get(root)?;
         return resolve_dotted_path(root_val, rest);
     }
@@ -756,6 +779,11 @@ pub(crate) fn get_field_value_for_variant(
     if let Some(dot_pos) = field.find('.') {
         let root = &field[..dot_pos];
         let rest = &field[dot_pos + 1..];
+        if root == "provenance" {
+            if let Some(v) = provenance_value(artifact, rest) {
+                return Some(v.into_owned());
+            }
+        }
         let merged = artifact.fields_for_variant(variant);
         let root_val = merged.get(root)?;
         return resolve_dotted_path(root_val, rest).map(Cow::into_owned);
@@ -1225,7 +1253,61 @@ impl Schema {
     pub fn consistency_diagnostics(&self) -> Vec<crate::validate::Diagnostic> {
         let mut diagnostics = check_conditional_consistency(&self.conditional_rules);
         diagnostics.extend(self.check_coverage_rule_consistency());
+        diagnostics.extend(self.check_conditional_rule_reachability());
         diagnostics
+    }
+
+    /// REQ-388 / #958 item 5: a conditional rule whose `when` or `condition`
+    /// tests a base field with declared `allowed-values`, for a value no
+    /// allowed value can take, can never fire on a valid store — and says
+    /// nothing. `ai-generated-needs-review` shipped that way (`equals:
+    /// active`, not a status), so the one review gate on AI-authored
+    /// artifacts emitted zero warnings on every valid store.
+    pub fn check_conditional_rule_reachability(&self) -> Vec<crate::validate::Diagnostic> {
+        let mut out = Vec::new();
+        for rule in &self.conditional_rules {
+            for cond in std::iter::once(&rule.when).chain(rule.condition.as_ref()) {
+                let field = match cond {
+                    Condition::Equals { field, .. } | Condition::Matches { field, .. } => {
+                        field.as_str()
+                    }
+                    Condition::Exists { .. } => continue,
+                };
+                let Some(allowed) = self
+                    .base_fields
+                    .iter()
+                    .find(|f| f.name == field)
+                    .and_then(|f| f.allowed_values.as_ref())
+                else {
+                    continue;
+                };
+                let reachable = match cond {
+                    Condition::Equals { value, .. } => allowed.iter().any(|a| a == value),
+                    Condition::Matches { pattern, .. } => match regex::Regex::new(pattern) {
+                        Ok(re) => allowed.iter().any(|a| re.is_match(a)),
+                        Err(_) => continue,
+                    },
+                    Condition::Exists { .. } => continue,
+                };
+                if !reachable {
+                    out.push(crate::validate::Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
+                        severity: Severity::Warning,
+                        artifact_id: None,
+                        rule: "conditional-rule-unreachable".to_string(),
+                        message: format!(
+                            "conditional rule '{}' tests '{field}' for a value none of its \
+                             allowed-values can take ({}); it can never fire",
+                            rule.name,
+                            allowed.join(", ")
+                        ),
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// REQ-148 / #350: flag a `required-backlink` coverage rule that
@@ -2732,6 +2814,167 @@ mod tests {
                 "rule 'bad': from-type 'nosuch-from' is not a known artifact type".to_string(),
                 "rule 'bad': target-type 'nosuch-target' is not a known artifact type".to_string(),
             ]
+        );
+    }
+
+    // ── REQ-388 / #958 item 5: the AI review gate can fire ────────────────
+
+    fn ai_artifact(status: &str, reviewer: Option<&str>) -> Artifact {
+        let mut a = minimal_artifact("REQ-AI", "requirement");
+        a.status = Some(status.into());
+        a.provenance = Some(crate::model::Provenance {
+            created_by: "ai-assisted".into(),
+            model: Some("m".into()),
+            session_id: None,
+            timestamp: None,
+            reviewed_by: reviewer.map(Into::into),
+            federation: None,
+        });
+        a
+    }
+
+    // rivet: verifies REQ-388
+    /// `provenance.<key>` reads the provenance record, in both lookups.
+    #[test]
+    fn provenance_dotted_paths_read_the_provenance_record() {
+        let a = ai_artifact("approved", Some("alice"));
+        assert_eq!(
+            get_field_value(&a, "provenance.created-by").as_deref(),
+            Some("ai-assisted")
+        );
+        assert_eq!(
+            get_field_value(&a, "provenance.reviewed-by").as_deref(),
+            Some("alice")
+        );
+        assert_eq!(
+            get_field_value(&a, "provenance.model").as_deref(),
+            Some("m")
+        );
+        assert_eq!(get_field_value(&a, "provenance.session-id"), None);
+        assert_eq!(
+            get_field_value_for_variant(&a, "provenance.reviewed-by", Some("v")).as_deref(),
+            Some("alice")
+        );
+        let unreviewed = ai_artifact("approved", None);
+        assert_eq!(get_field_value(&unreviewed, "provenance.reviewed-by"), None);
+        assert_eq!(
+            get_field_value_for_variant(&unreviewed, "provenance.reviewed-by", Some("v")),
+            None
+        );
+    }
+
+    // rivet: verifies REQ-388
+    /// The shipped rule, on the real embedded `common` schema: an AI-authored
+    /// artifact that is approved or later needs a reviewer; a reviewed one and
+    /// a draft do not.
+    #[test]
+    fn ai_generated_needs_review_fires_on_the_shipped_common_schema() {
+        let schema = crate::embedded::load_schemas_with_fallback(
+            &["common".to_string()],
+            std::path::Path::new("/nonexistent-schemas-dir"),
+        )
+        .expect("embedded common loads");
+        let rule = schema
+            .conditional_rules
+            .iter()
+            .find(|r| r.name == "ai-generated-needs-review")
+            .expect("rule shipped");
+        let fires = |a: &Artifact| {
+            rule.when.matches_artifact(a)
+                && rule
+                    .condition
+                    .as_ref()
+                    .is_none_or(|c| c.matches_artifact(a))
+                && !rule.then.check(a, &rule.name, rule.severity).is_empty()
+        };
+        for s in [
+            "approved",
+            "implemented",
+            "verified",
+            "released",
+            "accepted",
+        ] {
+            assert!(
+                fires(&ai_artifact(s, None)),
+                "{s} without a reviewer must fire"
+            );
+            assert!(
+                !fires(&ai_artifact(s, Some("alice"))),
+                "{s} with a reviewer must not"
+            );
+        }
+        for s in ["draft", "proposed", "deprecated", "rejected"] {
+            assert!(!fires(&ai_artifact(s, None)), "{s} is not yet signed off");
+        }
+        let mut human = ai_artifact("approved", None);
+        human.provenance.as_mut().unwrap().created_by = "human".into();
+        assert!(!fires(&human), "only AI-authored artifacts");
+        assert!(
+            schema.check_conditional_rule_reachability().is_empty(),
+            "no shipped conditional rule in common is unreachable"
+        );
+    }
+
+    // rivet: verifies REQ-388
+    /// A condition no allowed value can satisfy is reported; a reachable
+    /// one, an `exists` test and an unconstrained field are not.
+    #[test]
+    fn unreachable_conditional_rules_are_reported() {
+        let mut file = crate::test_helpers::minimal_schema("r");
+        file.base_fields = vec![FieldDef {
+            name: "status".into(),
+            field_type: "string".into(),
+            allowed_values: Some(vec!["draft".into(), "approved".into()]),
+            ..Default::default()
+        }];
+        let rule = |name: &str, when: Condition, condition: Option<Condition>| ConditionalRule {
+            name: name.into(),
+            description: None,
+            condition,
+            when,
+            then: Requirement::RequiredFields {
+                fields: vec!["x".into()],
+            },
+            severity: Severity::Warning,
+        };
+        let eq = |v: &str| Condition::Equals {
+            field: "status".into(),
+            value: v.into(),
+        };
+        let mt = |p: &str| Condition::Matches {
+            field: "status".into(),
+            pattern: p.into(),
+        };
+        file.conditional_rules = vec![
+            rule("dead-equals", eq("active"), None),
+            rule("dead-matches", mt("^(active|live)$"), None),
+            rule(
+                "dead-condition",
+                Condition::Exists { field: "x".into() },
+                Some(eq("gone")),
+            ),
+            rule("ok-equals", eq("approved"), None),
+            rule("ok-matches", mt("^appr"), None),
+            rule(
+                "free-field",
+                Condition::Equals {
+                    field: "tier".into(),
+                    value: "z".into(),
+                },
+                None,
+            ),
+        ];
+        let flagged: Vec<String> = Schema::merge(&[file])
+            .check_conditional_rule_reachability()
+            .into_iter()
+            .map(|d| {
+                assert_eq!(d.rule, "conditional-rule-unreachable");
+                d.message.split('\'').nth(1).unwrap().to_string()
+            })
+            .collect();
+        assert_eq!(
+            flagged,
+            vec!["dead-equals", "dead-matches", "dead-condition"]
         );
     }
 }

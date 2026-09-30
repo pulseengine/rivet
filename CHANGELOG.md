@@ -51,6 +51,20 @@
   the consuming project shared that ID. On
   ordeal, 115 of 172 reported backlinks were such collisions. Only a prefixed
   reference (`prefix:ID`) crosses a project boundary now.
+- **The review gate on AI-authored artifacts can now fire** (REQ-388, #958) —
+  `ai-generated-needs-review` could never fire on a valid store, for two
+  reasons: it tested `status: active`, which is not a status, and it read
+  `provenance.created-by` / `provenance.reviewed-by`, which dotted paths never
+  resolved. **Behaviour change:** an AI-authored artifact that is approved or
+  later (approved, implemented, verified, released, accepted) and has no
+  `reviewed-by` now gets a warning; record one with `rivet stamp <ID>
+  --reviewed-by <name>`. A conditional rule that no allowed value can satisfy
+  is now reported (`conditional-rule-unreachable`). `common` schema 0.3.1.
+- **Documentation that described behaviour rivet does not have** (REQ-388,
+  #958) — AGENTS.md named a `baseline` field for release planning (it is
+  `release`), inside a section `rivet init --agents` would overwrite; the MCP
+  catalog said fifteen tools and omitted `rivet_bundle`; smaller claims about
+  rule consistency, orphan detection, JSON schemas and `init` are corrected.
 - **`--set-field` writes the type the schema declares** (REQ-385, #1008) —
   `rivet modify --set-field backlog=true` wrote the string `"true"` for a
   field declared boolean, so `exempt-when-field`, which honours only a boolean,

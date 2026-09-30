@@ -183,26 +183,6 @@ Use `rivet validate --format json` for machine-readable output.
 - Always include traceability links when creating artifacts
 - Run `rivet validate` before committing
 
-### Release planning (the `baseline` field is the release field)
-
-rivet's release plan lives in the **`baseline`** field on requirement /
-design-decision / feature artifacts — it is the schema-declared, queryable
-"which version is this targeted for" field. (This is the field the
-release-planning skill calls `release:`; rivet's name for it is `baseline`,
-and #512's "add a release field" is answered by this convention, not a new
-field.)
-
-- **In progress:** `baseline: vX.Y.Z-track` while the release is being built.
-- **Shipped:** drop the `-track` suffix (`baseline: vX.Y.Z`) when the release
-  is cut.
-- **Scope a release** = `rivet list --filter '(= baseline "vX.Y.Z-track")'`.
-- **Readiness is a query:** a release is cuttable only when every artifact in
-  its scope is `verified`/`accepted` (the V closed) — not when it's merely
-  `implemented`. Check with
-  `rivet list --filter '(and (= baseline "vX.Y.Z-track") (= status "implemented"))'`
-  (anything returned is still-to-verify).
-- Tag in bulk without races via `rivet modify --where '<filter>' --set-field baseline=vX.Y.Z-track`.
-
 ## Commit Traceability
 
 This project enforces commit-to-artifact traceability.
@@ -218,6 +198,26 @@ Exempt artifact types (no trailer required): `chore`, `style`, `ci`, `docs`, `bu
 
 To skip traceability for a commit, add: `Trace: skip`
 <!-- END rivet-managed -->
+
+## Release planning
+
+<!-- Hand-written, and deliberately OUTSIDE the rivet-managed markers: text
+     inside them is replaced on `rivet init --agents` (REQ-388 / #958). -->
+
+rivet's release plan lives in the **`release`** field on requirement /
+design-decision / feature artifacts. A release is defined by the artifacts
+scoped to it; `rivet release` reads and gates on that scope. (An earlier
+version of this file called the field `baseline`; there is no such field, and
+a filter on it matched nothing.)
+
+- **Scope an artifact:** `rivet modify <ID> --set-release vX.Y.Z`, or in bulk
+  `rivet modify --where '<filter>' --set-release vX.Y.Z`.
+- **See a release's scope:** `rivet list --release vX.Y.Z`, or
+  `rivet list --filter '(= release "vX.Y.Z")'`.
+- **Readiness is a query:** `rivet release status vX.Y.Z` exits non-zero until
+  every artifact in scope is release-ready. What "ready" means is set by the
+  `release:` block in `rivet.yaml` (see `rivet docs release-status`).
+- **The release note:** `rivet release notes vX.Y.Z`.
 
 ## Before You Push (Rust)
 
