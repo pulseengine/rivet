@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790708252291,
+  "lastUpdate": 1790742309557,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "b2b155cb1ef9f6a10bf311b57e5c675cf2ffa358",
-          "message": "fix(coverage): a declared-exempt source leaves the denominator (REQ-309, #848) (#850)\n\nfix(coverage): a declared-exempt source leaves the denominator (REQ-309, #848)\n\nReported from scry's safety case. `rivet coverage` returned a true number that\nwas not measuring what a reader assumes: three goals carrying GSN's\n`undeveloped: true` — the diamond, a deliberate declaration of known\nincompleteness — counted identically to a goal somebody forgot.\n\nThe safety-case schema already PROMISED the exemption. goal-has-support is\ndescribed as \"unless marked undeveloped\", while `undeveloped` appeared in no\nRust file at all. The semantics were documented and unimplemented.\n\nThe figure misled in both directions. False alarm: a project doing the right\nthing scored as if it had drifted, and the natural remedy is to add links until\nthe number goes green — the cosmetic move a coverage gate exists to prevent.\nFalse comfort, the one that bites: a forgotten goal hides among the declared\nones, because three accepted gaps becoming four reads as more of the same.\n\nFix is schema-declared, not a hardcoded field name: a traceability rule may name\na boolean field via `exempt-when-field`, so any schema can express its own\nnotion of a declared, accepted gap. safety-case wires it to `undeveloped` on\ngoal-has-support. An exempt source leaves the denominator AND is reported as its\nown named count with ids — counted, never silently dropped, because a\ndeclaration must stay visible as a declaration. Only an explicit `true` exempts;\n`false` or absent keeps the source in scope, so an exemption is always something\nan author wrote on purpose.\n\nMeasured on a three-goal fixture (one supported, one declared undeveloped, one\nforgotten):\n\n  before   goal-has-support  1/3  33.3%\n  after    goal-has-support  1/2  50.0%  + \"1 declared exempt: G-002\"\n  after, forgotten goal removed\n           goal-has-support  1/1 100.0%  + \"1 declared exempt: G-002\"\n\nSo a forgotten goal now moves the figure 100% -> 50%, where it is loud.\n\nOracle first: the test was written before the implementation and is\nnegative-controlled — disabling the exemption reddens it with \"declared-\nundeveloped goal must leave the denominator\".\n\nDeliberately NOT applied to goal-has-context. `undeveloped` states that a goal\nis not yet decomposed into evidence and says nothing about whether it has\ncontext; exempting that rule too would silently weaken a separate check. Flagged\nfor the reporter rather than assumed.\n\nNot done here: the reporter's `--fail-under` policy ask (exemptions allowed in\ndevelopment, blocking for a qualification claim, since an undeveloped ASIL D\ngoal is fine in-flight and is a release blocker for certification).\n\nrivet's own coverage is unchanged — no artifact here carries `undeveloped`.\n\nConfirmed with cargo fmt --check, clippy --all-targets -D warnings on 1.97.0,\ncargo test --workspace (exit 0, 65 ok), rivet validate, rivet docs check — all\nexit 0.\n\nImplements: REQ-309\nRefs: REQ-010",
-          "timestamp": "2026-08-26T06:07:59+02:00",
-          "tree_id": "58a5699d30e509f09b3dea52ab314daae05e7577",
-          "url": "https://github.com/pulseengine/rivet/commit/b2b155cb1ef9f6a10bf311b57e5c675cf2ffa358"
-        },
-        "date": 1787726410838,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 66849,
-            "range": "± 2499",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 814934,
-            "range": "± 13544",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 10888120,
-            "range": "± 129104",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1314,
-            "range": "± 49",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 16157,
-            "range": "± 517",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 333615,
-            "range": "± 4360",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 63,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 63,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 63,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1184219,
-            "range": "± 18762",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 139214,
-            "range": "± 7196",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1597796,
-            "range": "± 28679",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 22921971,
-            "range": "± 782170",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 370041,
-            "range": "± 2561",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 12482455,
-            "range": "± 101341",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 872300848,
-            "range": "± 9589437",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3182,
-            "range": "± 82",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 35250,
-            "range": "± 1089",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 792390,
-            "range": "± 18348",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 50233,
-            "range": "± 288",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 534190,
-            "range": "± 2763",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6578063,
-            "range": "± 106558",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 838,
-            "range": "± 41",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 10317,
-            "range": "± 304",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 261377,
-            "range": "± 4576",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 17722,
-            "range": "± 931",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 122690,
-            "range": "± 1602",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1127932,
-            "range": "± 46736",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1351979,
             "range": "± 34059",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "21242f8f44ffc081c0121c8d030948cba0931ab1",
+          "message": "test(schema, sexpr): kill the scheduled run's surviving mutants (REQ-386) (#1013)\n\nVerifies: REQ-386\nRefs: #1009\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9",
+          "timestamp": "2026-09-30T06:12:16+02:00",
+          "tree_id": "4348b9142b40b836dd2d9a721d3885bb08d8353d",
+          "url": "https://github.com/pulseengine/rivet/commit/21242f8f44ffc081c0121c8d030948cba0931ab1"
+        },
+        "date": 1790742308506,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84849,
+            "range": "± 421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 913367,
+            "range": "± 4038",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14136691,
+            "range": "± 820957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2228,
+            "range": "± 24",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25483,
+            "range": "± 110",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 353159,
+            "range": "± 1722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1519365,
+            "range": "± 26772",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 148147,
+            "range": "± 1713",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1779707,
+            "range": "± 22078",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27409638,
+            "range": "± 1721138",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 508912,
+            "range": "± 3487",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17262630,
+            "range": "± 204600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1379036894,
+            "range": "± 12534287",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4314,
+            "range": "± 96",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 58355,
+            "range": "± 177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 757732,
+            "range": "± 30656",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59992,
+            "range": "± 2810",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 678557,
+            "range": "± 2351",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7812512,
+            "range": "± 264968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1150,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14471,
+            "range": "± 105",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 332237,
+            "range": "± 2109",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22751,
+            "range": "± 73",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 159358,
+            "range": "± 587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1511378,
+            "range": "± 25645",
             "unit": "ns/iter"
           }
         ]
