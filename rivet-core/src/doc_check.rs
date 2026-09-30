@@ -2589,4 +2589,42 @@ jobs:
         let unreleased_edit = tagged.replace("## [Unreleased]\n", "## [Unreleased]\n\n- new\n");
         assert!(changelog_released_drift(rel, &unreleased_edit, at).is_empty());
     }
+
+    // rivet: verifies REQ-399
+    /// Through the invariant itself: only a file named CHANGELOG.md is
+    /// checked, and every violation carries the invariant's name.
+    #[test]
+    fn changelog_structure_checks_only_changelog_files() {
+        let content = "## [Unreleased]\n\n### Fixed\n- a\n\n### Fixed\n- b\n";
+        let docs = vec![doc("CHANGELOG.md", content), doc("docs/notes.md", content)];
+        let root = std::env::temp_dir().join("rivet-changelog-structure-test-no-git");
+        let (cmds, embeds) = (known_cmds(&[]), known_cmds(&[]));
+        let ctx = ctx_with(&root, &docs, &cmds, &embeds, "0.0.0");
+        let v = ChangelogStructure.check(&ctx);
+        assert_eq!(v.len(), 1, "{v:#?}");
+        assert_eq!(v[0].file, PathBuf::from("CHANGELOG.md"));
+        assert_eq!(v[0].line, 6);
+        assert_eq!(v[0].invariant, ChangelogStructure.name());
+        assert_eq!(ChangelogStructure.name(), "ChangelogStructure");
+    }
+
+    // rivet: verifies REQ-399
+    /// A tag lookup that resolves EVERY heading: `[Unreleased]` is still
+    /// never compared, a repeated release heading is compared once, and a
+    /// drifted LAST section reports its own line.
+    #[test]
+    fn changelog_drift_skips_unreleased_and_repeats_and_locates_the_last_section() {
+        let tagged = "## [Unreleased]\n\n## [0.2.0]\n\n- x\n\n## [0.1.0]\n\n- y\n";
+        let rel = Path::new("CHANGELOG.md");
+        let always = |_: &str| Some(tagged.to_string());
+        let unreleased_edit = tagged.replace("## [Unreleased]\n", "## [Unreleased]\n\n- new\n");
+        assert!(changelog_released_drift(rel, &unreleased_edit, always).is_empty());
+        let last_drift = tagged.replace("- y\n", "- y\n- leaked\n");
+        let v = changelog_released_drift(rel, &last_drift, always);
+        assert_eq!(v.len(), 1, "{v:#?}");
+        assert_eq!(v[0].line, 7, "the drifted section is the last one");
+        let repeated = format!("{last_drift}\n## [0.1.0]\n\n- again\n");
+        let v = changelog_released_drift(rel, &repeated, always);
+        assert_eq!(v.len(), 1, "a repeated heading is compared once: {v:#?}");
+    }
 }

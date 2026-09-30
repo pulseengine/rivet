@@ -244,17 +244,18 @@ fn import_needs_json_inner(
 fn extra_link_fields(item: &NeedsItem) -> std::collections::HashSet<String> {
     item.extra
         .keys()
-        .filter(|k| *k != "links" && !k.ends_with("_back"))
+        // `links` itself is a struct field, never in `extra`; `links_back` is
+        // in EXCLUDED_EXTRA_KEYS. So a key with a `_back` twin is all it takes.
         .filter(|k| item.extra.contains_key(&format!("{k}_back")))
         .cloned()
         .collect()
 }
 
-/// `K_back` whose forward field `K` is a link field (or the generic
-/// `links`): a reverse index sphinx-needs computes, not data to import.
+/// `K_back` whose forward field `K` is present: a reverse index sphinx-needs
+/// computes, not data to import. (`links_back` is in EXCLUDED_EXTRA_KEYS.)
 fn is_back_link_list(item: &NeedsItem, key: &str) -> bool {
     key.strip_suffix("_back")
-        .is_some_and(|fwd| fwd == "links" || item.extra.contains_key(fwd))
+        .is_some_and(|fwd| item.extra.contains_key(fwd))
 }
 
 fn transform_id(id: &str, transform: &IdTransform) -> String {
