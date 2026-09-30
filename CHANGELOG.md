@@ -6,6 +6,12 @@
 ## [Unreleased]
 
 ### Added
+- **The built-in reference is readable outside the binary** (REQ-396) —
+  `rivet docs --export docs/reference` writes every `rivet docs` topic as
+  Markdown; the export is committed, and `rivet docs check` fails when it no
+  longer matches the binary. A `context7.json` makes rivet discoverable to AI
+  coding assistants through Context7; a test keeps its guidance to real
+  commands, flags and filters.
 - **The VS Code extension publishes to Open VSX** (REQ-397) — the registry
   VSCodium, Cursor and Windsurf install from; previously only the Microsoft
   Marketplace. The release confirms the version is listed before reporting
@@ -31,6 +37,9 @@
   permissions).
 
 ### Fixed — safety
+- **`--qualification-mode` no longer allows `docs check --fix`** (REQ-396) —
+  it treated every `docs` command as read-only, but `--fix` rewrites
+  documentation files; `--fix` and the new `--export` are refused in that mode.
 - **`verified` can no longer be written without evidence** (REQ-381, #952) —
   `rivet verify` refuses to advance an artifact without a `verifies` link or a
   source marker, and that refusal is what `verified` means. But `rivet modify
