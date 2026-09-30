@@ -7674,7 +7674,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-8
       timestamp: 2026-07-01T00:00:00Z
-    release: v0.40.0
+    release: v0.41.0
 
   - id: REQ-248
     type: requirement
@@ -8147,7 +8147,7 @@ artifacts:
     title: "Mutation-safety property harness for the YAML write path — one invariant, four data-loss bugs, no property test (#809)"
     status: proposed
     description: "Every mutating command writes through `rivet-core/src/yaml_edit.rs`, a ~2000-line line-oriented editor built on indentation heuristics. Hand-rolled deliberately (it preserves comments, key order and human formatting, which a serde round-trip destroys in version-controlled files) — but it has produced four data-loss bugs, each found by a user rather than a test: #573 flow-style `fields:` maps, #618/#625 block-list orphaning, REQ-287 unquoted tag emission, and #806 multi-line values in `fields:`. All four violate one invariant: replacing a key must consume that key's ENTIRE on-disk extent and change nothing else. #806 is the proof that examples are not enough — `set_field` upholds the invariant via `field_block_end` + `splice` and its comment names the history, while the custom-fields loop 700 lines below did a single-line assignment and had no multi-line-value test at all. The property must be stated as EXACT equality: parse before, mutate, parse after must succeed, every path except the target must be byte-identical, and the target must equal the intended value. 'It parses' is only a precondition — #806 mode 1 produced a perfectly parseable file whose value silently became 'short first body line second body line', so a parse-only assertion would green on the data loss. Corpus axis is scalar STYLE, not field name: plain, single/double-quoted, folded, literal, |- / |+ / |2, empty value, flow map, flow seq, block seq, nested block map, body containing colon / hash / leading dash, internal blank line, anchors, CRLF, tabs, last-field-of-last-artifact, unicode. Mutations: every --set-* flag, --add-tag/--remove-tag, --where bulk, plus `rivet add` and the MCP/batch writers. Lands as a proptest in rivet-core (fast, shrinks, runs in CI) plus a thin CLI-level test for flag wiring. Deliberately does NOT include migrating the writer to the in-tree rowan-yaml CST: that is an architecture decision with real cost for the maintainer to weigh, and the harness is the right thing to have in place BEFORE such a migration so it can prove behavior is preserved."
-    release: v0.40.0
+    release: v0.41.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8202,7 +8202,7 @@ artifacts:
     title: "Humans have no assisted way to author artifacts — YAML editing is the only path (#546)"
     status: draft
     description: "User-reported and the largest gap in the v0.34 customer-UI theme, missed in the first triage pass. rivet's mutation surface is excellent for agents (add, modify, link, batch, next-id, MCP) and its read surface is excellent for everyone (serve, query, sql, trace, export), but a human authoring or correcting an artifact has exactly one option: hand-edit YAML. The reporter's words are the requirement — the editing is cumbersome, and we are missing the UI for helping humans work with it. Note the irony this repo has just paid for: hand-editing is also the path with no guard rails, and the write path underneath has produced four data-loss bugs (#573, #618/#625, REQ-287, #806), so the humans doing it by hand are the ones least protected. DESIGN-FIRST — this must not go straight to implementation. At least three plausible shapes exist and they differ enormously in cost and in who they serve: (a) extend the vscode-rivet VSIX with form-based editing and completion, which meets people where the YAML already is but is limited to VS Code users and the webview has no htmx; (b) make `rivet serve` writable, which reaches any browser and reuses the existing dashboard but turns a read-only viewer into a mutating service with all the authz questions that implies; (c) a guided terminal flow (`rivet add --interactive`) which is cheap and composes with the existing CLI but does not address the reporter's likely mental model of a UI. A design decision artifact must land before any REQ is scoped for implementation, and it must state which of these it is NOT doing and why."
-    release: v0.40.0
+    release: v0.42.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8290,7 +8290,7 @@ artifacts:
     title: "`rivet verify` advances on the existence of evidence, not its sufficiency (#838)"
     status: proposed
     description: "Reported from varve, where rivet is the release-readiness gate, and reproduced in rivet's own v0.34.0 cut the same day. `rivet verify REQ-X` correctly refuses when there is NO evidence — that guard works and stopped the reporter twice. But when a `verifies` marker exists it advances unconditionally, and a marker is cheap: one comment line above one `#[test]`. The structural problem is granularity: a requirement is a set of clauses, a marker attaches to the requirement, so the evidence link is coarser than the claim and the gap is invisible. The failure is not a missing check but a graph that LOOKS complete, which is worse — readers stop reading the requirement text once status says `verified`. In varve three requirements had markers and undischarged clauses (a gate that cannot detect the failure mode its clause names; a clause implemented for one transport but not another; a clause parsing a field nothing consumes). In rivet, REQ-298 was flipped to `verified` during the v0.34.0 release with its third clause ('tighten the top-level command list so the common path is legible') knowingly undischarged — 52 flat top-level commands remain — and `coverage --tests` reported `REQ-298  1 test marker`, indistinguishable from full discharge. The residual was hand-carried into REQ-307 plus commit prose, i.e. the reporter's option (3) improvised manually, and crucially the trace graph does NOT carry that caveat, so the caveat is not traceable. Degenerate variant found the same day: a marker that matches nothing is reported as neither present nor broken — the scanner regex accepts only word characters and hyphens after `verifies`, and `#` is neither, so `rivet: verifies #808` silently is not a marker at all; six such markers existed against 593 valid ones. Options in cost order: (1) per-clause markers `rivet: verifies REQ-X clause 3`, the real fix, but needs clauses addressable rather than prose inside `description` — a schema migration across every artifact; (2) make `partially-verifies` BLOCK rather than annotate, so `verify` refuses to advance past `implemented` without explicit override — no schema change, converts the common case into a refusal, and is therefore the right first move; (3) record the human judgement explicitly (`--clauses-discharged 1,2,4 --note ...`) so an unexamined default becomes a stated claim — cheap, but only meaningful if clause numbering is stable, and prose clauses renumber on any description edit, so record clause TEXT alongside the index or do (1) first."
-    release: v0.40.0
+    release: v0.42.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8401,7 +8401,7 @@ artifacts:
     title: "Externally-owned verification: a criterion only another project can run has no home but prose (#800)"
     status: proposed
     description: "A requirement can carry a verification criterion that only a DIFFERENT project can run. `rivet verify` already refuses to promote without evidence, which is the correct block, so the mechanism is present; what is missing is a way to say WHY it is unrun and WHO owns it, so the set is queryable rather than living in a description field. `external-anchor` is not it — that models the INBOUND boundary, requirements handed to us by a supplier, with `source-of-truth`, `expected-derived-types` and `received-status`. This is the outbound direction: evidence we are waiting on from someone else. Same family as REQ-313, which gave a declared-blocked acceptance criterion a machine-readable home instead of shouty caps inside the string, and as REQ-308, which is about `verify` advancing on the existence of evidence rather than its sufficiency. Deliberately NOT scheduled into a release yet: the three overlap enough that solving them piecemeal risks three near-identical mechanisms for 'this obligation is declared, owned elsewhere, and not yet discharged'. REQ-308 already needs clauses to become addressable, which is a schema migration across every artifact; this should be designed alongside it rather than bolted on first. Backlog pending that design decision."
-    release: v0.40.0
+    release: v0.42.0
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8700,7 +8700,7 @@ artifacts:
     title: "serde_yaml is unmaintained and reads every artifact in every PulseEngine repo — the parser under the assessor evidence chain has no upstream (#930)"
     status: proposed
     description: "Raised from varve (#930) and confirmed. Cargo.lock resolves serde_yaml 0.9 to 0.9.34+deprecated, last published 2024-03-25, archived upstream. THE EXPOSURE IS TOTAL, NOT PARTIAL. rivet.yaml declares artifacts, safety/stpa-sec and safety/tool-qualification as format generic-yaml; that format is served by GenericYamlAdapter at lib.rs:329, whose parse is `serde_yaml::from_str` at formats/generic.rs:191. So serde_yaml reads every artifact, which is exactly what the report said. AN EARLIER VERSION OF THIS REQUIREMENT CLAIMED OTHERWISE AND WAS WRONG, and the failure mode is worth recording because it is the one this project keeps finding in its own gates. rivet does contain yaml_cst.rs, a rowan-based lossless parser of 1419 lines, and yaml_hir.rs which extracts artifacts from it. Seeing those modules and finding extract_schema_driven called in lib.rs, I concluded that was the artifact load path — without checking which adapter the CONFIGURED sources actually use. extract_schema_driven is reached from import_with_schema, a separate route the generic-yaml sources do not take. The reproduction I ran to demonstrate a parser divergence PRINTED the answer, `[WARN rivet_core::formats::generic]`, naming the module, and I read it as confirmation because the conclusion was already formed. Evidence in hand, read for agreement rather than for refutation. THE DIVERGENCE IS REAL AND NOW HAS A SIMPLER EXPLANATION. A spec-valid document with an anchor and a merge key resolves in PyYAML to two complete artifacts and is rejected by rivet with `missing field type at line 7`. serde_yaml does not implement merge keys, and serde_yaml is what reads the file. rivet fails LOUDLY here — a warning, an explicit artifacts-are-NOT-loaded line, and validate exiting FAIL — so this is not the silent case, but two tools do disagree about a valid document and the message blames the author rather than naming the limitation. That gap will never be fixed where it lives. WHAT OWNING IT WOULD MEAN, given the maintainer prefers taking this on-side rather than depending outside. The base is genuine: 1419 lines and 34 tests in yaml_cst.rs, 2564 lines and 36 tests in yaml_hir.rs, 2514 lines and 49 tests in yaml_edit.rs. What is missing is not a parser but a serde Deserializer over that CST, after which every derive(Deserialize) keeps working while the read path becomes rivet own. The usual argument against hand-rolling a YAML parser is sound for general-purpose parsers; rivet parses a constrained artifact format and already REFUSES what it does not handle, emitting Error nodes for anchors, aliases, tags, flow mappings, complex keys, multi-document streams and merge keys. A subset parser that enforces its subset is a different risk class from one that guesses. But note the scope correction: because serde_yaml is on the whole artifact read path rather than only on field values, this is a larger change than swapping some scalar deserialization, and GenericYamlAdapter is the first thing that has to move. SAFETY MECHANISM, which should gate removal rather than follow it: the repository holds 706 artifacts plus schema and config documents. Parse every one through both paths and assert structural equality before serde_yaml is dropped. A migration to any other external crate would need the same corpus, so the cost is not specific to owning it. NOT DECIDED HERE, and cross-repo: whether the shared org crate is the artifact model rather than the parser. PRECONDITION MEASURED 2026-09-11 (REQ-348's differential gate). The safety mechanism this requirement asks for now exists and it has already found the blocker. yaml_cst has a FlowSequence node and no FlowMapping node, so a flow-mapped value is dropped with NO parse error while the surrounding artifact survives. On this repository's own corpus that is 18 artifacts whose provenance the rowan path does not see — serde reads provenance on 205 of the 321 artifacts in requirements.yaml, rowan on 195, and the 10-artifact gap is exactly that file's flow-style share. So migrating GenericYamlAdapter onto the CST today would silently lose live data here, not merely risk it on a shape the corpus happens not to use. FlowMapping support in yaml_cst is a precondition of this migration, not a follow-up to it, and the gate will redden the moment it lands so the record has to be updated rather than re-baselined. Carry with the fix: rivet-core/tests/differential_yaml.rs generates only block-style id/type/title/status and compares only those four fields, so it agrees by construction and did not find this. Widen its generator to flow mappings, links, tags and provenance as part of landing FlowMapping — it can go green only once the gap is closed, which makes it the fix's oracle rather than a separate chore. PRECONDITION DISCHARGED 2026-09-11. yaml_cst now parses flow mappings and the corpus divergence is gone: 26 comparable files, 26 agree, 0 differ, where it was 24 agree and 2 differ on 18 artifacts. THE IMPLEMENTATION IS DELIBERATELY SMALL. `{` and `}` become tokens exactly as `[` and `]` already were, and parse_flow_mapping emits a **Mapping** node — the same kind a block mapping produces, with MappingEntry, Key and Value children — rather than a distinct FlowMapping kind. That choice is the point: every HIR walker, extract_provenance and the generic and schema-driven extractors alike, already looks for Mapping, so all of them gained flow support without knowing flow exists. A separate kind would have meant each consumer that forgot to handle it silently reads nothing, which is the exact failure being fixed. The tree stays lossless — braces and commas are kept as tokens — so the style is recoverable and the text round-trips. Flow entry values terminate at a comma or closing brace rather than at end of line, which is the whole difference from the block form, and each is wrapped in its own Value node so scalar_text's sibling collection stops at the entry boundary instead of swallowing the rest of the mapping into the first value. Flow mappings nest in flow mappings, in flow sequences, and as sequence items. TWO THINGS THE NEGATIVE CONTROLS FOUND, both of which would otherwise have shipped. First, removing `{` from lex_plain_scalar's break bytes was caught by no test. The rule is that a surviving mutant means the assertion is missing — but probing both lexer variants side by side showed the opposite: the break byte was WRONG. `a{b: c}` is a block mapping whose key contains a brace, and breaking on `{` made it lex as `a`, `{`, `b`, `:` and emit two spurious diagnostics, expected ':' after mapping key and expected mapping key found Some(LBrace). Removing it fixes that and shrinks the lexer change to two token arms. A test written to cover the mutant would have frozen a bug in place. Second, the same probe showed a flow mapping inside a flow SEQUENCE, `[a, {b: c}, d]`, producing three unexpected-token-in-flow-sequence errors; parse_flow_sequence already recursed for a nested `[` and `{` fell to the error arm. Both are now fixed and each is caught by exactly the test that claims it. EVIDENCE. The oracle was written first and watched go red: the proptest generator in differential_yaml.rs was widened to emit provenance in both flow and block style and to compare it, and proptest shrank the failure to `provenance: {created-by: ai-assisted, model: A}` — the corpus shape exactly. It passes now. Eleven unit tests live IN yaml_cst.rs rather than in tests/, because the mutation gate runs --lib and cannot see integration tests, and five deliberate mutations of the new code each redden only the test that names them. Workspace 2389 passing, cli_commands 216, fmt, clippy --all-targets -D warnings on 1.97.0, validate, docs check and yamllint all zero. Scope note, since it narrows the work: the two paths agree on everything else. 26 comparable files, 24 fully agree, and the only divergence class across 715 serde-read and 1062 rowan-read artifacts is provenance."
-    release: v0.40.0
+    release: v0.41.0
     tags: [yaml, dependencies, supply-chain, architecture]
     provenance:
       created-by: ai-assisted
@@ -8866,7 +8866,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-15T19:29:56Z
-    release: v0.40.0
+    release: v0.42.0
 
   - id: REQ-361
     type: requirement
@@ -9067,7 +9067,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-24T07:13:56Z
-    release: v0.40.0
+    release: v0.41.0
 
   - id: REQ-375
     type: requirement
@@ -9082,7 +9082,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-24T15:33:28Z
-    release: v0.40.0
+    release: v0.41.0
 
   - id: REQ-376
     type: requirement
@@ -9097,7 +9097,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-24T16:05:46Z
-    release: v0.40.0
+    release: backlog
 
   - id: REQ-377
     type: requirement
@@ -9112,13 +9112,13 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-24T21:09:51Z
-    release: v0.40.0
+    release: v0.41.0
 
   - id: REQ-378
     type: requirement
     title: 62 of 67 unsafe control actions name their control action in free text that resolves to nothing, and validate passes
     status: proposed
-    release: v0.40.0
+    release: v0.41.0
     description: "Found while testing REQ-340's grounding claim on rivet's own corpus, and a defect in its own right independent of any formalization work. STPA's analytical value depends on each unsafe control action being attributable to a SPECIFIC control action issued by a specific controller. In rivet that attribution is prose. Measured through the store with rivet list --format json --full, guarded by an assertion that fields are populated: of 67 unsafe control actions, 62 name their control action in FREE TEXT THAT RESOLVES TO NOTHING, and only 5 use a string that is an artifact id. UCA-C-1, for example, names its action as Build link graph, validate artifacts, generate metrics, a sentence that matches none of the 20 control-action artifacts that exist. rivet validate passes over all of it, because uca.control-action is declared as a plain string field rather than a link, so there is nothing for validation to resolve. The same holds one level up: all 8 controller process models are lists of English phrases such as Current state of local artifact files, with no ids, so a UCA's context can only reference the controller belief it invalidates by paraphrase. TWO CHANGES, in order. First, make the UCA-to-control-action relation a typed link to a control-action artifact, so an unresolvable reference becomes a broken-link error rather than silently passing, and migrate the 62 existing references, most of which will need a human to choose which of the 20 actions each one means. Second, give process-model entries ids so a UCA can cite the belief it is about. Both improve STPA rigour on their own merits, and both are the groundwork REQ-340 identified as the precondition for ever revisiting autoformalization. Note the migration is itself a grounding exercise of exactly the kind the paper describes: reconciling differently-worded references to the same thing, and it should be done by a person rather than by string similarity."
     tags: [stpa, traceability, weak-green, grounding]
     fields:
@@ -9148,7 +9148,7 @@ artifacts:
     type: requirement
     title: bounded, pre-registered autoformalization spike on rivet requirement pairs, with the fidelity check and negative control the paper lacked
     status: proposed
-    release: v0.40.0
+    release: v0.42.0
     description: "The bounded spike decided by DD-080 after the maintainer reviewed REQ-340's assessment. PURPOSE: first-hand evidence on whether autoformalizing rivet requirements into Lean yields anything a reviewer would not already see, to inform a later adopt-or-not decision. It is a spike: its output is a findings document and a measurement, not production code or a new command. PRE-REGISTERED, so the spike cannot grade its own homework. The procedure, the measurements and the success criterion are fixed here BEFORE any formalization is run. CORPUS: four to six PAIRS of rivet requirements chosen because they plausibly constrain the same behaviour, so that equivalence, implication or inconsistency is a meaningful question for each pair. Each pair's selection rationale is recorded before formalizing. PROCEDURE, the paper's pipeline plus the step it lacked. One, an LLM formalizes each requirement into a Lean 4 proposition using core Lean only, no Mathlib, matching the paper's encodings. Two, a human writes the grounding hypotheses equating differently-named symbols, and every one is counted. Three, attempt to prove equivalence or implication between the pair, recording proved, refuted by counterexample, or search failed; a failed search is NOT a disproof and must not be reported as one, which the paper did. Four, THE FIDELITY CHECK THE PAPER LACKED: back-translate each Lean proposition into English and have a human compare it with the original requirement, recording any mismatch. MEASURED PER PAIR: compiles or not; number of grounding hypotheses; proof outcome; fidelity-check outcome; whether the proof went through only because the grounding made the two sides syntactically identical, as in the paper's own showcase. NEGATIVE CONTROL, and the most important element: one pair is deliberately seeded with the exact error the paper shipped, a greater-or-equal formalized as a strict greater-than. The fidelity check MUST catch it. If it does not, the procedure cannot be trusted to catch real mis-formalizations and every other result is void. SUCCESS CRITERION, fixed now: the spike SUCCEEDS if it surfaces at least one equivalence, implication or inconsistency between real rivet requirements that a human reviewer confirms is genuine and was not already recorded, AND the negative control is caught. It FAILS USEFULLY if every proof is carried by the grounding, which would replicate the paper's result on rivet's corpus and settle the adoption question in the negative. Either outcome is a result. TIME-BOXED; if the time-box expires, whatever was measured is reported as it stands."
     tags: [research, formal-methods, spike, lean]
     fields:
@@ -9269,9 +9269,9 @@ artifacts:
   - id: REQ-388
     type: requirement
     title: "documented behaviour the code does not have: link-type source and target restrictions are never enforced, among other claims in the audit (#958)"
-    status: proposed
+    status: verified
     release: v0.40.0
-    description: "Umbrella from the claim-versus-code audit: six items, each confirmed by reproduction first. Headline: schemas/common.yaml documents link-types source-types and target-types as restrictions for every shipped schema, but no validation path reads them, so a link from a disallowed source type validates clean; the only reader uses them to suppress a prose-mention lint. rivet docs check passes over all of these, which is itself the pattern. ACCEPTANCE: each item is either implemented as documented (source-types and target-types become validate diagnostics, introduced at a severity that does not break existing corpora without notice) or its documentation is corrected to what the code does; the fixed claims are machine-checked by a test or a docs check where feasible. PROGRESS: items 5, 6 and 7 fixed. Item 5 had two defects, not one: the rule tested status equals active, which the status enum does not contain, and its condition and requirement read provenance.created-by and provenance.reviewed-by, while dotted paths resolved only against the fields map, where provenance never lives. provenance.* now reads the provenance record; the rule, by the maintainer's choice, requires a reviewer once an AI-authored artifact is approved or later, and on rivet's own corpus it fires 459 times with no false positive. A new consistency check reports any conditional rule that no allowed value can satisfy; none remains in any shipped schema. common is 0.3.1. Item 6: AGENTS.md documents the release field and the section now sits outside the managed markers. Item 7: the MCP catalog states sixteen tools and lists rivet_bundle, guarded by a test against the registry; the rule-consistency, orphan-detection, JSON-schema and init claims are corrected. Also found: Schema::validate_consistency runs only in a test, so its unknown-link-type and unknown-target-type checks never reach a user. Items 1 to 4 remain."
+    description: "Umbrella from the claim-versus-code audit: six items, each confirmed by reproduction first. Headline: schemas/common.yaml documents link-types source-types and target-types as restrictions for every shipped schema, but no validation path reads them, so a link from a disallowed source type validates clean; the only reader uses them to suppress a prose-mention lint. rivet docs check passes over all of these, which is itself the pattern. ACCEPTANCE: each item is either implemented as documented (source-types and target-types become validate diagnostics, introduced at a severity that does not break existing corpora without notice) or its documentation is corrected to what the code does; the fixed claims are machine-checked by a test or a docs check where feasible. PROGRESS: items 5, 6 and 7 fixed. Item 5 had two defects, not one: the rule tested status equals active, which the status enum does not contain, and its condition and requirement read provenance.created-by and provenance.reviewed-by, while dotted paths resolved only against the fields map, where provenance never lives. provenance.* now reads the provenance record; the rule, by the maintainer's choice, requires a reviewer once an AI-authored artifact is approved or later, and on rivet's own corpus it fires 459 times with no false positive. A new consistency check reports any conditional rule that no allowed value can satisfy; none remains in any shipped schema. common is 0.3.1. Item 6: AGENTS.md documents the release field and the section now sits outside the managed markers. Item 7: the MCP catalog states sixteen tools and lists rivet_bundle, guarded by a test against the registry; the rule-consistency, orphan-detection, JSON-schema and init claims are corrected. Also found: Schema::validate_consistency runs only in a test, so its unknown-link-type and unknown-target-type checks never reach a user. Items 1 to 4 were split into REQ-401 (v0.41.0) when v0.40.0 was cut, so the delivered items ship; this requirement now covers items 5 to 7."
     tags: [docs, schema, validation, weak-green]
     fields:
       category: functional
@@ -9285,7 +9285,7 @@ artifacts:
     type: requirement
     title: "gates that pass vacuously: the traceability gate cannot fail on a traceability regression, and the WASM render tests skip themselves (#957)"
     status: proposed
-    release: v0.40.0
+    release: v0.41.0
     description: "Umbrella from the weak-green audit. Items include: ci.yml runs rivet validate, which exits 0 on the real corpus because every traceability finding is warning or info, so appending an implemented requirement with no links still passes; the WASM adapter tests render_aadl_via_wasm and load_spar_wasm_component skip on a hardcoded path that exists nowhere and one swallows Err, so call_render never executes (confirmed by two MISSED mutants on a72637c), leaving the read-only preopen and the fuel limit untested. REQ-375, the oracle dispatcher, carries its own item. ACCEPTANCE: each item has a negative control that now reddens its gate; the WASM tests run a real component in CI and fail rather than skip when it is absent there; a probe guest demonstrates a refused write through the preopen and a trap on fuel exhaustion."
     tags: [ci, testing, weak-green, wasm]
     fields:
@@ -9315,7 +9315,7 @@ artifacts:
     type: requirement
     title: "Kani Proofs dies with exit 143 before any proof runs; find and fix the cause instead of merging past it (#839)"
     status: proposed
-    release: v0.40.0
+    release: v0.41.0
     description: "Kani is continue-on-error and outside CI Gate, so it blocks nothing. As measured in the issue, failures die in the kani-github-action step before cargo kani runs. On 2026-09-29 it died with the runner's shutdown signal on #1006 and on main da945d3, and on a72637c it sat without an assigned runner for over an hour, while successes take about six minutes. ACCEPTANCE: the cause is established from runner and job evidence rather than guessed; Kani then passes on consecutive pushes to main, or moves to a runner class where it does, so that only a proof regression, not an infrastructure kill, turns it red; its success rate over the next ten main pushes is reported."
     tags: [ci, kani, formal]
     fields:
@@ -9330,7 +9330,7 @@ artifacts:
     type: requirement
     title: "self-hosted runner disk exhaustion fails every compile gate, and the post-job cleanup hook frees nothing (#567)"
     status: proposed
-    release: v0.40.0
+    release: v0.41.0
     description: "On the self-hosted pool a full disk makes every compile gate fail at once, and the post-job cleanup hook that exists for this reclaims no space. ACCEPTANCE: the hook's reclaim is measured with df before and after on a real runner, and it frees the per-job build output; a low-disk precondition fails a job early with a clear message rather than as a compile error; the fix holds across at least three consecutive runs on the same runner."
     tags: [ci, runners]
     fields:
@@ -9345,7 +9345,7 @@ artifacts:
     type: requirement
     title: "Linux release binaries require glibc 2.39, which excludes Ubuntu 22.04, Debian 12, RHEL 9 and every static image; ship musl builds (#980)"
     status: proposed
-    release: v0.40.0
+    release: v0.41.0
     description: "Measured on v0.37.0's Linux x86_64 asset: dynamically linked, with GLIBC_2.39 as its highest symbol version. varve's pulseengine realm ingests these binaries, and a layer is only as portable as its highest floor, so rivet alone sets it for the whole toolchain. ACCEPTANCE: the release publishes statically linked musl builds for x86_64 and aarch64 Linux alongside the existing assets, listed in SHA256SUMS and covered by the cosign signature; the release verifier confirms each is static and runs rivet --version inside a musl or distroless container; the release notes name the asset to use on older distributions."
     tags: [release, portability, varve]
     fields:
@@ -9360,7 +9360,7 @@ artifacts:
     type: requirement
     title: "no VEX: a consumer cannot tell whether a published advisory affects the rivet release they run (#983)"
     status: proposed
-    release: v0.40.0
+    release: v0.41.0
     description: "An SBOM says what is in a release, not what an advisory means for it. rivet already publishes a CycloneDX SBOM inside the signed sums, runs cargo-audit, and records not-applicable assessments as artifacts (REQ-376 for the salsa advisory). varve is adding ingestion of each payload's supply-chain documents. ACCEPTANCE: each release publishes a CycloneDX VEX document whose vulnerabilities carry analysis.state and a justification, generated from cargo-audit findings plus the recorded assessments, listed in SHA256SUMS and signed; an advisory published after a release can be answered by re-issuing that release's VEX without rebuilding it; an advisory with no recorded assessment is published as under investigation, never omitted."
     tags: [release, supply-chain, security, varve]
     fields:
@@ -9389,7 +9389,7 @@ artifacts:
   - id: REQ-396
     type: requirement
     title: "rivet is not discoverable by AI coding assistants through Context7, and its best reference documentation is invisible to any docs indexer"
-    status: implemented
+    status: verified
     release: v0.40.0
     description: "Found by the 2026-09-30 sphinx-needs comparison. Context7 is a documentation service with an MCP server that coding assistants query for current library docs; sphinx-needs registered in May 2026 (their #1720). A Context7 search for rivet returns five unrelated projects and not pulseengine/rivet, so an assistant asking about rivet receives the wrong library's documentation. Context7 indexes Markdown and reStructuredText, not source code, and rivet's authoritative reference, the rivet docs topics, is compiled into the binary as Rust string constants, so an indexer would see only design notes and historical plans. ACCEPTANCE: the embedded rivet docs topics are generated as Markdown under docs/reference, and rivet docs check fails when that export is stale; a context7.json at the repository root sets a distinct projectTitle naming PulseEngine and traceability, restricts folders to the reference export, getting-started material and the README, excludes docs/historical, docs/research, docs/plans and docs/design, and states only rules that a test checks against the CLI; submitting the repository to Context7 and claiming it are the maintainer's actions and are recorded here once done. IMPLEMENTED: rivet docs --export DIR writes all 59 topics as Markdown, byte-identical to what rivet docs <topic> prints, plus an index, each file marked by a generated banner; docs/reference is committed. rivet docs check reports ReferenceExportFresh when an exported topic is missing, differs, or no longer exists, and skips generated files in its hand-written-docs scan because the embedded-topic invariants already check that text; it passes on a fresh export and fails after an edit or a deletion. context7.json validates against Context7's published schema (the description was cut to its 200-character limit) and scans the repository minus history, research, plans, design notes, build and test trees and contributor-only files. A test checks that every rivet command in its rules is a real subcommand, every flag exists on it and every filter parses; a wrong flag, a missing subcommand and a malformed filter each fail it. Found in passing and fixed: --qualification-mode treated every docs invocation as read-only, although docs check --fix rewrites documentation files; --fix and --export are now refused in that mode. PENDING, maintainer: submit pulseengine/rivet at context7.com/add-library and claim it."
     tags: [docs, discoverability, ai]
@@ -9405,7 +9405,7 @@ artifacts:
     type: requirement
     title: "the VS Code extension is published only to the Microsoft Marketplace, so VSCodium, Cursor and Windsurf users cannot install it from their registry"
     status: implemented
-    release: v0.40.0
+    release: v0.41.0
     description: "Found by the 2026-09-30 sphinx-needs comparison: useblocks' ubCode began publishing to Open VSX on 2026-09-28. rivet's release workflow publishes vscode-rivet to the Microsoft Marketplace only; no Open VSX reference exists in .github or the extension. ACCEPTANCE: the release workflow publishes the same VSIX to Open VSX under the pulseengine namespace, from the SHA256SUMS-covered artifact; a missing token is a visible warning, as for the Marketplace; the release verification confirms the version is listed on Open VSX after a release. The Open VSX account, namespace and token secret are the maintainer's to create. IMPLEMENTED in release.yml as publish-vsix-openvsx: it publishes the same VSIX artifact as the Marketplace job with ovsx, is continue-on-error like that job so it cannot block release-npm.yml, warns visibly when OVSX_PAT is not configured, and after publishing polls https://open-vsx.org/api/pulseengine/rivet-sdlc/<version> until it answers 200, failing the job otherwise. The URL scheme was checked against a listed extension (useblocks/ubcode 0.36.0 answers 200, a missing version 404). NOT YET VERIFIED: that needs the maintainer's pulseengine namespace and OVSX_PAT secret and a release run; the status stays implemented until the listing check passes on a real release."
     tags: [release, vscode, distribution]
     fields:
@@ -9445,3 +9445,33 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-30T07:21:33Z
+
+  - id: REQ-400
+    type: requirement
+    title: "the MCP validate tool and the serve diagnostics give a different verdict than rivet validate on the same project (#956 item 3 and lower tier)"
+    status: proposed
+    release: v0.41.0
+    description: "Split out of REQ-387 when v0.40.0 was cut, so the delivered part of that umbrella could ship. rivet validate assembles its verdict from roughly thirteen sources inside one 1,321-line function with 19 parameters (parse-error skips, near-miss root keys, empty and overlapping sources, duplicate IDs, unknown config keys, blocked acceptance criteria, orphans, documents, cited sources, variants); the MCP validate tool calls validate::validate once, so a malformed file or a duplicate ID is FAIL on the command line and PASS over MCP. Also open from #956's lower tier: the export navigation drops sections, a drifted fork of the components module, a duplicated STPA type list, an SQL test named for an equivalence it never evaluates, and JSON output schemas checked for key presence only. CONSTRAINT for the fix: MCP speaks JSON-RPC over stdout, so a shared compute function must print nothing to stdout; the current function prints as it goes. ACCEPTANCE: rivet validate is split into a print-free compute step and a render step; the MCP validate tool calls the same compute step with default options and returns the same verdict and diagnostic set for a fixture with a parse error, a duplicate ID and an overlapping source; each lower-tier item is fixed with a test or recorded as not reproducing."
+    tags: [consistency, mcp, validate, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T12:33:05Z
+
+  - id: REQ-401
+    type: requirement
+    title: "documented behaviour the code does not have, remaining items: link-type restrictions, ignored export flags, non-recursive document scanning, and the vendoring claim for bridges (#958 items 1-4)"
+    status: proposed
+    release: v0.41.0
+    description: "Split out of REQ-388 when v0.40.0 was cut. Item 1: link-type source-types and target-types are documented as restrictions and never enforced; the fix is written (a link-type-restriction warning, an empty list merging as any, a link-field-restriction-conflict schema check) and it exposed rivet's own aspice, score and stpa-sec schemas contradicting themselves. Item 2: export --format html documents --homepage, --version-label and --versions and a generated config.js, and ignores all of them. Item 3: document scanning is described as recursive and is one level deep, dropping nested documents without a warning. Item 4: init --vendor-schemas claims immunity to release-to-release rule drift, which is false for bridges, which still load from the binary. ACCEPTANCE: each item is implemented as documented or its documentation is corrected, with a test; for item 1, every shipped schema is free of link-field restriction conflicts."
+    tags: [docs, schema, validation, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T12:33:05Z
