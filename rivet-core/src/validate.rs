@@ -740,6 +740,32 @@ pub fn validate_structural_with_externals_and_variant(
                 }
             }
 
+            // REQ-385 / #1008: a field declared boolean or numeric that holds
+            // a STRING. Older `rivet modify --set-field` wrote `"true"` this
+            // way, and consumers of the typed value — `exempt-when-field`
+            // honours only a boolean `true` — silently skip it.
+            if matches!(
+                field.field_type.as_str(),
+                "boolean" | "bool" | "integer" | "number"
+            ) {
+                if let Some(s) = effective_fields.get(&field.name).and_then(|v| v.as_str()) {
+                    diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
+                        severity: Severity::Warning,
+                        artifact_id: Some(artifact.id.clone()),
+                        rule: "field-type-mismatch".to_string(),
+                        message: format!(
+                            "field '{}' is declared {} but holds the string \"{}\"; \
+                             typed consumers such as exempt-when-field ignore it. \
+                             Rewrite it unquoted: rivet modify {} --set-field {}={}",
+                            field.name, field.field_type, s, artifact.id, field.name, s
+                        ),
+                    });
+                }
+            }
+
             // 3. Check allowed values
             if let Some(allowed) = &field.allowed_values {
                 if let Some(value) = effective_fields.get(&field.name) {
@@ -2489,6 +2515,42 @@ then:
     }
 
     // rivet: verifies REQ-004
+    // rivet: verifies REQ-385
+    /// #1008: a string where the schema declares boolean or numeric is flagged
+    /// — older `rivet modify --set-field` wrote `"true"` — while the correctly
+    /// typed value and a genuine string field are not.
+    #[test]
+    fn field_type_mismatch_flags_a_string_in_a_typed_field() {
+        let schema = crate::test_helpers::schema_with_fields(
+            "T",
+            &[("flag", "boolean"), ("n", "number"), ("s", "string")],
+        );
+        let mut store = Store::new();
+        for (id, field, value) in [
+            ("A-1", "flag", rivet_yaml::Value::String("true".into())),
+            ("A-2", "flag", rivet_yaml::Value::Bool(true)),
+            ("A-3", "n", rivet_yaml::Value::String("3".into())),
+            ("A-4", "s", rivet_yaml::Value::String("true".into())),
+        ] {
+            let mut a = crate::test_helpers::minimal_artifact(id, "T");
+            a.fields.insert(field.into(), value);
+            store.insert(a).unwrap();
+        }
+        let graph = LinkGraph::build(&store, &schema);
+        let flagged: Vec<(String, Severity)> = validate_structural(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "field-type-mismatch")
+            .map(|d| (d.artifact_id.unwrap(), d.severity))
+            .collect();
+        assert_eq!(
+            flagged,
+            vec![
+                ("A-1".to_string(), Severity::Warning),
+                ("A-3".to_string(), Severity::Warning)
+            ]
+        );
+    }
+
     #[test]
     fn no_coercion_warning_for_non_string_field_type() {
         // When the field type is "boolean" (not "string"), we should NOT emit

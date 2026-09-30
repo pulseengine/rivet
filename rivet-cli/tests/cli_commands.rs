@@ -13384,3 +13384,120 @@ fn release_status_rejects_an_unknown_require_value() {
         "the error names the bad value and the valid ones. Got:\n{err}"
     );
 }
+
+// ── REQ-385 / #1008: --set-field writes the schema's declared type ──────
+
+/// The #1008 report, end to end: a boolean `backlog` field drives a rule's
+/// `exempt-when-field`. `rivet modify --set-field backlog=true` used to write
+/// the STRING `"true"`, so the exemption silently did not apply and the
+/// artifact stayed uncovered. `rivet batch` shares the write path.
+///
+// rivet: verifies REQ-385
+#[test]
+fn set_field_true_on_a_boolean_field_makes_exempt_when_field_apply() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("schemas")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev, local]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("schemas/local.yaml"),
+        "schema:\n  name: local\n  version: 0.1.0\n  extends: [dev]\n\
+         artifact-types:\n  - name: requirement\n    description: r\n    fields:\n      \
+         - name: backlog\n        type: boolean\n        required: false\n\
+         traceability-rules:\n  - name: parked-or-verified\n    \
+         description: verified unless parked\n    source-type: requirement\n    \
+         required-backlink: verifies\n    exempt-when-field: backlog\n    severity: error\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("artifacts/a.yaml"),
+        "artifacts:\n  \
+         - id: REQ-1\n    type: requirement\n    title: parked via modify\n    status: draft\n  \
+         - id: REQ-2\n    type: requirement\n    title: parked via batch\n    status: draft\n",
+    )
+    .unwrap();
+    let uncovered = || -> Vec<String> {
+        let out = Command::new(rivet_bin())
+            .args(["coverage", "--format", "json"])
+            .current_dir(dir)
+            .output()
+            .expect("rivet coverage");
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("coverage JSON");
+        let rule = v["rules"]
+            .as_array()
+            .or_else(|| v["entries"].as_array())
+            .expect("rule list")
+            .iter()
+            .find(|r| r["name"] == "parked-or-verified")
+            .expect("the local rule is reported")
+            .clone();
+        serde_json::from_value(rule["uncovered_ids"].clone()).unwrap()
+    };
+    assert_eq!(
+        uncovered(),
+        vec!["REQ-1", "REQ-2"],
+        "baseline: both uncovered"
+    );
+
+    let out = Command::new(rivet_bin())
+        .args(["modify", "REQ-1", "--set-field", "backlog=true"])
+        .current_dir(dir)
+        .output()
+        .expect("rivet modify");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::write(
+        dir.join("batch.yaml"),
+        "mutations:\n  - action: modify\n    id: REQ-2\n    set_fields:\n      \
+         - key: backlog\n        value: \"true\"\n",
+    )
+    .unwrap();
+    let out = Command::new(rivet_bin())
+        .args(["batch", "batch.yaml"])
+        .current_dir(dir)
+        .output()
+        .expect("rivet batch");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let written = std::fs::read_to_string(dir.join("artifacts/a.yaml")).unwrap();
+    assert_eq!(
+        written.matches("backlog: true\n").count(),
+        2,
+        "both writes must be an unquoted YAML boolean. Got:\n{written}"
+    );
+    assert_eq!(
+        uncovered(),
+        Vec::<String>::new(),
+        "a boolean `true` exempts both from the rule"
+    );
+
+    // A value that is not a boolean is refused and nothing is written.
+    let out = Command::new(rivet_bin())
+        .args(["modify", "REQ-1", "--set-field", "backlog=yes"])
+        .current_dir(dir)
+        .output()
+        .expect("rivet modify");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("'yes' is not a boolean (use true or false)"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("artifacts/a.yaml")).unwrap(),
+        written
+    );
+}

@@ -1153,7 +1153,7 @@ fn tool_modify(project_dir: &Path, p: &ModifyParams) -> Result<Value> {
     let source_file = mutate::find_source_file(&p.id, &proj.store)
         .ok_or_else(|| anyhow::anyhow!("cannot find source file for '{}'", p.id))?;
 
-    mutate::modify_artifact_in_file(&p.id, &params, &source_file, &proj.store)?;
+    mutate::modify_artifact_in_file(&p.id, &params, &source_file, &proj.store, &proj.schema)?;
 
     let result = json!({ "modified": p.id, "file": source_file.display().to_string() });
     mcp_audit_log(

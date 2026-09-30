@@ -67,6 +67,25 @@ pub fn minimal_schema(name: &str) -> SchemaFile {
     }
 }
 
+/// A merged schema with one artifact type declaring `fields` as
+/// `(name, type)` pairs — for tests of typed-field handling (REQ-385).
+pub fn schema_with_fields(art_type: &str, fields: &[(&str, &str)]) -> Schema {
+    let mut file = minimal_schema("typed");
+    file.artifact_types = vec![crate::schema::ArtifactTypeDef {
+        name: art_type.into(),
+        fields: fields
+            .iter()
+            .map(|(n, ty)| crate::schema::FieldDef {
+                name: (*n).into(),
+                field_type: (*ty).into(),
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    }];
+    Schema::merge(&[file])
+}
+
 /// Create a minimal artifact with sensible defaults.
 ///
 /// Sets `title` to `"Test {id}"` and leaves all optional / collection
