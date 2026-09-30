@@ -9404,9 +9404,9 @@ artifacts:
   - id: REQ-397
     type: requirement
     title: "the VS Code extension is published only to the Microsoft Marketplace, so VSCodium, Cursor and Windsurf users cannot install it from their registry"
-    status: proposed
+    status: implemented
     release: v0.40.0
-    description: "Found by the 2026-09-30 sphinx-needs comparison: useblocks' ubCode began publishing to Open VSX on 2026-09-28. rivet's release workflow publishes vscode-rivet to the Microsoft Marketplace only; no Open VSX reference exists in .github or the extension. ACCEPTANCE: the release workflow publishes the same VSIX to Open VSX under the pulseengine namespace, from the SHA256SUMS-covered artifact; a missing token is a visible warning, as for the Marketplace; the release verification confirms the version is listed on Open VSX after a release. The Open VSX account, namespace and token secret are the maintainer's to create."
+    description: "Found by the 2026-09-30 sphinx-needs comparison: useblocks' ubCode began publishing to Open VSX on 2026-09-28. rivet's release workflow publishes vscode-rivet to the Microsoft Marketplace only; no Open VSX reference exists in .github or the extension. ACCEPTANCE: the release workflow publishes the same VSIX to Open VSX under the pulseengine namespace, from the SHA256SUMS-covered artifact; a missing token is a visible warning, as for the Marketplace; the release verification confirms the version is listed on Open VSX after a release. The Open VSX account, namespace and token secret are the maintainer's to create. IMPLEMENTED in release.yml as publish-vsix-openvsx: it publishes the same VSIX artifact as the Marketplace job with ovsx, is continue-on-error like that job so it cannot block release-npm.yml, warns visibly when OVSX_PAT is not configured, and after publishing polls https://open-vsx.org/api/pulseengine/rivet-sdlc/<version> until it answers 200, failing the job otherwise. The URL scheme was checked against a listed extension (useblocks/ubcode 0.36.0 answers 200, a missing version 404). NOT YET VERIFIED: that needs the maintainer's pulseengine namespace and OVSX_PAT secret and a release run; the status stays implemented until the listing check passes on a real release."
     tags: [release, vscode, distribution]
     fields:
       category: functional

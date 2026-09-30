@@ -6,6 +6,10 @@
 ## [Unreleased]
 
 ### Added
+- **The VS Code extension publishes to Open VSX** (REQ-397) — the registry
+  VSCodium, Cursor and Windsurf install from; previously only the Microsoft
+  Marketplace. The release confirms the version is listed before reporting
+  success. Needs an `OVSX_PAT` secret; without it the job warns and skips.
 - **`release: require: evidence`** (REQ-384) — a mode that makes "cuttable"
   stricter instead of looser: an artifact is release-ready only when its
   status is ready **and** no `error`-severity traceability rule for its type
