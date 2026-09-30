@@ -2851,6 +2851,20 @@ mod tests {
             Some("m")
         );
         assert_eq!(get_field_value(&a, "provenance.session-id"), None);
+        assert_eq!(get_field_value(&a, "provenance.no-such-key"), None);
+        let mut full = ai_artifact("approved", Some("alice"));
+        if let Some(p) = full.provenance.as_mut() {
+            p.session_id = Some("s-42".into());
+            p.timestamp = Some("2026-09-30T00:00:00Z".into());
+        }
+        assert_eq!(
+            get_field_value(&full, "provenance.session-id").as_deref(),
+            Some("s-42")
+        );
+        assert_eq!(
+            get_field_value(&full, "provenance.timestamp").as_deref(),
+            Some("2026-09-30T00:00:00Z")
+        );
         assert_eq!(
             get_field_value_for_variant(&a, "provenance.reviewed-by", Some("v")).as_deref(),
             Some("alice")
