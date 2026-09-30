@@ -9385,3 +9385,63 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-30T04:37:33Z
+
+  - id: REQ-396
+    type: requirement
+    title: "rivet is not discoverable by AI coding assistants through Context7, and its best reference documentation is invisible to any docs indexer"
+    status: proposed
+    release: v0.40.0
+    description: "Found by the 2026-09-30 sphinx-needs comparison. Context7 is a documentation service with an MCP server that coding assistants query for current library docs; sphinx-needs registered in May 2026 (their #1720). A Context7 search for rivet returns five unrelated projects and not pulseengine/rivet, so an assistant asking about rivet receives the wrong library's documentation. Context7 indexes Markdown and reStructuredText, not source code, and rivet's authoritative reference, the rivet docs topics, is compiled into the binary as Rust string constants, so an indexer would see only design notes and historical plans. ACCEPTANCE: the embedded rivet docs topics are generated as Markdown under docs/reference, and rivet docs check fails when that export is stale; a context7.json at the repository root sets a distinct projectTitle naming PulseEngine and traceability, restricts folders to the reference export, getting-started material and the README, excludes docs/historical, docs/research, docs/plans and docs/design, and states only rules that a test checks against the CLI; submitting the repository to Context7 and claiming it are the maintainer's actions and are recorded here once done."
+    tags: [docs, discoverability, ai]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z
+
+  - id: REQ-397
+    type: requirement
+    title: "the VS Code extension is published only to the Microsoft Marketplace, so VSCodium, Cursor and Windsurf users cannot install it from their registry"
+    status: proposed
+    release: v0.40.0
+    description: "Found by the 2026-09-30 sphinx-needs comparison: useblocks' ubCode began publishing to Open VSX on 2026-09-28. rivet's release workflow publishes vscode-rivet to the Microsoft Marketplace only; no Open VSX reference exists in .github or the extension. ACCEPTANCE: the release workflow publishes the same VSIX to Open VSX under the pulseengine namespace, from the SHA256SUMS-covered artifact; a missing token is a visible warning, as for the Marketplace; the release verification confirms the version is listed on Open VSX after a release. The Open VSX account, namespace and token secret are the maintainer's to create."
+    tags: [release, vscode, distribution]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z
+
+  - id: REQ-398
+    type: requirement
+    title: "the needs.json importer has never been checked against real sphinx-needs output, and the format changed three times since its last fix"
+    status: proposed
+    release: v0.40.0
+    description: "The needs.json adapter is rivet's migration path from sphinx-needs. Its last fix was REQ-081 at v0.11.1, found by an agent re-run rather than by importing real output; its tests use synthetic fixtures. Since then sphinx-needs changed its needs.json shape in 8.2.0 (sorted, deduplicated links), 8.4.0 (corrected lineno, content embedding removed) and 8.5.0 (schema-validation messages). ACCEPTANCE: a fixture generated from a real sphinx-needs 8.5 project, useblocks' public sphinx-needs-demo, is checked in with the sphinx-needs version and source commit that produced it; a test imports it and asserts exact artifact counts, types, and link targets against values read independently from the fixture; any field the importer drops or misreads is fixed or recorded as a declared gap."
+    tags: [import, sphinx-needs, migration, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z
+
+  - id: REQ-399
+    type: requirement
+    title: "CHANGELOG structure is unchecked: a release section can appear twice and headings duplicate without any gate noticing"
+    status: proposed
+    release: v0.40.0
+    description: "Found by the 2026-09-30 comparison: CHANGELOG.md carries two sections headed 0.33.0. Duplicate section headings under Unreleased from clean merges have recurred at least six times, and rebasing across a release cut once moved an entry into an already-released section. rivet docs check passes on all of it. ACCEPTANCE: rivet docs check fails on a release section heading that appears twice, on a subsection heading repeated inside one release section, and on a change to a released section relative to its tag when run in a release-aware mode; the existing duplicate 0.33.0 section is resolved from the tag's own content; DD-066, still draft, is settled."
+    tags: [docs, changelog, release, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T07:21:33Z
