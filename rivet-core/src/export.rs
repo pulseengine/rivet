@@ -3216,6 +3216,82 @@ mod tests {
     }
 
     // rivet: verifies REQ-387
+    /// A matrix row's coverage is the share of that type's artifacts with any
+    /// forward link: one of two design decisions linked is exactly 50.0%.
+    #[test]
+    fn matrix_row_coverage_is_the_linked_share() {
+        let schema = test_schema();
+        let mut store = Store::new();
+        store
+            .insert(make_artifact("REQ-001", "requirement", &[]))
+            .unwrap();
+        store
+            .insert(make_artifact(
+                "DD-001",
+                "design-decision",
+                &[("satisfies", "REQ-001")],
+            ))
+            .unwrap();
+        store
+            .insert(make_artifact("DD-002", "design-decision", &[]))
+            .unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let html = render_traceability_matrix(&store, &schema, &graph, &default_config());
+        let row_start = html
+            .find("<tr><th>design-decision</th>")
+            .expect("design-decision row");
+        let row = &html[row_start..];
+        let row = &row[..row.find("</tr>").expect("row end")];
+        assert!(row.ends_with(">50.0%</td>"), "design-decision row: {row}");
+    }
+
+    // rivet: verifies REQ-387
+    /// The single-page export's summary card and coverage section show the
+    /// same overall label the coverage report computes, and `n/a` for an
+    /// empty scope.
+    #[test]
+    fn single_page_sections_show_the_computed_overall_coverage() {
+        let (store, schema, graph, diagnostics) = test_fixtures();
+        let expected = coverage::format_percentage(
+            coverage::compute_coverage(&store, &schema, &graph).overall_coverage_opt(),
+        );
+        assert!(expected.ends_with('%'), "fixture has a scope: {expected}");
+
+        let index = render_section_index(
+            &store,
+            &schema,
+            &graph,
+            &diagnostics,
+            "Test",
+            "0.1.0",
+            "now",
+        );
+        assert!(index.starts_with("<h1>Test</h1>\n"), "index: {index}");
+        assert!(
+            index.contains(&format!("\">{expected}</span>")),
+            "index coverage card: {index}"
+        );
+
+        let section = render_section_coverage(&store, &schema, &graph);
+        assert!(
+            section.starts_with("<h1>Coverage Report</h1>\n<p>Overall coverage: "),
+            "coverage section: {section}"
+        );
+        assert!(
+            section.contains(&format!("\">{expected}</span></p>")),
+            "coverage section: {section}"
+        );
+
+        let empty = Store::new();
+        let empty_graph = LinkGraph::build(&empty, &schema);
+        assert!(
+            render_section_coverage(&empty, &schema, &empty_graph)
+                .contains("<span class=\"badge badge-na\">n/a</span>"),
+            "an empty scope is n/a"
+        );
+    }
+
+    // rivet: verifies REQ-387
     /// The static export's coverage page and overall badge render an empty
     /// scope as `n/a` in a neutral colour; they used to paint `100.0%` green.
     #[test]
