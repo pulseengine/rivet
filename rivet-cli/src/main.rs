@@ -19202,7 +19202,7 @@ fn cmd_modify_inner(
         let base = staged
             .base_content(&source_file)
             .with_context(|| format!("reading {}", source_file.display()))?;
-        let updated = mutate::modify_artifact_yaml(&base, tid, &params, &store)
+        let updated = mutate::modify_artifact_yaml(&base, tid, &params, &store, &schema)
             .with_context(|| format!("updating {}", source_file.display()))?;
         staged.stage(source_file, updated);
     }
@@ -19811,7 +19811,7 @@ fn cmd_batch(cli: &Cli, file: &std::path::Path) -> Result<bool> {
                 let base = staged
                     .base_content(&source_file)
                     .with_context(|| format!("reading {}", source_file.display()))?;
-                let updated = mutate::modify_artifact_yaml(&base, &id, &params, &store)
+                let updated = mutate::modify_artifact_yaml(&base, &id, &params, &store, &schema)
                     .with_context(|| format!("updating {}", source_file.display()))?;
                 staged.stage(source_file, updated);
 
@@ -20088,8 +20088,14 @@ fn cmd_sql_write(project: &rivet_core::LoadedProject, query: &str) -> Result<boo
             .get(&pw.id)
             .and_then(|a| a.source_file.clone())
             .ok_or_else(|| anyhow::anyhow!("no source file recorded for `{}`", pw.id))?;
-        rivet_core::mutate::modify_artifact_in_file(&pw.id, &pw.params, &src, &project.store)
-            .map_err(|e| anyhow::anyhow!("writing `{}`: {e}", pw.id))?;
+        rivet_core::mutate::modify_artifact_in_file(
+            &pw.id,
+            &pw.params,
+            &src,
+            &project.store,
+            &project.schema,
+        )
+        .map_err(|e| anyhow::anyhow!("writing `{}`: {e}", pw.id))?;
     }
 
     let ids: Vec<&str> = planned.iter().map(|p| p.id.as_str()).collect();

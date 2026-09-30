@@ -917,11 +917,12 @@ pub fn modify_artifact_in_file(
     params: &ModifyParams,
     file_path: &Path,
     store: &crate::store::Store,
+    schema: &crate::schema::Schema,
 ) -> Result<(), Error> {
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
 
-    let new_content = modify_artifact_yaml(&content, id, params, store)?;
+    let new_content = modify_artifact_yaml(&content, id, params, store, schema)?;
 
     std::fs::write(file_path, &new_content)
         .map_err(|e| Error::Io(format!("{}: {}", file_path.display(), e)))?;
@@ -935,6 +936,7 @@ pub fn modify_artifact_yaml(
     id: &str,
     params: &ModifyParams,
     store: &crate::store::Store,
+    schema: &crate::schema::Schema,
 ) -> Result<String, Error> {
     let mut editor = YamlEditor::parse(content);
 
@@ -1039,6 +1041,13 @@ pub fn modify_artifact_yaml(
         // vanished. Route through the same helper the sibling setters
         // (`set_title`/`set_status`/`set_release`) use.
         let quoted_value = yaml_quote_inline_scalar(value);
+        // REQ-385 / #1008: a field the schema declares boolean or numeric is
+        // written as an unquoted typed scalar, so it parses back as that type.
+        let typed = match store.get(id) {
+            Some(a) => crate::mutate::typed_field_scalar(schema, &a.artifact_type, key, value)?,
+            None => None,
+        };
+        let quoted_value = typed.clone().unwrap_or(quoted_value);
 
         if let Some(fields_line) = editor.find_field_in_block(block_start, block_end, "fields") {
             let sub_indent = field_indent + 2;
@@ -1060,10 +1069,13 @@ pub fn modify_artifact_yaml(
                             "parsing flow-style `fields:` map for '{id}': {e}"
                         ))
                     })?;
-                map.insert(
-                    rivet_yaml::Value::String(key.clone()),
-                    rivet_yaml::Value::String(value.clone()),
-                );
+                let typed_value = match &typed {
+                    Some(s) => rivet_yaml::from_str::<rivet_yaml::Value>(s).map_err(|e| {
+                        Error::Validation(format!("typed value for '{key}' in '{id}': {e}"))
+                    })?,
+                    None => rivet_yaml::Value::String(value.clone()),
+                };
+                map.insert(rivet_yaml::Value::String(key.clone()), typed_value);
                 let block = rivet_yaml::to_string(&map).map_err(|e| {
                     Error::Validation(format!("re-emitting `fields:` map for '{id}': {e}"))
                 })?;
@@ -1960,8 +1972,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        let out =
-            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+        let out = modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
         let parsed: rivet_yaml::Value =
             rivet_yaml::from_str(&out).expect("output must parse as YAML");
         assert_eq!(
@@ -1998,8 +2016,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        let out =
-            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+        let out = modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
 
         // Must still be valid YAML — the corruption made this fail.
         let parsed: rivet_yaml::Value =
@@ -2042,8 +2066,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        let out =
-            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+        let out = modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
         let parsed: rivet_yaml::Value =
             rivet_yaml::from_str(&out).expect("output must parse as YAML");
         assert_eq!(
@@ -2082,8 +2112,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        let out =
-            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+        let out = modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
 
         // Must still parse — the corruption made this fail.
         let parsed: rivet_yaml::Value =
@@ -2131,8 +2167,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        let out =
-            modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed");
+        let out = modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
 
         let parsed: rivet_yaml::Value =
             rivet_yaml::from_str(&out).expect("output must parse as YAML");
@@ -2239,8 +2281,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        let out =
-            modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
+        let out = modify_artifact_yaml(
+            content,
+            "DD-1",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
 
         // Must still be valid YAML — the raw-write corruption made this fail.
         let parsed: rivet_yaml::Value =
@@ -2286,8 +2334,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        let out =
-            modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
+        let out = modify_artifact_yaml(
+            content,
+            "DD-1",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
 
         let parsed: rivet_yaml::Value =
             rivet_yaml::from_str(&out).expect("output must parse as YAML");
@@ -2323,8 +2377,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        let out =
-            modify_artifact_yaml(content, "DD-1", &params, &store).expect("modify must succeed");
+        let out = modify_artifact_yaml(
+            content,
+            "DD-1",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
 
         let parsed: rivet_yaml::Value =
             rivet_yaml::from_str(&out).expect("output must parse as YAML");
@@ -2352,7 +2412,14 @@ artifacts:
             ..Default::default()
         };
         let store = crate::store::Store::new();
-        modify_artifact_yaml(content, "REQ-001", &params, &store).expect("modify must succeed")
+        modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed")
     }
 
     fn assert_rationale_replaced(out: &str, case: &str) {
@@ -2575,6 +2642,7 @@ artifacts:
             "SR-32",
             &params,
             &store,
+            &crate::schema::Schema::merge(&[]),
         )
         .expect("modify must succeed");
         let parsed: rivet_yaml::Value =
@@ -2635,8 +2703,14 @@ artifacts:
         // A no-op modify still runs the parse gate on the emitted string.
         let params = crate::mutate::ModifyParams::default();
         let store = crate::store::Store::new();
-        let err = modify_artifact_yaml(broken, "REQ-001", &params, &store)
-            .expect_err("the parse gate must refuse invalid YAML instead of returning it");
+        let err = modify_artifact_yaml(
+            broken,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect_err("the parse gate must refuse invalid YAML instead of returning it");
         let msg = format!("{err}");
         assert!(
             msg.contains("post-write parse check"),
@@ -2646,5 +2720,62 @@ artifacts:
             msg.contains("REQ-001"),
             "the refusal must name the artifact id the caller passed: got `{msg}`"
         );
+    }
+
+    // rivet: verifies REQ-385
+    /// #1008: a field the schema declares boolean is written as a YAML
+    /// boolean — block and flow style — while a string field keeps "true"
+    /// quoted so it stays a string.
+    #[test]
+    fn set_field_writes_declared_types_unquoted_and_strings_quoted() {
+        let schema = crate::test_helpers::schema_with_fields(
+            "requirement",
+            &[
+                ("backlog", "boolean"),
+                ("count", "integer"),
+                ("note", "string"),
+            ],
+        );
+        let mut store = crate::store::Store::new();
+        store
+            .insert(crate::test_helpers::minimal_artifact(
+                "REQ-001",
+                "requirement",
+            ))
+            .unwrap();
+        let params = crate::mutate::ModifyParams {
+            set_fields: vec![
+                ("backlog".to_string(), "true".to_string()),
+                ("count".to_string(), "3".to_string()),
+                ("note".to_string(), "true".to_string()),
+            ],
+            ..Default::default()
+        };
+        for (style, content) in [
+            (
+                "block",
+                "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: t\n    fields:\n      priority: must\n",
+            ),
+            (
+                "flow",
+                "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: t\n    fields: { priority: must }\n",
+            ),
+            (
+                "absent",
+                "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: t\n",
+            ),
+        ] {
+            let out = modify_artifact_yaml(content, "REQ-001", &params, &store, &schema)
+                .unwrap_or_else(|e| panic!("{style}: {e}"));
+            let parsed: rivet_yaml::Value = rivet_yaml::from_str(&out).unwrap();
+            let f = &parsed["artifacts"][0]["fields"];
+            assert_eq!(
+                f["backlog"],
+                rivet_yaml::Value::Bool(true),
+                "{style}:\n{out}"
+            );
+            assert_eq!(f["count"].as_i64(), Some(3), "{style}:\n{out}");
+            assert_eq!(f["note"].as_str(), Some("true"), "{style}:\n{out}");
+        }
     }
 }
