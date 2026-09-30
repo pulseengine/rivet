@@ -256,6 +256,11 @@ jobs:
       # closed; the oracle asserts a missing entry FAILS rather than skips.
       - name: Compliance bundle extra-files tests (REQ-371)
         run: bash .github/actions/compliance/copy_extra_files_test.sh
+      # REQ-390 / #951: the one-spar-revision guard runs only in release.yml
+      # (tag push) and scripts/build-wasm.sh, neither reachable from a PR, so
+      # its oracle runs here or the guard ships having never fired.
+      - name: spar single-revision guard tests (REQ-390)
+        run: bash tools/release/spar-rev_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its

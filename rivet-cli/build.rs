@@ -123,7 +123,7 @@ fn build_wasm_assets() {
     let spar_path = Path::new(&spar_dir);
     let spar_wasm_crate = spar_path.join("crates/spar-wasm");
 
-    // Compare local spar HEAD against the rev pinned in Cargo.toml.
+    // Compare local spar HEAD against the commit Cargo.lock pins (REQ-390).
     if spar_path.join(".git").exists() {
         check_spar_version_drift(&spar_dir);
     }
@@ -134,19 +134,11 @@ fn build_wasm_assets() {
 
     // Try to build from local spar repo.
     if spar_wasm_crate.exists() {
-        // Check out the pinned rev before building so WASM matches the dependency.
-        if let Some(pinned_rev) = get_pinned_spar_rev() {
-            let checkout = Command::new("git")
-                .args(["checkout", &pinned_rev])
-                .current_dir(&spar_dir)
-                .status();
-            if let Ok(s) = checkout {
-                if s.success() {
-                    println!("cargo:warning=Checked out spar at pinned rev {pinned_rev}");
-                }
-            }
-        }
-
+        // REQ-390 / #951: this used to `git checkout` the pin INSIDE the
+        // sibling spar repository — a build rewriting another repo's working
+        // tree. It never ran, only because the pin lookup could not match a
+        // `tag =` pin. build-wasm.sh now refuses a checkout that is not the
+        // Cargo.lock commit, and says which commit to check out.
         println!("cargo:warning=Building spar WASM assets from {spar_dir}...");
         let status = Command::new("bash")
             .arg("../scripts/build-wasm.sh")
@@ -190,37 +182,33 @@ fn build_wasm_assets() {
     );
 }
 
-/// Extract the pinned spar rev from workspace Cargo.toml.
+/// REQ-390 / #951: the spar commit the native build compiled, from the
+/// workspace Cargo.lock. The old lookup searched Cargo.toml for `rev =`, but
+/// the pin is `tag =`, so it never matched and the drift check never fired.
+/// The lock records the commit whatever form the pin takes. Mirrors
+/// tools/release/spar-rev.sh, whose oracle is tools/release/spar-rev_test.sh.
 fn get_pinned_spar_rev() -> Option<String> {
-    let cargo_toml = Path::new("../Cargo.toml");
-    let content = std::fs::read_to_string(cargo_toml).ok()?;
-    content
+    let lock = std::fs::read_to_string(Path::new("../Cargo.lock")).ok()?;
+    let mut revs: Vec<&str> = lock
         .lines()
-        .find(|l| l.contains("spar-hir") && l.contains("rev"))
-        .and_then(|line| {
-            let after_rev = line.split("rev = \"").nth(1)?;
-            Some(after_rev.split('"').next()?.to_string())
-        })
+        .filter_map(|l| l.strip_prefix("source = \"git+https://github.com/pulseengine/spar"))
+        .filter(|rest| rest.starts_with(".git?") || rest.starts_with('?') || rest.starts_with('#'))
+        .filter_map(|rest| rest.rsplit_once('#'))
+        .map(|(_, rev)| rev.trim_end_matches('"'))
+        .filter(|rev| rev.len() == 40 && rev.bytes().all(|b| b.is_ascii_hexdigit()))
+        .collect();
+    revs.sort_unstable();
+    revs.dedup();
+    match revs.as_slice() {
+        [one] => Some((*one).to_string()),
+        _ => None,
+    }
 }
 
-/// Compare the local spar repo HEAD against the rev pinned in workspace Cargo.toml.
+/// Compare the local spar repo HEAD against the commit Cargo.lock pins.
 /// Warns if they differ so developers know to bump the dep or update spar.
 fn check_spar_version_drift(spar_dir: &str) {
-    // Read the pinned rev from Cargo.toml.
-    let cargo_toml = Path::new("../Cargo.toml");
-    let pinned_rev = match std::fs::read_to_string(cargo_toml) {
-        Ok(content) => {
-            // Look for: spar-hir = { ... rev = "XXXXXXX" ... }
-            content
-                .lines()
-                .find(|l| l.contains("spar-hir") && l.contains("rev"))
-                .and_then(|line| {
-                    let after_rev = line.split("rev = \"").nth(1)?;
-                    Some(after_rev.split('"').next()?.to_string())
-                })
-        }
-        Err(_) => None,
-    };
+    let pinned_rev = get_pinned_spar_rev();
 
     let Some(pinned) = pinned_rev else {
         return; // Can't determine pinned rev, skip check.
@@ -253,9 +241,10 @@ fn check_spar_version_drift(spar_dir: &str) {
             .unwrap_or_else(|| "?".to_string());
 
         println!(
-            "cargo:warning=spar version drift: Cargo.toml pins rev {pinned}, \
+            "cargo:warning=spar version drift: Cargo.lock pins {pinned}, \
              but local spar is at {head} ({distance} commits ahead). \
-             Consider: cargo update -p spar-hir -p spar-analysis"
+             build-wasm.sh will refuse it; check out the pin, or bump the dependency \
+             with cargo update -p spar-hir -p spar-analysis"
         );
     }
 }

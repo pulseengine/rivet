@@ -84,6 +84,13 @@
     `--as jsonl` kept.
   - The `supply-chain-dev` bridge shipped on disk but not in the binary, so
     `common, dev, supply-chain` failed with an undefined link type.
+- **One spar revision per binary** (REQ-390, #951) — the release built the
+  `rivet serve` AADL renderer from spar's default-branch HEAD while the native
+  parser stayed on the `Cargo.lock` pin, and the drift guard in `build.rs`
+  could never fire (it looked for `rev =`; the pin is `tag =`). The release
+  now fetches exactly the locked commit, `scripts/build-wasm.sh` refuses any
+  other, and `build.rs` warns on drift. `build.rs` also no longer runs `git
+  checkout` inside your sibling spar repository.
 - **The release note no longer reports design decisions as unevidenced**
   (REQ-383) — it asked every artifact type for a `verifies` link, so the
   v0.39.0 note listed 6 of 14 delivered artifacts, all accepted and reviewed,

@@ -303,7 +303,14 @@ jobs:
 
       - name: Build spar WASM assets
         run: |
-          git clone --depth 1 https://github.com/pulseengine/spar.git ../spar
+          # REQ-390 / #951: build the wasm renderer from the exact spar
+          # commit Cargo.lock pins for the native parser — never HEAD.
+          # build-wasm.sh re-checks this and fails on a mismatch.
+          SPAR_REV="$(tools/release/spar-rev.sh lock-rev Cargo.lock)"
+          git init -q ../spar
+          git -C ../spar remote add origin https://github.com/pulseengine/spar.git
+          git -C ../spar fetch -q --depth 1 origin "$SPAR_REV"
+          git -C ../spar checkout -q --detach FETCH_HEAD
           npm install -g @bytecodealliance/jco
           ./scripts/build-wasm.sh ../spar
 
