@@ -1398,6 +1398,7 @@ impl SyncAdapter for OslcSyncAdapter {
 ///
 /// Inspects the `@type` array to determine which domain type to deserialize
 /// into. Falls back to `Requirement` if no recognized type is found.
+#[cfg_attr(not(feature = "oslc"), allow(dead_code))] // used by the gated client
 fn parse_member_resource(value: &serde_json::Value) -> Result<OslcResource, Error> {
     // Look at the @type field to determine the resource type
     let rdf_types = value
