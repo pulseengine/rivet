@@ -233,8 +233,24 @@ fn render_yaml(entries: &[BundleEntry]) -> String {
             out.push_str("  links:\n");
             for link in &entry.links {
                 out.push_str(&format!("    # {} -> {}\n", link.link_type, link.target));
-                out.push_str(&format!("    - type: {}\n", link.link_type));
-                out.push_str(&format!("      target: {}\n", link.target));
+                if link.external.is_some() {
+                    // REQ-387 / #956 item 7: an external link's `target:` is a
+                    // mapping carrying the cross-org delegation payload (org,
+                    // contract, doc-id, last-synced, sha256). Writing only
+                    // `type` + `target` dropped it, while `--as jsonl` kept
+                    // it: two renderings of one bundle stating different
+                    // facts. Emit the link's own serialisation — the same
+                    // shape an artifact file uses — so it round-trips.
+                    let body = rivet_yaml::to_string(link)
+                        .unwrap_or_else(|e| format!("error: serialize link: {e}\n"));
+                    for (i, line) in body.lines().enumerate() {
+                        let lead = if i == 0 { "    - " } else { "      " };
+                        out.push_str(&format!("{lead}{line}\n"));
+                    }
+                } else {
+                    out.push_str(&format!("    - type: {}\n", link.link_type));
+                    out.push_str(&format!("      target: {}\n", link.target));
+                }
             }
         }
     }
@@ -517,5 +533,43 @@ mod tests {
         let inc = bundle_with_graph(&store, &graph, "REQ-SINK", 1, true).unwrap();
         let ids: Vec<&str> = inc.iter().map(|e| e.id.as_str()).collect();
         assert_eq!(ids, vec!["REQ-SINK", "DD-1", "FEAT-1"], "got {ids:?}");
+    }
+
+    // rivet: verifies REQ-387
+    /// #956 item 7: `--as yaml` and `--as jsonl` must state the same facts.
+    /// The YAML rendering used to drop an external link's delegation payload.
+    #[test]
+    fn yaml_and_jsonl_carry_the_same_external_link_payload() {
+        let mut a = make("REQ-1", "requirement", "t", vec![("satisfies", "REQ-0")]);
+        a.links.push(Link {
+            link_type: "derives-from-external".into(),
+            target: "EXT-1".into(),
+            external: Some(crate::model::ExternalLinkTarget {
+                org: "acme".into(),
+                contract: Some("PO-7".into()),
+                doc_id: Some("ACME-42".into()),
+                last_synced: Some("2026-09-01".into()),
+                sha256: None,
+                anchor: "EXT-1".into(),
+            }),
+        });
+        let entries = vec![BundleEntry::from_artifact(&a, 0)];
+        let yaml = render_yaml(&entries);
+        let parsed: Vec<rivet_yaml::Value> = rivet_yaml::from_str(&yaml).expect(&yaml);
+        let from_yaml: Vec<Link> =
+            rivet_yaml::from_value(parsed[0]["links"].clone()).expect("links deserialize");
+        assert_eq!(from_yaml, a.links, "YAML rendering:\n{yaml}");
+
+        let jsonl = render_jsonl(&entries);
+        let j: serde_json::Value = serde_json::from_str(jsonl.lines().next().unwrap()).unwrap();
+        let from_jsonl: Vec<Link> = serde_json::from_value(j["links"].clone()).unwrap();
+        assert_eq!(
+            from_jsonl, from_yaml,
+            "both renderings state the same links"
+        );
+        assert!(
+            yaml.contains("    - type: satisfies\n      target: REQ-0\n"),
+            "a plain link keeps its existing rendering:\n{yaml}"
+        );
     }
 }

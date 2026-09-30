@@ -1474,6 +1474,51 @@ fn graph_focused_view_renders_svg() {
     child.wait().ok();
 }
 
+/// REQ-387 / #956 item 8: a filter that does not parse is a 400, not "no
+/// filter". It used to return every artifact with HTTP 200, so a typo read as
+/// "everything matches". A valid filter still narrows the result.
+// rivet: verifies REQ-387
+#[test]
+fn api_artifacts_malformed_filter_returns_400_not_everything() {
+    let (mut child, port) = start_server();
+    // `(= type "requirement"` — unbalanced paren, URL-encoded.
+    let (status, body, _) = fetch(
+        port,
+        "/api/v1/artifacts?filter=%28%3D%20type%20%22requirement%22",
+        false,
+    );
+    assert_eq!(
+        status, 400,
+        "a malformed filter must be 400, got body: {body}"
+    );
+    let j: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(j["error"], "invalid_filter");
+    assert!(
+        !j["message"].as_str().unwrap_or("").is_empty(),
+        "the parse error is reported: {j}"
+    );
+
+    let (status, body, _) = fetch(port, "/api/v1/artifacts?limit=1000", false);
+    assert_eq!(status, 200);
+    let all: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let (status, body, _) = fetch(
+        port,
+        "/api/v1/artifacts?limit=1000&filter=%28%3D%20type%20%22requirement%22%29",
+        false,
+    );
+    assert_eq!(status, 200, "a valid filter is accepted: {body}");
+    let some: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let arts = some["artifacts"].as_array().unwrap();
+    assert!(!arts.is_empty(), "the project has requirements");
+    assert!(arts.iter().all(|a| a["type"] == "requirement"));
+    assert!(
+        some["total"].as_u64().unwrap() < all["total"].as_u64().unwrap(),
+        "a valid filter narrows the set"
+    );
+    child.kill().ok();
+    child.wait().ok();
+}
+
 #[test]
 fn api_artifacts_unknown_variant_returns_400_json() {
     let (mut child, port) = start_server();
