@@ -60,9 +60,7 @@ def main() -> int:
     nxt = rest.find("\n## [")
     section = rest if nxt < 0 else rest[:nxt]
 
-    mentioned = set(re.findall(r"\b[A-Z]{2,}-\d+\b", section))
-    claimed = set(re.findall(r"\((?:[A-Z]{2,}-\d+, )*([A-Z]{2,}-\d+)", section))
-    claimed |= set(re.findall(r"\(([A-Z]{2,}-\d+)", section))
+    mentioned, claimed = extract_ids(section)
 
     missing = sorted(delivered - mentioned)
     unclaimed = sorted(claimed - delivered)
@@ -74,6 +72,25 @@ def main() -> int:
     if withheld:
         print(f"  WITHHELD (release is not cuttable): {sorted(withheld)}")
     return 1 if (missing or unclaimed or withheld) else 0
+
+
+# Security-advisory namespaces share the artifact-id shape (RUSTSEC-2026-0315
+# reads as `RUSTSEC-2026`), but they name advisories, never release scope.
+ADVISORY_PREFIXES = ("RUSTSEC-", "CVE-", "GHSA-")
+
+
+def extract_ids(section):
+    """Artifact ids a CHANGELOG section mentions, and those in claim position
+    (inside a parenthesis, as in `**thing** (REQ-1, REQ-2)`). Advisory ids
+    are excluded from both."""
+
+    def keep(ids):
+        return {i for i in ids if not i.startswith(ADVISORY_PREFIXES)}
+
+    mentioned = keep(re.findall(r"\b[A-Z]{2,}-\d+\b", section))
+    claimed = set(re.findall(r"\((?:[A-Z]{2,}-\d+, )*([A-Z]{2,}-\d+)", section))
+    claimed |= set(re.findall(r"\(([A-Z]{2,}-\d+)", section))
+    return mentioned, keep(claimed)
 
 
 if __name__ == "__main__":

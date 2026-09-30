@@ -261,6 +261,11 @@ jobs:
       # its oracle runs here or the guard ships having never fired.
       - name: spar single-revision guard tests (REQ-390)
         run: bash tools/release/spar-rev_test.sh
+      # The release cut compares the CHANGELOG with the release scope through
+      # changelog-drift.py; its id extraction is tested here, since the tool
+      # itself only runs by hand at a cut.
+      - name: changelog-drift id extraction tests
+        run: bash tools/release/changelog-drift_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
