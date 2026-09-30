@@ -43,6 +43,10 @@ docs-check:
     - "0.3.0"
     # common 0.3.1 (REQ-388: ai-generated-needs-review can fire).
     - "0.3.1"
+    # stpa-sec 0.1.1 (REQ-401: issued-by declared for sec-uca).
+    - "0.1.1"
+    # aspice 0.2.1 (REQ-401: allocated-from covers SYS.3).
+    - "0.2.1"
     # dev 0.4.0 (#748: verification test fields + widened verifies target).
     - "0.4.0"
     # ASPICE process IDs that look like X.Y.Z (e.g. SYS.2.1.7) — false
