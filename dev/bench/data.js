@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790742309557,
+  "lastUpdate": 1790752879519,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "50626f463aa1ec2ae1c9863b3d4ef7a032e793d8",
-          "message": "feat(serve): server-rendered tag facet over the tags param (REQ-275) (#851)\n\nfeat(serve): server-rendered tag facet over the tags param (REQ-275)\n\nCustomer-reported: tag filtering was a comma-separated `tags` param —\nefficient for machines, cumbersome for humans.\n\nA facet UI already existed, built in JavaScript, and it had three problems:\n\n  * it collected tags from the rows of the CURRENT PAGE, and /artifacts clamps\n    to a page, so a tag outside that page silently did not exist as a filter\n    option and nothing said the list was a subset;\n  * it filtered by setting row.style.display, so the selection never reached\n    the URL — it died on reload and did not compose with paging;\n  * it matched with tags.some(...) — union — while the server-side `tags` param\n    matches with .all(...) — intersection. Two tag filters in one product that\n    disagreed about what a selection means.\n\nThe list is now server-rendered from the whole project (name-sorted, with\ncounts) and drives `params.tags`, so there is one tag filter with one meaning.\nSelect All / Unselect All and a filter box for the long list, as asked.\n\nBuilding it surfaced a conflict worth naming rather than papering over. This\nproject has 427 distinct tags, and under intersection \"Select All\" asks for\nartifacts carrying all 427 — guaranteed to return nothing. A button that can\nonly ever produce an empty page is not worth shipping, so the combinator is now\nexplicit: a `tag-match` param and an `all of` / `any of` selector. It defaults\nto intersection, so every existing `tags=` URL keeps exactly its current\nmeaning, and Select All switches to union because that is what \"select all\"\nmeans in a faceted list. Unrecognised values fall back to intersection rather\nthan silently widening the result set.\n\nMeasured against the live dashboard:\n\n  ?tags=aadl                             31 rows\n  ?tags=aadl,accessibility                0 rows   (default, intersection)\n  ?tags=aadl,accessibility&tag-match=any 32 rows   (union)\n  ?tags=aadl,accessibility&tag-match=all  0 rows   (explicit intersection)\n\nNote on a measurement that misled me first time: `rivet list --format json`\ndoes not emit `tags` at all, so a check built on it reported \"0 distinct tags\"\nwhile the facet correctly rendered 427. The CLI JSON carries a fixed field set;\nit is not a view of the artifact.\n\nConfirmed with cargo fmt --check, clippy --all-targets -D warnings on 1.97.0,\ncargo test --workspace (exit 0, 65 ok), rivet validate, rivet docs check — all\nexit 0.\n\nImplements: REQ-275\nVerifies: REQ-275",
-          "timestamp": "2026-08-26T09:50:24+02:00",
-          "tree_id": "c2e2408daf37b9cda576d5198cb07e216a0062a6",
-          "url": "https://github.com/pulseengine/rivet/commit/50626f463aa1ec2ae1c9863b3d4ef7a032e793d8"
-        },
-        "date": 1787737049847,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84967,
-            "range": "± 680",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 915470,
-            "range": "± 5824",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13774992,
-            "range": "± 245068",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1898,
-            "range": "± 41",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24339,
-            "range": "± 55",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 360495,
-            "range": "± 2447",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 95,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 95,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1541466,
-            "range": "± 21557",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 168722,
-            "range": "± 693",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1967252,
-            "range": "± 7949",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27251588,
-            "range": "± 159582",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 479350,
-            "range": "± 1266",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15768359,
-            "range": "± 194944",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1101550318,
-            "range": "± 17175271",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4337,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46052,
-            "range": "± 1902",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 808792,
-            "range": "± 13074",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60958,
-            "range": "± 2025",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 720271,
-            "range": "± 14042",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8042202,
-            "range": "± 72649",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1080,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14667,
-            "range": "± 277",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 227358,
-            "range": "± 1708",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 21198,
-            "range": "± 49",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 145498,
-            "range": "± 613",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1354762,
-            "range": "± 21267",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1511378,
             "range": "± 25645",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f9789670db2dd1cef59ec73f1b1b4e5d83572f6e",
+          "message": "fix(externals): an unprefixed link target never crosses a project boundary (REQ-395) (#1017)\n\nFixes: REQ-395\nVerifies: REQ-395\nRefs: #1015\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9",
+          "timestamp": "2026-09-30T08:30:30+02:00",
+          "tree_id": "2d71d32218f8abdc907f9027f0ad585a85e0a09b",
+          "url": "https://github.com/pulseengine/rivet/commit/f9789670db2dd1cef59ec73f1b1b4e5d83572f6e"
+        },
+        "date": 1790752877875,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 87399,
+            "range": "± 1644",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 905710,
+            "range": "± 12051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14030643,
+            "range": "± 653950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2112,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 25586,
+            "range": "± 65",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 370984,
+            "range": "± 3639",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1522099,
+            "range": "± 25672",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 146288,
+            "range": "± 779",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1785118,
+            "range": "± 18374",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 26960913,
+            "range": "± 3968603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 501859,
+            "range": "± 3581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17457540,
+            "range": "± 320376",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1413153221,
+            "range": "± 12021169",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4467,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 59619,
+            "range": "± 414",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 860041,
+            "range": "± 13494",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 61618,
+            "range": "± 196",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 707493,
+            "range": "± 3808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8631486,
+            "range": "± 1023801",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1119,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14716,
+            "range": "± 208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 322682,
+            "range": "± 2964",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 24027,
+            "range": "± 69",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 164546,
+            "range": "± 1047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1481936,
+            "range": "± 25538",
             "unit": "ns/iter"
           }
         ]
