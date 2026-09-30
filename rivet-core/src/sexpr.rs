@@ -607,4 +607,48 @@ mod tests {
             ]
         );
     }
+
+    // rivet: verifies REQ-386
+    /// Input that stops mid-token — a comment with no newline, an unterminated
+    /// string, a trailing backslash, a trailing sign, a trailing `3.` — lexes
+    /// without reading past the end, and losslessly: the token texts
+    /// concatenate back to the source. Every bounds check in `lex` guards one
+    /// of these cases; the scheduled mutation run showed none was tested.
+    #[test]
+    fn lex_truncated_input_is_lossless_and_never_reads_past_the_end() {
+        for src in [
+            "x ; trailing comment",
+            "\"unterminated",
+            "\"ends with backslash\\",
+            "\"\\",
+            "x -",
+            "+",
+            "3.",
+            "3.x",
+            "(= a 3.5)",
+            ";",
+        ] {
+            let joined: String = lex(src).iter().map(|t| t.text).collect();
+            assert_eq!(joined, src, "lex must be lossless on {src:?}");
+        }
+        let kinds = |s: &str| -> Vec<SyntaxKind> {
+            lex(s)
+                .iter()
+                .filter(|t| !t.kind.is_trivia())
+                .map(|t| t.kind)
+                .collect()
+        };
+        assert_eq!(kinds("3.5"), vec![SyntaxKind::FloatLit]);
+        assert_eq!(
+            kinds("3.x")[0],
+            SyntaxKind::IntLit,
+            "a dot not followed by a digit does not make a float"
+        );
+        assert_eq!(kinds("3.")[0], SyntaxKind::IntLit);
+        let comment = lex("x ; c");
+        assert_eq!(
+            comment.last().map(|t| (t.kind, t.text)),
+            Some((SyntaxKind::Comment, "; c"))
+        );
+    }
 }
