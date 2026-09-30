@@ -238,7 +238,10 @@ pub fn format_percentage(p: Option<f64>) -> String {
 pub fn coverage_band(p: Option<f64>) -> &'static str {
     match p {
         None => "na",
-        Some(v) if v >= 100.0 - f64::EPSILON => "green",
+        // Exactly 100: covered == total gives exactly 100.0, and at this
+        // magnitude `f64::EPSILON` is below resolution, so `100.0 - EPSILON`
+        // was the same number (an equivalent mutant said so).
+        Some(v) if v >= 100.0 => "green",
         Some(v) if v > 0.0 => "yellow",
         Some(_) => "red",
     }
@@ -759,6 +762,74 @@ mod tests {
     }
     use crate::schema::{Severity, TraceabilityRule};
     use crate::test_helpers::{artifact_with_links, minimal_artifact, minimal_schema};
+
+    // rivet: verifies REQ-387
+    /// The band behind every surface's colour: `na` for an empty scope, and
+    /// exact boundaries — only a full 100 is green, anything above 0 yellow.
+    #[test]
+    fn coverage_band_boundaries() {
+        assert_eq!(coverage_band(None), "na");
+        assert_eq!(coverage_band(Some(100.0)), "green");
+        assert_eq!(coverage_band(Some(99.9)), "yellow");
+        assert_eq!(coverage_band(Some(50.0)), "yellow");
+        assert_eq!(coverage_band(Some(0.1)), "yellow");
+        assert_eq!(coverage_band(Some(0.0)), "red");
+        assert_eq!(format_percentage(None), "n/a");
+        assert_eq!(format_percentage(Some(66.666)), "66.7%");
+    }
+
+    // rivet: verifies REQ-387
+    /// The deprecated methods keep their documented legacy contract for API
+    /// consumers — 100 for an empty scope, the real value otherwise — and
+    /// agree with the `_opt` forms wherever those return a value.
+    #[test]
+    #[allow(deprecated)]
+    fn legacy_percentage_methods_keep_their_contract() {
+        let entry = |covered: usize, boundary: usize, total: usize| CoverageEntry {
+            rule_name: "r".into(),
+            description: String::new(),
+            source_type: "requirement".into(),
+            link_type: "satisfies".into(),
+            direction: CoverageDirection::Forward,
+            target_types: vec![],
+            covered,
+            exempt: 0,
+            exempt_ids: vec![],
+            unmodelled: None,
+            total,
+            uncovered_ids: vec![],
+            external_boundary: boundary,
+            external_boundary_ids: vec![],
+        };
+        let empty = entry(0, 0, 0);
+        assert_eq!(empty.percentage(), 100.0);
+        assert_eq!(empty.accounted_percentage(), 100.0);
+        assert_eq!(empty.percentage_opt(), None);
+        let e = entry(1, 1, 4);
+        assert_eq!(e.percentage(), 25.0);
+        assert_eq!(e.accounted_percentage(), 50.0);
+        assert_eq!(e.percentage_opt(), Some(25.0));
+        assert_eq!(e.accounted_percentage_opt(), Some(50.0));
+
+        let closure = |closed: usize, total: usize| ClosureEntry {
+            source_type: "requirement".into(),
+            rule_names: vec![],
+            closed,
+            total,
+            open_ids: vec![],
+        };
+        assert_eq!(closure(0, 0).percentage(), 100.0);
+        assert_eq!(closure(0, 0).percentage_opt(), None);
+        assert_eq!(closure(3, 4).percentage(), 75.0);
+        assert_eq!(closure(3, 4).percentage_opt(), Some(75.0));
+
+        let report = |entries: Vec<CoverageEntry>| CoverageReport { entries };
+        assert_eq!(report(vec![]).overall_coverage(), 100.0);
+        assert_eq!(report(vec![]).overall_coverage_opt(), None);
+        let r = report(vec![entry(1, 0, 4), entry(3, 0, 4)]);
+        assert_eq!(r.overall_coverage(), 50.0);
+        assert_eq!(r.overall_coverage_opt(), Some(50.0));
+    }
 
     fn test_schema() -> Schema {
         let mut file = minimal_schema("test");
