@@ -2336,6 +2336,31 @@ traceability-rules:
         run_embed("coverage", &store, &schema, &graph).unwrap()
     }
 
+    // rivet: verifies REQ-387
+    /// A rule with nothing to score renders `n/a` with an empty neutral bar —
+    /// it used to render `100.0%` and a full green bar (#956).
+    #[test]
+    fn coverage_embed_renders_an_empty_scope_as_na() {
+        let store = make_store(vec![plain("TC-1", "test", None, &[])]);
+        let schema = coverage_test_schema();
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("coverage", &store, &schema, &graph).unwrap();
+        assert!(html.contains("<td>n/a</td>"), "got: {html}");
+        assert!(
+            html.contains("bar-na") && html.contains("width:0%"),
+            "got: {html}"
+        );
+        assert!(
+            !html.contains("100.0%") && !html.contains("bar-full"),
+            "got: {html}"
+        );
+        let scored = run_coverage_at(50);
+        assert!(
+            scored.contains("50.0%") && !scored.contains("n/a"),
+            "a scored rule keeps its number"
+        );
+    }
+
     #[test]
     fn coverage_bar_class_full_at_100_percent() {
         let html = run_coverage_at(100);

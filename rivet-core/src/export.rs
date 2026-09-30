@@ -3215,6 +3215,39 @@ mod tests {
         }
     }
 
+    // rivet: verifies REQ-387
+    /// The static export's coverage page and overall badge render an empty
+    /// scope as `n/a` in a neutral colour; they used to paint `100.0%` green.
+    #[test]
+    fn coverage_page_renders_an_empty_scope_as_na() {
+        let schema = test_schema();
+        let store = Store::new();
+        let graph = LinkGraph::build(&store, &schema);
+        let html = render_coverage(&store, &schema, &graph, &default_config());
+        assert!(
+            html.contains("<span class=\"badge badge-na\">n/a</span>"),
+            "overall badge: {html}"
+        );
+        assert!(
+            html.contains("class=\"cell-na\">n/a</td>"),
+            "per-rule cell: {html}"
+        );
+        // The page embeds its stylesheet, which defines `.badge-green`, so
+        // check the rendered elements, not the bare class name.
+        assert!(
+            !html.contains(">100.0%<") && !html.contains("class=\"badge badge-green\""),
+            "{html}"
+        );
+
+        let (store, schema, graph, _) = test_fixtures();
+        let scored = render_coverage(&store, &schema, &graph, &default_config());
+        assert!(
+            !scored.contains("class=\"badge badge-na\""),
+            "a scored report keeps its colour"
+        );
+        assert!(scored.contains("50.0%"), "and its number: {scored}");
+    }
+
     // rivet: verifies REQ-035
     #[test]
     fn coverage_page_shows_rules() {
