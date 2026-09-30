@@ -74,6 +74,13 @@
   untagged section, and a released section that no longer matches its tag,
   apart from the `Closed issues` block `rivet release` adds. It reports when it
   could not compare any section because no tag was available.
+- **No surface reports 100% coverage for an empty scope any more** (REQ-387,
+  #956 items 1–2) — only the CLI rendered `n/a`; the dashboard, static
+  export, JSON API and MCP painted a green 100%, `rivet context` told an agent
+  "Overall: 100.0%", and `--fail-under` reported `"passed": true` in the run
+  that exited 1. All now say `n/a` / `null`, and all honour
+  `coverage.unmodelled-rules` with the declared reason. New
+  `percentage_opt()`-style methods replace the deprecated ones that return 100.
 - **Cross-repo backlinks are no longer invented from ID collisions**
   (REQ-395, #1015) — an external artifact's unprefixed link target, which
   names its own artifact, was counted as a backlink to whichever artifact of
