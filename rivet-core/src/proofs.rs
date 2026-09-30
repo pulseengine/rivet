@@ -230,13 +230,14 @@ mod proofs {
             external_boundary_ids: vec![],
         };
 
-        let pct = entry.percentage();
-        kani::assert(pct >= 0.0, "Coverage percentage must be >= 0.0");
-        kani::assert(pct <= 100.0, "Coverage percentage must be <= 100.0");
-
-        // Additional: when total is 0, percentage must be 100.0
-        if total == 0 {
-            kani::assert(pct == 100.0, "Coverage with zero total must be 100.0");
+        // REQ-387: an empty scope has no percentage; otherwise it is bounded.
+        match entry.percentage_opt() {
+            None => kani::assert(total == 0, "only a zero total has no percentage"),
+            Some(pct) => {
+                kani::assert(total != 0, "a zero total must have no percentage");
+                kani::assert(pct >= 0.0, "Coverage percentage must be >= 0.0");
+                kani::assert(pct <= 100.0, "Coverage percentage must be <= 100.0");
+            }
         }
 
         // Additional: when covered == total and total > 0, percentage must be 100.0
@@ -364,14 +365,16 @@ mod proofs {
 
         for entry in &report.entries {
             kani::assert(entry.covered <= entry.total, "covered must be <= total");
-            let pct = entry.percentage();
-            kani::assert(pct >= 0.0, "entry percentage must be >= 0");
-            kani::assert(pct <= 100.0, "entry percentage must be <= 100");
+            if let Some(pct) = entry.percentage_opt() {
+                kani::assert(pct >= 0.0, "entry percentage must be >= 0");
+                kani::assert(pct <= 100.0, "entry percentage must be <= 100");
+            }
         }
 
-        let overall = report.overall_coverage();
-        kani::assert(overall >= 0.0, "overall coverage must be >= 0");
-        kani::assert(overall <= 100.0, "overall coverage must be <= 100");
+        if let Some(overall) = report.overall_coverage_opt() {
+            kani::assert(overall >= 0.0, "overall coverage must be >= 0");
+            kani::assert(overall <= 100.0, "overall coverage must be <= 100");
+        }
     }
 
     // ── 7. Schema::merge: idempotence ───────────────────────────────────

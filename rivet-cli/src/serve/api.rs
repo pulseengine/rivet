@@ -44,7 +44,6 @@ use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 
-use rivet_core::coverage::compute_coverage;
 use rivet_core::schema::Severity;
 
 use super::SharedState;
@@ -211,7 +210,11 @@ struct CoverageStats {
     link_type: String,
     covered: usize,
     total: usize,
-    percentage: f64,
+    /// `null` for an empty scope (REQ-387), never 100.
+    percentage: Option<f64>,
+    /// The project's reason, when it declares this rule unmodelled (REQ-320).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unmodelled: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -327,7 +330,16 @@ pub(crate) async fn stats(
     }
 
     // coverage
-    let report = compute_coverage(store_ref, &guard.schema, graph_ref);
+    let report = rivet_core::coverage::compute_project_coverage(
+        store_ref,
+        &guard.schema,
+        graph_ref,
+        guard
+            .config
+            .coverage
+            .as_ref()
+            .map_or(&[][..], |c| &c.unmodelled_rules),
+    );
     let coverage: Vec<CoverageStats> = report
         .entries
         .iter()
@@ -338,7 +350,8 @@ pub(crate) async fn stats(
             link_type: e.link_type.clone(),
             covered: e.covered,
             total: e.total,
-            percentage: e.percentage(),
+            percentage: e.percentage_opt(),
+            unmodelled: e.unmodelled.clone(),
         })
         .collect();
 
@@ -760,7 +773,10 @@ struct ApiCoverageRule {
     target_types: Vec<String>,
     covered: usize,
     total: usize,
-    percentage: f64,
+    /// `null` for an empty scope (REQ-387), never 100.
+    percentage: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unmodelled: Option<String>,
     uncovered: Vec<String>,
 }
 
@@ -802,7 +818,16 @@ pub(crate) async fn coverage(
             Some(s) => (&s.store, &s.graph),
             None => (&guard.store, &guard.graph),
         };
-    let report = compute_coverage(store_ref, &guard.schema, graph_ref);
+    let report = rivet_core::coverage::compute_project_coverage(
+        store_ref,
+        &guard.schema,
+        graph_ref,
+        guard
+            .config
+            .coverage
+            .as_ref()
+            .map_or(&[][..], |c| &c.unmodelled_rules),
+    );
 
     let rules: Vec<ApiCoverageRule> = report
         .entries
@@ -819,7 +844,8 @@ pub(crate) async fn coverage(
             target_types: e.target_types.clone(),
             covered: e.covered,
             total: e.total,
-            percentage: e.percentage(),
+            percentage: e.percentage_opt(),
+            unmodelled: e.unmodelled.clone(),
             uncovered: e.uncovered_ids.clone(),
         })
         .collect();

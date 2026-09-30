@@ -13501,3 +13501,71 @@ fn set_field_true_on_a_boolean_field_makes_exempt_when_field_apply() {
         written
     );
 }
+
+// ── REQ-387 / #956 items 1–2: every surface agrees on coverage ───────────
+
+/// A project whose `sources:` load no artifacts (every rule has nothing to
+/// score) and which declares one rule unmodelled. Shared by the CLI, serve and
+/// MCP agreement tests.
+pub fn empty_scope_unmodelled_fixture() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n\
+         coverage:\n  unmodelled-rules:\n    - rule: requirement-verification\n      \
+         reason: verified in a sibling repository\n",
+    )
+    .unwrap();
+    tmp
+}
+
+/// An empty scope is `n/a` (JSON `null`) everywhere the CLI states coverage,
+/// and a coverage gate cannot pass on it: `--fail-under` used to exit 1 while
+/// its own JSON said `"passed": true`. `rivet context`, written for agents,
+/// said "Overall: 100.0%" and "All rules at 100% coverage".
+///
+// rivet: verifies REQ-387
+#[test]
+fn coverage_on_an_empty_scope_is_na_on_every_cli_surface() {
+    let tmp = empty_scope_unmodelled_fixture();
+    let dir = tmp.path();
+    let out = Command::new(rivet_bin())
+        .args(["coverage", "--format", "json", "--fail-under", "50"])
+        .current_dir(dir)
+        .output()
+        .expect("rivet coverage");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("coverage JSON");
+    assert!(
+        !out.status.success(),
+        "an empty scope cannot meet a threshold"
+    );
+    assert_eq!(
+        v["threshold"]["passed"], false,
+        "JSON agrees with the exit code: {v}"
+    );
+    assert_eq!(v["overall"]["percentage"], serde_json::Value::Null);
+    let rule = v["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "requirement-verification")
+        .expect("rule reported")
+        .clone();
+    assert_eq!(rule["percentage"], serde_json::Value::Null);
+    assert_eq!(rule["unmodelled"], "verified in a sibling repository");
+
+    let out = Command::new(rivet_bin())
+        .args(["context", "--stdout"])
+        .current_dir(dir)
+        .output()
+        .expect("rivet context");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("**Overall: n/a**"), "rivet context:\n{text}");
+    assert!(
+        !text.contains("100.0%") && !text.contains("All rules at 100% coverage"),
+        "an empty scope must not read as full coverage:\n{text}"
+    );
+}

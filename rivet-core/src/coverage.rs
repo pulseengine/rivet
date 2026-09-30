@@ -122,29 +122,38 @@ impl CoverageEntry {
     }
 
     /// In-house coverage percentage (0..100). Counts only `covered`,
-    /// excluding `external_boundary`. Returns 100 when total is 0 for
-    /// legacy callers; display code MUST check [`Self::is_empty_scope`]
-    /// first and render `n/a` rather than trust this value in the empty
-    /// case.
+    /// excluding `external_boundary`. `None` when the rule has nothing to
+    /// score (total == 0).
+    ///
+    /// REQ-387 / #956 item 1: this returned 100 for an empty scope, and the
+    /// doc comment said display code MUST check [`Self::is_empty_scope`]
+    /// first. Only the CLI did; the dashboard, static export, MCP tool and
+    /// JSON API painted a green 100%. An `Option` makes every caller decide.
+    pub fn percentage_opt(&self) -> Option<f64> {
+        (self.total != 0).then(|| (self.covered as f64 / self.total as f64) * 100.0)
+    }
+
+    /// Legacy form: 100 for an empty scope. Kept for API compatibility;
+    /// every rivet surface uses [`Self::percentage_opt`] (REQ-387).
+    #[deprecated(note = "returns 100 for an empty scope; use percentage_opt (REQ-387)")]
     pub fn percentage(&self) -> f64 {
-        if self.total == 0 {
-            100.0
-        } else {
-            (self.covered as f64 / self.total as f64) * 100.0
-        }
+        self.percentage_opt().unwrap_or(100.0)
     }
 
     /// Combined accounted percentage: `(covered + external_boundary) /
     /// total`. Issue #253: an auditor sees this as "what's not strictly
     /// missing from the trace — either we satisfy it, or a supplier
-    /// owes it on a recorded boundary." Returns 100 when total is 0
-    /// (see [`Self::percentage`] for the display-side caveat).
+    /// owes it on a recorded boundary." `None` when total is 0, as for
+    /// [`Self::percentage`].
+    pub fn accounted_percentage_opt(&self) -> Option<f64> {
+        (self.total != 0)
+            .then(|| ((self.covered + self.external_boundary) as f64 / self.total as f64) * 100.0)
+    }
+
+    /// Legacy form: 100 for an empty scope (REQ-387).
+    #[deprecated(note = "returns 100 for an empty scope; use accounted_percentage_opt (REQ-387)")]
     pub fn accounted_percentage(&self) -> f64 {
-        if self.total == 0 {
-            100.0
-        } else {
-            ((self.covered + self.external_boundary) as f64 / self.total as f64) * 100.0
-        }
+        self.accounted_percentage_opt().unwrap_or(100.0)
     }
 }
 
@@ -185,16 +194,53 @@ impl ClosureEntry {
         self.total == 0
     }
 
-    /// Closure percentage (0..100). Returns 100 when total is 0 for
-    /// legacy callers; display code MUST check
-    /// [`Self::is_empty_scope`] first and render `n/a` rather than
-    /// trust this value in the empty case.
+    /// Closure percentage (0..100); `None` when total is 0 (REQ-387).
+    pub fn percentage_opt(&self) -> Option<f64> {
+        (self.total != 0).then(|| (self.closed as f64 / self.total as f64) * 100.0)
+    }
+
+    /// Legacy form: 100 for an empty scope (REQ-387).
+    #[deprecated(note = "returns 100 for an empty scope; use percentage_opt (REQ-387)")]
     pub fn percentage(&self) -> f64 {
-        if self.total == 0 {
-            100.0
-        } else {
-            (self.closed as f64 / self.total as f64) * 100.0
-        }
+        self.percentage_opt().unwrap_or(100.0)
+    }
+}
+
+/// REQ-387 / #956 item 2: coverage as the project defines it — every rule
+/// computed, then the project's `coverage.unmodelled-rules` declarations
+/// applied. `rivet coverage` and release readiness applied them; the
+/// dashboard, static export, MCP tool, JSON API and snapshot did not, so a
+/// project that declared a rule unmodelled saw two different percentages.
+/// Every surface calls this. The declarations' own problems (a stale or
+/// unknown rule) are `rivet coverage`'s to report and are not returned here.
+#[must_use]
+pub fn compute_project_coverage(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    unmodelled: &[crate::model::UnmodelledRule],
+) -> CoverageReport {
+    let mut report = compute_coverage(store, schema, graph);
+    let _ = mark_unmodelled(&mut report, unmodelled);
+    report
+}
+
+/// REQ-387 / #956 item 1: the one rendering of a coverage percentage shared
+/// by every surface. An empty scope (`None`) reads `n/a`, never `100.0%`.
+#[must_use]
+pub fn format_percentage(p: Option<f64>) -> String {
+    p.map_or_else(|| "n/a".to_string(), |v| format!("{v:.1}%"))
+}
+
+/// Traffic-light band for a coverage percentage: `na` for an empty scope,
+/// so no renderer can colour "nothing to score" green (REQ-387).
+#[must_use]
+pub fn coverage_band(p: Option<f64>) -> &'static str {
+    match p {
+        None => "na",
+        Some(v) if v >= 100.0 - f64::EPSILON => "green",
+        Some(v) if v > 0.0 => "yellow",
+        Some(_) => "red",
     }
 }
 
@@ -218,13 +264,16 @@ impl CoverageReport {
     /// count). Returns 100 when the total denominator is 0 for legacy
     /// callers; display / gating code MUST check
     /// [`Self::is_empty_scope`] first.
-    pub fn overall_coverage(&self) -> f64 {
+    pub fn overall_coverage_opt(&self) -> Option<f64> {
         let total: usize = self.entries.iter().map(|e| e.total).sum();
-        if total == 0 {
-            return 100.0;
-        }
         let covered: usize = self.entries.iter().map(|e| e.covered).sum();
-        (covered as f64 / total as f64) * 100.0
+        (total != 0).then(|| (covered as f64 / total as f64) * 100.0)
+    }
+
+    /// Legacy form: 100 for an empty scope (REQ-387).
+    #[deprecated(note = "returns 100 for an empty scope; use overall_coverage_opt (REQ-387)")]
+    pub fn overall_coverage(&self) -> f64 {
+        self.overall_coverage_opt().unwrap_or(100.0)
     }
 
     /// V-closure across every source type that is governed by more than one
@@ -768,7 +817,7 @@ mod tests {
         assert_eq!(req_entry.rule_name, "req-coverage");
         assert_eq!(req_entry.covered, 1);
         assert_eq!(req_entry.total, 1);
-        assert!((req_entry.percentage() - 100.0).abs() < f64::EPSILON);
+        assert!((req_entry.percentage_opt().unwrap() - 100.0).abs() < f64::EPSILON);
 
         // dd-justification: DD-001 has forward link satisfies -> REQ-001
         let dd_entry = &report.entries[1];
@@ -776,7 +825,7 @@ mod tests {
         assert_eq!(dd_entry.covered, 1);
         assert_eq!(dd_entry.total, 1);
 
-        assert!((report.overall_coverage() - 100.0).abs() < f64::EPSILON);
+        assert!((report.overall_coverage_opt().unwrap() - 100.0).abs() < f64::EPSILON);
     }
 
     // rivet: verifies REQ-383
@@ -940,23 +989,21 @@ mod tests {
         let req_entry = &report.entries[0];
         assert_eq!(req_entry.covered, 1);
         assert_eq!(req_entry.total, 2);
-        assert!((req_entry.percentage() - 50.0).abs() < f64::EPSILON);
+        assert!((req_entry.percentage_opt().unwrap() - 50.0).abs() < f64::EPSILON);
         assert_eq!(req_entry.uncovered_ids, vec!["REQ-002"]);
 
         // overall: 2 covered out of 3 total
-        assert!((report.overall_coverage() - 66.666_666_666_666_66).abs() < 0.01);
+        assert!((report.overall_coverage_opt().unwrap() - 66.666_666_666_666_66).abs() < 0.01);
     }
 
     // rivet: verifies REQ-004
     // rivet: verifies #808
     #[test]
     fn zero_artifacts_is_flagged_as_empty_scope_not_a_100_percent_pass() {
-        // #808: a project that loads zero artifacts must NOT read as
-        // "everything is fine." percentage() still returns 100 for legacy
-        // callers, but display code must consult is_empty_scope() and
-        // render "n/a" — that's what the renderer regression at CLI
-        // level enforces, and this unit test locks the invariant at the
-        // model layer.
+        // #808 / REQ-387: a project that loads zero artifacts must NOT read
+        // as "everything is fine." percentage() used to return a legacy 100
+        // that only the CLI knew to ignore; it now returns None, so no
+        // surface can print it.
         let schema = test_schema();
         let store = Store::new();
         let graph = LinkGraph::build(&store, &schema);
@@ -965,15 +1012,14 @@ mod tests {
         for entry in &report.entries {
             assert_eq!(entry.total, 0);
             assert!(entry.is_empty_scope(), "zero total ⇒ empty-scope");
-            // legacy value preserved for now; display path guarded separately
-            assert!((entry.percentage() - 100.0).abs() < f64::EPSILON);
+            assert_eq!(entry.percentage_opt(), None);
+            assert_eq!(entry.accounted_percentage_opt(), None);
         }
         assert!(
             report.is_empty_scope(),
             "every rule empty ⇒ report empty-scope"
         );
-        // legacy value preserved
-        assert!((report.overall_coverage() - 100.0).abs() < f64::EPSILON);
+        assert_eq!(report.overall_coverage_opt(), None);
     }
 
     // rivet: partially-verifies REQ-004
@@ -1113,8 +1159,8 @@ mod tests {
 
         // Percentages: covered alone is 1/3 ≈ 33.3%, but the accounted
         // figure (covered + boundary) is 2/3 ≈ 66.7%.
-        assert!((entry.percentage() - 33.333).abs() < 0.1);
-        assert!((entry.accounted_percentage() - 66.666).abs() < 0.1);
+        assert!((entry.percentage_opt().unwrap() - 33.333).abs() < 0.1);
+        assert!((entry.accounted_percentage_opt().unwrap() - 66.666).abs() < 0.1);
     }
 
     /// An external-anchor whose `expected-derived-types` does NOT include
@@ -1393,7 +1439,7 @@ mod tests {
         assert_eq!(c.total, 3);
         assert_eq!(c.closed, 1, "only REQ-001 satisfies BOTH rules");
         assert_eq!(c.open_ids, vec!["REQ-002", "REQ-003"]);
-        assert!((c.percentage() - 33.333).abs() < 0.01);
+        assert!((c.percentage_opt().unwrap() - 33.333).abs() < 0.01);
     }
 
     #[test]
@@ -1504,7 +1550,7 @@ mod tests {
         assert_eq!(e2.covered, 1);
         assert_eq!(e2.exempt, 1);
         assert!(
-            e2.percentage() < 100.0,
+            e2.percentage_opt().unwrap() < 100.0,
             "a forgotten goal must drop the figure below 100%, where it is loud"
         );
     }

@@ -61,10 +61,15 @@ fn free_port() -> u16 {
 
 /// Start the rivet server and return (child, port).
 fn start_server() -> (Child, u16) {
+    start_server_in(&project_root())
+}
+
+/// `rivet serve` over an arbitrary project directory (a fixture).
+fn start_server_in(dir: &std::path::Path) -> (Child, u16) {
     let port = free_port();
     let mut child = Command::new(rivet_bin())
         .args(["serve", "--port", &port.to_string()])
-        .current_dir(project_root())
+        .current_dir(dir)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -2009,4 +2014,61 @@ fn sql_endpoint_runs_read_query_and_refuses_writes() {
     );
 
     child.kill().ok();
+}
+
+/// REQ-387 / #956 items 1–2: the dashboard and JSON API state the same
+/// coverage `rivet coverage` does. On an empty scope they painted a green
+/// 100% where the CLI said `n/a`, and they ignored `coverage.unmodelled-rules`.
+// rivet: verifies REQ-387
+#[test]
+fn coverage_on_an_empty_scope_agrees_across_api_and_dashboard() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n\
+         coverage:\n  unmodelled-rules:\n    - rule: requirement-verification\n      \
+         reason: verified in a sibling repository\n",
+    )
+    .unwrap();
+    let (mut child, port) = start_server_in(dir);
+
+    let (status, body, _) = fetch(port, "/api/v1/coverage", false);
+    assert_eq!(status, 200, "{body}");
+    let j: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let rules = j["rules"].as_array().expect("rules");
+    assert!(!rules.is_empty());
+    for r in rules {
+        assert_eq!(
+            r["percentage"],
+            serde_json::Value::Null,
+            "empty scope is null: {r}"
+        );
+    }
+    let rv = rules
+        .iter()
+        .find(|r| r["rule"] == "requirement-verification")
+        .expect("rule present");
+    assert_eq!(rv["unmodelled"], "verified in a sibling repository");
+
+    let (status, body, _) = fetch(port, "/api/v1/stats", false);
+    assert_eq!(status, 200);
+    let j: serde_json::Value = serde_json::from_str(&body).unwrap();
+    for r in j["coverage"].as_array().expect("coverage") {
+        assert_eq!(r["percentage"], serde_json::Value::Null, "{r}");
+    }
+
+    let (status, html, _) = fetch(port, "/coverage", true);
+    assert_eq!(status, 200);
+    assert!(html.contains("n/a"), "dashboard shows n/a:\n{html}");
+    assert!(
+        html.contains("unmodelled: verified in a sibling repository"),
+        "dashboard carries the declared reason"
+    );
+    assert!(!html.contains("100.0%"), "no green 100% for nothing scored");
+
+    child.kill().ok();
+    child.wait().ok();
 }

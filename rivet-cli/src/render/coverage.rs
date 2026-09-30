@@ -7,22 +7,24 @@ use super::RenderContext;
 use super::helpers::badge_for_type;
 
 pub(crate) fn render_coverage_view(ctx: &RenderContext) -> String {
-    let report = coverage::compute_coverage(ctx.store, ctx.schema, ctx.graph);
-    let overall = report.overall_coverage();
+    // REQ-387 / #956: the project's coverage (unmodelled rules applied), and
+    // an empty scope rendered `n/a` in grey — this page painted it a green 100%.
+    let report =
+        coverage::compute_project_coverage(ctx.store, ctx.schema, ctx.graph, ctx.unmodelled_rules);
+    let overall = report.overall_coverage_opt();
 
     let mut html = String::from("<h2>Traceability Coverage</h2>");
 
-    let overall_color = if overall >= 80.0 {
-        "#15713a"
-    } else if overall >= 50.0 {
-        "#8b6914"
-    } else {
-        "#c62828"
+    let overall_color = match overall {
+        None => "#8e8e93",
+        Some(o) if o >= 80.0 => "#15713a",
+        Some(o) if o >= 50.0 => "#8b6914",
+        Some(_) => "#c62828",
     };
     html.push_str("<div class=\"stat-grid\">");
     html.push_str(&format!(
-        "<div class=\"stat-box\"><div class=\"number\" style=\"color:{overall_color}\">{:.1}%</div><div class=\"label\">Overall Coverage</div></div>",
-        overall
+        "<div class=\"stat-box\"><div class=\"number\" style=\"color:{overall_color}\">{}</div><div class=\"label\">Overall Coverage</div></div>",
+        coverage::format_percentage(overall)
     ));
     html.push_str(&format!(
         "<div class=\"stat-box\"><div class=\"number\">{}</div><div class=\"label\">Rules</div></div>",
@@ -57,13 +59,17 @@ pub(crate) fn render_coverage_view(ctx: &RenderContext) -> String {
     }
 
     for entry in &report.entries {
-        let pct = entry.percentage();
-        let (bar_color, badge_class) = if pct >= 80.0 {
-            ("#15713a", "badge-ok")
-        } else if pct >= 50.0 {
-            ("#b8860b", "badge-warn")
-        } else {
-            ("#c62828", "badge-error")
+        let pct_opt = entry.percentage_opt();
+        let pct = pct_opt.unwrap_or(0.0);
+        let (bar_color, badge_class) = match pct_opt {
+            None => ("#8e8e93", "badge-info"),
+            Some(p) if p >= 80.0 => ("#15713a", "badge-ok"),
+            Some(p) if p >= 50.0 => ("#b8860b", "badge-warn"),
+            Some(_) => ("#c62828", "badge-error"),
+        };
+        let pct_label = match (&entry.unmodelled, pct_opt) {
+            (Some(reason), _) => format!("n/a — unmodelled: {}", html_escape(reason)),
+            (None, p) => coverage::format_percentage(p),
         };
 
         let dir_label = match entry.direction {
@@ -76,7 +82,7 @@ pub(crate) fn render_coverage_view(ctx: &RenderContext) -> String {
                 .and_then(|s| s.coverage.rules.iter().find(|r| r.rule == entry.rule_name))
                 .map_or(0.0, |r| r.percentage);
             let diff = pct - base_pct;
-            if diff.abs() < 0.05 {
+            if pct_opt.is_none() || diff.abs() < 0.05 {
                 "<td>—</td>".to_string()
             } else {
                 let (sign, color) = if diff > 0.0 {
@@ -97,7 +103,7 @@ pub(crate) fn render_coverage_view(ctx: &RenderContext) -> String {
              <td>{source}</td>\
              <td><span class=\"link-pill\">{link}</span></td>\
              <td>{dir}</td>\
-             <td><span class=\"badge {badge_class}\">{covered}/{total} ({pct:.1}%)</span></td>\
+             <td><span class=\"badge {badge_class}\">{covered}/{total} ({pct_label})</span></td>\
              {delta_cell}\
              <td>\
                <div style=\"background:#e5e5ea;border-radius:4px;height:18px;position:relative;overflow:hidden\">\

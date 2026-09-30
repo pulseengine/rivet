@@ -1190,3 +1190,38 @@ async fn test_modify_description_with_backticks_and_newlines() {
 
     client.cancel().await.expect("cancel");
 }
+
+/// REQ-387 / #956 items 1–2: MCP states the same coverage `rivet coverage`
+/// does — `null` for an empty scope (it returned 100.0) and the project's
+/// `coverage.unmodelled-rules` reason (it ignored them).
+// rivet: verifies REQ-387
+#[tokio::test]
+async fn test_rivet_coverage_empty_scope_is_null_and_carries_unmodelled() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n\
+         coverage:\n  unmodelled-rules:\n    - rule: requirement-verification\n      \
+         reason: verified in a sibling repository\n",
+    )
+    .unwrap();
+    let client = spawn_mcp_client(dir).await;
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_coverage"))
+        .await
+        .expect("call_tool rivet_coverage");
+    let json = parse_result(&result);
+    assert_eq!(json["overall_percentage"], Value::Null, "{json}");
+    let rv = json["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "requirement-verification")
+        .expect("rule present")
+        .clone();
+    assert_eq!(rv["percentage"], Value::Null);
+    assert_eq!(rv["unmodelled"], "verified in a sibling repository");
+}
