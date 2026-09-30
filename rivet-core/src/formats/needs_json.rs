@@ -238,6 +238,25 @@ fn import_needs_json_inner(
     Ok(artifacts)
 }
 
+/// The extra link fields of a need: every key K for which the need also
+/// carries `K_back` (sphinx-needs' reverse list). The generic `links` field
+/// is handled separately.
+fn extra_link_fields(item: &NeedsItem) -> std::collections::HashSet<String> {
+    item.extra
+        .keys()
+        .filter(|k| *k != "links" && !k.ends_with("_back"))
+        .filter(|k| item.extra.contains_key(&format!("{k}_back")))
+        .cloned()
+        .collect()
+}
+
+/// `K_back` whose forward field `K` is a link field (or the generic
+/// `links`): a reverse index sphinx-needs computes, not data to import.
+fn is_back_link_list(item: &NeedsItem, key: &str) -> bool {
+    key.strip_suffix("_back")
+        .is_some_and(|fwd| fwd == "links" || item.extra.contains_key(fwd))
+}
+
 fn transform_id(id: &str, transform: &IdTransform) -> String {
     match transform {
         IdTransform::UnderscoresToDashes => id.replace('_', "-"),
@@ -348,8 +367,9 @@ fn convert_need(
     );
     let title = item.title.clone().unwrap_or_else(|| id.clone());
 
-    // Convert forward links.
-    let links: Vec<Link> = item
+    // Convert forward links: the generic `links` option takes the default
+    // link type.
+    let mut links: Vec<Link> = item
         .links
         .iter()
         .map(|target| Link {
@@ -358,6 +378,28 @@ fn convert_need(
             external: None,
         })
         .collect();
+
+    // REQ-398: every extra link type (`needs_extra_links`: `implements`,
+    // `derives_from`, `mitigates`, ...) is a typed link. sphinx-needs emits a
+    // `<name>_back` list beside each link field, so a key K with a `K_back`
+    // twin IS a link field. The importer used to copy these into `fields` as
+    // untyped strings: on useblocks' sphinx-needs-demo (8.5.0) 478 of 809
+    // links arrived as text, and the 331 that survived were all typed
+    // `satisfies` whatever they meant.
+    let link_fields = extra_link_fields(item);
+    let mut names: Vec<&String> = link_fields.iter().collect();
+    names.sort();
+    for name in names {
+        if let Some(serde_json::Value::Array(targets)) = item.extra.get(name.as_str()) {
+            for target in targets.iter().filter_map(|t| t.as_str()) {
+                links.push(Link {
+                    link_type: name.replace('_', "-"),
+                    target: transform_id(target, &config.id_transform),
+                    external: None,
+                });
+            }
+        }
+    }
 
     // Status: sphinx-needs uses empty string for "no status".
     let status = item
@@ -375,7 +417,10 @@ fn convert_need(
     // Preserve interesting extra fields.
     let mut fields = BTreeMap::new();
     for (k, v) in &item.extra {
-        if EXCLUDED_EXTRA_KEYS.contains(&k.as_str()) {
+        if EXCLUDED_EXTRA_KEYS.contains(&k.as_str())
+            || link_fields.contains(k)
+            || is_back_link_list(item, k)
+        {
             continue;
         }
         // Skip null / empty-string / empty-array values.
@@ -736,5 +781,77 @@ mod tests {
             "error should name the offending need key: {err}"
         );
         assert!(err.contains("type"), "unexpected error message: {err}");
+    }
+
+    // rivet: verifies REQ-398
+    /// Real sphinx-needs 8.5.0 output (useblocks' public demo; provenance in
+    /// tests/fixtures/sphinx-needs-8.5-demo/README.md). Expected values are
+    /// read from the fixture independently of the importer: the link fields
+    /// come from `needs_schema` (every property with a `_back` twin), not from
+    /// the per-need detection the importer uses.
+    #[test]
+    fn imports_real_sphinx_needs_8_5_output_with_every_link_typed() {
+        let raw = include_str!("../../tests/fixtures/sphinx-needs-8.5-demo/needs.json");
+        let doc: serde_json::Value = serde_json::from_str(raw).unwrap();
+        let cv = doc["current_version"].as_str().unwrap();
+        let version = &doc["versions"][cv];
+        let needs = version["needs"].as_object().unwrap();
+        let props = version["needs_schema"]["properties"].as_object().unwrap();
+        let link_fields: Vec<&str> = props
+            .keys()
+            .filter_map(|k| k.strip_suffix("_back"))
+            .filter(|f| props.contains_key(*f))
+            .collect();
+        let dash = |s: &str| s.replace('_', "-");
+        let mut expected = std::collections::BTreeSet::new();
+        for need in needs.values() {
+            let id = dash(need["id"].as_str().unwrap());
+            for f in &link_fields {
+                for t in need[*f].as_array().into_iter().flatten() {
+                    let ty = if *f == "links" {
+                        "satisfies".to_string()
+                    } else {
+                        dash(f)
+                    };
+                    expected.insert((id.clone(), ty, dash(t.as_str().unwrap())));
+                }
+            }
+        }
+        assert!(
+            expected.len() > 30,
+            "the fixture carries real links: {}",
+            expected.len()
+        );
+        assert!(
+            expected.iter().any(|(_, ty, _)| ty != "satisfies"),
+            "the fixture exercises extra link types"
+        );
+
+        let arts = import_needs_json(raw, &NeedsJsonConfig::default()).unwrap();
+        assert_eq!(arts.len(), needs.len(), "one artifact per need");
+        let got: std::collections::BTreeSet<(String, String, String)> = arts
+            .iter()
+            .flat_map(|a| {
+                a.links
+                    .iter()
+                    .map(|l| (a.id.clone(), l.link_type.clone(), l.target.clone()))
+            })
+            .collect();
+        assert_eq!(got, expected, "every forward link, typed by its field");
+        for need in needs.values() {
+            let id = dash(need["id"].as_str().unwrap());
+            let a = arts.iter().find(|a| a.id == id).expect("imported");
+            assert_eq!(a.artifact_type, dash(need["type"].as_str().unwrap()));
+            for key in a.fields.keys() {
+                assert!(
+                    !key.ends_with("-back"),
+                    "{id}: reverse list {key} is not data"
+                );
+                assert!(
+                    !link_fields.iter().any(|f| dash(f) == *key),
+                    "{id}: link field {key} must be a link, not a field"
+                );
+            }
+        }
     }
 }

@@ -45,6 +45,14 @@
   the other writers are refused.
 
 ### Fixed
+- **Importing `needs.json` keeps every link and its type** (REQ-398) —
+  checked for the first time against real sphinx-needs 8.5.0 output (useblocks'
+  public demo): of 809 links only 331 arrived as links, all typed `satisfies`,
+  and the rest (`implements`, `derives_from`, `mitigates`, …) landed in
+  `fields` as untyped text. Every sphinx-needs link field now imports as a link
+  typed by its name (`derives_from` → `derives-from`). **Behaviour change:** a
+  project whose schema does not declare those link types now sees them in
+  `rivet validate`, instead of losing them silently.
 - **The CHANGELOG told a wrong release history, and no gate noticed**
   (REQ-399) — a second `[0.33.0]` section listed v0.34.0 work, and the
   `[0.31.0]` and `[0.16.0]` sections carried fixes that first shipped in later
