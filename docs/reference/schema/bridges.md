@@ -24,6 +24,7 @@ rule you're chasing to see the `source-type`, `required-link`, and
 | `schema/safety-case-stpa.bridge`    | `safety-case` + `stpa`         | GSN safety case ↔ STPA hazards & constraints |
 | `schema/sotif-stpa.bridge`          | `sotif` + `stpa`               | SOTIF (ISO 21448) ↔ STPA |
 | `schema/stpa-dev.bridge`            | `stpa` + `dev`                 | STPA constraints ↔ dev requirements |
+| `schema/supply-chain-dev.bridge`    | `supply-chain` + `dev`         | supply-chain evidence ↔ dev requirements |
 
 ## Reading a failing coverage row
 

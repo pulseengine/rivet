@@ -76,3 +76,4 @@ The documentation built into the `rivet` binary, one file per topic. `rivet docs
 - [`schema/safety-case-stpa.bridge`](schema/safety-case-stpa.bridge.md) — Bridge: GSN Safety Case ↔ STPA
 - [`schema/sotif-stpa.bridge`](schema/sotif-stpa.bridge.md) — Bridge: SOTIF (ISO 21448) ↔ STPA
 - [`schema/stpa-dev.bridge`](schema/stpa-dev.bridge.md) — Bridge: STPA ↔ Development (dev schema)
+- [`schema/supply-chain-dev.bridge`](schema/supply-chain-dev.bridge.md) — Bridge: Supply chain ↔ Development (dev schema)

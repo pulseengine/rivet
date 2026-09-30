@@ -178,4 +178,4 @@ Documents participate in validation:
 
 - **Broken references**: `[[ID]]` pointing to nonexistent artifacts are warnings
 - **Coverage**: The doc-linkage view shows which artifacts are referenced in docs
-- **Orphan detection**: Artifacts never referenced in any document are flagged
+- **Orphan detection**: Artifacts with no incoming or outgoing links are flagged (documents are not consulted)

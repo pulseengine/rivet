@@ -41,8 +41,9 @@ conditional-rules:
 
 ## Rule Consistency
 
-At schema load time, rivet checks that conditional rules don't contradict
-each other. If two rules with the same condition impose conflicting
-requirements, the schema is rejected with a diagnostic.
+When validating, rivet checks the conditional rules themselves. Two rules
+with the same condition and overlapping requirements, a rule defined twice,
+and a rule whose condition no allowed value can satisfy (so it can never
+fire) each produce a **warning** — the schema is still loaded.
 
 Related: [[REQ-023]], [[DD-018]], [[FEAT-040]]

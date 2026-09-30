@@ -14,7 +14,7 @@
 
 schema:
   name: common
-  version: "0.3.0"
+  version: "0.3.1"
   description: >
     Base field definitions and common link types for lifecycle traceability.
     All domain schemas implicitly extend this schema.
@@ -430,14 +430,18 @@ artifact-types:
 # condition is met and check for additional requirements.
 # ──────────────────────────────────────────────────────────────────────────
 conditional-rules:
+  # REQ-388 / #958 item 5: this said `equals: active`, a value the status
+  # enum does not contain, so the rule could never fire on a valid store.
+  # Once an AI-authored artifact is approved or built upon, a human reviewer
+  # must be recorded (`rivet stamp <ID> --reviewed-by <name>`).
   - name: ai-generated-needs-review
-    description: AI-generated artifacts with active/approved status must have a reviewer
+    description: AI-generated artifacts that are approved or later (approved, implemented, verified, released, accepted) must have a reviewer
     condition:
       field: provenance.created-by
       matches: "^(ai|ai-assisted)$"
     when:
       field: status
-      equals: active
+      matches: "^(approved|implemented|verified|released|accepted)$"
     then:
       required-fields: [provenance.reviewed-by]
     severity: warning

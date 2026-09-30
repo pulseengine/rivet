@@ -93,9 +93,9 @@ that follow the spec strictly will reject `tools/list` until they see it.
 After the notification, the client may freely send `tools/list`,
 `tools/call`, `resources/list`, and `resources/read` requests.
 
-## The 15-Tool Catalog
+## The 16-Tool Catalog
 
-The server registers fifteen tools. The authoritative listing — including
+The server registers sixteen tools. The authoritative listing — including
 the full input schema for each — is `rivet mcp --list-tools` (text) or
 `rivet mcp --list-tools --format json` (the JSON-RPC `tools/list` payload).
 
@@ -105,6 +105,7 @@ the full input schema for each — is `rivet mcp --list-tools` (text) or
 | `rivet_list`            | List artifacts, optional type / status filters           | `type_filter?`, `status_filter?`       |
 | `rivet_get`             | Fetch one artifact (fields, links, metadata)             | `id`                                   |
 | `rivet_stats`           | Counts by type, orphans, broken-link totals              | (none)                                 |
+| `rivet_bundle`          | An artifact plus its link-graph closure, as one document | `id`, `depth?`, `format?`              |
 | `rivet_coverage`        | Per-rule traceability coverage                           | `rule?`                                |
 | `rivet_schema`          | Artifact types, link types, traceability rules           | `type?`                                |
 | `rivet_query`           | S-expression filter; matches with full bodies            | `filter`, `limit?`                     |
@@ -117,7 +118,8 @@ the full input schema for each — is `rivet mcp --list-tools` (text) or
 | `rivet_remove`          | Delete an artifact (refuses if backlinked unless force)  | `id`, `force?`                         |
 | `rivet_reload`          | Reload the cache from disk after external file changes   | (none)                                 |
 
-The first nine tools are read-only and run against the cache. The next
+The first nine tools are read-only and run against the cache.
+`rivet_snapshot_capture` writes a snapshot file but no artifact. The next
 five mutate YAML on disk and require a `rivet_reload` afterwards (see
 "Mutation Convention" below). `rivet_reload` itself is the cache primitive.
 
@@ -227,7 +229,7 @@ recipe that exercises the actual stdio transport:
 
 You should see three JSON lines: an `initialize` response, no body for
 the notification (the server emits nothing for notifications), then a
-`tools/list` response with the fifteen tools embedded in
+`tools/list` response with the sixteen tools embedded in
 `result.tools`. The `sleep` is needed because the server reads stdin
 until EOF and would otherwise block waiting for the next request.
 
