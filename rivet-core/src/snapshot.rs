@@ -162,7 +162,9 @@ pub fn capture_with_data(
             source_type: e.source_type.clone(),
             covered: e.covered,
             total: e.total,
-            percentage: e.percentage(),
+            // The snapshot format stores an f64, so an empty scope keeps the
+            // legacy 100 here; changing it is a format break (REQ-387, open).
+            percentage: e.percentage_opt().unwrap_or(100.0),
         })
         .collect();
 
@@ -206,7 +208,7 @@ pub fn capture_with_data(
             by_status,
         },
         coverage: CoverageData {
-            overall: coverage_report.overall_coverage(),
+            overall: coverage_report.overall_coverage_opt().unwrap_or(100.0),
             rules,
         },
         diagnostics: DiagnosticsData {

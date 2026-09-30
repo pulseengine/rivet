@@ -306,6 +306,7 @@ tr:nth-child(even) td { background: var(--bg-card); }
 .badge-ok, .badge-approved, .badge-green { background: rgba(74, 222, 128, 0.12); color: var(--green); }
 .badge-warn, .badge-draft, .badge-yellow { background: rgba(251, 191, 36, 0.12); color: var(--amber); }
 .badge-error, .badge-obsolete, .badge-red { background: rgba(248, 113, 113, 0.12); color: var(--red); }
+.badge-na { background: rgba(148, 163, 184, 0.12); color: var(--text-muted, #94a3b8); }
 .badge-info { background: rgba(108, 140, 255, 0.12); color: var(--accent); }
 .badge-default { background: var(--bg-card-solid); color: var(--text-muted); }
 .severity-error { color: var(--red); font-weight: 600; }
@@ -338,6 +339,7 @@ tr:nth-child(even) td { background: var(--bg-card); }
 .artifact-section .artifact-meta { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
 .tag { display: inline-block; background: rgba(108, 140, 255, 0.12); color: var(--accent); padding: 0.1rem 0.4rem; border-radius: var(--radius-sm); font-size: 0.8rem; margin-right: 0.25rem; }
 .cell-green { background: rgba(74, 222, 128, 0.12) !important; }
+.cell-na { color: var(--text-muted, #94a3b8); }
 .cell-yellow { background: rgba(251, 191, 36, 0.12) !important; }
 .cell-red { background: rgba(248, 113, 113, 0.12) !important; }
 .toc { column-count: 2; column-gap: 2rem; margin: 1rem 0; }
@@ -672,7 +674,7 @@ pub fn render_index(
         .count();
 
     let coverage_report = coverage::compute_coverage(store, schema, graph);
-    let overall_cov = coverage_report.overall_coverage();
+    let overall_cov = coverage_report.overall_coverage_opt();
 
     out.push_str("<div class=\"summary-grid\">\n");
     writeln!(
@@ -698,17 +700,12 @@ pub fn render_index(
     .unwrap();
 
     // Coverage
-    let cov_class = if overall_cov >= 100.0 - f64::EPSILON {
-        "badge-green"
-    } else if overall_cov > 0.0 {
-        "badge-yellow"
-    } else {
-        "badge-red"
-    };
+    let cov_class = format!("badge-{}", coverage::coverage_band(overall_cov));
+    let overall_cov_label = coverage::format_percentage(overall_cov);
     writeln!(
         out,
         "<div class=\"summary-card\"><div class=\"label\">Coverage</div>\
-         <div class=\"value\"><span class=\"badge {cov_class}\">{overall_cov:.1}%</span>\
+         <div class=\"value\"><span class=\"badge {cov_class}\">{overall_cov_label}</span>\
          </div></div>"
     )
     .unwrap();
@@ -1055,19 +1052,11 @@ pub fn render_traceability_matrix(
             // Row coverage
             let total = row_totals.get(src).copied().unwrap_or(0);
             let covered = row_covered.get(src).copied().unwrap_or(0);
-            let pct = if total == 0 {
-                100.0
-            } else {
-                (covered as f64 / total as f64) * 100.0
-            };
-            let cell_class = if pct >= 100.0 - f64::EPSILON {
-                "cell-green"
-            } else if pct > 0.0 {
-                "cell-yellow"
-            } else {
-                "cell-red"
-            };
-            write!(out, "<td class=\"{cell_class}\">{pct:.1}%</td>").unwrap();
+            // REQ-387: an empty row has nothing to score — `n/a`, not a green 100%.
+            let pct = (total != 0).then(|| (covered as f64 / total as f64) * 100.0);
+            let cell_class = format!("cell-{}", coverage::coverage_band(pct));
+            let pct_label = coverage::format_percentage(pct);
+            write!(out, "<td class=\"{cell_class}\">{pct_label}</td>").unwrap();
             out.push_str("</tr>\n");
         }
         out.push_str("</tbody></table>\n");
@@ -1097,17 +1086,12 @@ pub fn render_coverage(
     out.push_str("<main>\n<h1>Coverage Report</h1>\n");
 
     // Overall summary
-    let overall = report.overall_coverage();
-    let cov_class = if overall >= 100.0 - f64::EPSILON {
-        "badge-green"
-    } else if overall > 0.0 {
-        "badge-yellow"
-    } else {
-        "badge-red"
-    };
+    let overall = report.overall_coverage_opt();
+    let cov_class = format!("badge-{}", coverage::coverage_band(overall));
+    let overall_label = coverage::format_percentage(overall);
     writeln!(
         out,
-        "<p>Overall coverage: <span class=\"badge {cov_class}\">{overall:.1}%</span></p>"
+        "<p>Overall coverage: <span class=\"badge {cov_class}\">{overall_label}</span></p>"
     )
     .unwrap();
 
@@ -1122,18 +1106,13 @@ pub fn render_coverage(
              </tr></thead><tbody>\n",
         );
         for entry in &report.entries {
-            let pct = entry.percentage();
-            let cell_class = if pct >= 100.0 - f64::EPSILON {
-                "cell-green"
-            } else if pct > 0.0 {
-                "cell-yellow"
-            } else {
-                "cell-red"
-            };
+            let pct = entry.percentage_opt();
+            let cell_class = format!("cell-{}", coverage::coverage_band(pct));
+            let pct_label = coverage::format_percentage(pct);
             writeln!(
                 out,
                 "<tr><td>{name}</td><td>{desc}</td><td>{src}</td><td>{link}</td>\
-                 <td>{covered}</td><td>{total}</td><td class=\"{cell_class}\">{pct:.1}%</td></tr>",
+                 <td>{covered}</td><td>{total}</td><td class=\"{cell_class}\">{pct_label}</td></tr>",
                 name = html_escape(&entry.rule_name),
                 desc = html_escape(&entry.description),
                 src = html_escape(&entry.source_type),
@@ -2618,7 +2597,7 @@ fn render_section_index(
         .filter(|d| d.severity == Severity::Warning)
         .count();
     let coverage_report = coverage::compute_coverage(store, schema, graph);
-    let overall_cov = coverage_report.overall_coverage();
+    let overall_cov = coverage_report.overall_coverage_opt();
 
     out.push_str("<div class=\"summary-grid\">\n");
     writeln!(
@@ -2640,17 +2619,12 @@ fn render_section_index(
          <div class=\"value {val_class}\">{val_label}</div></div>"
     )
     .unwrap();
-    let cov_class = if overall_cov >= 100.0 - f64::EPSILON {
-        "badge-green"
-    } else if overall_cov > 0.0 {
-        "badge-yellow"
-    } else {
-        "badge-red"
-    };
+    let cov_class = format!("badge-{}", coverage::coverage_band(overall_cov));
+    let overall_cov_label = coverage::format_percentage(overall_cov);
     writeln!(
         out,
         "<div class=\"summary-card\"><div class=\"label\">Coverage</div>\
-         <div class=\"value\"><span class=\"badge {cov_class}\">{overall_cov:.1}%</span>\
+         <div class=\"value\"><span class=\"badge {cov_class}\">{overall_cov_label}</span>\
          </div></div>"
     )
     .unwrap();
@@ -2813,18 +2787,14 @@ fn render_section_matrix(store: &Store, graph: &LinkGraph) -> String {
 fn render_section_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> String {
     let mut out = String::from("<h1>Coverage Report</h1>\n");
     let report = coverage::compute_coverage(store, schema, graph);
-    let overall = report.overall_coverage();
+    let overall = report.overall_coverage_opt();
 
-    let cov_class = if overall >= 100.0 - f64::EPSILON {
-        "badge-green"
-    } else if overall > 0.0 {
-        "badge-yellow"
-    } else {
-        "badge-red"
-    };
+    let cov_class = format!("badge-{}", coverage::coverage_band(overall));
+
+    let overall_label = coverage::format_percentage(overall);
     writeln!(
         out,
-        "<p>Overall coverage: <span class=\"badge {cov_class}\">{overall:.1}%</span></p>"
+        "<p>Overall coverage: <span class=\"badge {cov_class}\">{overall_label}</span></p>"
     )
     .unwrap();
 
@@ -2835,18 +2805,13 @@ fn render_section_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) ->
              </tr></thead><tbody>\n",
         );
         for entry in &report.entries {
-            let pct = entry.percentage();
-            let cell_class = if pct >= 100.0 - f64::EPSILON {
-                "cell-green"
-            } else if pct > 0.0 {
-                "cell-yellow"
-            } else {
-                "cell-red"
-            };
+            let pct = entry.percentage_opt();
+            let cell_class = format!("cell-{}", coverage::coverage_band(pct));
+            let pct_label = coverage::format_percentage(pct);
             writeln!(
                 out,
                 "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td>\
-                 <td class=\"{cell_class}\">{pct:.1}%</td></tr>",
+                 <td class=\"{cell_class}\">{pct_label}</td></tr>",
                 html_escape(&entry.rule_name),
                 html_escape(&entry.source_type),
                 entry.covered,
@@ -3248,6 +3213,115 @@ mod tests {
                 "page {i} missing closing html tag"
             );
         }
+    }
+
+    // rivet: verifies REQ-387
+    /// A matrix row's coverage is the share of that type's artifacts with any
+    /// forward link: one of two design decisions linked is exactly 50.0%.
+    #[test]
+    fn matrix_row_coverage_is_the_linked_share() {
+        let schema = test_schema();
+        let mut store = Store::new();
+        store
+            .insert(make_artifact("REQ-001", "requirement", &[]))
+            .unwrap();
+        store
+            .insert(make_artifact(
+                "DD-001",
+                "design-decision",
+                &[("satisfies", "REQ-001")],
+            ))
+            .unwrap();
+        store
+            .insert(make_artifact("DD-002", "design-decision", &[]))
+            .unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let html = render_traceability_matrix(&store, &schema, &graph, &default_config());
+        let row_start = html
+            .find("<tr><th>design-decision</th>")
+            .expect("design-decision row");
+        let row = &html[row_start..];
+        let row = &row[..row.find("</tr>").expect("row end")];
+        assert!(row.ends_with(">50.0%</td>"), "design-decision row: {row}");
+    }
+
+    // rivet: verifies REQ-387
+    /// The single-page export's summary card and coverage section show the
+    /// same overall label the coverage report computes, and `n/a` for an
+    /// empty scope.
+    #[test]
+    fn single_page_sections_show_the_computed_overall_coverage() {
+        let (store, schema, graph, diagnostics) = test_fixtures();
+        let expected = coverage::format_percentage(
+            coverage::compute_coverage(&store, &schema, &graph).overall_coverage_opt(),
+        );
+        assert!(expected.ends_with('%'), "fixture has a scope: {expected}");
+
+        let index = render_section_index(
+            &store,
+            &schema,
+            &graph,
+            &diagnostics,
+            "Test",
+            "0.1.0",
+            "now",
+        );
+        assert!(index.starts_with("<h1>Test</h1>\n"), "index: {index}");
+        assert!(
+            index.contains(&format!("\">{expected}</span>")),
+            "index coverage card: {index}"
+        );
+
+        let section = render_section_coverage(&store, &schema, &graph);
+        assert!(
+            section.starts_with("<h1>Coverage Report</h1>\n<p>Overall coverage: "),
+            "coverage section: {section}"
+        );
+        assert!(
+            section.contains(&format!("\">{expected}</span></p>")),
+            "coverage section: {section}"
+        );
+
+        let empty = Store::new();
+        let empty_graph = LinkGraph::build(&empty, &schema);
+        assert!(
+            render_section_coverage(&empty, &schema, &empty_graph)
+                .contains("<span class=\"badge badge-na\">n/a</span>"),
+            "an empty scope is n/a"
+        );
+    }
+
+    // rivet: verifies REQ-387
+    /// The static export's coverage page and overall badge render an empty
+    /// scope as `n/a` in a neutral colour; they used to paint `100.0%` green.
+    #[test]
+    fn coverage_page_renders_an_empty_scope_as_na() {
+        let schema = test_schema();
+        let store = Store::new();
+        let graph = LinkGraph::build(&store, &schema);
+        let html = render_coverage(&store, &schema, &graph, &default_config());
+        assert!(
+            html.contains("<span class=\"badge badge-na\">n/a</span>"),
+            "overall badge: {html}"
+        );
+        assert!(
+            html.contains("class=\"cell-na\">n/a</td>"),
+            "per-rule cell: {html}"
+        );
+        // The page embeds its stylesheet, which defines `.badge-green`, so
+        // check the rendered elements, not the bare class name.
+        assert!(
+            !html.contains(">100.0%<") && !html.contains("class=\"badge badge-green\""),
+            "{html}"
+        );
+
+        let (store, schema, graph, _) = test_fixtures();
+        let scored = render_coverage(&store, &schema, &graph, &default_config());
+        assert!(
+            !scored.contains("class=\"badge badge-na\""),
+            "a scored report keeps its colour"
+        );
+        assert!(scored.contains("50.0%"), "and its number: {scored}");
     }
 
     // rivet: verifies REQ-035

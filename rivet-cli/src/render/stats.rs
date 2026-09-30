@@ -224,30 +224,34 @@ pub(crate) fn render_stats(ctx: &RenderContext) -> String {
     }
 
     // ── Coverage summary card ────────────────────────────────────────
-    let cov_report = coverage::compute_coverage(store, ctx.schema, graph);
+    // REQ-387 / #956: unmodelled rules applied; an empty scope reads `n/a`.
+    let cov_report =
+        coverage::compute_project_coverage(store, ctx.schema, graph, ctx.unmodelled_rules);
     if !cov_report.entries.is_empty() {
-        let overall = cov_report.overall_coverage();
-        let cov_color = if overall >= 80.0 {
-            "#15713a"
-        } else if overall >= 50.0 {
-            "#b8860b"
-        } else {
-            "#c62828"
+        let overall_opt = cov_report.overall_coverage_opt();
+        let overall = overall_opt.unwrap_or(0.0);
+        let cov_color = match overall_opt {
+            None => "#8e8e93",
+            Some(o) if o >= 80.0 => "#15713a",
+            Some(o) if o >= 50.0 => "#b8860b",
+            Some(_) => "#c62828",
         };
+        let overall_label = overall_opt.map_or_else(|| "n/a".to_string(), |o| format!("{o:.0}%"));
         // REQ-110: these are per-RULE check sums (an artifact in N rules counts
         // N times), NOT distinct artifacts. The store-artifact total lives on the
         // "Artifacts" stat card. Label them "coverage checks" so the two
         // different "totals" are not conflated.
         let checks_covered: usize = cov_report.entries.iter().map(|e| e.covered).sum();
         let checks_total: usize = cov_report.entries.iter().map(|e| e.total).sum();
-        let cov_delta = bl.map_or(String::new(), |s| {
-            delta_pct_badge(overall, s.coverage.overall)
-        });
+        let cov_delta = match (bl, overall_opt) {
+            (Some(s), Some(o)) => delta_pct_badge(o, s.coverage.overall),
+            _ => String::new(),
+        };
         html.push_str(&format!(
             "<div class=\"card\">\
              <h3>Traceability Coverage</h3>\
              <div style=\"display:flex;align-items:center;gap:1.5rem;margin-bottom:0.75rem\">\
-               <div style=\"font-size:2rem;font-weight:700;color:{cov_color}\">{overall:.0}%{cov_delta}</div>\
+               <div style=\"font-size:2rem;font-weight:700;color:{cov_color}\">{overall_label}{cov_delta}</div>\
                <div style=\"flex:1\">\
                  <div class=\"status-bar-track\" style=\"height:0.6rem\">\
                    <div class=\"status-bar-fill\" style=\"background:{cov_color};width:{overall:.1}%\"></div>\

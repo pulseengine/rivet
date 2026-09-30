@@ -271,6 +271,11 @@ impl AppState {
             project_path: &self.project_path_buf,
             schemas_dir: &self.schemas_dir,
             baseline: None,
+            unmodelled_rules: self
+                .config
+                .coverage
+                .as_ref()
+                .map_or(&[][..], |c| &c.unmodelled_rules),
         }
     }
 
@@ -358,6 +363,11 @@ impl VariantScope {
             project_path: &state.project_path_buf,
             schemas_dir: &state.schemas_dir,
             baseline: None,
+            unmodelled_rules: state
+                .config
+                .coverage
+                .as_ref()
+                .map_or(&[][..], |c| &c.unmodelled_rules),
         }
     }
 }
@@ -889,6 +899,12 @@ pub async fn run(app_state: AppState, bind: String, watch: bool) -> Result<()> {
                     guard.store.clone(),
                     guard.schema.clone(),
                     guard.graph.clone(),
+                    guard
+                        .config
+                        .coverage
+                        .as_ref()
+                        .map(|c| c.unmodelled_rules.clone())
+                        .unwrap_or_default(),
                 ))
             },
             Arc::new(LocalSessionManager::default()),

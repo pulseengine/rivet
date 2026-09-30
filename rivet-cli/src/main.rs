@@ -10202,12 +10202,11 @@ fn cmd_coverage(
     // coverage." A rule with total=0 emits `null` for both percentages;
     // a machine consumer can then tell a satisfied gate from an empty
     // one without inspecting `total`.
-    let pct_or_null = |empty: bool, pct: f64| -> serde_json::Value {
-        if empty {
-            serde_json::Value::Null
-        } else {
-            serde_json::json!((pct * 10.0).round() / 10.0)
-        }
+    // REQ-387: `None` (an empty scope) is `null`, never a number.
+    let pct_or_null = |pct: Option<f64>| -> serde_json::Value {
+        pct.map_or(serde_json::Value::Null, |p| {
+            serde_json::json!((p * 10.0).round() / 10.0)
+        })
     };
 
     if format == "json" {
@@ -10227,8 +10226,8 @@ fn cmd_coverage(
                     "external_boundary_ids": e.external_boundary_ids,
                     "total": e.total,
                     "empty_scope": empty,
-                    "percentage": pct_or_null(empty, e.percentage()),
-                    "accounted_percentage": pct_or_null(empty, e.accounted_percentage()),
+                    "percentage": pct_or_null(e.percentage_opt()),
+                    "accounted_percentage": pct_or_null(e.accounted_percentage_opt()),
                     "uncovered_ids": e.uncovered_ids,
                     // REQ-320: present only when the project declared it, so a
                     // reader can tell an unmodelled level from an empty
@@ -10245,7 +10244,7 @@ fn cmd_coverage(
         let checks_covered: usize = report.entries.iter().map(|e| e.covered).sum();
         let external_boundary: usize = report.entries.iter().map(|e| e.external_boundary).sum();
         let report_empty = report.is_empty_scope();
-        let overall_pct = pct_or_null(report_empty, report.overall_coverage());
+        let overall_pct = pct_or_null(report.overall_coverage_opt());
         // V-closure: intersection of all rules per source type (both sides of
         // the V). Each entry rounds its percentage to one decimal to match the
         // text view and the `overall` block.
@@ -10261,7 +10260,7 @@ fn cmd_coverage(
                     "total": c.total,
                     "empty_scope": empty,
                     "open_ids": c.open_ids,
-                    "percentage": pct_or_null(empty, c.percentage()),
+                    "percentage": pct_or_null(c.percentage_opt()),
                 })
             })
             .collect();
@@ -10284,7 +10283,11 @@ fn cmd_coverage(
         // effect so CI consumers can programmatically distinguish a
         // clean run from a gated failure without parsing stderr.
         if let Some(&threshold) = fail_under {
-            let passed = report.overall_coverage() >= threshold;
+            // REQ-387: an empty scope cannot meet a threshold. This said
+            // `passed: true` while the same run exited 1 for the empty load.
+            let passed = report
+                .overall_coverage_opt()
+                .is_some_and(|o| o >= threshold);
             output["threshold"] = serde_json::json!({
                 "fail_under": threshold,
                 "passed": passed,
@@ -10327,16 +10330,14 @@ fn cmd_coverage(
 
         // Format helper: "n/a" for empty scope, "N.N%" otherwise. Keeps
         // the width stable so column alignment survives either state.
-        let fmt_pct = |empty: bool, pct: f64| -> String {
-            if empty {
-                format!("{:>7}%", "n/a")
-            } else {
-                format!("{:>7.1}%", pct)
+        let fmt_pct = |pct: Option<f64>| -> String {
+            match pct {
+                None => format!("{:>7}%", "n/a"),
+                Some(p) => format!("{:>7.1}%", p),
             }
         };
 
         for entry in &report.entries {
-            let empty = entry.is_empty_scope();
             if any_boundary {
                 println!(
                     "  {:<30} {:<20} {:>8} {:>9} {:>8} {}",
@@ -10345,7 +10346,7 @@ fn cmd_coverage(
                     entry.covered,
                     entry.external_boundary,
                     entry.total,
-                    fmt_pct(empty, entry.percentage())
+                    fmt_pct(entry.percentage_opt())
                 );
             } else {
                 println!(
@@ -10354,7 +10355,7 @@ fn cmd_coverage(
                     entry.source_type,
                     entry.covered,
                     entry.total,
-                    fmt_pct(empty, entry.percentage())
+                    fmt_pct(entry.percentage_opt())
                 );
             }
             // #895: for a failing (non-100%) rule, print the link the rule
@@ -10363,7 +10364,7 @@ fn cmd_coverage(
             // name so a plain `grep <rule>` on the report also returns
             // the remediation info. Empty-scope rules (0/0) and 100%
             // rules are skipped — remediation isn't the question there.
-            if !empty && entry.percentage() < 100.0 {
+            if entry.percentage_opt().is_some_and(|p| p < 100.0) {
                 let arrow = match entry.direction {
                     rivet_core::coverage::CoverageDirection::Forward => "→",
                     rivet_core::coverage::CoverageDirection::Backward => "←",
@@ -10405,12 +10406,11 @@ fn cmd_coverage(
             }
         }
 
-        let overall = report.overall_coverage();
         println!("  {}", "-".repeat(80));
         println!(
             "  {:<52} {}",
             "Overall (weighted)",
-            fmt_pct(report.is_empty_scope(), overall)
+            fmt_pct(report.overall_coverage_opt())
         );
 
         // V-closure: for any source type governed by >1 rule, the share that
@@ -10427,7 +10427,7 @@ fn cmd_coverage(
             println!(
                 "  {:<52} {}  [{}/{}]",
                 label,
-                fmt_pct(c.is_empty_scope(), c.percentage()),
+                fmt_pct(c.percentage_opt()),
                 c.closed,
                 c.total
             );
@@ -10574,7 +10574,9 @@ fn cmd_coverage(
             );
             return Ok(false);
         }
-        let overall = report.overall_coverage();
+        let overall = report
+            .overall_coverage_opt()
+            .expect("the empty load returned above");
         if overall < threshold {
             eprintln!(
                 "\nerror: overall coverage {:.1}% is below threshold {:.1}% (--fail-under)",
@@ -10719,7 +10721,7 @@ fn cmd_supplier_check(cli: &Cli, format: &str) -> Result<bool> {
                     "uncovered": e.uncovered_ids.len(),
                     "uncovered_ids": e.uncovered_ids,
                     "total": e.total,
-                    "accounted_percentage": (e.accounted_percentage() * 10.0).round() / 10.0,
+                    "accounted_percentage": e.accounted_percentage_opt().map(|p| (p * 10.0).round() / 10.0),
                 })
             })
             .collect();
@@ -15038,16 +15040,17 @@ fn cmd_context(cli: &Cli, stdout: bool, brief: bool) -> Result<bool> {
     // Under --brief, list only rules below 100% (the actionable ones);
     // otherwise emit the full table.
     out.push_str("## Coverage\n\n");
+    // REQ-387: an empty scope is `n/a`, not a reassuring 100% for an agent.
     out.push_str(&format!(
-        "**Overall: {:.1}%**\n\n",
-        coverage_report.overall_coverage()
+        "**Overall: {}**\n\n",
+        rivet_core::coverage::format_percentage(coverage_report.overall_coverage_opt())
     ));
     if !coverage_report.entries.is_empty() {
         let entries: Vec<_> = if brief {
             coverage_report
                 .entries
                 .iter()
-                .filter(|e| e.percentage() < 100.0)
+                .filter(|e| e.percentage_opt().is_none_or(|p| p < 100.0))
                 .collect()
         } else {
             coverage_report.entries.iter().collect()
@@ -15059,12 +15062,12 @@ fn cmd_context(cli: &Cli, stdout: bool, brief: bool) -> Result<bool> {
             out.push_str("|------|------------|---------|-------|---|\n");
             for entry in entries {
                 out.push_str(&format!(
-                    "| {} | {} | {} | {} | {:.1}% |\n",
+                    "| {} | {} | {} | {} | {} |\n",
                     entry.rule_name,
                     entry.source_type,
                     entry.covered,
                     entry.total,
-                    entry.percentage()
+                    rivet_core::coverage::format_percentage(entry.percentage_opt())
                 ));
             }
             out.push('\n');
@@ -20687,6 +20690,10 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                             project_path: &project_dir,
                             schemas_dir: &schemas_dir,
                             baseline: None,
+                            unmodelled_rules: config_opt
+                                .as_ref()
+                                .and_then(|c| c.coverage.as_ref())
+                                .map_or(&[][..], |c| &c.unmodelled_rules),
                         };
 
                         let result = crate::render::render_page(&ctx, page, &view_params);

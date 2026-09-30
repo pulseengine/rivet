@@ -73,12 +73,19 @@ struct McpProject {
     store: Store,
     schema: rivet_core::schema::Schema,
     graph: LinkGraph,
+    /// The project's `coverage.unmodelled-rules` (REQ-387 / #956 item 2).
+    unmodelled_rules: Vec<rivet_core::model::UnmodelledRule>,
 }
 
 fn load_project(project_dir: &Path) -> Result<McpProject> {
     let loaded = rivet_core::load_project_full(project_dir)
         .with_context(|| format!("loading project from {}", project_dir.display()))?;
     Ok(McpProject {
+        unmodelled_rules: loaded
+            .config
+            .coverage
+            .map(|c| c.unmodelled_rules)
+            .unwrap_or_default(),
         store: loaded.store,
         schema: loaded.schema,
         graph: loaded.graph,
@@ -314,6 +321,7 @@ impl RivetServer {
         store: Store,
         schema: rivet_core::schema::Schema,
         graph: LinkGraph,
+        unmodelled_rules: Vec<rivet_core::model::UnmodelledRule>,
     ) -> Self {
         Self {
             tool_router: Self::tool_router(),
@@ -322,6 +330,7 @@ impl RivetServer {
                 store,
                 schema,
                 graph,
+                unmodelled_rules,
             })),
         }
     }
@@ -723,7 +732,14 @@ fn tool_get_cached(proj: &McpProject, id: &str) -> Result<Value> {
 }
 
 fn tool_coverage_cached(proj: &McpProject, rule_filter: Option<&str>) -> Value {
-    let report = coverage::compute_coverage(&proj.store, &proj.schema, &proj.graph);
+    let report = coverage::compute_project_coverage(
+        &proj.store,
+        &proj.schema,
+        &proj.graph,
+        &proj.unmodelled_rules,
+    );
+    // REQ-387: an empty scope is `null`, never 100.
+    let round = |p: Option<f64>| p.map(|v| (v * 100.0).round() / 100.0);
 
     let rules_json: Vec<Value> = report
         .entries
@@ -735,13 +751,14 @@ fn tool_coverage_cached(proj: &McpProject, rule_filter: Option<&str>) -> Value {
                 "source_type": e.source_type,
                 "covered": e.covered,
                 "total": e.total,
-                "percentage": (e.percentage() * 100.0).round() / 100.0,
+                "percentage": round(e.percentage_opt()),
+                "unmodelled": e.unmodelled,
                 "uncovered_ids": e.uncovered_ids,
             })
         })
         .collect();
 
-    json!({"overall_percentage": (report.overall_coverage() * 100.0).round() / 100.0, "rules": rules_json})
+    json!({"overall_percentage": round(report.overall_coverage_opt()), "rules": rules_json})
 }
 
 fn tool_schema_cached(proj: &McpProject, type_filter: Option<&str>) -> Value {

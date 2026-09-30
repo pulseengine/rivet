@@ -45,6 +45,9 @@ pub(crate) struct RenderContext<'a> {
     pub(crate) schemas_dir: &'a Path,
     /// Optional baseline snapshot for delta rendering in export.
     pub(crate) baseline: Option<&'a rivet_core::snapshot::Snapshot>,
+    /// The project's `coverage.unmodelled-rules` (REQ-387 / #956 item 2), so
+    /// the dashboard shows the same coverage `rivet coverage` does.
+    pub(crate) unmodelled_rules: &'a [rivet_core::model::UnmodelledRule],
 }
 
 #[allow(dead_code)]

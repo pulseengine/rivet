@@ -642,17 +642,17 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<Str
     );
 
     for entry in &entries {
-        let pct = entry.percentage();
-        let bar_width = pct.round() as u32;
-        let bar_class = if pct >= 100.0 {
-            "bar-full"
-        } else if pct >= 80.0 {
-            "bar-good"
-        } else if pct >= 50.0 {
-            "bar-warn"
-        } else {
-            "bar-danger"
+        // REQ-387: an empty scope renders `n/a` with an empty, neutral bar.
+        let pct = entry.percentage_opt();
+        let bar_width = pct.map_or(0, |p| p.round() as u32);
+        let bar_class = match pct {
+            None => "bar-na",
+            Some(p) if p >= 100.0 => "bar-full",
+            Some(p) if p >= 80.0 => "bar-good",
+            Some(p) if p >= 50.0 => "bar-warn",
+            Some(_) => "bar-danger",
         };
+        let pct_label = crate::coverage::format_percentage(pct);
         let _ = writeln!(
             html,
             "<tr>\
@@ -660,7 +660,7 @@ fn render_coverage(request: &EmbedRequest, ctx: &EmbedContext<'_>) -> Result<Str
              <td>{source}</td>\
              <td>{covered}</td>\
              <td>{total}</td>\
-             <td>{pct:.1}%</td>\
+             <td>{pct_label}</td>\
              <td><div class=\"coverage-bar\"><div class=\"coverage-fill {bar_class}\" style=\"width:{bar_width}%\"></div></div></td>\
              </tr>",
             rule = entry.rule_name,
@@ -2334,6 +2334,31 @@ traceability-rules:
         let schema = coverage_test_schema();
         let graph = LinkGraph::build(&store, &schema);
         run_embed("coverage", &store, &schema, &graph).unwrap()
+    }
+
+    // rivet: verifies REQ-387
+    /// A rule with nothing to score renders `n/a` with an empty neutral bar —
+    /// it used to render `100.0%` and a full green bar (#956).
+    #[test]
+    fn coverage_embed_renders_an_empty_scope_as_na() {
+        let store = make_store(vec![plain("TC-1", "test", None, &[])]);
+        let schema = coverage_test_schema();
+        let graph = LinkGraph::build(&store, &schema);
+        let html = run_embed("coverage", &store, &schema, &graph).unwrap();
+        assert!(html.contains("<td>n/a</td>"), "got: {html}");
+        assert!(
+            html.contains("bar-na") && html.contains("width:0%"),
+            "got: {html}"
+        );
+        assert!(
+            !html.contains("100.0%") && !html.contains("bar-full"),
+            "got: {html}"
+        );
+        let scored = run_coverage_at(50);
+        assert!(
+            scored.contains("50.0%") && !scored.contains("n/a"),
+            "a scored rule keeps its number"
+        );
     }
 
     #[test]
