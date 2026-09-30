@@ -68,7 +68,9 @@ pub mod matrix;
 pub mod migrate;
 pub mod model;
 pub mod mutate;
-#[cfg(feature = "oslc")]
+// REQ-387: the conversion and diff code is pure and always compiled, so its
+// tests (and the mutation gate, which runs default features) see it. Only the
+// HTTP client inside is gated on `oslc`, which is what pulls in `reqwest`.
 pub mod oslc;
 pub mod ownership;
 pub mod query;

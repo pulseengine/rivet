@@ -590,6 +590,11 @@ const PROV_LONG_MODEL: &str = "rivet:model";
 const PROV_LONG_SESSION_ID: &str = "rivet:session-id";
 const PROV_LONG_TIMESTAMP: &str = "rivet:timestamp";
 const PROV_LONG_REVIEWED_BY: &str = "rivet:reviewed-by";
+/// REQ-387 / #956 item 6: `release` survives a ReqIF round trip. Namespaced
+/// like the provenance attributes, so a foreign tool's own "release"
+/// attribute still imports as a custom field rather than being taken over.
+const ATTR_DEF_RELEASE: &str = "ATTR-RIVET-RELEASE";
+const RELEASE_LONG: &str = "rivet:release";
 
 // ── Adapter ─────────────────────────────────────────────────────────────
 
@@ -840,6 +845,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
         let mut prov_session_id: Option<String> = None;
         let mut prov_timestamp: Option<String> = None;
         let mut prov_reviewed_by: Option<String> = None;
+        let mut release: Option<String> = None;
 
         if let Some(values) = &obj.values {
             for av in &values.string_values {
@@ -860,6 +866,11 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
                     "artifact-type" => {
                         if !av.the_value.is_empty() {
                             override_artifact_type = Some(av.the_value.clone());
+                        }
+                    }
+                    RELEASE_LONG => {
+                        if !av.the_value.is_empty() {
+                            release = Some(av.the_value.clone());
                         }
                     }
                     // ReqIF standard attributes (StrictDoc, DOORS, Polarion)
@@ -1011,7 +1022,7 @@ pub fn parse_reqif(xml: &str, type_map: &HashMap<String, String>) -> Result<Vec<
             title,
             description,
             status,
-            release: None,
+            release,
             tags,
             links: vec![], // filled in below from SPEC-RELATIONS
             fields,
@@ -1280,6 +1291,13 @@ pub fn build_reqif_with_schema(artifacts: &[Artifact], schema: Option<&Schema>) 
                         datatype_ref: DATATYPE_STRING_ID.into(),
                     }),
                 },
+                AttributeDefinitionString {
+                    identifier: ATTR_DEF_RELEASE.into(),
+                    long_name: Some(RELEASE_LONG.into()),
+                    datatype_ref: Some(DatatypeRef {
+                        datatype_ref: DATATYPE_STRING_ID.into(),
+                    }),
+                },
             ];
 
             // Rivet AI-provenance attribute definitions.  Emitted on every
@@ -1371,6 +1389,14 @@ pub fn build_reqif_with_schema(artifacts: &[Artifact], schema: Option<&Schema>) 
                     },
                 },
             ];
+            if let Some(r) = a.release.as_deref().filter(|r| !r.is_empty()) {
+                string_values.push(AttributeValueString {
+                    the_value: r.to_string(),
+                    definition: AttrDefinitionRef {
+                        attr_def_ref: ATTR_DEF_RELEASE.into(),
+                    },
+                });
+            }
 
             // Emit rivet AI-provenance when present.  Fields with `None`
             // values are skipped — only the non-empty metadata survives.
@@ -1953,6 +1979,45 @@ mod tests {
 
         assert_eq!(re.len(), 1);
         assert_eq!(re[0].provenance, art.provenance);
+    }
+
+    // rivet: verifies REQ-387
+    /// #956 item 6: `release` used to be dropped on export and hardcoded to
+    /// `None` on import, so a round trip erased every artifact's release
+    /// scope. A foreign "release" attribute is NOT taken over: it still
+    /// imports as a custom field.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_release_roundtrip_and_foreign_release_attribute_stays_a_field() {
+        let mut scoped = crate::test_helpers::minimal_artifact("REQ-R1", "requirement");
+        scoped.release = Some("v0.40.0".into());
+        let unscoped = crate::test_helpers::minimal_artifact("REQ-R2", "requirement");
+        let adapter = ReqIfAdapter::new();
+        let config = AdapterConfig::default();
+        let bytes = adapter
+            .export(&[scoped.clone(), unscoped.clone()], &config)
+            .unwrap();
+        let re = adapter
+            .import(&AdapterSource::Bytes(bytes.clone()), &config)
+            .unwrap();
+        let by = |id: &str| re.iter().find(|a| a.id == id).unwrap().clone();
+        assert_eq!(by("REQ-R1").release.as_deref(), Some("v0.40.0"));
+        assert_eq!(by("REQ-R2").release, None);
+
+        // A foreign tool's own attribute long-named "release" keeps its old
+        // meaning: a custom field, not rivet's release scope.
+        let foreign = String::from_utf8(bytes)
+            .unwrap()
+            .replace("rivet:release", "release");
+        let re = adapter
+            .import(&AdapterSource::Bytes(foreign.into_bytes()), &config)
+            .unwrap();
+        let r1 = re.iter().find(|a| a.id == "REQ-R1").unwrap();
+        assert_eq!(r1.release, None);
+        assert_eq!(
+            r1.fields.get("release"),
+            Some(&rivet_yaml::Value::String("v0.40.0".into()))
+        );
     }
 
     /// Non-string `fields` values must round-trip without Rust-`Debug`

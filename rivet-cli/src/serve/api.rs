@@ -481,11 +481,30 @@ pub(crate) async fn artifacts(
         _ => None,
     };
 
-    // Parse s-expression filter once before iterating.
-    let sexpr_filter = params
-        .filter
-        .as_deref()
-        .and_then(|f| rivet_core::sexpr_eval::parse_filter(f).ok());
+    // Parse s-expression filter once before iterating. REQ-387 / #956 item 8:
+    // a filter that does not parse is a 400, as it is at every CLI filter
+    // site. It used to become `None` — "no filter" — so a typo returned every
+    // artifact with HTTP 200, the worst direction to fail in.
+    let sexpr_filter = match params.filter.as_deref().filter(|f| !f.trim().is_empty()) {
+        None => None,
+        Some(f) => match rivet_core::sexpr_eval::parse_filter(f) {
+            Ok(expr) => Some(expr),
+            Err(errs) => {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": "invalid_filter",
+                        "message": errs
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join("; "),
+                    })),
+                )
+                    .into_response();
+            }
+        },
+    };
 
     let include_externals = params
         .origin
