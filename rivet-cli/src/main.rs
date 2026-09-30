@@ -1531,8 +1531,9 @@ enum SchemaAction {
     },
     /// List JSON schemas describing `--format json` CLI outputs
     ///
-    /// Rivet ships draft-2020-12 JSON Schemas for every `--format json`
-    /// output (validate, stats, coverage, list). Consumers can pipe
+    /// Rivet ships draft-2020-12 JSON Schemas for five `--format json`
+    /// outputs (validate, stats, coverage, list, query); other commands'
+    /// JSON has no published schema yet. Consumers can pipe
     /// the CLI output through a JSON Schema validator to catch
     /// regressions when CLI fields are added or removed.
     ListJson {

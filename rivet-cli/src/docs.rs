@@ -1105,7 +1105,7 @@ Documents participate in validation:
 
 - **Broken references**: `[[ID]]` pointing to nonexistent artifacts are warnings
 - **Coverage**: The doc-linkage view shows which artifacts are referenced in docs
-- **Orphan detection**: Artifacts never referenced in any document are flagged
+- **Orphan detection**: Artifacts with no incoming or outgoing links are flagged (documents are not consulted)
 "#;
 
 const COMMIT_TRACEABILITY_DOC: &str = r#"# Commit-to-Artifact Traceability
@@ -2146,9 +2146,9 @@ that follow the spec strictly will reject `tools/list` until they see it.
 After the notification, the client may freely send `tools/list`,
 `tools/call`, `resources/list`, and `resources/read` requests.
 
-## The 15-Tool Catalog
+## The 16-Tool Catalog
 
-The server registers fifteen tools. The authoritative listing — including
+The server registers sixteen tools. The authoritative listing — including
 the full input schema for each — is `rivet mcp --list-tools` (text) or
 `rivet mcp --list-tools --format json` (the JSON-RPC `tools/list` payload).
 
@@ -2158,6 +2158,7 @@ the full input schema for each — is `rivet mcp --list-tools` (text) or
 | `rivet_list`            | List artifacts, optional type / status filters           | `type_filter?`, `status_filter?`       |
 | `rivet_get`             | Fetch one artifact (fields, links, metadata)             | `id`                                   |
 | `rivet_stats`           | Counts by type, orphans, broken-link totals              | (none)                                 |
+| `rivet_bundle`          | An artifact plus its link-graph closure, as one document | `id`, `depth?`, `format?`              |
 | `rivet_coverage`        | Per-rule traceability coverage                           | `rule?`                                |
 | `rivet_schema`          | Artifact types, link types, traceability rules           | `type?`                                |
 | `rivet_query`           | S-expression filter; matches with full bodies            | `filter`, `limit?`                     |
@@ -2170,7 +2171,8 @@ the full input schema for each — is `rivet mcp --list-tools` (text) or
 | `rivet_remove`          | Delete an artifact (refuses if backlinked unless force)  | `id`, `force?`                         |
 | `rivet_reload`          | Reload the cache from disk after external file changes   | (none)                                 |
 
-The first nine tools are read-only and run against the cache. The next
+The first nine tools are read-only and run against the cache.
+`rivet_snapshot_capture` writes a snapshot file but no artifact. The next
 five mutate YAML on disk and require a `rivet_reload` afterwards (see
 "Mutation Convention" below). `rivet_reload` itself is the cache primitive.
 
@@ -2280,7 +2282,7 @@ recipe that exercises the actual stdio transport:
 
 You should see three JSON lines: an `initialize` response, no body for
 the notification (the server emits nothing for notifications), then a
-`tools/list` response with the fifteen tools embedded in
+`tools/list` response with the sixteen tools embedded in
 `result.tools`. The `sleep` is needed because the server reads stdin
 until EOF and would otherwise block waiting for the next request.
 
@@ -2776,9 +2778,10 @@ conditional-rules:
 
 ## Rule Consistency
 
-At schema load time, rivet checks that conditional rules don't contradict
-each other. If two rules with the same condition impose conflicting
-requirements, the schema is rejected with a diagnostic.
+When validating, rivet checks the conditional rules themselves. Two rules
+with the same condition and overlapping requirements, a rule defined twice,
+and a rule whose condition no allowed value can satisfy (so it can never
+fire) each produce a **warning** — the schema is still loaded.
 
 Related: [[REQ-023]], [[DD-018]], [[FEAT-040]]
 "#;
@@ -4204,6 +4207,100 @@ mod docs_pointer_tests {
         assert!(
             !shown.contains("id: DOC-RELEASE-STATUS"),
             "frontmatter must not reach the reader"
+        );
+    }
+}
+
+#[cfg(test)]
+mod mcp_catalog_tests {
+    use super::*;
+
+    /// REQ-388 / #958 item 7: the documented MCP catalog is the registry.
+    /// It said "fifteen tools" and omitted `rivet_bundle` while the server
+    /// registered sixteen; this pins the table, the heading and the prose to
+    /// `RivetServer::tool_catalog()` so the next tool added cannot go missing.
+    // rivet: verifies REQ-388
+    #[test]
+    fn documented_mcp_catalog_matches_the_registered_tools() {
+        let registered: std::collections::BTreeSet<String> =
+            crate::mcp::RivetServer::tool_catalog()
+                .into_iter()
+                .map(|(name, _, _)| name)
+                .collect();
+        let table: std::collections::BTreeSet<String> = MCP_DOC
+            .lines()
+            .filter_map(|l| l.strip_prefix("| `"))
+            .filter_map(|l| l.split('`').next())
+            .filter(|n| n.starts_with("rivet_"))
+            .map(str::to_string)
+            .collect();
+        assert_eq!(
+            table, registered,
+            "the catalog table lists exactly the registered tools"
+        );
+        let n = registered.len();
+        assert!(
+            MCP_DOC.contains(&format!("## The {n}-Tool Catalog")),
+            "the heading states the registered count ({n})"
+        );
+        let words = [
+            "zero",
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "ten",
+            "eleven",
+            "twelve",
+            "thirteen",
+            "fourteen",
+            "fifteen",
+            "sixteen",
+            "seventeen",
+            "eighteen",
+            "nineteen",
+            "twenty",
+        ];
+        // Total-count phrasings only: "The first nine tools are read-only"
+        // is a claim about a subset, checked below against the table.
+        for (i, w) in words.iter().enumerate() {
+            for phrase in [
+                format!("registers {w} tools"),
+                format!("with the {w} tools"),
+            ] {
+                assert!(
+                    i == n || !MCP_DOC.contains(&phrase),
+                    "the prose says \"{phrase}\" but {n} are registered"
+                );
+            }
+        }
+        // "The first nine tools are read-only": the first nine table rows are
+        // exactly the tools that write nothing.
+        let order: Vec<&str> = MCP_DOC
+            .lines()
+            .filter_map(|l| l.strip_prefix("| `"))
+            .filter_map(|l| l.split('`').next())
+            .filter(|n| n.starts_with("rivet_"))
+            .collect();
+        assert!(MCP_DOC.contains("The first nine tools are read-only"));
+        assert_eq!(
+            &order[..9],
+            &[
+                "rivet_validate",
+                "rivet_list",
+                "rivet_get",
+                "rivet_stats",
+                "rivet_bundle",
+                "rivet_coverage",
+                "rivet_schema",
+                "rivet_query",
+                "rivet_embed"
+            ]
         );
     }
 }

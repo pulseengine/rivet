@@ -1340,7 +1340,8 @@ fn test_schema_metadata_loading() {
     let common = Schema::load_file(&common_path).expect("load common schema");
     assert_eq!(common.schema.name, "common");
     // 0.2.0: ai-found-defect gained a per-type `status` enum (#550 / REQ-224).
-    assert_eq!(common.schema.version, "0.3.0");
+    // 0.3.1: ai-generated-needs-review can fire (REQ-388 / #958 item 5).
+    assert_eq!(common.schema.version, "0.3.1");
     assert!(
         common.schema.description.is_some(),
         "common schema should have a description"
