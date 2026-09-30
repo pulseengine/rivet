@@ -9370,3 +9370,18 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-29T20:39:49Z
+
+  - id: REQ-395
+    type: requirement
+    title: "an external's unprefixed link targets resolved into the consuming project's namespace, inventing cross-repo backlinks from ID collisions (#1015)"
+    status: verified
+    release: v0.40.0
+    description: "Reported from ordeal. rivet validate listed 183 cross-repo backlinks into ordeal from its configured externals, and they were ID collisions, not references: synth:LI-ARCH-001 -> TR-003 names synth's own TR-003, yet was counted against ordeal's TR-003. compute_backlinks matched every UNPREFIXED link target of an external artifact against the consuming project's IDs, although from inside the external an unprefixed ID names its own artifact. A test asserted exactly that behaviour. ACCEPTANCE: an external's unprefixed link target never produces a backlink into the consuming project; a prefixed reference still does; the case from the issue, an external's unprefixed ID that also exists locally, is a test. IMPLEMENTED: only prefixed references (prefix:ID) are reported. local_ids is kept in the public signature for API compatibility and no longer consulted. The old test is rewritten to assert the corrected behaviour and fails when the old arm is restored. Reproduced on an export of ordeal's main with its nine externals synced: 172 reported before, 115 of them unprefixed collisions; 57 after, none unprefixed. FOLLOW-UP, not done here: the 57 that remain are prefixed links between OTHER externals, and none target ordeal, so calling them backlinks misleads too; recognising a genuine back-reference needs the prefix an external's own rivet.yaml uses for this project."
+    tags: [externals, cross-repo, weak-green]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-09-30T04:37:33Z

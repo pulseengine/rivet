@@ -964,39 +964,33 @@ pub struct CrossRepoBacklink {
     pub target: String,
 }
 
-/// Compute backlinks: scan external artifacts' links for references to local artifacts
-/// or to other external projects.
+/// Compute backlinks: scan external artifacts' links for PREFIXED references
+/// (`prefix:ID`) — the only form in which one project can name another's
+/// artifact.
 ///
-/// A "backlink" is a link stored in an external project's artifact that points back
-/// to an artifact in the local project (or to another external). This enables
-/// bidirectional awareness without requiring both sides to declare the link.
+/// REQ-395 / #1015: an UNPREFIXED target in an external artifact names that
+/// external's OWN artifact. It used to be matched against this project's IDs,
+/// so every ID the two projects happened to share read as a cross-repo
+/// backlink — ordeal reported 183, all collisions such as synth's own `TR-003`
+/// counted against ordeal's `TR-003`. `local_ids` is kept for API
+/// compatibility and no longer consulted: an unprefixed ID never crosses a
+/// project boundary.
 pub fn compute_backlinks(
     resolved: &[ResolvedExternal],
-    local_ids: &std::collections::HashSet<String>,
+    _local_ids: &std::collections::HashSet<String>,
 ) -> Vec<CrossRepoBacklink> {
     let mut backlinks = Vec::new();
     for ext in resolved {
         for artifact in &ext.artifacts {
             for link in &artifact.links {
-                let parsed = parse_artifact_ref(&link.target);
-                match parsed {
-                    // External artifact links to a local ID in our project
-                    ArtifactRef::Local(ref id) if local_ids.contains(id) => {
-                        backlinks.push(CrossRepoBacklink {
-                            source_prefix: ext.prefix.clone(),
-                            source_id: artifact.id.clone(),
-                            target: link.target.clone(),
-                        });
-                    }
-                    // External artifact links to another external (cross-external)
-                    ArtifactRef::External { .. } => {
-                        backlinks.push(CrossRepoBacklink {
-                            source_prefix: ext.prefix.clone(),
-                            source_id: artifact.id.clone(),
-                            target: link.target.clone(),
-                        });
-                    }
-                    _ => {}
+                // A prefixed reference is the one form that crosses a
+                // project boundary.
+                if let ArtifactRef::External { .. } = parse_artifact_ref(&link.target) {
+                    backlinks.push(CrossRepoBacklink {
+                        source_prefix: ext.prefix.clone(),
+                        source_id: artifact.id.clone(),
+                        target: link.target.clone(),
+                    });
                 }
             }
         }
@@ -1599,8 +1593,12 @@ mod tests {
     }
 
     // rivet: verifies REQ-020
+    // rivet: verifies REQ-395
+    /// #1015: an external's UNPREFIXED link target is that external's own
+    /// artifact, even when this project happens to have an artifact with the
+    /// same ID. Only a prefixed reference crosses a project boundary.
     #[test]
-    fn compute_backlinks_finds_reverse_refs() {
+    fn compute_backlinks_ignores_unprefixed_id_collisions() {
         use crate::model::{Artifact, Link};
 
         let mut local_ids = std::collections::HashSet::new();
@@ -1617,8 +1615,15 @@ mod tests {
             tags: vec![],
             links: vec![
                 Link {
+                    // meld's OWN REQ-001; we also have a REQ-001 (#1015).
                     link_type: "traces-to".to_string(),
-                    target: "REQ-001".to_string(), // links back to our local artifact,
+                    target: "REQ-001".to_string(),
+                    external: None,
+                },
+                Link {
+                    // A prefixed reference — the one form that crosses repos.
+                    link_type: "traces-to".to_string(),
+                    target: "rivet:FEAT-001".to_string(),
                     external: None,
                 },
                 Link {
@@ -1641,10 +1646,15 @@ mod tests {
         }];
 
         let backlinks = compute_backlinks(&resolved, &local_ids);
-        assert_eq!(backlinks.len(), 1);
-        assert_eq!(backlinks[0].source_prefix, "meld");
-        assert_eq!(backlinks[0].source_id, "EXT-UCA-1");
-        assert_eq!(backlinks[0].target, "REQ-001");
+        assert_eq!(
+            backlinks,
+            vec![CrossRepoBacklink {
+                source_prefix: "meld".to_string(),
+                source_id: "EXT-UCA-1".to_string(),
+                target: "rivet:FEAT-001".to_string(),
+            }],
+            "REQ-001 collides with a local ID but names meld's own artifact"
+        );
     }
 
     // rivet: verifies REQ-020

@@ -45,6 +45,12 @@
   the other writers are refused.
 
 ### Fixed
+- **Cross-repo backlinks are no longer invented from ID collisions**
+  (REQ-395, #1015) — an external artifact's unprefixed link target, which
+  names its own artifact, was counted as a backlink to whichever artifact of
+  the consuming project shared that ID. On
+  ordeal, 115 of 172 reported backlinks were such collisions. Only a prefixed
+  reference (`prefix:ID`) crosses a project boundary now.
 - **`--set-field` writes the type the schema declares** (REQ-385, #1008) —
   `rivet modify --set-field backlog=true` wrote the string `"true"` for a
   field declared boolean, so `exempt-when-field`, which honours only a boolean,
