@@ -2509,4 +2509,229 @@ mod tests {
                 .is_empty()
         );
     }
+
+    // ── REQ-386 / #1009: tests for the scheduled run's surviving mutants ──
+
+    fn variant_artifact() -> Artifact {
+        let mut a = minimal_artifact("REQ-9", "requirement");
+        a.status = Some("approved".into());
+        a.description = Some("the description".into());
+        a.fields
+            .insert("priority".into(), rivet_yaml::Value::String("must".into()));
+        a.fields.insert("gone".into(), rivet_yaml::Value::Null);
+        let mut prov = rivet_yaml::Mapping::new();
+        prov.insert(
+            rivet_yaml::Value::String("created-by".into()),
+            rivet_yaml::Value::String("human".into()),
+        );
+        a.fields
+            .insert("provenance".into(), rivet_yaml::Value::Mapping(prov));
+        let mut overlay = std::collections::BTreeMap::new();
+        overlay.insert(
+            "priority".into(),
+            rivet_yaml::Value::String("should".into()),
+        );
+        let mut prov_v = rivet_yaml::Mapping::new();
+        prov_v.insert(
+            rivet_yaml::Value::String("created-by".into()),
+            rivet_yaml::Value::String("ai".into()),
+        );
+        overlay.insert("provenance".into(), rivet_yaml::Value::Mapping(prov_v));
+        a.fields_per_variant.insert("v1".into(), overlay);
+        a
+    }
+
+    // rivet: verifies REQ-386
+    /// With a variant active, base fields read the artifact itself (variants
+    /// only overlay `fields`), dotted paths read the variant overlay, and a
+    /// YAML null is absent rather than the string "Null".
+    #[test]
+    fn variant_field_lookup_reads_base_fields_overlay_and_dotted_paths() {
+        let a = variant_artifact();
+        let v = |f: &str| get_field_value_for_variant(&a, f, Some("v1"));
+        assert_eq!(v("status").as_deref(), Some("approved"));
+        assert_eq!(v("description").as_deref(), Some("the description"));
+        assert_eq!(v("title").as_deref(), Some("Test REQ-9"));
+        assert_eq!(v("id").as_deref(), Some("REQ-9"));
+        assert_eq!(v("priority").as_deref(), Some("should"), "overlay wins");
+        assert_eq!(
+            v("provenance.created-by").as_deref(),
+            Some("ai"),
+            "a dotted path splits at the dot and reads the overlay's value"
+        );
+        assert_eq!(
+            get_field_value_for_variant(&a, "provenance.created-by", None).as_deref(),
+            Some("human"),
+            "without a variant the default fields map is read"
+        );
+        assert_eq!(v("gone"), None, "a YAML null reads as absent");
+        assert_eq!(v("missing"), None);
+    }
+
+    fn cond_rule(name: &str, when: Condition, then: Requirement) -> ConditionalRule {
+        ConditionalRule {
+            name: name.into(),
+            description: None,
+            condition: None,
+            when,
+            then,
+            severity: Severity::Warning,
+        }
+    }
+
+    fn eq(f: &str, v: &str) -> Condition {
+        Condition::Equals {
+            field: f.into(),
+            value: v.into(),
+        }
+    }
+    fn mt(f: &str, p: &str) -> Condition {
+        Condition::Matches {
+            field: f.into(),
+            pattern: p.into(),
+        }
+    }
+    fn ex(f: &str) -> Condition {
+        Condition::Exists { field: f.into() }
+    }
+    fn fields(xs: &[&str]) -> Requirement {
+        Requirement::RequiredFields {
+            fields: xs.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+    fn links(xs: &[&str]) -> Requirement {
+        Requirement::RequiredLinks {
+            link_types: xs.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    // rivet: verifies REQ-386
+    #[test]
+    fn conditions_are_equivalent_only_when_kind_field_and_operand_all_match() {
+        assert!(conditions_equivalent(
+            &eq("status", "a"),
+            &eq("status", "a")
+        ));
+        assert!(!conditions_equivalent(
+            &eq("status", "a"),
+            &eq("status", "b")
+        ));
+        assert!(!conditions_equivalent(&eq("status", "a"), &eq("tier", "a")));
+        assert!(conditions_equivalent(&mt("id", "^R"), &mt("id", "^R")));
+        assert!(!conditions_equivalent(&mt("id", "^R"), &mt("id", "^S")));
+        assert!(!conditions_equivalent(&mt("id", "^R"), &mt("title", "^R")));
+        assert!(conditions_equivalent(&ex("owner"), &ex("owner")));
+        assert!(!conditions_equivalent(&ex("owner"), &ex("tier")));
+        assert!(!conditions_equivalent(
+            &eq("status", "a"),
+            &mt("status", "a")
+        ));
+        assert!(!conditions_equivalent(&ex("status"), &eq("status", "a")));
+    }
+
+    // rivet: verifies REQ-386
+    /// Exactly the pairs with an equivalent condition AND an overlapping
+    /// requirement are reported — never a rule against itself.
+    #[test]
+    fn conditional_consistency_reports_only_real_overlaps() {
+        let single = [cond_rule("one", eq("status", "a"), fields(&["owner"]))];
+        assert!(
+            check_conditional_consistency(&single).is_empty(),
+            "a lone rule never overlaps itself"
+        );
+
+        let rules = [
+            cond_rule("links-a", ex("owner"), links(&["verifies", "satisfies"])),
+            cond_rule("links-b", ex("owner"), links(&["verifies"])),
+            cond_rule("links-c", ex("owner"), links(&["refines"])),
+            cond_rule("m-a", mt("id", "^R"), fields(&["x"])),
+            cond_rule("m-b", mt("id", "^R"), fields(&["x"])),
+        ];
+        let msgs: Vec<String> = check_conditional_consistency(&rules)
+            .into_iter()
+            .map(|d| d.message)
+            .collect();
+        assert_eq!(
+            msgs,
+            vec![
+                "conditional rules 'links-a' and 'links-b' have the same condition and \
+                 overlapping requirements: both require links: [\"verifies\"]"
+                    .to_string(),
+                "conditional rules 'm-a' and 'm-b' have the same condition and \
+                 overlapping requirements: both require fields: [\"x\"]"
+                    .to_string(),
+            ]
+        );
+    }
+
+    // rivet: verifies REQ-386
+    /// A base field declared in two files is merged by NAME: the later file
+    /// replaces the earlier one's definition, and distinct names both survive.
+    #[test]
+    fn base_fields_merge_by_name_later_wins() {
+        let bf = |name: &str, ty: &str| FieldDef {
+            name: name.into(),
+            field_type: ty.into(),
+            ..Default::default()
+        };
+        let mut a = crate::test_helpers::minimal_schema("a");
+        a.base_fields = vec![bf("status", "string"), bf("owner", "string")];
+        let mut b = crate::test_helpers::minimal_schema("b");
+        b.base_fields = vec![bf("status", "enum")];
+        let merged = Schema::merge(&[a, b]);
+        let got: Vec<(String, String)> = merged
+            .base_fields
+            .iter()
+            .map(|f| (f.name.clone(), f.field_type.clone()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("status".to_string(), "enum".to_string()),
+                ("owner".to_string(), "string".to_string()),
+            ]
+        );
+    }
+
+    // rivet: verifies REQ-386
+    /// A traceability rule's from-types and target-types are reported only
+    /// when they name an unknown type.
+    #[test]
+    fn validate_consistency_flags_only_unknown_rule_types() {
+        let mut file = crate::test_helpers::minimal_schema("c");
+        file.artifact_types = vec![
+            ArtifactTypeDef {
+                name: "requirement".into(),
+                ..Default::default()
+            },
+            ArtifactTypeDef {
+                name: "test".into(),
+                ..Default::default()
+            },
+        ];
+        let rule = |name: &str, from: &str, target: &str| TraceabilityRule {
+            name: name.into(),
+            description: String::new(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("verifies".into()),
+            target_types: vec![target.into()],
+            from_types: vec![from.into()],
+            severity: Severity::Warning,
+            alternate_backlinks: vec![],
+            exempt_when_field: None,
+        };
+        file.traceability_rules = vec![
+            rule("known", "test", "requirement"),
+            rule("bad", "nosuch-from", "nosuch-target"),
+        ];
+        let issues = Schema::merge(&[file]).validate_consistency();
+        assert_eq!(
+            issues,
+            vec![
+                "rule 'bad': from-type 'nosuch-from' is not a known artifact type".to_string(),
+                "rule 'bad': target-type 'nosuch-target' is not a known artifact type".to_string(),
+            ]
+        );
+    }
 }
