@@ -1775,10 +1775,34 @@ mod tests {
             "what OSLC cannot represent is not a difference"
         );
 
+        let mut retyped = in_sync.clone();
+        retyped.artifact_type = "test-case".into();
+        let d = compute_diff(std::slice::from_ref(&local), &[retyped]);
+        assert_eq!(
+            d.modified,
+            vec!["REQ-1".to_string()],
+            "a changed type is a change"
+        );
+
         let mut retitled = in_sync;
         retitled.title = "changed".into();
         let d = compute_diff(&[local], &[retitled]);
         assert_eq!(d.modified, vec!["REQ-1".to_string()]);
+
+        // test-result carries status over OSLC, so status alone can differ.
+        let mut run = crate::test_helpers::minimal_artifact("TR-1", "test-result");
+        run.status = Some("passed".into());
+        let same = remote_of(&run);
+        let d = compute_diff(std::slice::from_ref(&run), std::slice::from_ref(&same));
+        assert_eq!(d.unchanged, vec!["TR-1".to_string()], "{d:?}");
+        let mut failed = same;
+        failed.status = Some("failed".into());
+        let d = compute_diff(&[run], &[failed]);
+        assert_eq!(
+            d.modified,
+            vec!["TR-1".to_string()],
+            "a changed status is a change"
+        );
     }
 
     // rivet: verifies REQ-006
