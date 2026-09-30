@@ -58,6 +58,18 @@
   boolean, integer and number fields as unquoted typed values, and refuse a
   value that doesn't parse (`'yes' is not a boolean`). `rivet validate` warns
   (`field-type-mismatch`) on strings older versions already wrote.
+- **Surfaces that disagreed about the same fact now agree** (REQ-387, #956,
+  items 4–8):
+  - A malformed `filter=` on the HTTP API returned **every artifact with HTTP
+    200**; it is now a 400 `invalid_filter`, as on the CLI.
+  - A ReqIF round trip erased every artifact's `release`; it now travels as
+    `rivet:release`.
+  - OSLC sync called an artifact unchanged while ignoring its links; links and
+    fields now count.
+  - `rivet bundle --as yaml` dropped an external link's delegation payload that
+    `--as jsonl` kept.
+  - The `supply-chain-dev` bridge shipped on disk but not in the binary, so
+    `common, dev, supply-chain` failed with an undefined link type.
 - **The release note no longer reports design decisions as unevidenced**
   (REQ-383) — it asked every artifact type for a `verifies` link, so the
   v0.39.0 note listed 6 of 14 delivered artifacts, all accepted and reviewed,

@@ -66,6 +66,8 @@ pub const BRIDGE_SAFETY_CASE_STPA: &str =
     include_str!("../../schemas/safety-case-stpa.bridge.yaml");
 pub const BRIDGE_SOTIF_STPA: &str = include_str!("../../schemas/sotif-stpa.bridge.yaml");
 pub const BRIDGE_STPA_DEV: &str = include_str!("../../schemas/stpa-dev.bridge.yaml");
+pub const BRIDGE_SUPPLY_CHAIN_DEV: &str =
+    include_str!("../../schemas/supply-chain-dev.bridge.yaml");
 
 /// All known built-in schema names.
 pub const SCHEMA_NAMES: &[&str] = &[
@@ -139,6 +141,14 @@ pub const BRIDGE_SCHEMAS: &[BridgeInfo] = &[
         filename: "stpa-dev.bridge",
         extends: &["stpa", "dev"],
         content: BRIDGE_STPA_DEV,
+    },
+    // REQ-387 / #956 item 4: shipped on disk, missing here, so a project
+    // declaring `common, dev, supply-chain` failed with an undefined link
+    // type. `every_bridge_on_disk_is_registered` now guards the class.
+    BridgeInfo {
+        filename: "supply-chain-dev.bridge",
+        extends: &["supply-chain", "dev"],
+        content: BRIDGE_SUPPLY_CHAIN_DEV,
     },
 ];
 
@@ -1190,6 +1200,45 @@ mod tests {
                 "bridge link 'constraint-satisfies' names source type '{src}', which no \
                  loaded schema declares — the bridge is present but unusable"
             );
+        }
+    }
+
+    // rivet: verifies REQ-387
+    /// #956 item 4: every `schemas/*.bridge.yaml` shipped in the repository is
+    /// compiled in, with the `extends` list its file declares and the file's
+    /// exact content. A bridge that exists only on disk works for this repo's
+    /// own `schemas/` directory and fails for every installed binary.
+    #[test]
+    fn every_bridge_on_disk_is_registered() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../schemas");
+        let mut on_disk: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".bridge.yaml"))
+            .collect();
+        on_disk.sort();
+        assert!(on_disk.len() >= 8, "found {on_disk:?}");
+        let mut registered: Vec<String> = BRIDGE_SCHEMAS
+            .iter()
+            .map(|b| format!("{}.yaml", b.filename))
+            .collect();
+        registered.sort();
+        assert_eq!(
+            registered, on_disk,
+            "BRIDGE_SCHEMAS must list every bridge file"
+        );
+        for b in BRIDGE_SCHEMAS {
+            let file = std::fs::read_to_string(dir.join(format!("{}.yaml", b.filename))).unwrap();
+            assert_eq!(
+                b.content, file,
+                "{}: embedded content differs from disk",
+                b.filename
+            );
+            let parsed: rivet_yaml::Value = rivet_yaml::from_str(&file).unwrap();
+            let extends: Vec<String> =
+                rivet_yaml::from_value(parsed["schema"]["extends"].clone()).unwrap();
+            assert_eq!(b.extends, extends.as_slice(), "{}: extends", b.filename);
         }
     }
 }

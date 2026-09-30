@@ -418,6 +418,12 @@ const TOPICS: &[DocTopic] = &[
         category: "Bridges",
         content: embedded::BRIDGE_STPA_DEV,
     },
+    DocTopic {
+        slug: "schema/supply-chain-dev.bridge",
+        title: "Bridge: Supply chain ↔ Development (dev schema)",
+        category: "Bridges",
+        content: embedded::BRIDGE_SUPPLY_CHAIN_DEV,
+    },
 ];
 
 const ORDEAL_CERTIFICATE_DOC: &str = concat!(
@@ -451,6 +457,7 @@ const BRIDGE_TOPIC_SLUGS: &[&str] = &[
     "schema/safety-case-stpa.bridge",
     "schema/sotif-stpa.bridge",
     "schema/stpa-dev.bridge",
+    "schema/supply-chain-dev.bridge",
 ];
 
 const BRIDGES_OVERVIEW_DOC: &str = r#"# Bridge schemas
@@ -475,6 +482,7 @@ rule you're chasing to see the `source-type`, `required-link`, and
 | `schema/safety-case-stpa.bridge`    | `safety-case` + `stpa`         | GSN safety case ↔ STPA hazards & constraints |
 | `schema/sotif-stpa.bridge`          | `sotif` + `stpa`               | SOTIF (ISO 21448) ↔ STPA |
 | `schema/stpa-dev.bridge`            | `stpa` + `dev`                 | STPA constraints ↔ dev requirements |
+| `schema/supply-chain-dev.bridge`    | `supply-chain` + `dev`         | supply-chain evidence ↔ dev requirements |
 
 ## Reading a failing coverage row
 

@@ -882,7 +882,7 @@ impl SyncDiff {
 /// Compute the synchronization diff between a local and remote set of artifacts.
 ///
 /// Comparison is based on artifact IDs. Two artifacts with the same ID are
-/// considered "modified" if their titles or descriptions differ.
+/// "modified" when anything OSLC carries differs — see [`artifacts_differ`].
 pub fn compute_diff(local: &[Artifact], remote: &[Artifact]) -> SyncDiff {
     let local_map: BTreeMap<&str, &Artifact> = local.iter().map(|a| (a.id.as_str(), a)).collect();
     let remote_map: BTreeMap<&str, &Artifact> = remote.iter().map(|a| (a.id.as_str(), a)).collect();
@@ -913,11 +913,31 @@ pub fn compute_diff(local: &[Artifact], remote: &[Artifact]) -> SyncDiff {
 }
 
 /// Check whether two artifacts with the same ID have meaningful differences.
-fn artifacts_differ(a: &Artifact, b: &Artifact) -> bool {
-    a.title != b.title
-        || a.description != b.description
-        || a.status != b.status
-        || a.artifact_type != b.artifact_type
+///
+/// REQ-387 / #956 item 5: this compared title, description, status and type
+/// only, so an artifact whose whole link set was rewritten read as in sync.
+/// It now compares everything OSLC can carry: `local` is first passed through
+/// the same mapping the sync uses (`artifact_to_oslc` then `oslc_to_artifact`),
+/// so a difference in something OSLC cannot represent — tags, release,
+/// provenance, an unmapped link type — does not make every artifact read as
+/// modified. Links compare as a set: their order carries no meaning.
+fn artifacts_differ(local: &Artifact, remote: &Artifact) -> bool {
+    let normalised = artifact_to_oslc(local)
+        .and_then(|r| oslc_to_artifact(&r))
+        .ok();
+    let a = normalised.as_ref().unwrap_or(local);
+    let link_set = |x: &Artifact| {
+        x.links
+            .iter()
+            .map(|l| (l.link_type.clone(), l.target.clone()))
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    a.title != remote.title
+        || a.description != remote.description
+        || a.status != remote.status
+        || a.artifact_type != remote.artifact_type
+        || link_set(a) != link_set(remote)
+        || a.fields != remote.fields
 }
 
 // ---------------------------------------------------------------------------
@@ -1378,6 +1398,7 @@ impl SyncAdapter for OslcSyncAdapter {
 ///
 /// Inspects the `@type` array to determine which domain type to deserialize
 /// into. Falls back to `Requirement` if no recognized type is found.
+#[cfg_attr(not(feature = "oslc"), allow(dead_code))] // used by the gated client
 fn parse_member_resource(value: &serde_json::Value) -> Result<OslcResource, Error> {
     // Look at the @type field to determine the resource type
     let rdf_types = value
@@ -1706,6 +1727,82 @@ mod tests {
 
         let result = artifact_to_oslc(&artifact);
         assert!(result.is_err());
+    }
+
+    // rivet: verifies REQ-387
+    /// #956 item 5: a rewritten link set is a modification. What OSLC cannot
+    /// carry (tags, release, an unmapped link type) and link order are not.
+    #[test]
+    fn test_compute_diff_sees_links_but_not_what_oslc_cannot_carry() {
+        let link = |ty: &str, to: &str| Link {
+            link_type: ty.into(),
+            target: to.into(),
+            external: None,
+        };
+        let mut local = crate::test_helpers::minimal_artifact("REQ-1", "requirement");
+        local.links = vec![link("satisfied-by", "IMPL-1"), link("tracked-by", "CR-1")];
+        let remote_of = |a: &Artifact| oslc_to_artifact(&artifact_to_oslc(a).unwrap()).unwrap();
+        let in_sync = remote_of(&local);
+        let d = compute_diff(std::slice::from_ref(&local), std::slice::from_ref(&in_sync));
+        assert_eq!(d.unchanged, vec!["REQ-1".to_string()], "{d:?}");
+
+        let mut rewired = in_sync.clone();
+        rewired.links = vec![link("satisfied-by", "IMPL-2"), link("tracked-by", "CR-1")];
+        let d = compute_diff(std::slice::from_ref(&local), &[rewired]);
+        assert_eq!(
+            d.modified,
+            vec!["REQ-1".to_string()],
+            "a rewritten link is a change"
+        );
+
+        let mut reordered = in_sync.clone();
+        reordered.links.reverse();
+        let d = compute_diff(std::slice::from_ref(&local), &[reordered]);
+        assert_eq!(
+            d.unchanged,
+            vec!["REQ-1".to_string()],
+            "order carries no meaning"
+        );
+
+        let mut richer = local.clone();
+        richer.tags = vec!["t".into()];
+        richer.release = Some("v1".into());
+        richer.links.push(link("verifies", "TEST-1"));
+        let d = compute_diff(&[richer], std::slice::from_ref(&in_sync));
+        assert_eq!(
+            d.unchanged,
+            vec!["REQ-1".to_string()],
+            "what OSLC cannot represent is not a difference"
+        );
+
+        let mut retyped = in_sync.clone();
+        retyped.artifact_type = "test-case".into();
+        let d = compute_diff(std::slice::from_ref(&local), &[retyped]);
+        assert_eq!(
+            d.modified,
+            vec!["REQ-1".to_string()],
+            "a changed type is a change"
+        );
+
+        let mut retitled = in_sync;
+        retitled.title = "changed".into();
+        let d = compute_diff(&[local], &[retitled]);
+        assert_eq!(d.modified, vec!["REQ-1".to_string()]);
+
+        // test-result carries status over OSLC, so status alone can differ.
+        let mut run = crate::test_helpers::minimal_artifact("TR-1", "test-result");
+        run.status = Some("passed".into());
+        let same = remote_of(&run);
+        let d = compute_diff(std::slice::from_ref(&run), std::slice::from_ref(&same));
+        assert_eq!(d.unchanged, vec!["TR-1".to_string()], "{d:?}");
+        let mut failed = same;
+        failed.status = Some("failed".into());
+        let d = compute_diff(&[run], &[failed]);
+        assert_eq!(
+            d.modified,
+            vec!["TR-1".to_string()],
+            "a changed status is a change"
+        );
     }
 
     // rivet: verifies REQ-006
