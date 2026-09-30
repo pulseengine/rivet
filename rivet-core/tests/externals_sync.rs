@@ -193,11 +193,20 @@ fn backlinks_from_spar_to_local() {
         status: None,
         release: None,
         tags: vec![],
-        links: vec![Link {
-            link_type: "allocated-from".into(),
-            target: "REQ-001".into(),
-            external: None,
-        }],
+        links: vec![
+            // spar's OWN REQ-001 — an unprefixed ID never crosses repos (#1015).
+            Link {
+                link_type: "allocated-from".into(),
+                target: "REQ-001".into(),
+                external: None,
+            },
+            // A prefixed reference names the other project's artifact.
+            Link {
+                link_type: "allocated-from".into(),
+                target: "rivet:REQ-001".into(),
+                external: None,
+            },
+        ],
         fields: BTreeMap::new(),
         fields_per_variant: Default::default(),
         provenance: None,
@@ -214,11 +223,16 @@ fn backlinks_from_spar_to_local() {
     let mut local_ids = HashSet::new();
     local_ids.insert("REQ-001".into());
 
+    // rivet: verifies REQ-395
     let backlinks = compute_backlinks(&resolved, &local_ids);
-    assert_eq!(backlinks.len(), 1, "expected 1 backlink");
+    assert_eq!(
+        backlinks.len(),
+        1,
+        "only the prefixed reference: {backlinks:?}"
+    );
     assert_eq!(backlinks[0].source_prefix, "spar");
     assert_eq!(backlinks[0].source_id, "SPAR-LINK-001");
-    assert_eq!(backlinks[0].target, "REQ-001");
+    assert_eq!(backlinks[0].target, "rivet:REQ-001");
 }
 
 // rivet: verifies REQ-020
