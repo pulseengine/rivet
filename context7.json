@@ -30,5 +30,7 @@
     "Filters are s-expressions whose head is an operator, never a field name: `rivet list --filter '(= type \"requirement\")'`.",
     "Only `rivet verify <ID>` sets an artifact's status to verified, and it refuses without a `verifies` link or a `// rivet: verifies <ID>` source marker.",
     "A release is the set of artifacts with a `release:` field; `rivet release status <version>` exits non-zero until every one is release-ready."
-  ]
+  ],
+  "url": "https://context7.com/pulseengine/rivet",
+  "public_key": "pk_uEfrSo7VlNUJ6SUcIHfHu"
 }
