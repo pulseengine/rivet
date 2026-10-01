@@ -1880,7 +1880,7 @@ artifacts:
   - id: DD-082
     type: design-decision
     title: "rivet's lane beside sphinx-needs and useblocks: deterministic evidence, standard interchange, and no S-CORE-specific tooling before S-CORE decides"
-    status: proposed
+    status: accepted
     release: v0.40.0
     fields:
       decision: "Three things rivet does not build now. (1) No LLM-based quality scoring or autonomous engineering agent as a product feature: rivet's value is deterministic, re-checkable evidence, and a non-deterministic score would undercut the tool-qualification claim; AI stays bounded and pre-registered as in DD-080. (2) No proprietary ALM connectors (DOORS, Polarion, Jama, Codebeamer): ReqIF is the interchange, and those connectors are useblocks' commercial product. (3) No further Eclipse S-CORE-specific tooling, such as the REQ-092 source-code linker or a deep RST adapter, until S-CORE's own tool decision is known; the generic needs.json importer stays and is re-validated under REQ-398."
@@ -1893,3 +1893,4 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-30T07:21:33Z
+      reviewed-by: avrabe
