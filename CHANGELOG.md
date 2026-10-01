@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Changed
+- **The release publishes to Open VSX without a stored token** (REQ-397) —
+  with trusted publishing, the release job exchanges its GitHub OIDC token for
+  a five-minute token that can publish only this extension. The job chooses
+  its mode explicitly: an `OVSX_PAT` secret publishes with the token, the
+  repository variable `OPENVSX_TRUSTED_PUBLISHING=true` publishes by trusted
+  publishing, and with neither it warns and skips. A configured registration
+  that cannot obtain a token is an error, never a skip. `ovsx` is pinned to
+  1.2.0, the first release that supports it.
+
 ## [0.40.0] - 2026-10-01
 
 v0.39.0 stopped the release surface from saying one thing and doing another.

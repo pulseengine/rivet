@@ -696,7 +696,18 @@ jobs:
     needs: [create-release]
     runs-on: ubuntu-latest
     continue-on-error: true   # a separate channel; must not block release-npm.yml (see above)
+    # Trusted publishing: Open VSX trusts this workflow file (and this
+    # environment) by registration, and exchanges the job's OIDC token for a
+    # five-minute token scoped to pulseengine.rivet-sdlc. Whoever can change
+    # release.yml or run it under this environment can publish the extension.
+    environment: openvsx
+    permissions:
+      contents: read
+      id-token: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: tools/release
       - uses: actions/download-artifact@v4
         with:
           name: vsix
@@ -704,19 +715,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # The mode (PAT bootstrap, trusted publishing, or a visible skip) and its
+      # oracle live in tools/release/openvsx-publish{,_test}.sh.
       - name: Publish to Open VSX
         id: publish
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: |
-          if [ -z "$OVSX_PAT" ]; then
-            echo "::warning::OVSX_PAT secret is not configured. VSIX is attached to the GitHub Release but WILL NOT be published to Open VSX."
-            echo "::warning::See https://github.com/eclipse/openvsx/wiki/Publishing-Extensions for the namespace and token setup."
-            echo "published=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          npx --yes ovsx publish vsix/*.vsix -p "$OVSX_PAT"
-          echo "published=true" >> "$GITHUB_OUTPUT"
+          OPENVSX_TRUSTED_PUBLISHING: ${{ vars.OPENVSX_TRUSTED_PUBLISHING }}
+        run: bash tools/release/openvsx-publish.sh vsix/*.vsix
       # A publish command exiting 0 is not the same as the version being
       # installable: ask the registry for exactly this version.
       - name: Confirm the version is listed on Open VSX
