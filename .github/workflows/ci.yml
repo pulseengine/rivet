@@ -266,6 +266,8 @@ jobs:
       # itself only runs by hand at a cut.
       - name: changelog-drift id extraction tests
         run: bash tools/release/changelog-drift_test.sh
+      - name: Open VSX publish mode tests (REQ-397)
+        run: bash tools/release/openvsx-publish_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
