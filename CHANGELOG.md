@@ -5,6 +5,35 @@
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-10-01
+
+v0.39.0 stopped the release surface from saying one thing and doing another.
+v0.40.0 applies the same test to the rest of rivet: **surfaces that stopped
+telling the truth, and the checks that would have caught them**. Most of it was
+found by comparing rivet's own surfaces with each other, or its output with a
+real system's, rather than by a report.
+
+- **The same fact, one answer.** Coverage for an empty scope was `n/a` on the
+  CLI and a green 100% on the dashboard, the static export, the JSON API, MCP
+  and `rivet context`; a malformed HTTP filter returned everything; ReqIF
+  erased `release`; OSLC called a rewired artifact unchanged. Each surface now
+  routes the fact through one function, and tests assert the surfaces agree.
+- **Evidence judged by what each type actually needs.** The release note and
+  `release: require: evidence` read the schema's own rules per type instead of
+  asking every artifact for a `verifies` link.
+- **Checks that could not fail, now can.** The review gate for AI-authored
+  artifacts never fired; the spar drift guard never matched; `docs check`
+  passed over a CHANGELOG that listed work under the wrong releases. Each now
+  fires, and each fix carries a test that fails when it is reverted.
+- **Measured against real systems.** The `needs.json` importer, checked for the
+  first time against sphinx-needs 8.5.0 output, now keeps 809 of 809 links and
+  their types (it kept 331, all as `satisfies`). Cross-repo backlinks are no
+  longer invented from ID collisions (115 of 172 on ordeal were).
+  The comparison with sphinx-needs that found the importer gap also records
+  what rivet will not build beside it (DD-082): no LLM quality scoring, no
+  proprietary ALM connectors, no S-CORE-specific tooling before S-CORE
+  decides.
+
 ### Added
 - **The built-in reference is readable outside the binary** (REQ-396) —
   `rivet docs --export docs/reference` writes every `rivet docs` topic as
@@ -12,10 +41,11 @@
   longer matches the binary. A `context7.json` makes rivet discoverable to AI
   coding assistants through Context7; a test keeps its guidance to real
   commands, flags and filters.
-- **The VS Code extension publishes to Open VSX** (REQ-397) — the registry
-  VSCodium, Cursor and Windsurf install from; previously only the Microsoft
-  Marketplace. The release confirms the version is listed before reporting
-  success. Needs an `OVSX_PAT` secret; without it the job warns and skips.
+- **The release workflow can publish the VS Code extension to Open VSX** —
+  the registry VSCodium, Cursor and Windsurf install from; previously only the
+  Microsoft Marketplace. The job confirms the version is listed before
+  reporting success. It needs an `OVSX_PAT` secret and warns and skips without
+  one; the listing is confirmed once a release runs with the token.
 - **`release: require: evidence`** (REQ-384) — a mode that makes "cuttable"
   stricter instead of looser: an artifact is release-ready only when its
   status is ready **and** no `error`-severity traceability rule for its type
@@ -124,6 +154,12 @@
     `--as jsonl` kept.
   - The `supply-chain-dev` bridge shipped on disk but not in the binary, so
     `common, dev, supply-chain` failed with an undefined link type.
+- **20 mutants that survived the scheduled mutation run are killed**
+  (REQ-386, #1009) — no test checked which field the conditional-rule and
+  variant machinery reads: deleting the `status` and `description` lookups
+  survived. In-module tests now cover variant field lookup, condition
+  equivalence and conditional-rule overlap, and a lossless truncated-input test
+  kills 11 further survivors in the s-expression lexer.
 - **One spar revision per binary** (REQ-390, #951) — the release built the
   `rivet serve` AADL renderer from spar's default-branch HEAD while the native
   parser stayed on the `Cargo.lock` pin, and the drift guard in `build.rs`
