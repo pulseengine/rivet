@@ -5,17 +5,25 @@
 
 ## [Unreleased]
 
+## [0.40.1] - 2026-10-06
+
+Patch release for seven security advisories against the WASM adapter runtime,
+published four days after v0.40.0. It changes no rivet behaviour; it also
+carries the Open VSX release change that was on `main`.
+
 ### Security
-- **wasmtime 48.0.3 → 48.0.5** (RUSTSEC-2026-0321 to RUSTSEC-2026-0327) —
+- **wasmtime 48.0.3 → 48.0.5** (REQ-402; RUSTSEC-2026-0321 to RUSTSEC-2026-0327) —
   seven advisories against the WASM adapter runtime: a native stack buffer
   overflow from an unvalidated async callback result count, two GC heap
   corruptions, a `poll_oneoff` path that bypassed fuel accounting, uninitialised
   padding copied into guest memory, a host panic on pre-epoch timestamps, and
   unbounded host allocation for guests without stdio. rivet bounds adapter
   guests with fuel, so the fuel bypass applied directly.
+  A test now fails on every `cargo test` run if `Cargo.lock` resolves an
+  affected version again.
 
 ### Changed
-- **The release publishes to Open VSX without a stored token** (REQ-397) —
+- **The release publishes to Open VSX without a stored token** —
   with trusted publishing, the release job exchanges its GitHub OIDC token for
   a five-minute token that can publish only this extension. The job chooses
   its mode explicitly: an `OVSX_PAT` secret publishes with the token, the

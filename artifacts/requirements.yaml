@@ -9475,3 +9475,18 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-09-30T12:33:05Z
+
+  - id: REQ-402
+    type: requirement
+    title: "the WASM adapter runtime ships wasmtime 48.0.3, affected by RUSTSEC-2026-0321 to RUSTSEC-2026-0327"
+    status: verified
+    release: v0.40.1
+    description: "Seven RustSec advisories landed on 2026-10-02 and 2026-10-03 against wasmtime and wasmtime-wasi 48.0.3, the versions rivet v0.40.0 ships for its WASM adapter runtime: RUSTSEC-2026-0327 (an unvalidated async-lifted callback result count causes a native stack buffer overflow), RUSTSEC-2026-0326 and RUSTSEC-2026-0325 (GC heap corruption), RUSTSEC-2026-0324 (a guest can panic the host through a pre-epoch timestamp), RUSTSEC-2026-0323 (fd_readdir copies uninitialised padding into guest memory), RUSTSEC-2026-0322 (excessive host allocation when guests have no stdio) and RUSTSEC-2026-0321 (preview 0 poll_oneoff bypasses fuel consumption). rivet bounds adapter guests with fuel, so the fuel bypass applies directly. The nightly Security Audit had failed on main since 2026-10-03. ACCEPTANCE: wasmtime and wasmtime-wasi resolve to a patched version (>=48.0.4,<49.0.0 or >=49.0.2); CI's cargo audit command reports no vulnerability; a test fails on every cargo test run if Cargo.lock resolves an affected version again; shipped in a patch release rather than waiting for v0.41.0. IMPLEMENTED in #1032: both crates moved to 48.0.5, and CI's exact cargo audit command reports 7 vulnerabilities before and none after. rivet-core/tests/dependency_floors.rs checks Cargo.lock against the patched ranges. Reverting both crates to 48.0.3 in Cargo.toml and Cargo.lock makes it fail with the named assertion. (A lock-only edit is not a valid control: cargo rewrites the lock to match the manifest before building.)"
+    tags: [security, dependencies, wasm]
+    fields:
+      category: functional
+      priority: must
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-06T19:30:00Z
