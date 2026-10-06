@@ -6,13 +6,21 @@
 ## [Unreleased]
 
 ### Security
-- **wasmtime 48.0.3 → 48.0.5** (RUSTSEC-2026-0321 to RUSTSEC-2026-0327) —
-  seven advisories against the WASM adapter runtime: a native stack buffer
-  overflow from an unvalidated async callback result count, two GC heap
-  corruptions, a `poll_oneoff` path that bypassed fuel accounting, uninitialised
-  padding copied into guest memory, a host panic on pre-epoch timestamps, and
-  unbounded host allocation for guests without stdio. rivet bounds adapter
-  guests with fuel, so the fuel bypass applied directly.
+- **wasmtime 48.0.3 → 48.0.5** (REQ-402; RUSTSEC-2026-0321 to
+  RUSTSEC-2026-0327) — seven advisories against the WASM adapter runtime: a
+  native stack buffer overflow from an unvalidated async callback result count,
+  two GC heap corruptions, a `poll_oneoff` path that bypassed fuel accounting,
+  uninitialised padding copied into guest memory, a host panic on pre-epoch
+  timestamps, and unbounded host allocation for guests without stdio. **Who
+  was affected:** source builds with `--features wasm` and `rivet-core` used as
+  a library with that feature. The published binaries are built without it and
+  contain no wasmtime. A test now fails on every `cargo test` run if
+  `Cargo.lock` resolves an affected version again.
+- **The advisory gate now sees feature-gated dependencies** (REQ-402, #1034) —
+  `cargo deny`, the only advisory check in CI Gate, analysed default features
+  only, so it passed on wasmtime 48.0.3. It now analyses every feature. The
+  advisories were caught only by the nightly `cargo audit`, which does not
+  block merges.
 
 ### Changed
 - **The release publishes to Open VSX without a stored token** (REQ-397) —

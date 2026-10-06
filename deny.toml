@@ -89,3 +89,10 @@ unknown-registry = "deny"
 unknown-git = "warn"
 # Allow crates from these registries
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+# Analyse every feature, not only the defaults (#1034, REQ-402). wasmtime is
+# optional (rivet-core's `wasm` feature); with default features cargo-deny never
+# saw it and passed `advisories ok` on wasmtime 48.0.3 while cargo audit, which
+# reads all of Cargo.lock, reported seven advisories.
+[graph]
+all-features = true
