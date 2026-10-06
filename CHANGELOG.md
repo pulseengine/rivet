@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+### Security
+- **wasmtime 48.0.3 → 48.0.5** (RUSTSEC-2026-0321 to RUSTSEC-2026-0327) —
+  seven advisories against the WASM adapter runtime: a native stack buffer
+  overflow from an unvalidated async callback result count, two GC heap
+  corruptions, a `poll_oneoff` path that bypassed fuel accounting, uninitialised
+  padding copied into guest memory, a host panic on pre-epoch timestamps, and
+  unbounded host allocation for guests without stdio. rivet bounds adapter
+  guests with fuel, so the fuel bypass applied directly.
+
 ### Changed
 - **The release publishes to Open VSX without a stored token** (REQ-397) —
   with trusted publishing, the release job exchanges its GitHub OIDC token for
