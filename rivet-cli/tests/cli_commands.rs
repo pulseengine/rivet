@@ -7936,6 +7936,84 @@ fn verify_advances_on_marker_evidence_and_refuses_without() {
     );
 }
 
+/// #1037: a `verifies` link counts as evidence only when the verifying
+/// artifact is itself verified (or released/accepted). Reproduces the meld
+/// case — the requirement's only verifier is `implemented` — and checks that
+/// `verify` refuses it, names the weak link with its status, and leaves the
+/// requirement unchanged; then that the same link counts once its source is
+/// verified, and that the output names the evidence instead of counting it.
+///
+/// rivet: verifies REQ-404
+#[test]
+fn verify_counts_a_link_only_from_a_verified_artifact() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .output()
+            .expect("run rivet")
+    };
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let write = |ver_status: &str| {
+        std::fs::write(
+            dir.join("artifacts/reqs.yaml"),
+            format!(
+                "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: T\n    status: implemented\n  - id: VER-1\n    type: verification\n    title: V\n    status: {ver_status}\n    links:\n      - type: verifies\n        target: REQ-1\n"
+            ),
+        )
+        .unwrap();
+    };
+
+    // The only verifier is implemented: refuse, name it, change nothing.
+    write("implemented");
+    let weak = run(&["verify", "REQ-1"]);
+    let stderr = String::from_utf8_lossy(&weak.stderr);
+    assert!(
+        !weak.status.success(),
+        "a link from an implemented artifact must not verify REQ-1; stdout: {}",
+        String::from_utf8_lossy(&weak.stdout)
+    );
+    assert!(
+        stderr
+            .contains("every artifact that verifies it is unverified itself: VER-1 (implemented)"),
+        "the refusal must name the weak link and its status; stderr: {stderr}"
+    );
+    let reqs = std::fs::read_to_string(dir.join("artifacts/reqs.yaml")).unwrap();
+    assert!(
+        reqs.contains("id: REQ-1\n    type: requirement\n    title: T\n    status: implemented"),
+        "REQ-1 must stay implemented; got:\n{reqs}"
+    );
+
+    // The verifier is verified: the same link now counts, named with its status.
+    write("verified");
+    let ok = run(&["verify", "REQ-1"]);
+    let stdout = String::from_utf8_lossy(&ok.stdout);
+    assert!(
+        ok.status.success(),
+        "a link from a verified artifact must verify REQ-1; stderr: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    assert!(
+        stdout.contains("evidence: verified by VER-1 (verified)"),
+        "the output must name the evidence; stdout: {stdout}"
+    );
+    let reqs = std::fs::read_to_string(dir.join("artifacts/reqs.yaml")).unwrap();
+    assert!(
+        reqs.contains("id: REQ-1\n    type: requirement\n    title: T\n    status: verified"),
+        "REQ-1 must now be verified; got:\n{reqs}"
+    );
+}
+
 /// #574: in a cargo WORKSPACE layout — no `./src` or `./tests` at the project
 /// root, crates live in `<member>/src/` — `rivet verify <ID>` must still find
 /// `// rivet: verifies <ID>` markers by DEFAULT (the project-root fallback

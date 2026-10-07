@@ -32,6 +32,16 @@
   never affected.
 
 ### Changed
+- **`rivet verify` counts a link only from a verified artifact** (REQ-404,
+  #1037) — it promoted a requirement on the mere presence of a `verifies` link,
+  so in meld a requirement became `verified` while its only verifier was
+  `implemented`, and the output said `evidence: 1 incoming verifies link(s)`.
+  A link now counts only when its source is `verified`, `released` or
+  `accepted`; the output names each linked artifact with its status, and
+  a link from an unverified one is listed but not counted. **Behaviour change:**
+  `verify` now refuses a requirement whose only evidence is a link from an
+  unverified artifact; verify that artifact first, or add a
+  `// rivet: verifies <ID>` marker. Already-verified artifacts are unchanged.
 - **The release publishes to Open VSX without a stored token** (REQ-397) —
   with trusted publishing, the release job exchanges its GitHub OIDC token for
   a five-minute token that can publish only this extension. The job chooses
