@@ -22,6 +22,15 @@
   advisories were caught only by the nightly `cargo audit`, which does not
   block merges.
 
+### Fixed
+- **The release builds its test evidence again** (REQ-403, #1028) — v0.40.0
+  shipped without its test-evidence artifact (`junit.xml`, coverage): the
+  release builds the AADL renderer from exactly the spar commit in
+  `Cargo.lock`, and that pin (spar v0.10.0) predates spar's solver-free WASM
+  build, so a C++ solver failed to compile for `wasm32-wasip2`. spar is now
+  pinned to v0.13.0, the first tag with that build. The published binaries were
+  never affected.
+
 ### Changed
 - **The release publishes to Open VSX without a stored token** (REQ-397) —
   with trusted publishing, the release job exchanges its GitHub OIDC token for
