@@ -36,7 +36,7 @@
 
 schema:
   name: aspice
-  version: "0.2.0"
+  version: "0.2.1"
   namespace: "http://pulseengine.dev/ns/aspice#"
   extends: [common]
   description: >
@@ -479,11 +479,14 @@ link-types:
   # `allocated-to`. ASPICE swaps the canonical direction for SWE.2,
   # so we declare `allocated-from` here as a forward link-type to
   # avoid the gotcha-G.3 footgun in the seed.
+  # REQ-401: also the system level (SYS.3): `system-arch-component` declares a
+  # required `allocated-from` link field to `system-req`, which this
+  # restriction used to forbid.
   - name: allocated-from
     inverse: allocated-to
-    description: SW arch component is allocated from a SW requirement (SWE.2)
-    source-types: [sw-arch-component]
-    target-types: [sw-req, system-arch-component]
+    description: An architecture component is allocated from a requirement (SWE.2 for software, SYS.3 for system)
+    source-types: [sw-arch-component, system-arch-component]
+    target-types: [sw-req, system-arch-component, system-req]
 
 # ──────────────────────────────────────────────────────────────────────────
 # ASPICE traceability rules

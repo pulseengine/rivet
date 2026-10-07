@@ -23,6 +23,14 @@
   block merges.
 
 ### Fixed
+- **Link-type source and target restrictions are enforced** (REQ-401, #958
+  item 1) — `source-types` and `target-types` on a link type were documented
+  as restrictions and never checked. A link from or to a type its link type
+  does not allow is now a `link-type-restriction` warning, and a link field
+  its own link type forbids is a `link-field-restriction-conflict`. Enforcing
+  it showed three shipped schemas contradicting themselves; they are widened
+  to what their own link fields require (aspice 0.2.1, score 0.1.1, stpa-sec
+  0.1.1). **Behaviour change:** projects with such links now see warnings.
 - **The release builds its test evidence again** (REQ-403, #1028) — v0.40.0
   shipped without its test-evidence artifact (`junit.xml`, coverage): the
   release builds the AADL renderer from exactly the spar commit in

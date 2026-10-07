@@ -225,15 +225,24 @@ impl LinkTypeDef {
         if other.inverse.is_some() {
             self.inverse = other.inverse;
         }
-        for t in other.source_types {
-            if !self.source_types.contains(&t) {
-                self.source_types.push(t);
-            }
-        }
-        for t in other.target_types {
-            if !self.target_types.contains(&t) {
-                self.target_types.push(t);
-            }
+        // REQ-401: an empty list means "any type". If either declaration is
+        // unrestricted, the merged link type is unrestricted: a union would
+        // turn one schema's open `governs` plus another's restricted one into
+        // a restriction neither alone imposed.
+        merge_restriction(&mut self.source_types, other.source_types);
+        merge_restriction(&mut self.target_types, other.target_types);
+    }
+}
+
+/// Union two type restrictions where an empty list means "any".
+fn merge_restriction(into: &mut Vec<String>, other: Vec<String>) {
+    if into.is_empty() || other.is_empty() {
+        into.clear();
+        return;
+    }
+    for t in other {
+        if !into.contains(&t) {
+            into.push(t);
         }
     }
 }
@@ -1254,7 +1263,66 @@ impl Schema {
         let mut diagnostics = check_conditional_consistency(&self.conditional_rules);
         diagnostics.extend(self.check_coverage_rule_consistency());
         diagnostics.extend(self.check_conditional_rule_reachability());
+        diagnostics.extend(self.check_link_field_restrictions());
         diagnostics
+    }
+
+    /// REQ-401: a type's link field must be permitted by the link type it
+    /// uses. `aspice` shipped `system-arch-component` with a required
+    /// `allocated-from` link field targeting `system-req`, while the
+    /// `allocated-from` link type allowed neither that source nor that target —
+    /// so once link-type restrictions were enforced, every correctly modelled
+    /// artifact was reported. A schema that contradicts itself is reported
+    /// here, once, instead of on every artifact.
+    pub fn check_link_field_restrictions(&self) -> Vec<crate::validate::Diagnostic> {
+        let mut out = Vec::new();
+        let mut types: Vec<&ArtifactTypeDef> = self.artifact_types.values().collect();
+        types.sort_by(|a, b| a.name.cmp(&b.name));
+        for at in types {
+            for lf in &at.link_fields {
+                let Some(lt) = self.link_types.get(&lf.link_type) else {
+                    continue;
+                };
+                let mut problems = Vec::new();
+                if !lt.source_types.is_empty() && !lt.source_types.contains(&at.name) {
+                    problems.push(format!(
+                        "the link type allows sources {:?}, not '{}'",
+                        lt.source_types, at.name
+                    ));
+                }
+                if !lt.target_types.is_empty() {
+                    let denied: Vec<&String> = lf
+                        .target_types
+                        .iter()
+                        .filter(|t| !lt.target_types.contains(t))
+                        .collect();
+                    if !denied.is_empty() {
+                        problems.push(format!(
+                            "the link type allows targets {:?}, not {:?}",
+                            lt.target_types, denied
+                        ));
+                    }
+                }
+                if !problems.is_empty() {
+                    out.push(crate::validate::Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
+                        severity: Severity::Warning,
+                        artifact_id: None,
+                        rule: "link-field-restriction-conflict".to_string(),
+                        message: format!(
+                            "type '{}' declares link field '{}' ({}), but {}",
+                            at.name,
+                            lf.name,
+                            lf.link_type,
+                            problems.join("; ")
+                        ),
+                    });
+                }
+            }
+        }
+        out
     }
 
     /// REQ-388 / #958 item 5: a conditional rule whose `when` or `condition`
@@ -2990,5 +3058,96 @@ mod tests {
             flagged,
             vec!["dead-equals", "dead-matches", "dead-condition"]
         );
+    }
+
+    // ── REQ-401 / #958 item 1: link-type restrictions ──────────────────
+
+    // rivet: verifies REQ-401
+    /// An empty restriction means "any type", so merging an unrestricted
+    /// declaration with a restricted one stays unrestricted; two restricted
+    /// declarations union.
+    #[test]
+    fn link_type_restrictions_merge_with_empty_meaning_any() {
+        let lt = |src: &[&str]| LinkTypeDef {
+            name: "governs".into(),
+            source_types: src.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
+        let mut open = lt(&[]);
+        open.merge_in_place(lt(&["a"]));
+        assert!(open.source_types.is_empty(), "open + restricted stays open");
+        let mut closed = lt(&["a"]);
+        closed.merge_in_place(lt(&[]));
+        assert!(
+            closed.source_types.is_empty(),
+            "restricted + open becomes open"
+        );
+        let mut both = lt(&["a"]);
+        both.merge_in_place(lt(&["b", "a"]));
+        assert_eq!(both.source_types, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    // rivet: verifies REQ-401
+    /// A type's link field that its own link type forbids is a schema
+    /// contradiction, reported once at schema level.
+    #[test]
+    fn link_field_that_its_link_type_forbids_is_reported() {
+        let mut file = crate::test_helpers::minimal_schema("lf");
+        file.link_types = vec![LinkTypeDef {
+            name: "allocated-from".into(),
+            source_types: vec!["sw-arch".into()],
+            target_types: vec!["sw-req".into()],
+            ..Default::default()
+        }];
+        let lf = |targets: &[&str]| LinkFieldDef {
+            name: "allocated-from".into(),
+            link_type: "allocated-from".into(),
+            target_types: targets.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
+        file.artifact_types = vec![
+            ArtifactTypeDef {
+                name: "sw-arch".into(),
+                link_fields: vec![lf(&["sw-req"])],
+                ..Default::default()
+            },
+            ArtifactTypeDef {
+                name: "sys-arch".into(),
+                link_fields: vec![lf(&["sys-req"])],
+                ..Default::default()
+            },
+        ];
+        let d = Schema::merge(&[file]).check_link_field_restrictions();
+        assert_eq!(d.len(), 1, "{d:#?}");
+        assert_eq!(d[0].rule, "link-field-restriction-conflict");
+        assert!(d[0].message.contains("type 'sys-arch'"), "{}", d[0].message);
+        assert!(d[0].message.contains("not 'sys-arch'") && d[0].message.contains("[\"sys-req\"]"));
+    }
+
+    // rivet: verifies REQ-401
+    /// No shipped schema contradicts itself: every link field is permitted
+    /// by the link type it uses, with each schema loaded alongside `common`.
+    /// `aspice` (system-arch-component) and `score` (four architecture types)
+    /// did until REQ-401.
+    #[test]
+    fn no_shipped_schema_declares_a_link_field_its_link_type_forbids() {
+        let mut checked = 0;
+        for name in crate::embedded::embedded_schema_names() {
+            let names = ["common".to_string(), name.to_string()];
+            let Ok(schema) = crate::embedded::load_schemas_with_fallback(
+                &names,
+                std::path::Path::new("/nonexistent-schemas-dir"),
+            ) else {
+                continue;
+            };
+            checked += 1;
+            let d = schema.check_link_field_restrictions();
+            assert!(
+                d.is_empty(),
+                "{name}: {:#?}",
+                d.iter().map(|x| &x.message).collect::<Vec<_>>()
+            );
+        }
+        assert!(checked >= 20, "loaded {checked} shipped schemas");
     }
 }

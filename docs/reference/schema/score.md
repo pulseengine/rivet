@@ -26,7 +26,7 @@
 
 schema:
   name: score
-  version: "0.1.0"
+  version: "0.1.1"
   namespace: "http://pulseengine.dev/ns/score#"
   extends: [common]
   description: >
@@ -1152,9 +1152,11 @@ link-types:
 
   - name: fulfils
     inverse: fulfilled-by
-    description: Source fulfils the target (e.g. tool support function fulfils a tool requirement)
-    source-types: [tsf, test-verdict]
-    target-types: [tool-req, test-spec]
+    description: Source fulfils the target (e.g. tool support function fulfils a tool requirement, an architecture view fulfils the requirement it realises)
+    # REQ-401: widened to the four architecture types whose own `fulfils`
+    # link fields this schema declares; the restriction contradicted them.
+    source-types: [tsf, test-verdict, feat-arc-sta, feat-arc-dyn, comp-arc-sta, comp-arc-dyn]
+    target-types: [tool-req, test-spec, feat-req, aou-req, comp-req]
 
   - name: belongs-to
     inverse: consists-of

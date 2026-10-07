@@ -995,6 +995,52 @@ pub fn validate_structural_with_externals_and_variant(
         });
     }
 
+    // 6b. REQ-401 / #958 item 1: a link type's `source-types` and
+    // `target-types` are documented as restrictions but were never checked.
+    // A warning, so corpora that relied on the non-enforcement are told
+    // rather than broken. Targets outside the store (externals, broken links)
+    // are left to the rules that already report them.
+    for artifact in store.iter() {
+        for link in &artifact.links {
+            let Some(lt) = schema.link_types.get(&link.link_type) else {
+                continue;
+            };
+            if !lt.source_types.is_empty() && !lt.source_types.contains(&artifact.artifact_type) {
+                diagnostics.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
+                    severity: Severity::Warning,
+                    artifact_id: Some(artifact.id.clone()),
+                    rule: "link-type-restriction".to_string(),
+                    message: format!(
+                        "link type '{}' may originate only from {:?}, not from '{}'",
+                        link.link_type, lt.source_types, artifact.artifact_type
+                    ),
+                });
+            }
+            if lt.target_types.is_empty() {
+                continue;
+            }
+            if let Some(target) = store.get(&link.target) {
+                if !lt.target_types.contains(&target.artifact_type) {
+                    diagnostics.push(Diagnostic {
+                        source_file: None,
+                        line: None,
+                        column: None,
+                        severity: Severity::Warning,
+                        artifact_id: Some(artifact.id.clone()),
+                        rule: "link-type-restriction".to_string(),
+                        message: format!(
+                            "link type '{}' may target only {:?}; '{}' is a '{}'",
+                            link.link_type, lt.target_types, link.target, target.artifact_type
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
     // 7. Check traceability rules (forward + backlink coverage)
     for rule in &schema.traceability_rules {
         for id in store.by_type(&rule.source_type) {
@@ -5085,6 +5131,67 @@ then:
         assert!(
             diags.iter().all(|d| d.rule != "variant-key-unknown"),
             "feature names must be accepted as known variant keys: {diags:?}"
+        );
+    }
+
+    // rivet: verifies REQ-401
+    /// A link from a type the link type does not allow, or to a target type
+    /// it does not allow, is a `link-type-restriction` warning; an allowed
+    /// link and a link type with no restriction are not.
+    #[test]
+    fn link_type_restrictions_are_warnings_on_the_offending_link() {
+        let mut file = crate::test_helpers::minimal_schema("lt");
+        let lt = |name: &str, src: &[&str], tgt: &[&str]| crate::schema::LinkTypeDef {
+            name: name.into(),
+            source_types: src.iter().map(|s| s.to_string()).collect(),
+            target_types: tgt.iter().map(|s| s.to_string()).collect(),
+            ..Default::default()
+        };
+        file.link_types = vec![
+            lt("issued-by", &["uca"], &["controller"]),
+            lt("free", &[], &[]),
+        ];
+        for ty in ["uca", "sec-uca", "controller", "note"] {
+            file.artifact_types.push(crate::schema::ArtifactTypeDef {
+                name: ty.into(),
+                ..Default::default()
+            });
+        }
+        let schema = Schema::merge(&[file]);
+        let mut store = Store::new();
+        let link = |ty: &str, to: &str| crate::model::Link {
+            link_type: ty.into(),
+            target: to.into(),
+            external: None,
+        };
+        let mut ok = minimal_artifact("U-1", "uca");
+        ok.links = vec![link("issued-by", "C-1"), link("free", "N-1")];
+        let mut bad_src = minimal_artifact("S-1", "sec-uca");
+        bad_src.links = vec![link("issued-by", "C-1")];
+        let mut bad_tgt = minimal_artifact("U-2", "uca");
+        bad_tgt.links = vec![link("issued-by", "N-1")];
+        for a in [
+            ok,
+            bad_src,
+            bad_tgt,
+            minimal_artifact("C-1", "controller"),
+            minimal_artifact("N-1", "note"),
+        ] {
+            store.insert(a).unwrap();
+        }
+        let graph = LinkGraph::build(&store, &schema);
+        let mut hits: Vec<(String, Severity)> = validate_structural(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "link-type-restriction")
+            .map(|d| (d.artifact_id.unwrap(), d.severity))
+            .collect();
+        hits.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            hits,
+            vec![
+                ("S-1".to_string(), Severity::Warning),
+                ("U-2".to_string(), Severity::Warning)
+            ]
         );
     }
 }

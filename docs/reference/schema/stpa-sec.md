@@ -21,7 +21,7 @@
 
 schema:
   name: stpa-sec
-  version: "0.1.0"
+  version: "0.1.1"
   namespace: "http://pulseengine.dev/ns/stpa-sec#"
   extends: [stpa]
   description: >
@@ -171,6 +171,16 @@ artifact-types:
 # STPA-Sec link types
 # ──────────────────────────────────────────────────────────────────────────
 link-types:
+  # REQ-401: sec-uca declares an `issued-by` link field, but `issued-by` was
+  # declared only in stpa.yaml, restricted to uca and control-action. Once
+  # link-type restrictions were enforced, every security UCA's controller link
+  # was reported. Declaring it here widens the merged restriction.
+  - name: issued-by
+    inverse: issues
+    description: A security UCA is issued by a controller
+    source-types: [sec-uca]
+    target-types: [controller]
+
   - name: leads-to-sec-loss
     inverse: sec-loss-caused-by
     description: Security hazard leads to a security loss
