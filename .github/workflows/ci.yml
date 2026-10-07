@@ -268,6 +268,8 @@ jobs:
         run: bash tools/release/changelog-drift_test.sh
       - name: Open VSX publish mode tests (REQ-397)
         run: bash tools/release/openvsx-publish_test.sh
+      - name: Mutation test-process memory cap tests (#1031)
+        run: bash tools/ci/memcap_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
@@ -1031,6 +1033,14 @@ jobs:
         # and taking down neighboring jobs on the shared lean-mem host. The
         # `|| true` already records a clipped mutant as timeout/error, not a
         # gate failure. Defense-in-depth alongside the infra cgroup MemoryMax.
+        # #1031: the 48 GiB step cap sits above the lean-mem runners' 32 GiB
+        # cgroup ceiling, so a runaway mutant reached the OOM-killer first and
+        # took the runner down (shard 13, yaml_cst.rs, every night). Cargo now
+        # runs each test binary through tools/ci/memcap.sh, which caps only the
+        # test process (12 GiB): the mutant fails with ENOMEM in its own process
+        # and is recorded, and rustc's compile peak is not capped.
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: ${{ github.workspace }}/tools/ci/memcap.sh
         run: |
           ulimit -v 50331648
           cargo mutants -p ${{ matrix.crate }} --shard ${{ matrix.shard }} --timeout 30 --jobs 2 --output mutants-out -- --lib || true
