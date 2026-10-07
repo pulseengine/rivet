@@ -172,5 +172,5 @@ futures = "0.3"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # AADL (spar) — parser, HIR, analysis
-spar-hir = { git = "https://github.com/pulseengine/spar.git", tag = "v0.10.0" }
-spar-analysis = { git = "https://github.com/pulseengine/spar.git", tag = "v0.10.0" }
+spar-hir = { git = "https://github.com/pulseengine/spar.git", tag = "v0.13.0" }
+spar-analysis = { git = "https://github.com/pulseengine/spar.git", tag = "v0.13.0" }

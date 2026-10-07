@@ -9490,3 +9490,18 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-10-06T21:40:00Z
+
+  - id: REQ-403
+    type: requirement
+    title: "the release's test evidence cannot be built: the pinned spar v0.10.0 doesn't build spar-wasm for wasm32-wasip2 (#1028)"
+    status: implemented
+    release: v0.41.0
+    description: "Found at the v0.40.0 release (run 36850870619, #1028): Build test evidence failed in Build spar WASM assets, because highs-sys (the HiGHS MILP solver, C++) does not build for wasm32-wasip2 (CMake: System is unknown to cmake, Platform/wasi). REQ-390 made the release build the WASM renderer from exactly the spar commit in Cargo.lock, which was spar v0.10.0 (afd5da2). That commit predates spar 59189d0 (#259/#260), which builds spar-wasm against spar-analysis without the solver; spar's HEAD had it, which is why v0.38.0 and v0.39.0 passed. v0.40.0 shipped no test-evidence artifact (junit.xml, coverage); the binaries were unaffected. ACCEPTANCE: the spar pin is a tag containing 59189d0 (the earliest is v0.13.0); rivet builds and its tests pass against it; spar-wasm at the locked commit builds for wasm32-wasip2; a release run uploads a test-evidence artifact containing junit.xml. IMPLEMENTED: spar-hir and spar-analysis moved from tag v0.10.0 to v0.13.0 (d185c9a); rivet needed no code changes. At the locked commit, cargo tree -p spar-wasm --target wasm32-wasip2 lists no highs or good_lp crate, and cargo build --release -p spar-wasm --target wasm32-wasip2 produces spar_wasm.wasm (1.7 MB). The same commands at v0.10.0 list the solver and fail in highs-sys's CMake step, as the release did. NOT YET VERIFIED: needs a release run that uploads test-evidence with junit.xml."
+    tags: [release, evidence, spar, wasm]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-07T08:00:00Z
