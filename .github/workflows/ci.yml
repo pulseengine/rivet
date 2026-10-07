@@ -620,6 +620,12 @@ jobs:
   # Marketplace — its workflow is scoped differently). See release.yml.
 
   # ── Security audits ──────────────────────────────────────────────────
+  # This job is deliberately NOT in `ci-gate.needs`; see the
+  # "Deliberately NOT gated on" comment above `ci-gate` for the reasoning
+  # (#1034 / REQ-402). The short version: deny with all-features now
+  # covers advisories, and this job runs on ubuntu-latest — gating on it
+  # would reintroduce a GitHub-hosted dependency the ci-gate placement
+  # explicitly avoids.
   audit:
     name: Security Audit (RustSec)
     # Stays on ubuntu-latest: smithy ships cargo-audit v0.21.2 whose
@@ -1640,8 +1646,22 @@ jobs:
   #
   # Deliberately NOT gated on: Kani (exit-143 runner-shutdown flake would
   # wedge the queue on infrastructure, not correctness), Mutation Testing
-  # (honest since REQ-288 but young), Coverage (advisory by design), and
-  # Playwright (no timeout-minutes — a hung apt-get blocks for 6h, see #822).
+  # (honest since REQ-288 but young), Coverage (advisory by design),
+  # Playwright (no timeout-minutes — a hung apt-get blocks for 6h, see #822),
+  # and Security Audit (RustSec) — recorded here per #1034 (REQ-402) because
+  # the omission was previously an unrecorded gap, not a decision. Two
+  # reasons, both still true after REQ-402: (a) Cargo Deny with
+  # `[graph] all-features = true` now covers vulnerability matching across
+  # every optional feature (what #1034 showed audit was uniquely catching
+  # before — see deny.toml and the REQ-402 dependency-floor test), so audit
+  # is a secondary signal, not the sole one. (b) The audit job runs on
+  # ubuntu-latest; adding it would reintroduce exactly the GitHub-hosted
+  # dependency the ci-gate placement note below (self-hosted, deliberately)
+  # calls out — the 2026-08-26 hosted-starvation incident wedged the queue
+  # for ~24h on a single hosted dependency, and audit would be a second one.
+  # Audit stays in CI as an advisory signal; promotion to a required check
+  # is reconsidered when both are addressed (deny's all-features coverage
+  # proves insufficient OR audit moves to the self-hosted pool).
   ci-gate:
     name: CI Gate
     # #822: added in #825, after #824 capped every other job, so this was the
