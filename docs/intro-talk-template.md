@@ -131,7 +131,7 @@ cat scripts/mythos/HOWTO.md              # the four-prompt scaffold + oracle pai
 
 # Step 9: formal verification in CI
 ls proofs/rocq/ verus/                   # Coq + Verus specs
-# Show the GitHub Actions UI where Rocq + Verus + Kani are real CI gates
+# Show the GitHub Actions UI: Rocq, Verus and Kani run as advisory jobs (none is in CI Gate)
 
 # Step 10: the audit chain comes full circle
 rivet check bidirectional                # oracle: every link has its inverse
@@ -151,7 +151,7 @@ Pick 3-5 concrete bullets from the live work. Say one sentence per bullet. **Don
 
 - Variant scoping coherent across 8 dashboard handlers — the `?variant=minimal-ci` query actually scopes the data, not just the banner
 - Mutation testing 16-shard with ~125 surviving mutants killed — the test suite is now keeping itself honest
-- Formal verification fully restored — Rocq metamodel proofs + Verus SMT specs + Kani BMC harnesses all running in CI
+- Formal verification in CI — Rocq metamodel proofs and Verus SMT specs run as advisory jobs; Kani's 27 harnesses run, but 1 verifies today (REQ-391)
 - Embedded compliance content — rivet's own dashboard now shows its own EU AI Act Annex IV view (dogfooding the schema)
 
 **On the roadmap** (be honest about what's not done):

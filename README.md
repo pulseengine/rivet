@@ -144,8 +144,9 @@ rivet quickstart                 # 10-step oracle-gated walk-through
 
 - **CI**: `rivet validate`, `cargo clippy --workspace -- -D warnings`,
   `cargo test --workspace`, `rivet docs check`, Playwright (33 spec
-  files), Kani (28 BMC harnesses), Verus, Rocq, mutation testing
-  (16-shard rivet-core).
+  files), Verus, Rocq, mutation testing (16-shard rivet-core), and Kani
+  (27 BMC harnesses, an advisory job outside CI Gate; on Linux 1 of 27
+  verifies today and the rest time out, see REQ-391 and #839).
 - **Self-hosted dashboard**: rendered to https://pulseengine.eu/reports/rivet/
   on every push to `main`.
 - **Release**: see [CHANGELOG.md](CHANGELOG.md). Current line is the

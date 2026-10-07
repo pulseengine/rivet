@@ -67,9 +67,10 @@ cross-schema bridges between them. It imports ReqIF 1.2, JUnit XML,
 and sphinx-needs JSON. It exports ReqIF, HTML, Zola, Gherkin, and
 generic YAML. Validation runs on a salsa-backed incremental engine;
 every mutation stamps AI provenance. The core validation rules are
-backed by 27 Kani bounded-model-checking harnesses, Verus specs,
-Rocq proofs, and 324 Playwright end-to-end tests across 28 spec
-files.
+backed by Verus specs, Rocq proofs, and 324 Playwright end-to-end
+tests across 28 spec files. The 27 Kani bounded-model-checking
+harnesses run as an advisory CI job, but on Linux only 1 of them
+verifies today; the rest time out (REQ-391, #839).
 
 ---
 
@@ -377,8 +378,8 @@ server-side-validated before it lands.
 - **STPA methodology dogfood.** [docs/stpa-sec.md](stpa-sec.md) plus
   `safety/stpa/` and `safety/stpa-sec/`.
 - **Verification evidence.** [docs/verification.md](verification.md)
-  — 27 Kani BMC harnesses, Verus specs, Rocq proofs, 324 Playwright
-  end-to-end tests.
+  — Verus specs, Rocq proofs, 324 Playwright end-to-end tests, and 27
+  Kani BMC harnesses, of which 1 verifies today (REQ-391).
 - **Polarion / ReqIF fidelity audit.**
   [docs/design/polarion-reqif-fidelity.md](design/polarion-reqif-fidelity.md).
 - **Roadmap.** [docs/roadmap.md](roadmap.md).
