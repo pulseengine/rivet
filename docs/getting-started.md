@@ -470,8 +470,12 @@ External-boundary (supplier-delegated) artifacts count as closed, matching the
 ### `rivet verify`
 
 Advance a requirement from `implemented` to `verified` when it has verifying
-test evidence — an incoming `verifies` link OR a `// rivet: verifies <ID>`
-source marker (scanned from `src/` and `tests/`, or extra paths via `--scan`).
+test evidence — an incoming `verifies` link from an artifact that is itself
+`verified` (or `released`/`accepted`), OR a `// rivet: verifies <ID>` source
+marker (scanned from `src/` and `tests/`, or extra paths via `--scan`). The
+output names each linked artifact with its status; a link from an artifact that
+is not yet verified is listed but not counted, so a requirement never outranks
+its own evidence.
 
 ```bash
 rivet verify REQ-042

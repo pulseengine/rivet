@@ -431,6 +431,18 @@ impl Artifact {
         self.status_is("released")
     }
 
+    /// `true` iff the artifact has itself passed verification: status
+    /// `verified`, or a later stage (`released`, `accepted`). Only such an
+    /// artifact can stand as evidence that another one is verified: a test
+    /// specification that is merely `implemented` has not shown anything yet,
+    /// and a missing status claims nothing (#1037).
+    #[inline]
+    pub fn carries_verification(&self) -> bool {
+        ["verified", "released", "accepted"]
+            .iter()
+            .any(|s| self.status_is(s))
+    }
+
     /// Resolve the effective `fields` map for a given variant.
     ///
     /// Returns a `Cow<...>`:
@@ -564,6 +576,22 @@ mod tests {
         assert!(a.status_is("DRAFT"));
         assert!(a.status_is("Draft"));
         assert!(!a.status_is("approved"));
+    }
+
+    // rivet: verifies REQ-404
+    #[test]
+    fn only_verified_or_later_carries_verification() {
+        let mut a = minimal_artifact("A-1", "req");
+        for status in ["verified", "VERIFIED", "released", "accepted"] {
+            a.status = Some(status.into());
+            assert!(a.carries_verification(), "{status} carries verification");
+        }
+        for status in ["draft", "proposed", "approved", "implemented", "obsolete"] {
+            a.status = Some(status.into());
+            assert!(!a.carries_verification(), "{status} must not");
+        }
+        a.status = None;
+        assert!(!a.carries_verification(), "no status claims nothing");
     }
 
     #[test]

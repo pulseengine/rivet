@@ -596,8 +596,10 @@ enum Command {
     ///
     /// Closes the right side of the V explicitly. The requirement must
     /// currently be `implemented` and have at least one piece of verifying
-    /// evidence — an incoming `verifies` link, OR a `// rivet: verifies <ID>`
-    /// source marker. No auto-advance: this is the opt-in, auditable command.
+    /// evidence: an incoming `verifies` link from an artifact that is itself
+    /// verified (or released/accepted), OR a `// rivet: verifies <ID>` source
+    /// marker. A link from an unverified artifact is listed but not counted.
+    /// No auto-advance: this is the opt-in, auditable command.
     Verify {
         /// Requirement (or other artifact) ID to advance to `verified`.
         id: String,
@@ -10062,13 +10064,17 @@ fn cmd_trace_results(cli: &Cli, id: &str, depth: usize, format: &str) -> Result<
 }
 
 /// #559: advance an artifact to `verified` when it has verifying evidence —
-/// an incoming `verifies` link, OR a `// rivet: verifies <ID>` source marker.
+/// an incoming `verifies` link from an artifact that is itself verified or
+/// later (#1037), OR a `// rivet: verifies <ID>` source marker.
 /// Opt-in and auditable (no auto-advance); the artifact must be `implemented`.
 fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> {
     use rivet_core::test_scanner;
 
     // Scope the loaded store/graph borrows so cmd_modify can reload below.
-    let link_count = {
+    // Each incoming `verifies` link as (source id, its status, whether the
+    // source is itself verified or later). Only the latter is evidence: an
+    // `implemented` test specification has not shown anything yet (#1037).
+    let links: Vec<(String, String, bool)> = {
         let ctx = ProjectContext::load(cli)?;
         let artifact = ctx
             .store
@@ -10086,8 +10092,22 @@ fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> 
                 other.unwrap_or("(none)")
             ),
         }
-        ctx.graph.backlinks_of_type(id, "verifies").len()
+        ctx.graph
+            .backlinks_of_type(id, "verifies")
+            .iter()
+            .map(|bl| {
+                let source = ctx.store.get(&bl.source);
+                (
+                    bl.source.to_string(),
+                    source
+                        .and_then(|a| a.status.clone())
+                        .unwrap_or_else(|| "no status".to_string()),
+                    source.is_some_and(|a| a.carries_verification()),
+                )
+            })
+            .collect()
     };
+    let (qualifying, weak): (Vec<_>, Vec<_>) = links.iter().partition(|(_, _, ok)| *ok);
 
     // Source-marker evidence: `// rivet: verifies <ID>`. Default scan dirs are
     // workspace-aware and shared with `coverage --tests` (#603).
@@ -10102,15 +10122,33 @@ fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> 
         .filter(|m| m.target_id == id && m.link_type == "verifies")
         .collect();
 
-    if link_count == 0 && marker_hits.is_empty() {
+    let named = |set: &[&(String, String, bool)]| {
+        set.iter()
+            .map(|(src, status, _)| format!("{src} ({status})"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if qualifying.is_empty() && marker_hits.is_empty() {
+        if weak.is_empty() {
+            anyhow::bail!(
+                "refusing to verify '{id}': no verifying evidence. Add an incoming \
+                 `verifies` link from a test/verification artifact, or a \
+                 `// rivet: verifies {id}` marker in a test, then re-run."
+            );
+        }
         anyhow::bail!(
-            "refusing to verify '{id}': no verifying evidence. Add an incoming \
-             `verifies` link from a test/verification artifact, or a \
-             `// rivet: verifies {id}` marker in a test, then re-run."
+            "refusing to verify '{id}': every artifact that verifies it is unverified \
+             itself: {}. A verifying artifact must be verified (or released/accepted) \
+             before it is evidence; verify it first, or add a \
+             `// rivet: verifies {id}` marker in a test.",
+            named(&weak)
         );
     }
-    if link_count > 0 {
-        println!("  evidence: {link_count} incoming `verifies` link(s)");
+    if !qualifying.is_empty() {
+        println!("  evidence: verified by {}", named(&qualifying));
+    }
+    if !weak.is_empty() {
+        println!("  not counted (not verified themselves): {}", named(&weak));
     }
     if let Some(first) = marker_hits.first() {
         println!(

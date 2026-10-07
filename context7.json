@@ -28,7 +28,7 @@
     "The full reference is in docs/reference, one file per topic; `rivet docs <topic>` prints the same text offline and `rivet docs --list` lists the topics.",
     "Artifacts are YAML files under the paths listed in `sources:` of rivet.yaml. Create and change them with `rivet add` and `rivet modify` rather than by hand, then run `rivet validate`, which exits non-zero on errors.",
     "Filters are s-expressions whose head is an operator, never a field name: `rivet list --filter '(= type \"requirement\")'`.",
-    "Only `rivet verify <ID>` sets an artifact's status to verified, and it refuses without a `verifies` link or a `// rivet: verifies <ID>` source marker.",
+    "Only `rivet verify <ID>` sets status verified. It needs a `// rivet: verifies <ID>` source marker or a `verifies` link from an artifact that is itself verified.",
     "A release is the set of artifacts with a `release:` field; `rivet release status <version>` exits non-zero until every one is release-ready."
   ],
   "url": "https://context7.com/pulseengine/rivet",

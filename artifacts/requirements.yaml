@@ -9505,3 +9505,18 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-10-07T08:00:00Z
+
+  - id: REQ-404
+    type: requirement
+    title: "rivet verify promotes on a verifies link from an artifact that is not itself verified (#1037)"
+    status: verified
+    release: v0.41.0
+    description: "Reported from pulseengine/meld (#1037): rivet verify promoted SR-88 to verified on the presence of one incoming verifies link, from SWV-100, which was only implemented, and whose own description said the proofs had never been built in CI. The requirement outranked its own evidence, and verify silently undid a deliberate implemented set minutes earlier. The output, 'evidence: 1 incoming verifies link(s)', read like a finding but was a count. ACCEPTANCE: a verifies link counts as evidence only when its source artifact is itself verified or later (verified, released, accepted); a link from an artifact below that, or with no status, is named in the output but not counted, and if nothing else counts, verify refuses, names each weak link with its status, and leaves the artifact unchanged; the output names the counted evidence (id and status) instead of a count; source markers stay evidence. IMPLEMENTED: Artifact::carries_verification in rivet-core's model.rs (unit-tested per status, case-insensitive, None claims nothing); cmd_verify partitions incoming verifies links, prints 'evidence: verified by VER-1 (verified)' and 'not counted (not verified themselves): ...', and refuses with 'every artifact that verifies it is unverified itself: VER-1 (implemented)'. A CLI test reproduces the meld case and the positive case; treating every link as evidence again makes it fail with its named assertion. DOGFOOD: rivet has 72 verifies links, all from artifacts that are not verified themselves (43 approved features); no verified requirement of rivet relied on them alone (all were verified by source markers), so the rule invalidates nothing already recorded here. NOT DONE from #1037: a --dry-run for verify, and a warning when verify re-promotes an artifact whose status was set by hand; the chain requirement removes the case that issue hit."
+    tags: [verification, weak-green, cli]
+    fields:
+      category: functional
+      priority: must
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-07T09:30:00Z
