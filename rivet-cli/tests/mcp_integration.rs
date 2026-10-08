@@ -1225,3 +1225,96 @@ async fn test_rivet_coverage_empty_scope_is_null_and_carries_unmodelled() {
     assert_eq!(rv["percentage"], Value::Null);
     assert_eq!(rv["unmodelled"], "verified in a sibling repository");
 }
+
+/// REQ-400: the MCP validate tool and `rivet validate` reach the same verdict
+/// and the same diagnostic set. The fixture has the three defects the issue
+/// named: a file that does not parse, a duplicate ID and an overlapping
+/// source. Before the shared compute step, MCP ran only `validate::validate`
+/// on its cache and missed all three, answering PASS where the CLI FAILed.
+///
+/// rivet: verifies REQ-400
+#[tokio::test]
+async fn test_rivet_validate_matches_the_cli() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    assert!(
+        std::process::Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir"])
+            .arg(dir)
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let req = |id: &str| {
+        format!(
+            "artifacts:\n  - id: {id}\n    type: requirement\n    title: T\n    status: draft\n"
+        )
+    };
+    std::fs::create_dir_all(dir.join("artifacts/more")).unwrap();
+    std::fs::write(dir.join("artifacts/dup-a.yaml"), req("REQ-DUP")).unwrap();
+    std::fs::write(dir.join("artifacts/dup-b.yaml"), req("REQ-DUP")).unwrap();
+    std::fs::write(
+        dir.join("artifacts/broken.yaml"),
+        "artifacts:\n  - id: [unclosed\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join("artifacts/more/m.yaml"), req("REQ-M")).unwrap();
+    let mut config = std::fs::read_to_string(dir.join("rivet.yaml")).unwrap();
+    config = config.replace(
+        "  - path: artifacts\n    format: generic-yaml\n",
+        "  - path: artifacts\n    format: generic-yaml\n  - path: artifacts/more\n    format: generic-yaml\n",
+    );
+    std::fs::write(dir.join("rivet.yaml"), config).unwrap();
+
+    let cli = std::process::Command::new(rivet_bin())
+        .arg("--project")
+        .arg(dir)
+        .args(["validate", "--format", "json"])
+        .output()
+        .expect("rivet validate");
+    let cli_json: Value = serde_json::from_slice(&cli.stdout).expect("CLI JSON");
+
+    let client = spawn_mcp_client(dir).await;
+    let result = client
+        .call_tool(CallToolRequestParams::new("rivet_validate"))
+        .await
+        .expect("call_tool rivet_validate");
+    let mcp_json = parse_result(&result);
+    client.cancel().await.expect("cancel");
+
+    let pairs = |v: &Value| -> std::collections::BTreeSet<(String, String)> {
+        v["diagnostics"]
+            .as_array()
+            .expect("diagnostics array")
+            .iter()
+            .map(|d| {
+                (
+                    d["rule"].as_str().unwrap_or_default().to_string(),
+                    d["artifact_id"].as_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect()
+    };
+    let (cli_set, mcp_set) = (pairs(&cli_json), pairs(&mcp_json));
+    for rule in [
+        "artifact-parse-error",
+        "duplicate-artifact-id",
+        "overlapping-source",
+    ] {
+        assert!(
+            cli_set.iter().any(|(r, _)| r == rule),
+            "fixture must trigger {rule} in the CLI; CLI rules: {cli_set:?}"
+        );
+    }
+    assert_eq!(
+        mcp_json["result"], cli_json["result"],
+        "MCP and CLI verdicts differ; MCP: {mcp_json}"
+    );
+    assert_eq!(mcp_json["result"].as_str(), Some("FAIL"));
+    assert_eq!(
+        mcp_json["errors"], cli_json["errors"],
+        "error counts differ"
+    );
+    assert_eq!(mcp_set, cli_set, "MCP and CLI diagnostic sets differ");
+}

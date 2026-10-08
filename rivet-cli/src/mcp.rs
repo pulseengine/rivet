@@ -337,7 +337,7 @@ impl RivetServer {
 
     #[tool(description = "Validate artifacts against schemas and return diagnostics")]
     fn rivet_validate(&self) -> Result<CallToolResult, McpError> {
-        let result = self.with_project(|proj| Ok(tool_validate_cached(proj)))?;
+        let result = tool_validate(self.dir()).map_err(Self::err)?;
         Ok(CallToolResult::success(vec![Content::text(
             serde_json::to_string_pretty(&result).unwrap_or_default(),
         )]))
@@ -568,7 +568,7 @@ impl ServerHandler for RivetServer {
         let uri = request.uri.as_str();
         match uri {
             "rivet://diagnostics" => {
-                let result = self.with_project(|p| Ok(tool_validate_cached(p)))?;
+                let result = tool_validate(self.dir()).map_err(Self::err)?;
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(
                     serde_json::to_string_pretty(&result).unwrap_or_default(),
                     request.uri.clone(),
@@ -600,29 +600,71 @@ impl ServerHandler for RivetServer {
 
 // ── Cached tool implementations (use pre-loaded McpProject) ─────────────
 
-fn tool_validate_cached(proj: &McpProject) -> Value {
-    let diagnostics = validate::validate(&proj.store, &proj.schema, &proj.graph);
+/// REQ-400: the MCP validate tool reaches the same verdict as `rivet
+/// validate` with no flags, because it runs the CLI's own compute step
+/// (`run_validation`), which writes nothing to stdout (MCP's JSON-RPC
+/// channel). Before, it ran only `validate::validate` on the cached
+/// project, so a parse error, a duplicate ID or an overlapping source was
+/// FAIL on the command line and PASS here. It reads the project from disk,
+/// as the CLI does, rather than from the cache.
+fn tool_validate(project_dir: &Path) -> Result<Value> {
+    // The CLI runs this on the main thread (8 MiB of stack); a tokio worker
+    // has about 2 MiB, and parsing the full clap tree plus a validation run
+    // overflowed it and aborted the server. Run it on its own thread with
+    // room to spare.
+    let dir = project_dir.to_path_buf();
+    std::thread::Builder::new()
+        .name("rivet-mcp-validate".into())
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || validate_on_this_thread(&dir))
+        .context("spawning the validation thread")?
+        .join()
+        .map_err(|_| anyhow::anyhow!("the validation thread panicked"))?
+}
 
-    let errors = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Error)
-        .count();
-    let warnings = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Warning)
-        .count();
-    let infos = diagnostics
-        .iter()
-        .filter(|d| d.severity == Severity::Info)
-        .count();
+fn validate_on_this_thread(project_dir: &Path) -> Result<Value> {
+    use clap::Parser as _;
+    let dir = project_dir.to_string_lossy();
+    let cli = crate::Cli::try_parse_from(["rivet", "--project", dir.as_ref(), "validate"])
+        .context("building the validate invocation")?;
+    let run = crate::run_validation(&cli, &crate::ValidateOptions::default())?;
 
-    let diag_json: Vec<Value> = diagnostics
+    let count = |s: Severity| run.diagnostics.iter().filter(|d| d.severity == s).count();
+    let (errors, warnings, infos) = (
+        count(Severity::Error),
+        count(Severity::Warning),
+        count(Severity::Info),
+    );
+    let cross_repo_broken = run.cross_repo_broken.len();
+
+    let diag_json: Vec<Value> = run
+        .diagnostics
         .iter()
-        .map(|d| json!({"severity": format!("{:?}", d.severity).to_lowercase(), "artifact_id": d.artifact_id, "message": d.message}))
+        .map(|d| {
+            json!({
+                "severity": format!("{:?}", d.severity).to_lowercase(),
+                "artifact_id": d.artifact_id,
+                "rule": d.rule,
+                "message": d.message,
+            })
+        })
         .collect();
 
-    let result_str = if errors > 0 { "FAIL" } else { "PASS" };
-    json!({"result": result_str, "errors": errors, "warnings": warnings, "infos": infos, "diagnostics": diag_json})
+    // The CLI's default `--fail-on error`: errors or broken cross-repo
+    // references fail the run.
+    let result_str = if errors > 0 || cross_repo_broken > 0 {
+        "FAIL"
+    } else {
+        "PASS"
+    };
+    Ok(json!({
+        "result": result_str,
+        "errors": errors,
+        "warnings": warnings,
+        "infos": infos,
+        "cross_repo_broken": cross_repo_broken,
+        "diagnostics": diag_json,
+    }))
 }
 
 fn tool_list_cached(
