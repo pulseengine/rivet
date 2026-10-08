@@ -265,6 +265,59 @@ pub struct ScannedDoc {
     pub status: DocScanStatus,
 }
 
+/// Nested `.md` / `.markdown` files under `dir` that carry YAML frontmatter
+/// but are NOT loaded, because the scanner reads only the top level of each
+/// `docs:` entry (REQ-401 item 3). Without this, a document placed in a
+/// subdirectory was dropped with no warning.
+///
+/// Leaves out files matched by an `exclude` glob (relative to `dir`, as for
+/// the loader) and anything under another configured docs root in `roots`,
+/// which that entry loads itself. Symlinked directories are not followed.
+/// Sorted for deterministic output; unreadable entries are skipped.
+pub fn nested_documents(dir: &Path, exclude: &[String], roots: &[PathBuf]) -> Vec<PathBuf> {
+    let compiled: Vec<regex::Regex> = exclude
+        .iter()
+        .filter_map(|pat| glob_to_regex(pat).ok())
+        .collect();
+    let other_root = |p: &Path| roots.iter().any(|r| r.as_path() != dir && p.starts_with(r));
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                if !other_root(&path) {
+                    stack.push(path);
+                }
+                continue;
+            }
+            // Top-level files are the loader's; only nested ones are reported.
+            if current.as_path() == dir
+                || !path
+                    .extension()
+                    .is_some_and(|ext| ext == "md" || ext == "markdown")
+            {
+                continue;
+            }
+            let rel = path.strip_prefix(dir).unwrap_or(&path).to_string_lossy();
+            if compiled.iter().any(|re| re.is_match(&rel)) {
+                continue;
+            }
+            if std::fs::read_to_string(&path).is_ok_and(|c| c.starts_with("---")) {
+                out.push(path);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 /// Walk `dir` and classify every `.md` / `.markdown` candidate without
 /// emitting stderr warnings.
 ///
@@ -2559,6 +2612,42 @@ See frontmatter.
         assert_eq!(report.loaded, 0);
         assert_eq!(report.warned, 1);
         assert_eq!(report.excluded, 0);
+    }
+
+    // rivet: verifies REQ-401
+    #[test]
+    fn nested_documents_reports_only_skipped_frontmatter_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let doc = "---\nid: D-1\ntitle: T\n---\nbody";
+        std::fs::write(root.join("top.md"), doc).unwrap();
+        for sub in ["design", "design/deep", "drafts", "own", "plain"] {
+            std::fs::create_dir_all(root.join(sub)).unwrap();
+        }
+        std::fs::write(root.join("design/a.md"), doc).unwrap();
+        std::fs::write(root.join("design/deep/b.markdown"), doc).unwrap();
+        std::fs::write(root.join("design/notes.txt"), doc).unwrap();
+        std::fs::write(root.join("drafts/c.md"), doc).unwrap();
+        std::fs::write(root.join("own/d.md"), doc).unwrap();
+        std::fs::write(root.join("plain/readme.md"), "no frontmatter").unwrap();
+
+        let found = nested_documents(
+            root,
+            &["drafts/**".to_string()],
+            &[root.to_path_buf(), root.join("own")],
+        );
+        assert_eq!(
+            found,
+            vec![
+                root.join("design/a.md"),
+                root.join("design/deep/b.markdown")
+            ],
+            "only nested, not excluded, not under another root, with frontmatter"
+        );
+        assert!(
+            nested_documents(&root.join("missing"), &[], &[]).is_empty(),
+            "a missing directory reports nothing"
+        );
     }
 
     // rivet: verifies REQ-010

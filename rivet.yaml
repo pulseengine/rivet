@@ -21,7 +21,15 @@ sources:
     format: generic-yaml
 
 docs:
-  - docs
+  # Subdirectories of docs/ hold material with its own lifecycle and are not
+  # gated (docs/README.md). The scanner reads only the top level and names a
+  # nested file with frontmatter it skips (REQ-401); these are skipped on
+  # purpose.
+  - path: docs
+    exclude:
+      - "design/**"
+      - "historical/**"
+      - "research/**"
   - arch
 
 # `rivet docs check` configuration

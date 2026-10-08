@@ -23,6 +23,13 @@
   block merges.
 
 ### Fixed
+- **A document in a subdirectory is reported, not silently dropped**
+  (REQ-401, #958 item 3) — the docs scanner reads only the top level of each
+  `docs:` entry, but the docs topic said it loaded recursively, so a document
+  placed one level too deep vanished without a word. `rivet validate` now
+  names each nested `.md` file that has frontmatter and is not loaded, with a
+  hint to list its directory as its own `docs:` entry or exclude it; the docs
+  topic says "top level only".
 - **Link-type source and target restrictions are enforced** (REQ-401, #958
   item 1) — `source-types` and `target-types` on a link type were documented
   as restrictions and never checked. A link from or to a type its link type

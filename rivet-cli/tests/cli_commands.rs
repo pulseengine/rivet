@@ -13647,3 +13647,73 @@ fn coverage_on_an_empty_scope_is_na_on_every_cli_surface() {
         "an empty scope must not read as full coverage:\n{text}"
     );
 }
+
+/// REQ-401 item 3: the docs scanner reads only the top level of a `docs:`
+/// entry. A nested `.md` with frontmatter used to be dropped without a word;
+/// `rivet validate` now names it. It stays silent when the file is excluded,
+/// or when its directory is its own `docs:` entry (which then loads it).
+///
+/// rivet: verifies REQ-401
+#[test]
+fn validate_names_a_nested_document_it_does_not_load() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::create_dir_all(dir.join("docs/design")).unwrap();
+    std::fs::write(
+        dir.join("docs/design/arch.md"),
+        "---\nid: DOC-ARCH\ntitle: Architecture\n---\nbody\n",
+    )
+    .unwrap();
+    let config = std::fs::read_to_string(dir.join("rivet.yaml")).unwrap();
+    let validate = |config: &str| {
+        std::fs::write(dir.join("rivet.yaml"), config).unwrap();
+        let out = Command::new(rivet_bin())
+            .args(["--project", dirs, "validate"])
+            .output()
+            .expect("validate");
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let with_docs = |entries: &str| {
+        let mut c: String = config
+            .lines()
+            .filter(|l| !l.starts_with("docs:") && !l.starts_with("  - docs"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        c.push_str(&format!("\ndocs:\n{entries}"));
+        c
+    };
+
+    let stderr = validate(&with_docs("  - docs\n"));
+    assert!(
+        stderr.contains("does not descend into subdirectories")
+            && stderr.contains("design/arch.md has YAML frontmatter and is not loaded"),
+        "the nested document must be named; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("1 nested not scanned"),
+        "the summary must count it; stderr: {stderr}"
+    );
+
+    let stderr = validate(&with_docs(
+        "  - path: docs\n    exclude:\n      - \"design/**\"\n",
+    ));
+    assert!(
+        !stderr.contains("does not descend"),
+        "an excluded nested file must not be reported; stderr: {stderr}"
+    );
+
+    let stderr = validate(&with_docs("  - docs\n  - docs/design\n"));
+    assert!(
+        !stderr.contains("does not descend"),
+        "a directory that is its own docs entry must not be reported; stderr: {stderr}"
+    );
+}
