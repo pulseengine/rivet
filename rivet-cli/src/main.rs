@@ -5856,7 +5856,8 @@ struct ValidationRun {
 }
 
 /// Validation inputs that do not depend on the output format (REQ-400).
-#[derive(Clone, Copy)]
+/// `Default` is a plain `rivet validate` with no flags.
+#[derive(Clone, Copy, Default)]
 struct ValidateOptions<'a> {
     direct: bool,
     skip_external_validation: bool,

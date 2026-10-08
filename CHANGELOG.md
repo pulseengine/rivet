@@ -28,6 +28,12 @@
   block merges.
 
 ### Fixed
+- **The MCP validate tool gives the same verdict as `rivet validate`**
+  (REQ-400, #956 item 3) — it ran only the core validator on its cached
+  project, so a file that did not parse, a duplicate ID or an overlapping
+  source was FAIL on the command line and PASS over MCP. It now runs the CLI's
+  own validation step, reports each diagnostic's `rule` and the count of broken
+  cross-repo references, and reads the project from disk on each call.
 - **`rivet validate` output is byte-identical across runs** (REQ-029, #1049) —
   the salsa conditional-rule query iterated the backing store's `HashMap`
   directly, so warnings for `ai-generated-needs-review` and other
