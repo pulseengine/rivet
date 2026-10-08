@@ -28,6 +28,10 @@
   block merges.
 
 ### Fixed
+- **The static export's nav shows the same EU AI Act badge as the dashboard**
+  (REQ-400, #956) — with the EU AI Act schema loaded and no artifacts, the
+  dashboard showed `0` and the export showed nothing. The STPA type list behind
+  both navs, hand-copied in two places, is now one shared list.
 - **The MCP validate tool gives the same verdict as `rivet validate`**
   (REQ-400, #956 item 3) — it ran only the core validator on its cached
   project, so a file that did not parse, a duplicate ID or an overlapping

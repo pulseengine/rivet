@@ -13003,19 +13003,7 @@ fn cmd_export_html(
         } else {
             String::new()
         };
-        let stpa_types = [
-            "loss",
-            "hazard",
-            "sub-hazard",
-            "system-constraint",
-            "controller",
-            "controlled-process",
-            "control-action",
-            "uca",
-            "controller-constraint",
-            "loss-scenario",
-        ];
-        let stpa_count: usize = stpa_types
+        let stpa_count: usize = rivet_core::export::STPA_TYPES
             .iter()
             .map(|t| state.store.count_by_type(t))
             .sum();
@@ -13033,11 +13021,9 @@ fn cmd_export_html(
                 .iter()
                 .map(|t| state.store.count_by_type(t))
                 .sum();
-            let badge = if eu_count > 0 {
-                format!("<span class=\"nav-badge\">{eu_count}</span>")
-            } else {
-                String::new()
-            };
+            // #956: the dashboard nav shows `0` for a loaded schema with no
+            // artifacts; the export showed nothing. Same badge in both now.
+            let badge = format!("<span class=\"nav-badge\">{eu_count}</span>");
             format!("<li><a href=\"{prefix}eu-ai-act/index.html\">EU AI Act{badge}</a></li>")
         } else {
             String::new()

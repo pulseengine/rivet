@@ -1267,8 +1267,10 @@ pub fn render_validation(diagnostics: &[Diagnostic], config: &ExportConfig) -> S
 
 // ── STPA / STPA-Sec page ─────────────────────────────────────────────────
 
-/// STPA artifact types in analysis order.
-const STPA_TYPES: &[&str] = &[
+/// STPA artifact types in analysis order. The one list: the static export,
+/// the dashboard nav and the HTML export nav all count these (#956; the CLI
+/// held two more hand-copied lists).
+pub const STPA_TYPES: &[&str] = &[
     "loss",
     "hazard",
     "sub-hazard",
