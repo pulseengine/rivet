@@ -423,11 +423,14 @@ pub fn evaluate_conditional_rules(
     // the salsa and `--direct` surfaces never diverge (cf. REQ-146).
     diagnostics.extend(schema.consistency_diagnostics());
 
-    // Evaluate each conditional rule against each artifact (pre-compile regexes)
+    // Evaluate each conditional rule against each artifact (pre-compile regexes).
+    // #1049: iterate in deterministic id-order so pushed diagnostics land in a
+    // stable sequence — the direct path (validate.rs) already does; without this
+    // the salsa path (which the CLI takes) reorders warnings between runs.
     for rule in &schema.conditional_rules {
         let compiled_re = rule.when.compile_regex();
         let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
-        for artifact in store.iter() {
+        for artifact in store.iter_sorted() {
             // If a precondition is set, it must also match
             if let Some(cond) = &rule.condition {
                 if !cond.matches_artifact_with(artifact, condition_re.as_ref()) {
@@ -464,11 +467,12 @@ pub fn evaluate_conditional_rules_with_extras(
     // the salsa and `--direct` surfaces never diverge (cf. REQ-146).
     diagnostics.extend(schema.consistency_diagnostics());
 
-    // Evaluate each conditional rule against each artifact (pre-compile regexes)
+    // Evaluate each conditional rule against each artifact (pre-compile regexes).
+    // #1049: iterate in deterministic id-order — see sibling query above.
     for rule in &schema.conditional_rules {
         let compiled_re = rule.when.compile_regex();
         let condition_re = rule.condition.as_ref().and_then(|c| c.compile_regex());
-        for artifact in store.iter() {
+        for artifact in store.iter_sorted() {
             // If a precondition is set, it must also match
             if let Some(cond) = &rule.condition {
                 if !cond.matches_artifact_with(artifact, condition_re.as_ref()) {
@@ -1352,6 +1356,49 @@ artifacts:
         );
         assert_eq!(cond_diags[0].artifact_id.as_deref(), Some("REQ-010"),);
         assert_eq!(cond_diags[0].severity, crate::schema::Severity::Error);
+    }
+
+    /// #1049: the salsa conditional-rule query must emit diagnostics in a
+    /// deterministic order (ascending by artifact id), so repeated runs of
+    /// `rivet validate` produce byte-identical output. Earlier the direct
+    /// path used `store.iter_sorted()` while the salsa path (the one the CLI
+    /// takes) used `store.iter()` over a `HashMap`, so warnings reordered
+    /// between runs.
+    // rivet: verifies REQ-029
+    #[test]
+    fn conditional_diagnostics_are_sorted_by_artifact_id() {
+        // Many approved-without-description requirements inserted out of id
+        // order. If the query iterates the backing HashMap directly, the
+        // resulting diagnostic sequence does not match the sorted id order.
+        let mut artifacts = String::from("artifacts:\n");
+        let ids = [
+            "REQ-050", "REQ-002", "REQ-100", "REQ-011", "REQ-999", "REQ-030", "REQ-001", "REQ-500",
+            "REQ-020", "REQ-007",
+        ];
+        for id in ids {
+            artifacts.push_str(&format!(
+                "  - id: {id}\n    type: requirement\n    title: {id}\n    status: approved\n",
+            ));
+        }
+
+        let db = RivetDatabase::new();
+        let sources = db.load_sources(&[("reqs.yaml", artifacts.as_str())]);
+        let schemas = db.load_schemas(&[("test", SCHEMA_WITH_CONDITIONAL)]);
+
+        let diags = db.conditional_diagnostics(sources, schemas);
+
+        let fired: Vec<&str> = diags
+            .iter()
+            .filter(|d| d.rule == "approved-needs-desc")
+            .filter_map(|d| d.artifact_id.as_deref())
+            .collect();
+
+        let mut expected: Vec<&str> = ids.to_vec();
+        expected.sort();
+        assert_eq!(
+            fired, expected,
+            "conditional-rule diagnostics must be emitted in ascending id order"
+        );
     }
 
     // ── Test 12: conditional rules do not fire when condition is unmet ───
