@@ -78,11 +78,13 @@ pub(crate) fn render_coverage_view(ctx: &RenderContext) -> String {
         };
 
         let delta_cell = if has_delta {
+            // REQ-400: a baseline rule with nothing to score (null) has no
+            // change to show; a rule the baseline lacks counts from 0.
             let base_pct = bl
                 .and_then(|s| s.coverage.rules.iter().find(|r| r.rule == entry.rule_name))
-                .map_or(0.0, |r| r.percentage);
-            let diff = pct - base_pct;
-            if pct_opt.is_none() || diff.abs() < 0.05 {
+                .map_or(Some(0.0), |r| r.percentage);
+            let diff = base_pct.map_or(0.0, |b| pct - b);
+            if pct_opt.is_none() || base_pct.is_none() || diff.abs() < 0.05 {
                 "<td>—</td>".to_string()
             } else {
                 let (sign, color) = if diff > 0.0 {

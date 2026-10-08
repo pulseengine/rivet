@@ -964,7 +964,7 @@ fn tool_snapshot_capture(project_dir: &Path, name: Option<&str>) -> Result<Value
         "git_commit": git_commit_short,
         "git_dirty": git_dirty,
         "stats_total": snap.stats.total,
-        "coverage_overall": (snap.coverage.overall * 100.0).round() / 100.0,
+        "coverage_overall": snap.coverage.overall.map(|v| (v * 100.0).round() / 100.0),
         "diagnostics_errors": snap.diagnostics.errors,
         "diagnostics_warnings": snap.diagnostics.warnings,
     }))

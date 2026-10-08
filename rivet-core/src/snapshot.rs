@@ -57,7 +57,9 @@ use crate::validate::{self, Diagnostic};
 // ── Snapshot format ─────────────────────────────────────────────────────
 
 /// Schema version for forward compatibility (SC-EMBED-6).
-pub const SCHEMA_VERSION: u32 = 1;
+/// v2 (REQ-400): coverage percentages are `null` for an empty scope instead
+/// of 100. v1 snapshots still read; their recorded 100 stays as recorded.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// A full project snapshot for baseline comparison.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,7 +87,9 @@ pub struct StatsData {
 /// Coverage data captured in a snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CoverageData {
-    pub overall: f64,
+    /// `None` (JSON `null`) when nothing is in scope (REQ-400): the same
+    /// "n/a" every other surface reports, not a green 100.
+    pub overall: Option<f64>,
     pub rules: Vec<CoverageRuleData>,
 }
 
@@ -96,7 +100,8 @@ pub struct CoverageRuleData {
     pub source_type: String,
     pub covered: usize,
     pub total: usize,
-    pub percentage: f64,
+    /// `None` when the rule has nothing to score (REQ-400).
+    pub percentage: Option<f64>,
 }
 
 /// Diagnostics data captured in a snapshot.
@@ -162,9 +167,7 @@ pub fn capture_with_data(
             source_type: e.source_type.clone(),
             covered: e.covered,
             total: e.total,
-            // The snapshot format stores an f64, so an empty scope keeps the
-            // legacy 100 here; changing it is a format break (REQ-387, open).
-            percentage: e.percentage_opt().unwrap_or(100.0),
+            percentage: e.percentage_opt(),
         })
         .collect();
 
@@ -208,7 +211,7 @@ pub fn capture_with_data(
             by_status,
         },
         coverage: CoverageData {
-            overall: coverage_report.overall_coverage_opt().unwrap_or(100.0),
+            overall: coverage_report.overall_coverage_opt(),
             rules,
         },
         diagnostics: DiagnosticsData {
@@ -240,7 +243,9 @@ pub struct StatsDelta {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CoverageDelta {
-    pub overall: f64,
+    /// `None` when either side has nothing in scope: there is no change to
+    /// report against an empty scope (REQ-400).
+    pub overall: Option<f64>,
     pub rules: Vec<CoverageRuleDelta>,
 }
 
@@ -249,7 +254,8 @@ pub struct CoverageRuleDelta {
     pub rule: String,
     pub covered: isize,
     pub total: isize,
-    pub percentage: f64,
+    /// `None` when either side has nothing to score (REQ-400).
+    pub percentage: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -258,6 +264,12 @@ pub struct DiagnosticsDelta {
     pub warnings: isize,
     pub new_count: usize,
     pub resolved_count: usize,
+}
+
+/// The change between two coverage percentages; `None` when either has
+/// nothing in scope (REQ-400).
+fn percentage_delta(current: Option<f64>, baseline: Option<f64>) -> Option<f64> {
+    Some(current? - baseline?)
 }
 
 /// Compute the delta between a baseline snapshot and the current snapshot.
@@ -283,7 +295,11 @@ pub fn compute_delta(baseline: &Snapshot, current: &Snapshot) -> SnapshotDelta {
                 rule: r.rule.clone(),
                 covered: r.covered as isize - base.map_or(0, |b| b.covered as isize),
                 total: r.total as isize - base.map_or(0, |b| b.total as isize),
-                percentage: r.percentage - base.map_or(0.0, |b| b.percentage),
+                // A rule the baseline lacks counts from 0, as before.
+                percentage: percentage_delta(
+                    r.percentage,
+                    base.map_or(Some(0.0), |b| b.percentage),
+                ),
             }
         })
         .collect();
@@ -313,7 +329,7 @@ pub fn compute_delta(baseline: &Snapshot, current: &Snapshot) -> SnapshotDelta {
             by_type,
         },
         coverage: CoverageDelta {
-            overall: current.coverage.overall - baseline.coverage.overall,
+            overall: percentage_delta(current.coverage.overall, baseline.coverage.overall),
             rules: coverage_rules,
         },
         diagnostics: DiagnosticsDelta {
@@ -389,6 +405,83 @@ mod tests {
         assert_eq!(parsed.stats.total, snap.stats.total);
     }
 
+    // rivet: verifies REQ-400
+    /// v2: an empty scope is stored as null, not 100, and serializes so.
+    #[test]
+    fn empty_scope_coverage_is_null_not_100() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let snap = capture(&store, &schema, &graph, &dummy_git());
+        assert_eq!(snap.schema_version, 2);
+        assert_eq!(snap.coverage.overall, None);
+        let json = serde_json::to_value(&snap).unwrap();
+        assert!(json["coverage"]["overall"].is_null(), "{json}");
+    }
+
+    // rivet: verifies REQ-400
+    /// A delta against a side with nothing in scope is null; two scored sides
+    /// subtract; a rule the baseline lacks counts from 0.
+    #[test]
+    fn coverage_deltas_are_null_against_an_empty_scope() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let base = capture(&store, &schema, &graph, &dummy_git());
+        let rule = |pct: Option<f64>| CoverageRuleData {
+            rule: "r".into(),
+            source_type: "requirement".into(),
+            covered: 1,
+            total: 2,
+            percentage: pct,
+        };
+        let mut scored = base.clone();
+        scored.coverage.overall = Some(50.0);
+        scored.coverage.rules = vec![rule(Some(50.0))];
+
+        let from_empty = compute_delta(&base, &scored);
+        assert_eq!(from_empty.coverage.overall, None);
+        assert_eq!(
+            from_empty.coverage.rules[0].percentage,
+            Some(50.0),
+            "new rule counts from 0"
+        );
+
+        let mut later = scored.clone();
+        later.coverage.overall = Some(75.0);
+        later.coverage.rules = vec![rule(Some(75.0))];
+        let d = compute_delta(&scored, &later);
+        assert_eq!(d.coverage.overall, Some(25.0));
+        assert_eq!(d.coverage.rules[0].percentage, Some(25.0));
+
+        let mut emptied = later.clone();
+        emptied.coverage.rules = vec![rule(None)];
+        assert_eq!(
+            compute_delta(&later, &emptied).coverage.rules[0].percentage,
+            None
+        );
+    }
+
+    // rivet: verifies REQ-400
+    /// v1 snapshots (a number, 100 for an empty scope) still read.
+    #[test]
+    fn v1_snapshot_with_a_numeric_overall_still_reads() {
+        let store = Store::new();
+        let schema = Schema::merge(&[]);
+        let graph = LinkGraph::build(&store, &schema);
+        let mut json =
+            serde_json::to_value(capture(&store, &schema, &graph, &dummy_git())).unwrap();
+        json["schema_version"] = serde_json::json!(1);
+        json["coverage"]["overall"] = serde_json::json!(100.0);
+        let parsed: Snapshot = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed.schema_version, 1);
+        assert_eq!(
+            parsed.coverage.overall,
+            Some(100.0),
+            "recorded value stays as recorded"
+        );
+    }
+
     #[test]
     fn delta_empty_snapshots() {
         let store = Store::new();
@@ -398,7 +491,8 @@ mod tests {
 
         let delta = compute_delta(&snap, &snap);
         assert_eq!(delta.stats.total, 0);
-        assert_eq!(delta.coverage.overall, 0.0);
+        // REQ-400: nothing in scope on either side, so no coverage change.
+        assert_eq!(delta.coverage.overall, None);
         assert_eq!(delta.diagnostics.new_count, 0);
         assert_eq!(delta.diagnostics.resolved_count, 0);
     }

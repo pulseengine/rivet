@@ -243,8 +243,9 @@ pub(crate) fn render_stats(ctx: &RenderContext) -> String {
         // different "totals" are not conflated.
         let checks_covered: usize = cov_report.entries.iter().map(|e| e.covered).sum();
         let checks_total: usize = cov_report.entries.iter().map(|e| e.total).sum();
-        let cov_delta = match (bl, overall_opt) {
-            (Some(s), Some(o)) => delta_pct_badge(o, s.coverage.overall),
+        // REQ-400: no delta against a baseline with nothing in scope (null).
+        let cov_delta = match (bl.and_then(|s| s.coverage.overall), overall_opt) {
+            (Some(base), Some(o)) => delta_pct_badge(o, base),
             _ => String::new(),
         };
         html.push_str(&format!(
