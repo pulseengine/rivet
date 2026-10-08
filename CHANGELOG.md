@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+### Added
+- **`rivet verify --dry-run`** (REQ-404, #1037) — reports the evidence and
+  whether the artifact would be advanced, without writing; a refusal still
+  exits non-zero, so a traceability sweep can preview its effect.
+
 ### Security
 - **wasmtime 48.0.3 → 48.0.5** (REQ-402; RUSTSEC-2026-0321 to
   RUSTSEC-2026-0327) — seven advisories against the WASM adapter runtime: a
