@@ -2479,6 +2479,10 @@ fn rewrite_artifact_links(html: &str, req_href: &str) -> String {
 }
 
 /// Combine all reports into a single HTML page with internal anchors.
+///
+/// Computes coverage with no unmodelled rules; use
+/// [`render_single_page_with_unmodelled`] to apply a project's
+/// `coverage.unmodelled-rules`.
 #[allow(clippy::too_many_arguments)]
 pub fn render_single_page(
     store: &Store,
@@ -2489,6 +2493,35 @@ pub fn render_single_page(
     version: &str,
     config: &ExportConfig,
     doc_store: &DocumentStore,
+) -> String {
+    render_single_page_with_unmodelled(
+        store,
+        schema,
+        graph,
+        diagnostics,
+        project_name,
+        version,
+        config,
+        doc_store,
+        &[],
+    )
+}
+
+/// [`render_single_page`] with the project's declared unmodelled rules
+/// applied, so the coverage section and the overview show the same verdict
+/// and the declared reason as the dashboard and `rivet coverage` (REQ-400,
+/// residual of REQ-387).
+#[allow(clippy::too_many_arguments)]
+pub fn render_single_page_with_unmodelled(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    diagnostics: &[Diagnostic],
+    project_name: &str,
+    version: &str,
+    config: &ExportConfig,
+    doc_store: &DocumentStore,
+    unmodelled: &[crate::model::UnmodelledRule],
 ) -> String {
     let timestamp = timestamp_now();
     let css = build_css(config);
@@ -2523,6 +2556,7 @@ pub fn render_single_page(
         project_name,
         version,
         &timestamp,
+        unmodelled,
     ));
     out.push_str("</section>\n<hr>\n");
 
@@ -2576,7 +2610,7 @@ pub fn render_single_page(
 
     // Coverage section
     out.push_str("<section id=\"coverage\">\n");
-    out.push_str(&render_section_coverage(store, schema, graph));
+    out.push_str(&render_section_coverage(store, schema, graph, unmodelled));
     out.push_str("</section>\n<hr>\n");
 
     // Validation section
@@ -2595,6 +2629,7 @@ pub fn render_single_page(
 
 // ── Single-page section renderers (no <html> wrappers) ──────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn render_section_index(
     store: &Store,
     schema: &Schema,
@@ -2603,6 +2638,7 @@ fn render_section_index(
     project_name: &str,
     version: &str,
     timestamp: &str,
+    unmodelled: &[crate::model::UnmodelledRule],
 ) -> String {
     let mut out = String::new();
     writeln!(out, "<h1>{}</h1>", html_escape(project_name)).unwrap();
@@ -2617,7 +2653,7 @@ fn render_section_index(
         .iter()
         .filter(|d| d.severity == Severity::Warning)
         .count();
-    let coverage_report = coverage::compute_coverage(store, schema, graph);
+    let coverage_report = coverage::compute_project_coverage(store, schema, graph, unmodelled);
     let overall_cov = coverage_report.overall_coverage_opt();
 
     out.push_str("<div class=\"summary-grid\">\n");
@@ -2805,9 +2841,14 @@ fn render_section_matrix(store: &Store, graph: &LinkGraph) -> String {
     out
 }
 
-fn render_section_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> String {
+fn render_section_coverage(
+    store: &Store,
+    schema: &Schema,
+    graph: &LinkGraph,
+    unmodelled: &[crate::model::UnmodelledRule],
+) -> String {
     let mut out = String::from("<h1>Coverage Report</h1>\n");
-    let report = coverage::compute_coverage(store, schema, graph);
+    let report = coverage::compute_project_coverage(store, schema, graph, unmodelled);
     let overall = report.overall_coverage_opt();
 
     let cov_class = format!("badge-{}", coverage::coverage_band(overall));
@@ -2828,7 +2869,12 @@ fn render_section_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) ->
         for entry in &report.entries {
             let pct = entry.percentage_opt();
             let cell_class = format!("cell-{}", coverage::coverage_band(pct));
-            let pct_label = coverage::format_percentage(pct);
+            // REQ-400: an unmodelled rule names its declared reason, as the
+            // dashboard does, instead of a bare n/a.
+            let pct_label = match &entry.unmodelled {
+                Some(reason) => format!("n/a — unmodelled: {}", html_escape(reason)),
+                None => coverage::format_percentage(pct),
+            };
             writeln!(
                 out,
                 "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td>\
@@ -3286,6 +3332,7 @@ mod tests {
             "Test",
             "0.1.0",
             "now",
+            &[],
         );
         assert!(index.starts_with("<h1>Test</h1>\n"), "index: {index}");
         assert!(
@@ -3293,7 +3340,7 @@ mod tests {
             "index coverage card: {index}"
         );
 
-        let section = render_section_coverage(&store, &schema, &graph);
+        let section = render_section_coverage(&store, &schema, &graph, &[]);
         assert!(
             section.starts_with("<h1>Coverage Report</h1>\n<p>Overall coverage: "),
             "coverage section: {section}"
@@ -3306,7 +3353,7 @@ mod tests {
         let empty = Store::new();
         let empty_graph = LinkGraph::build(&empty, &schema);
         assert!(
-            render_section_coverage(&empty, &schema, &empty_graph)
+            render_section_coverage(&empty, &schema, &empty_graph, &[])
                 .contains("<span class=\"badge badge-na\">n/a</span>"),
             "an empty scope is n/a"
         );
@@ -3567,6 +3614,32 @@ mod tests {
     }
 
     // rivet: verifies REQ-035
+    // rivet: verifies REQ-400
+    /// Residual of REQ-387: the single-page coverage section showed a bare
+    /// n/a for a rule the project declares unmodelled; the dashboard and
+    /// `rivet coverage` show the declared reason. Same verdict here now.
+    #[test]
+    fn single_page_coverage_names_the_unmodelled_reason() {
+        let (store, schema, graph, _) = test_fixtures();
+        let rule = coverage::compute_coverage(&store, &schema, &graph)
+            .entries
+            .first()
+            .expect("the fixture schema has a rule")
+            .rule_name
+            .clone();
+        let declared = vec![crate::model::UnmodelledRule {
+            rule: rule.clone(),
+            reason: "tracked in the supplier's tool".to_string(),
+        }];
+        let section = render_section_coverage(&store, &schema, &graph, &declared);
+        assert!(
+            section.contains("n/a — unmodelled: tracked in the supplier's tool"),
+            "the declared reason must be shown; {section}"
+        );
+        let plain = render_section_coverage(&store, &schema, &graph, &[]);
+        assert!(!plain.contains("unmodelled"), "no declaration, no reason");
+    }
+
     // rivet: verifies REQ-401
     #[test]
     fn config_hooks_are_one_shared_copy() {

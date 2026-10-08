@@ -12943,7 +12943,14 @@ fn cmd_export_html(
         };
         let project_name = state.context.project_name.clone();
         let version = env!("CARGO_PKG_VERSION").to_string();
-        let html = rivet_core::export::render_single_page(
+        // REQ-400: apply the project's declared unmodelled rules, as the
+        // dashboard and `rivet coverage` do.
+        let unmodelled = state
+            .config
+            .coverage
+            .as_ref()
+            .map_or(&[][..], |c| &c.unmodelled_rules);
+        let html = rivet_core::export::render_single_page_with_unmodelled(
             &state.store,
             &state.schema,
             &state.graph,
@@ -12952,6 +12959,7 @@ fn cmd_export_html(
             &version,
             &config,
             &state.doc_store,
+            unmodelled,
         );
         let out_dir = output.unwrap_or(std::path::Path::new("dist"));
         std::fs::create_dir_all(out_dir)

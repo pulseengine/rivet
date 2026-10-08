@@ -14068,3 +14068,52 @@ fn export_html_writes_and_loads_config_js() {
     let single = std::fs::read_to_string(dir.join("s/index.html")).unwrap();
     assert!(single.contains("<script src=\"./config.js\"></script>"));
 }
+
+/// REQ-400 (residual of REQ-387): `export --single-page` applies the
+/// project's `coverage.unmodelled-rules`, showing the declared reason like the
+/// dashboard and `rivet coverage`, instead of a bare n/a.
+///
+/// rivet: verifies REQ-400
+#[test]
+fn single_page_export_shows_the_declared_unmodelled_reason() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let mut config = std::fs::read_to_string(dir.join("rivet.yaml")).unwrap();
+    config.push_str(
+        "\ncoverage:\n  unmodelled-rules:\n    - rule: requirement-coverage\n      reason: handled elsewhere\n",
+    );
+    std::fs::write(dir.join("rivet.yaml"), config).unwrap();
+    let out_dir = dir.join("s");
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "export",
+            "--format",
+            "html",
+            "--single-page",
+            "--output",
+        ])
+        .arg(&out_dir)
+        .output()
+        .expect("export");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let html = std::fs::read_to_string(out_dir.join("index.html")).unwrap();
+    assert!(
+        html.contains("n/a — unmodelled: handled elsewhere"),
+        "the single page must show the declared unmodelled reason"
+    );
+}
