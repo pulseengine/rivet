@@ -60,7 +60,8 @@ var RIVET_EXPORT = {
     { "label": "v0.2.0", "path": "../v0.2.0/" }
   ],
 
-  // Optional: external CSS URL to replace embedded styles
+  // Optional: external CSS URL. Replaces the inline styles of the core
+  // pages; on the multi-page export it loads after the shared stylesheet.
   // externalCss: "/main.css",
 };
 ```

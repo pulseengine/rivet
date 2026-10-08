@@ -12837,6 +12837,52 @@ fn rewrite_static_links(
     out
 }
 
+/// REQ-401 item 2: write the export's `config.js` from `--homepage`,
+/// `--version-label` and `--versions`. Every exported page loads it and fills
+/// its home link and version switcher. The label defaults to rivet.yaml's
+/// `project.version`, else "dev"; a `--versions` value that is not a JSON
+/// array of `{"label", "path"}` objects is an error rather than ignored.
+#[cfg(feature = "serve")]
+fn write_export_config_js(
+    out_dir: &std::path::Path,
+    project_path: &std::path::Path,
+    project_name: &str,
+    homepage: Option<&str>,
+    version_label: Option<&str>,
+    versions_json: Option<&str>,
+) -> Result<()> {
+    #[derive(serde::Deserialize)]
+    struct Entry {
+        label: String,
+        path: String,
+    }
+    let versions: Vec<rivet_core::export::VersionEntry> = match versions_json {
+        None => Vec::new(),
+        Some(raw) => serde_json::from_str::<Vec<Entry>>(raw)
+            .with_context(|| {
+                format!(
+                    "--versions must be a JSON array of {{\"label\", \"path\"}} objects, got: {raw}"
+                )
+            })?
+            .into_iter()
+            .map(|e| rivet_core::export::VersionEntry {
+                label: e.label,
+                path: e.path,
+            })
+            .collect(),
+    };
+    let project_version = rivet_core::load_project_config(&project_path.join("rivet.yaml"))
+        .ok()
+        .and_then(|c| c.project.version);
+    let label = version_label
+        .map(str::to_string)
+        .or(project_version)
+        .unwrap_or_else(|| "dev".to_string());
+    let js = rivet_core::export::generate_config_js(homepage, &label, &versions, project_name);
+    let path = out_dir.join("config.js");
+    std::fs::write(&path, js).with_context(|| format!("writing {}", path.display()))
+}
+
 /// This generates one standalone `.html` file per view, using the same
 /// render functions as `rivet serve`. No HTMX is included — all links
 /// are plain `<a href="...">` anchors that work in any static file server
@@ -12849,9 +12895,9 @@ fn cmd_export_html(
     single_page: bool,
     theme: &str,
     offline: bool,
-    _homepage: Option<&str>,
-    _version_label: Option<&str>,
-    _versions_json: Option<&str>,
+    homepage: Option<&str>,
+    version_label: Option<&str>,
+    versions_json: Option<&str>,
     sexpr_filter: Option<&str>,
     variant: Option<&str>,
 ) -> Result<bool> {
@@ -12910,6 +12956,14 @@ fn cmd_export_html(
         let out_dir = output.unwrap_or(std::path::Path::new("dist"));
         std::fs::create_dir_all(out_dir)
             .with_context(|| format!("creating {}", out_dir.display()))?;
+        write_export_config_js(
+            out_dir,
+            &project_path,
+            &project_name,
+            homepage,
+            version_label,
+            versions_json,
+        )?;
         let out_file = out_dir.join("index.html");
         std::fs::write(&out_file, &html)
             .with_context(|| format!("writing {}", out_file.display()))?;
@@ -12991,6 +13045,10 @@ fn cmd_export_html(
         let depth = rel_path.matches('/').count();
         let prefix: String = "../".repeat(depth);
         let version = env!("CARGO_PKG_VERSION");
+        // REQ-401 item 2: the config.js loader and its nav placeholders, shared
+        // with the core export pages.
+        let config_runtime = rivet_core::export::config_runtime_script();
+        let config_hooks = rivet_core::export::config_nav_placeholders();
         let project_name = &state.context.project_name;
         let error_badge = if error_count > 0 {
             format!("<span class=\"nav-badge nav-badge-error\">{error_count}</span>")
@@ -13038,6 +13096,9 @@ fn cmd_export_html(
 <link rel="stylesheet" href="{prefix}_assets/styles.css">
 <script src="{prefix}_assets/mermaid.min.js"></script>
 <script src="{prefix}_assets/svg-viewer.js"></script>
+<script>window.RIVET_EXPORT_ROOT="{prefix}";</script>
+<script src="{prefix}config.js"></script>
+{config_runtime}
 <script>
 mermaid.initialize({{startOnLoad:false,theme:'neutral',securityLevel:'strict'}});
 document.addEventListener('DOMContentLoaded',function(){{
@@ -13049,7 +13110,7 @@ document.addEventListener('DOMContentLoaded',function(){{
 <div class="shell">
 <nav role="navigation" aria-label="Main navigation">
   <h1>Rivet</h1>
-  <ul>
+{config_hooks}  <ul>
     <li><a href="{prefix}index.html">Overview
       <span class="nav-badge">{artifact_count}</span></a></li>
     <li><a href="{prefix}artifacts/index.html">Artifacts
@@ -13084,6 +13145,14 @@ document.addEventListener('DOMContentLoaded',function(){{
 
     let out_dir = output.unwrap_or(std::path::Path::new("dist"));
     std::fs::create_dir_all(out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
+    write_export_config_js(
+        out_dir,
+        &project_path,
+        &state.context.project_name,
+        homepage,
+        version_label,
+        versions_json,
+    )?;
 
     // REQ-088: write CSS + JS to a shared `_assets/` directory once,
     // instead of inlining ~3MB of mermaid.min.js into every page. With
