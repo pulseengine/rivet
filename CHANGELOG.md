@@ -28,6 +28,14 @@
   block merges.
 
 ### Fixed
+- **`rivet validate` output is byte-identical across runs** (REQ-029, #1049) —
+  the salsa conditional-rule query iterated the backing store's `HashMap`
+  directly, so warnings for `ai-generated-needs-review` and other
+  conditional rules reordered between runs. The direct `validate` path
+  already iterated by sorted id (#746); the salsa path (the one the CLI
+  takes) now does too, so repeated `rivet validate` and
+  `rivet validate --format json` runs on the same inputs produce
+  byte-identical stdout, and diff-based golden checks stop seeing noise.
 - **`--vendor-schemas` no longer claims to pin everything** (REQ-401, #958
   item 4) — the help and the schema docs said a vendored set is immune to
   release-to-release rule drift. A vendored bridge does load from disk, but a

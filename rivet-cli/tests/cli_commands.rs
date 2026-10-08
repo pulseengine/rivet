@@ -703,6 +703,46 @@ fn validate_json() {
     );
 }
 
+/// #1049: `rivet validate` on the same inputs must produce byte-identical
+/// output across runs — otherwise any diff-based or golden check is noisy
+/// and a real regression can hide among reordered diagnostics. The
+/// conditional-rule pass used to iterate a hash-ordered store, so warnings
+/// moved between runs. The test exercises the real project (which has
+/// many `ai-generated-needs-review` conditional-rule hits) in both the
+/// default text format and `--format json`.
+#[test]
+fn validate_output_is_byte_identical_across_runs() {
+    let project = project_root();
+    let project_s = project.to_str().unwrap();
+
+    for format in ["text", "json"] {
+        let args: &[&str] = if format == "json" {
+            &["--project", project_s, "validate", "--format", "json"]
+        } else {
+            &["--project", project_s, "validate"]
+        };
+
+        let out1 = Command::new(rivet_bin())
+            .args(args)
+            .output()
+            .expect("rivet validate (1)");
+        let out2 = Command::new(rivet_bin())
+            .args(args)
+            .output()
+            .expect("rivet validate (2)");
+
+        assert_eq!(
+            out1.stdout, out2.stdout,
+            "`rivet validate` ({format}) stdout must be byte-identical across runs"
+        );
+        assert_eq!(
+            out1.status.code(),
+            out2.status.code(),
+            "`rivet validate` ({format}) exit code must be stable across runs"
+        );
+    }
+}
+
 /// REQ-062 / F2: `rivet validate` must surface a malformed artifact file
 /// as an Error diagnostic — not swallow it to a stderr log line under a
 /// green PASS. A file with top-level `id:`/`type:` (an artifact written
