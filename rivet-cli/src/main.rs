@@ -299,9 +299,11 @@ enum Command {
 
         /// Vendor the resolved built-in schemas (and their auto-discovered
         /// bridges) into the project's `schemas/` directory, pinning validation
-        /// against rivet upgrades. The loader prefers on-disk schemas over
-        /// the binary's embedded copies, so a vendored set is immune to
-        /// release-to-release rule drift. Existing files are not overwritten.
+        /// against rivet upgrades. The loader prefers an on-disk schema or
+        /// bridge over the binary's embedded copy. A bridge rivet discovers
+        /// that is not on disk (for example one a later release adds) still
+        /// loads from the binary; `rivet validate` labels it `(embedded)`.
+        /// Existing files are not overwritten.
         #[arg(long)]
         vendor_schemas: bool,
     },
@@ -4559,9 +4561,10 @@ sources:
 
     // #431: vendor the resolved schema set (plus bridges) on-disk so validation
     // is pinned against rivet upgrades. The loader prefers `schemas/<name>.yaml`
-    // over the embedded copy, so a vendored project is immune to release-to-
-    // release rule drift. Existing files are left untouched (never clobber a
-    // locally-edited schema).
+    // over the embedded copy. REQ-401 item 4: that pins what is vendored, not
+    // everything. A bridge that auto-discovery finds and that is not on disk
+    // (one a later release adds) still loads from the binary. Existing files
+    // are left untouched (never clobber a locally-edited schema).
     if vendor_schemas {
         let schemas_dir = dir.join("schemas");
         std::fs::create_dir_all(&schemas_dir)
