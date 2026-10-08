@@ -18340,6 +18340,16 @@ impl ProjectContext {
 
         let mut doc_store = DocumentStore::new();
         let mut total = rivet_core::document::ScanReport::default();
+        // REQ-401 item 3: the scanner reads only the top level of each
+        // `docs:` entry. A nested file with frontmatter is a document the
+        // user expects to load, so it is named instead of dropped silently.
+        let roots: Vec<std::path::PathBuf> = ctx
+            .config
+            .docs
+            .iter()
+            .map(|e| cli.project.join(e.path()))
+            .collect();
+        let mut nested = 0usize;
         for entry in &ctx.config.docs {
             let dir = cli.project.join(entry.path());
             let (docs, report) = document::load_documents_with_report(&dir, entry.exclude())
@@ -18348,11 +18358,19 @@ impl ProjectContext {
                 doc_store.insert(doc);
             }
             total.merge(&report);
+            for path in document::nested_documents(&dir, entry.exclude(), &roots) {
+                nested += 1;
+                eprintln!(
+                    "warning: rivet doc scanner does not descend into subdirectories; {} has YAML frontmatter and is not loaded\n  \
+                     hint: add its directory as its own docs: entry in rivet.yaml, or add the path to docs[].exclude",
+                    path.display()
+                );
+            }
         }
-        if total.warned > 0 || total.excluded > 0 {
+        if total.warned > 0 || total.excluded > 0 || nested > 0 {
             eprintln!(
-                "rivet docs: {} loaded, {} skipped (warnings above), {} excluded by allowlist",
-                total.loaded, total.warned, total.excluded,
+                "rivet docs: {} loaded, {} skipped (warnings above), {} excluded by allowlist, {} nested not scanned",
+                total.loaded, total.warned, total.excluded, nested,
             );
         }
         ctx.doc_store = Some(doc_store);

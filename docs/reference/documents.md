@@ -13,11 +13,15 @@ YAML frontmatter, and scanned for artifact references.
 ```yaml
 # rivet.yaml
 docs:
-  - docs        # loads docs/*.md recursively
-  - arch        # loads arch/*.md recursively
+  - docs        # loads docs/*.md (top level only)
+  - arch        # loads arch/*.md (top level only)
 ```
 
 Each `.md` file becomes a document in the dashboard's Documents view.
+Subdirectories are not scanned: list one as its own entry (for example
+`- docs/design`) to load it. `rivet validate` names any nested `.md` file
+that has frontmatter but is not loaded, so a document placed one level too
+deep is reported rather than dropped; add it to `exclude:` to silence that.
 
 ## Frontmatter
 
