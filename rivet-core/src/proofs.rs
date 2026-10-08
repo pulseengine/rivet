@@ -5,8 +5,22 @@
 //! only when `cfg(kani)` is active (i.e. when running `cargo kani`).
 //!
 //! **Running:** Install Kani, then `cargo kani -p rivet-core`.
+//!
+//! **Parked harnesses (REQ-391, maintainer decision 2026-10-08).** Only
+//! harnesses that verify within CI's budget run by default. 26 of the 27 are
+//! gated behind `cfg(kani_slow)`: on Linux (Kani 0.67.0, CBMC 6.8.0) 25 timed
+//! out at 3 minutes and one stopped on an unsupported `syscall` (HashMap
+//! seeding). The cost is CBMC's model of `String`, `Vec` and `HashMap`, not
+//! the properties: `proof_strip_html_tags_no_panic` produced a 373,501-step
+//! formula for eight input bytes that neither MiniSat nor CaDiCaL solved in
+//! 20 minutes. A parked harness proves nothing until it is rewritten so that
+//! CBMC can solve it; do not cite it as verification evidence. Run them with
+//! `RUSTFLAGS="--cfg kani_slow" cargo kani -p rivet-core`.
 
+// Imports and helpers used only by parked harnesses are unused when
+// `kani_slow` is off; they stay so the parked harnesses keep compiling.
 #[cfg(kani)]
+#[cfg_attr(not(kani_slow), allow(unused_imports, dead_code))]
 mod proofs {
     use std::collections::BTreeMap;
 
@@ -89,6 +103,7 @@ mod proofs {
     /// Proves that `parse_artifact_ref` never panics for any string input
     /// up to 64 bytes.  This covers all possible combinations of colons,
     /// ASCII letters, digits, punctuation, and empty strings.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(66)]
     fn proof_parse_artifact_ref_no_panic() {
@@ -141,6 +156,7 @@ mod proofs {
     /// Proves that `Store::insert` never panics for any artifact with
     /// bounded-length fields.  The function may return Ok or Err, but
     /// must not panic.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_store_insert_no_panic() {
         let mut store = Store::new();
@@ -179,6 +195,7 @@ mod proofs {
     /// Proves that inserting an artifact with the same ID twice always
     /// returns `Err` on the second call, while the first always succeeds
     /// on an empty store.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_store_duplicate_returns_error() {
         let mut store = Store::new();
@@ -256,6 +273,7 @@ mod proofs {
     /// all enum variants without hitting an unreachable state.  We
     /// construct a schema with every cardinality variant and verify that
     /// validate() processes them all without panicking.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_cardinality_exhaustive() {
         let cardinalities = [
@@ -338,6 +356,7 @@ mod proofs {
     /// Proves that `compute_coverage` produces a report where every
     /// entry has covered <= total and percentage in [0.0, 100.0], and
     /// the overall coverage is also bounded.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_compute_coverage_report_bounds() {
         let schema = schema_with_rule();
@@ -380,6 +399,7 @@ mod proofs {
 
     /// Proves that merging a schema with itself produces the same number
     /// of artifact types and link types (idempotence).
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_schema_merge_idempotent() {
         let file = SchemaFile {
@@ -423,6 +443,7 @@ mod proofs {
 
     /// Proves that an artifact with no links (inserted alone) is always
     /// detected as an orphan.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_linkgraph_lone_artifact_is_orphan() {
         let schema = empty_schema();
@@ -447,6 +468,7 @@ mod proofs {
     // ── 9. LinkGraph: has_cycles is false for DAG ───────────────────────
 
     /// Proves that a simple chain A -> B -> C (a DAG) has no cycles.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_linkgraph_dag_no_cycles() {
         let schema = empty_schema();
@@ -482,6 +504,7 @@ mod proofs {
     // ── 10. LinkGraph: cycle detection ──────────────────────────────────
 
     /// Proves that a cycle A -> B -> A is correctly detected.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_linkgraph_cycle_detected() {
         let schema = empty_schema();
@@ -636,6 +659,7 @@ mod proofs {
     /// The expression space includes all logical connectives, boolean
     /// literals, tag predicates, and field-equality checks — exercising
     /// every branch in the top-level pattern match.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(20)]
     fn proof_sexpr_check_no_panic() {
@@ -657,6 +681,7 @@ mod proofs {
 
     /// Exhaustively proves De Morgan's law for AND over all expression
     /// pairs up to depth 2.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(20)]
     fn proof_sexpr_de_morgan_and() {
@@ -685,6 +710,7 @@ mod proofs {
 
     /// Exhaustively proves double negation elimination for all expressions
     /// up to depth 2.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(20)]
     fn proof_sexpr_double_negation() {
@@ -711,6 +737,7 @@ mod proofs {
 
     /// Exhaustively proves that implies is equivalent to its disjunctive
     /// expansion for all expression pairs up to depth 2.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(20)]
     fn proof_sexpr_implies_expansion() {
@@ -739,6 +766,7 @@ mod proofs {
 
     /// Exhaustively proves that excludes is the negation of conjunction
     /// for all expression pairs up to depth 2.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(20)]
     fn proof_sexpr_excludes_expansion() {
@@ -769,6 +797,7 @@ mod proofs {
 
     /// Proves that `parse_commit_type` never panics for any string input
     /// up to 16 bytes of printable ASCII.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(18)]
     fn proof_parse_commit_type_no_panic() {
@@ -798,6 +827,7 @@ mod proofs {
 
     /// Proves that `extract_artifact_ids` never panics for any string input
     /// up to 16 bytes of printable ASCII.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(18)]
     fn proof_extract_artifact_ids_no_panic() {
@@ -824,6 +854,7 @@ mod proofs {
 
     /// Proves that `expand_artifact_range` never panics for any 12-byte
     /// ASCII input and always returns at least one element.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(14)]
     fn proof_expand_artifact_range_no_panic() {
@@ -849,6 +880,7 @@ mod proofs {
 
     /// Proves that `parse_trailers` never panics for any 24-byte ASCII
     /// input (enough for "Key: Value\nKey2: Val2").
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(26)]
     fn proof_parse_trailers_no_panic() {
@@ -881,6 +913,7 @@ mod proofs {
 
     /// Proves that `Store::upsert` never panics and that the artifact is
     /// retrievable after upsert.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_store_upsert_no_panic() {
         let mut store = Store::new();
@@ -908,6 +941,7 @@ mod proofs {
 
     /// Proves that `ArtifactDiff::compute` never panics for any pair of
     /// stores with up to 3 artifacts each.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_artifact_diff_no_panic() {
         let mut base = Store::new();
@@ -944,6 +978,7 @@ mod proofs {
 
     /// Proves that `prefix_for_type` never panics and returns a non-empty
     /// string for any non-empty type name.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_prefix_for_type_no_panic() {
         let store = Store::new();
@@ -965,6 +1000,7 @@ mod proofs {
 
     /// Proves that `next_id` never panics and produces IDs with the
     /// correct prefix.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_next_id_no_panic() {
         let mut store = Store::new();
@@ -991,6 +1027,7 @@ mod proofs {
 
     /// Proves that `validate_link` returns Err when the source artifact
     /// does not exist in the store.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_validate_link_rejects_missing_source() {
         let store = Store::new();
@@ -1008,6 +1045,7 @@ mod proofs {
 
     /// Proves that `validate_link` returns Err when the target artifact
     /// does not exist and is not an external reference.
+    #[cfg(kani_slow)]
     #[kani::proof]
     fn proof_validate_link_rejects_missing_target() {
         let mut store = Store::new();
@@ -1028,6 +1066,7 @@ mod proofs {
     use crate::markdown;
 
     /// Proves that `render_markdown` never panics for any 16-byte input.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(18)]
     fn proof_render_markdown_no_panic() {
@@ -1053,6 +1092,7 @@ mod proofs {
 
     /// Proves that `strip_html_tags` never panics and never produces
     /// output containing `<` or `>`.
+    #[cfg(kani_slow)]
     #[kani::proof]
     #[kani::unwind(18)]
     fn proof_strip_html_tags_no_panic() {
