@@ -28,6 +28,10 @@
   block merges.
 
 ### Fixed
+- **The single-page export names a declared unmodelled rule's reason**
+  (REQ-400, #956) — it showed a bare `n/a` for a rule the project lists in
+  `coverage.unmodelled-rules`, where the dashboard and `rivet coverage` show
+  `n/a — unmodelled: <reason>`. It now applies the project's declarations.
 - **The static export's nav shows the same EU AI Act badge as the dashboard**
   (REQ-400, #956) — with the EU AI Act schema loaded and no artifacts, the
   dashboard showed `0` and the export showed nothing. The STPA type list behind
