@@ -88,19 +88,7 @@ pub(crate) fn page_layout_with_variant(
     } else {
         String::new()
     };
-    let stpa_types = [
-        "loss",
-        "hazard",
-        "sub-hazard",
-        "system-constraint",
-        "controller",
-        "controlled-process",
-        "control-action",
-        "uca",
-        "controller-constraint",
-        "loss-scenario",
-    ];
-    let stpa_count: usize = stpa_types
+    let stpa_count: usize = rivet_core::export::STPA_TYPES
         .iter()
         .map(|t| state.store.count_by_type(t))
         .sum();

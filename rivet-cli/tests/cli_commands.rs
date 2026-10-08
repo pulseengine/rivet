@@ -13932,3 +13932,42 @@ fn validate_json_with_baseline_is_pure_json() {
         "text mode still shows the baseline header"
     );
 }
+
+/// #956 lower tier: the EU AI Act nav badge in the static HTML export showed
+/// nothing for a loaded schema with no artifacts, while the dashboard nav
+/// showed `0`. Both now show `0`.
+///
+/// rivet: verifies REQ-400
+#[test]
+fn export_nav_shows_a_zero_eu_ai_act_badge_like_the_dashboard() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--schema", "eu-ai-act", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    for entry in std::fs::read_dir(dir.join("artifacts")).unwrap() {
+        std::fs::remove_file(entry.unwrap().path()).unwrap();
+    }
+    let out_dir = dir.join("dist");
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "export", "--format", "html", "--output"])
+        .arg(&out_dir)
+        .output()
+        .expect("export");
+    assert!(
+        out.status.success(),
+        "export must succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let index = std::fs::read_to_string(out_dir.join("index.html")).expect("index.html");
+    assert!(
+        index.contains("EU AI Act<span class=\"nav-badge\">0</span>"),
+        "the export nav must show a 0 badge for a loaded EU AI Act schema with no artifacts"
+    );
+}
