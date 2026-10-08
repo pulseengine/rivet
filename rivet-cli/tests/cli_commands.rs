@@ -13971,3 +13971,100 @@ fn export_nav_shows_a_zero_eu_ai_act_badge_like_the_dashboard() {
         "the export nav must show a 0 badge for a loaded EU AI Act schema with no artifacts"
     );
 }
+
+/// REQ-401 item 2: `export --format html` documented `--homepage`,
+/// `--version-label`, `--versions` and a generated `config.js`, and ignored
+/// all of them. It now writes `config.js`, every page loads it with a root
+/// prefix that matches its depth, the label defaults to rivet.yaml's version,
+/// a malformed `--versions` is an error, and the single page loads it too.
+///
+/// rivet: verifies REQ-401
+#[test]
+fn export_html_writes_and_loads_config_js() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let export = |out: &str, extra: &[&str]| {
+        Command::new(rivet_bin())
+            .args(["--project", dirs, "export", "--format", "html", "--output"])
+            .arg(dir.join(out))
+            .args(extra)
+            .output()
+            .expect("export")
+    };
+
+    let out = export(
+        "d",
+        &[
+            "--homepage",
+            "https://example.org/projects/",
+            "--version-label",
+            "v9",
+            "--versions",
+            r#"[{"label":"v8","path":"../v8/"}]"#,
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let config = std::fs::read_to_string(dir.join("d/config.js")).expect("config.js is written");
+    assert!(
+        config.contains("homepage: \"https://example.org/projects/\""),
+        "{config}"
+    );
+    assert!(config.contains("versionLabel: \"v9\""), "{config}");
+    assert!(
+        config.contains("\"label\": \"v8\", \"path\": \"../v8/\""),
+        "{config}"
+    );
+    let index = std::fs::read_to_string(dir.join("d/index.html")).unwrap();
+    assert!(
+        index.contains("<script src=\"config.js\"></script>"),
+        "index loads config.js"
+    );
+    assert!(index.contains("window.RIVET_EXPORT_ROOT=\"\";"));
+    assert!(index.contains("id=\"home-link\"") && index.contains("id=\"version-select\""));
+    let nested = std::fs::read_dir(dir.join("d/help/schema"))
+        .expect("help/schema pages")
+        .filter_map(|e| e.ok())
+        .find(|e| e.path().extension().is_some_and(|x| x == "html"))
+        .expect("a nested page")
+        .path();
+    let nested = std::fs::read_to_string(nested).unwrap();
+    assert!(nested.contains("<script src=\"../../config.js\"></script>"));
+    assert!(nested.contains("window.RIVET_EXPORT_ROOT=\"../../\";"));
+
+    let out = export("e", &[]);
+    assert!(out.status.success());
+    let config = std::fs::read_to_string(dir.join("e/config.js")).unwrap();
+    assert!(
+        config.contains("versionLabel: \"0.1.0\""),
+        "the label defaults to rivet.yaml's project.version; {config}"
+    );
+
+    let out = export("f", &["--versions", "not json"]);
+    assert!(!out.status.success(), "a malformed --versions is an error");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--versions must be a JSON array"));
+
+    let out = export(
+        "s",
+        &["--single-page", "--homepage", "https://example.org/"],
+    );
+    assert!(out.status.success());
+    assert!(
+        dir.join("s/config.js").exists(),
+        "the single page gets config.js"
+    );
+    let single = std::fs::read_to_string(dir.join("s/index.html")).unwrap();
+    assert!(single.contains("<script src=\"./config.js\"></script>"));
+}

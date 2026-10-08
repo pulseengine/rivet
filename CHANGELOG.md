@@ -32,6 +32,13 @@
   (REQ-400, #956) — with the EU AI Act schema loaded and no artifacts, the
   dashboard showed `0` and the export showed nothing. The STPA type list behind
   both navs, hand-copied in two places, is now one shared list.
+- **The HTML export's `--homepage`, `--version-label` and `--versions`
+  work** (REQ-401, #958 item 2) — they were documented as writing a
+  `config.js` that adds a home link and a version switcher, and were ignored:
+  no `config.js` was written and no page loaded one. The export now writes it
+  (the label defaults to rivet.yaml's `project.version`, a malformed
+  `--versions` is an error), every page loads it with paths that resolve from
+  nested pages, and the single-page export loads it too.
 - **The MCP validate tool gives the same verdict as `rivet validate`**
   (REQ-400, #956 item 3) — it ran only the core validator on its cached
   project, so a file that did not parse, a duplicate ID or an overlapping

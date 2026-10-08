@@ -470,10 +470,13 @@ document.addEventListener('DOMContentLoaded', function() {
   if (sel && cfg.versionLabel) {
     sel.options[0].textContent = cfg.versionLabel;
   }
+  // Version paths are relative to the export root; a page below the root
+  // sets RIVET_EXPORT_ROOT (e.g. "../") so they still resolve (REQ-401).
+  var root = window.RIVET_EXPORT_ROOT || '';
   if (sel && cfg.versions && cfg.versions.length > 0) {
     cfg.versions.forEach(function(v) {
       var opt = document.createElement('option');
-      opt.value = v.path;
+      opt.value = /^([a-z][a-z0-9+.-]*:|\/)/i.test(v.path) ? v.path : root + v.path;
       opt.textContent = v.label;
       sel.appendChild(opt);
     });
@@ -482,6 +485,27 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 "#;
+
+/// The `config.js` runtime loader: reads `window.RIVET_EXPORT` and fills the
+/// [`config_nav_placeholders`]. Shared by every HTML export page shell, the
+/// core pages and the CLI's multi-page export (REQ-401).
+#[must_use]
+pub fn config_runtime_script() -> &'static str {
+    CONFIG_RUNTIME_SCRIPT
+}
+
+/// Hidden home-link and version-switcher placeholders that
+/// [`config_runtime_script`] populates from `config.js`. One copy, used by
+/// the core nav bar and the CLI's multi-page export nav (REQ-401).
+#[must_use]
+pub fn config_nav_placeholders() -> &'static str {
+    "  <a id=\"home-link\" href=\"\" class=\"home-link\" style=\"display:none\"></a>\n\
+     <div class=\"version-switcher\" style=\"display:none\">\n\
+     <select id=\"version-select\" onchange=\"if(this.value)location.href=this.value\">\n\
+     <option value=\"\" selected>dev</option>\n\
+     </select>\n\
+     </div>\n"
+}
 
 fn page_header(title: &str, config: &ExportConfig, is_single_page: bool) -> String {
     if is_single_page {
@@ -531,19 +555,9 @@ fn nav_bar(active: &str, _config: &ExportConfig, is_single_page: bool) -> String
 
     let mut out = String::from("<header class=\"export-header\">\n<nav>\n");
 
-    // Homepage back-link — hidden placeholder, populated by config.js at runtime
-    out.push_str(
-        "  <a id=\"home-link\" href=\"\" class=\"home-link\" style=\"display:none\"></a>\n",
-    );
-
-    // Version switcher — hidden placeholder, populated by config.js at runtime
-    out.push_str("  <div class=\"version-switcher\" style=\"display:none\">\n");
-    out.push_str(
-        "    <select id=\"version-select\" onchange=\"if(this.value)location.href=this.value\">\n",
-    );
-    out.push_str("      <option value=\"\" selected>dev</option>\n");
-    out.push_str("    </select>\n");
-    out.push_str("  </div>\n");
+    // Home link and version switcher: hidden placeholders populated by
+    // config.js at runtime (one shared copy, REQ-401).
+    out.push_str(config_nav_placeholders());
 
     // Navigation links — all relative
     out.push_str("  <div class=\"nav-links\">\n");
@@ -2487,9 +2501,14 @@ pub fn render_single_page(
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <title>{name} — Rivet Export</title>\n\
          <style>{css}</style>\n\
+         <script src=\"./config.js\"></script>\n\
+         {runtime}\
          </head>\n\
          <body>\n",
         name = html_escape(project_name),
+        // REQ-401: the single page loads config.js like the multi-page export,
+        // so --homepage / --version-label / --versions take effect here too.
+        runtime = CONFIG_RUNTIME_SCRIPT,
     );
 
     out.push_str(&nav_bar("__single__", config, true));
@@ -3548,6 +3567,45 @@ mod tests {
     }
 
     // rivet: verifies REQ-035
+    // rivet: verifies REQ-401
+    #[test]
+    fn config_hooks_are_one_shared_copy() {
+        let hooks = config_nav_placeholders();
+        assert!(hooks.contains("id=\"home-link\""), "{hooks}");
+        assert!(hooks.contains("id=\"version-select\""), "{hooks}");
+        assert!(hooks.contains("class=\"version-switcher\" style=\"display:none\""));
+        let nav = nav_bar("index", &ExportConfig::default(), false);
+        assert!(
+            nav.contains(hooks),
+            "the core nav uses the shared placeholders"
+        );
+        let js = config_runtime_script();
+        assert!(js.contains("window.RIVET_EXPORT_ROOT || ''"), "{js}");
+        assert!(
+            js.contains("root + v.path"),
+            "relative version paths get the root"
+        );
+    }
+
+    // rivet: verifies REQ-401
+    #[test]
+    fn the_single_page_loads_config_js() {
+        let (store, schema, graph, diagnostics) = test_fixtures();
+        let html = render_single_page(
+            &store,
+            &schema,
+            &graph,
+            &diagnostics,
+            "Test",
+            "0.1.0",
+            &default_config(),
+            &DocumentStore::new(),
+        );
+        assert!(html.contains("<script src=\"./config.js\"></script>"));
+        assert!(html.contains("window.RIVET_EXPORT || {}"));
+        assert!(html.contains("id=\"home-link\""));
+    }
+
     #[test]
     fn pages_include_config_js_script_tag() {
         let cfg = default_config();
