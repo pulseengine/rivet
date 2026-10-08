@@ -36,6 +36,11 @@
   takes) now does too, so repeated `rivet validate` and
   `rivet validate --format json` runs on the same inputs produce
   byte-identical stdout, and diff-based golden checks stop seeing noise.
+- **`rivet validate --format json --baseline` prints valid JSON** (REQ-400) —
+  the baseline header (`Baseline: v1 (N artifacts in scope)`) was printed to
+  stdout in every format, so the JSON output did not parse. It now appears in
+  text mode only, as part of splitting validation into a compute step that
+  the MCP tool can share.
 - **`--vendor-schemas` no longer claims to pin everything** (REQ-401, #958
   item 4) — the help and the schema docs said a vendored set is immune to
   release-to-release rule drift. A vendored bridge does load from disk, but a

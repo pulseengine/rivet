@@ -13880,3 +13880,55 @@ fn validate_names_a_nested_document_it_does_not_load() {
         "a directory that is its own docs entry must not be reported; stderr: {stderr}"
     );
 }
+
+/// REQ-400: the compute step of `validate` prints nothing to stdout. Before
+/// it was split out, `--baseline` printed "Baseline: <name> (N artifacts in
+/// scope)" to stdout unconditionally, so `--format json --baseline` emitted a
+/// non-JSON first line and the output did not parse.
+///
+/// rivet: verifies REQ-400
+#[test]
+fn validate_json_with_baseline_is_pure_json() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let mut config = std::fs::read_to_string(dir.join("rivet.yaml")).unwrap();
+    config.push_str("\nbaselines:\n  - name: v1\n");
+    std::fs::write(dir.join("rivet.yaml"), config).unwrap();
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            dirs,
+            "validate",
+            "--format",
+            "json",
+            "--baseline",
+            "v1",
+        ])
+        .output()
+        .expect("validate");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let parsed: Result<serde_json::Value, _> = serde_json::from_str(&stdout);
+    assert!(
+        parsed.is_ok(),
+        "validate --format json --baseline must print only JSON; stdout: {stdout}"
+    );
+
+    let text = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate", "--baseline", "v1"])
+        .output()
+        .expect("validate");
+    assert!(
+        String::from_utf8_lossy(&text.stdout).contains("Baseline: v1 ("),
+        "text mode still shows the baseline header"
+    );
+}
