@@ -23,6 +23,12 @@
   block merges.
 
 ### Fixed
+- **`--vendor-schemas` no longer claims to pin everything** (REQ-401, #958
+  item 4) — the help and the schema docs said a vendored set is immune to
+  release-to-release rule drift. A vendored bridge does load from disk, but a
+  bridge that rivet discovers and that is not vendored, such as one a later
+  release adds, still loads from the binary. The docs now say what is pinned
+  and point to `rivet schema sources`, which shows on-disk versus embedded.
 - **A document in a subdirectory is reported, not silently dropped**
   (REQ-401, #958 item 3) — the docs scanner reads only the top level of each
   `docs:` entry, but the docs topic said it loaded recursively, so a document

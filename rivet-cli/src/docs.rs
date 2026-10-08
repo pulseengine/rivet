@@ -809,8 +809,12 @@ list with versions and type counts.
 
 Init also accepts `--vendor-schemas` to write the resolved built-in schemas
 (plus auto-discovered bridges) on-disk into `schemas/`, pinning a project's
-validation against rivet upgrades. The loader prefers on-disk schemas over the
-embedded copies, so a vendored set is immune to release-to-release rule drift.
+validation against rivet upgrades. The loader prefers an on-disk schema or
+bridge over the embedded copy, so what is vendored stays fixed across upgrades.
+It is not a complete pin: a bridge rivet discovers for your schema set that is
+not on disk, for example one a later release adds, still loads from the binary.
+`rivet schema sources` (and the `Schemas:` line of `rivet validate`) shows
+which schemas and bridges resolve on-disk and which from the binary.
 
 ## Mutation Commands
 

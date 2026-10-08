@@ -373,6 +373,68 @@ fn schema_presets_lists_declarable_standards_without_a_project() {
 /// on-disk so validation is pinned against rivet upgrades (the loader prefers
 /// `schemas/<name>.yaml` over the embedded copy), and is idempotent (won't
 /// clobber an existing/edited schema file).
+/// REQ-401 item 4: `--vendor-schemas` pins what it vendors, bridges
+/// included, and nothing more. A vendored bridge loads from disk (an edited
+/// version is what validate reports); a bridge that auto-discovery finds and
+/// that is not on disk falls back to the binary and is labelled `(embedded)`.
+/// The docs no longer claim immunity to release-to-release drift.
+///
+/// rivet: verifies REQ-401
+#[test]
+fn vendored_bridges_load_on_disk_and_missing_ones_fall_back_to_the_binary() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args([
+                "init",
+                "--schema",
+                "stpa,dev",
+                "--vendor-schemas",
+                "--dir",
+                dirs
+            ])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let bridge = dir.join("schemas/stpa-dev.bridge.yaml");
+    let text = std::fs::read_to_string(&bridge).expect("the bridge must be vendored");
+    let edited = text.replacen("version: \"0.1.0\"", "version: \"9.9.9\"", 1);
+    assert_ne!(edited, text, "the vendored bridge must carry version 0.1.0");
+    std::fs::write(&bridge, edited).unwrap();
+    let schemas_line = || {
+        let out = Command::new(rivet_bin())
+            .args(["--project", dirs, "validate"])
+            .output()
+            .expect("validate");
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+        .lines()
+        .find(|l| l.starts_with("Schemas:"))
+        .unwrap_or_default()
+        .to_string()
+    };
+
+    let line = schemas_line();
+    assert!(
+        line.contains("stpa-dev.bridge@9.9.9 (on-disk)"),
+        "the vendored, edited bridge must be the one loaded; got: {line}"
+    );
+
+    std::fs::remove_file(&bridge).unwrap();
+    let line = schemas_line();
+    assert!(
+        line.contains("stpa-dev.bridge@0.1.0 (embedded)"),
+        "a bridge that is not on disk falls back to the binary, labelled; got: {line}"
+    );
+}
+
 #[test]
 fn init_vendor_schemas_pins_schemas_on_disk() {
     let tmp = tempfile::tempdir().expect("create temp dir");
