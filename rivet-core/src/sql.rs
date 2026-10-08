@@ -544,11 +544,43 @@ mod tests {
     }
 
     // rivet: verifies REQ-229
+    /// #956 lower tier: this test was named `join_reproduces_v_closure_set`
+    /// and asserted a hardcoded row, never evaluating the coverage it named.
+    /// It now computes both sides: the SQL anti-join and the uncovered set of
+    /// a "requirement needs an incoming verifies" rule from `compute_coverage`,
+    /// and requires them to be the same set. The fixture's expected answer is
+    /// pinned too, so agreement on an empty set cannot pass.
     #[test]
-    fn join_reproduces_v_closure_set() {
-        // The V-closure query: implemented requirements with no incoming verify.
-        // (minimal_artifact has no status, so emulate via the links join only.)
+    fn join_matches_the_coverage_uncovered_set() {
+        use crate::coverage::compute_coverage;
+        use crate::links::LinkGraph;
+        use crate::schema::{Schema, Severity, TraceabilityRule};
+
         let store = store_with_v_model();
+        let mut file = crate::test_helpers::minimal_schema("test");
+        file.traceability_rules = vec![TraceabilityRule {
+            name: "req-verified".into(),
+            description: "Every requirement has an incoming verifies".into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some("verifies".into()),
+            target_types: vec![],
+            from_types: vec![],
+            severity: Severity::Warning,
+            alternate_backlinks: vec![],
+            exempt_when_field: None,
+        }];
+        let schema = Schema::merge(&[file]);
+        let graph = LinkGraph::build(&store, &schema);
+        let report = compute_coverage(&store, &schema, &graph);
+        let entry = report
+            .entries
+            .iter()
+            .find(|e| e.rule_name == "req-verified")
+            .expect("the rule is evaluated");
+        let mut from_coverage: Vec<String> = entry.uncovered_ids.clone();
+        from_coverage.sort();
+
         let r = query(
             &store,
             "SELECT id FROM artifacts
@@ -557,10 +589,23 @@ mod tests {
              ORDER BY id",
         )
         .unwrap();
+        let from_sql: Vec<String> = r
+            .rows
+            .iter()
+            .map(|row| match &row[0] {
+                SqlValue::Str(s) => s.clone(),
+                other => panic!("id column is a string, got {other:?}"),
+            })
+            .collect();
+
         assert_eq!(
-            r.rows,
-            vec![vec![SqlValue::Str("REQ-2".to_string())]],
-            "only REQ-2 lacks a verify"
+            from_sql, from_coverage,
+            "the SQL anti-join and the coverage rule disagree"
+        );
+        assert_eq!(
+            from_coverage,
+            vec!["REQ-2".to_string()],
+            "the fixture's uncovered requirement is REQ-2"
         );
     }
 
