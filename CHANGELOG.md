@@ -77,6 +77,12 @@
   never affected.
 
 ### Changed
+- **Kani runs only the proofs that verify** (REQ-391, #839) — on Linux only
+  1 of the 27 harnesses verified; 25 timed out on CBMC's model of `String`,
+  `Vec` and `HashMap`, and one stopped on an unsupported system call. Those
+  26 are parked behind `cfg(kani_slow)` with the reason recorded in
+  `proofs.rs`; they still compile and prove nothing until rewritten. The docs
+  no longer count them as verification evidence.
 - **`rivet verify` counts a link only from a verified artifact** (REQ-404,
   #1037) — it promoted a requirement on the mere presence of a `verifies` link,
   so in meld a requirement became `verified` while its only verifier was

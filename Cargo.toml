@@ -23,7 +23,7 @@ license = "Apache-2.0"
 rust-version = "1.89"
 
 [workspace.lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(verus)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(kani_slow)', 'cfg(verus)'] }
 
 # SCRC clippy restriction lints.
 # Phase 1 (DD-058, DD-059): base restriction family at warn with
