@@ -5831,21 +5831,40 @@ fn aspice_chain_hint(
     ))
 }
 
-/// Validate a full project (with rivet.yaml).
-#[allow(clippy::too_many_arguments)]
-fn cmd_validate(
-    cli: &Cli,
-    format: &str,
+/// Everything one `rivet validate` run decides, before any of it is printed
+/// (REQ-400). Shared by the CLI and the MCP `rivet_validate` tool, so both
+/// reach the same verdict on the same project. Writes nothing to stdout:
+/// MCP speaks JSON-RPC there. Warnings still go to stderr.
+struct ValidationRun {
+    diagnostics: Vec<validate::Diagnostic>,
+    store: Store,
+    schema: rivet_core::schema::Schema,
+    doc_store: DocumentStore,
+    schema_provenance: Vec<rivet_core::embedded::SchemaProvenance>,
+    backlinks: Vec<rivet_core::externals::CrossRepoBacklink>,
+    circular_deps: Vec<rivet_core::externals::CircularDependency>,
+    cross_refs_checked: bool,
+    cross_repo_broken: Vec<rivet_core::externals::BrokenRef>,
+    cross_repo_diagnostics: Vec<(String, validate::Diagnostic)>,
+    lifecycle_gaps: Vec<rivet_core::lifecycle::LifecycleGap>,
+    unresolved_externals: Vec<String>,
+    version_conflicts: Vec<rivet_core::externals::VersionConflict>,
+    variant_scope_name: Option<(String, usize)>,
+    /// Text-mode headers the run would have printed (baseline, variant and
+    /// binding scope); the text renderer prints them, JSON omits them.
+    notes: Vec<String>,
+}
+
+/// Validation inputs that do not depend on the output format (REQ-400).
+#[derive(Clone, Copy)]
+struct ValidateOptions<'a> {
     direct: bool,
     skip_external_validation: bool,
-    baseline_name: Option<&str>,
-    track_convergence: bool,
-    model_path: Option<&std::path::Path>,
-    variant_arg: Option<&str>,
-    binding_path: Option<&std::path::Path>,
+    baseline_name: Option<&'a str>,
+    model_path: Option<&'a std::path::Path>,
+    variant_arg: Option<&'a str>,
+    binding_path: Option<&'a std::path::Path>,
     strict_variants: bool,
-    fail_on: &str,
-    min_severity: Option<&str>,
     strict_cited_sources: bool,
     strict_cited_source_stale: bool,
     check_remote_sources: bool,
@@ -5853,13 +5872,28 @@ fn cmd_validate(
     strict: bool,
     with_externals_validate: bool,
     structural_only: bool,
-) -> Result<bool> {
-    validate_format(format, &["text", "json"])?;
-    let fail_on_threshold = parse_fail_on(fail_on)?;
-    // #357: optional DISPLAY floor — only print diagnostics at/above this
-    // severity. Reuses the same parser as --fail-on. None = show all.
-    let display_floor = min_severity.map(parse_fail_on).transpose()?;
-    check_for_updates();
+}
+
+/// The compute step of `rivet validate` (REQ-400): load, validate and apply
+/// every diagnostic source and option, print nothing to stdout.
+fn run_validation(cli: &Cli, opts: &ValidateOptions<'_>) -> Result<ValidationRun> {
+    let ValidateOptions {
+        direct,
+        skip_external_validation,
+        baseline_name,
+        model_path,
+        variant_arg,
+        binding_path,
+        strict_variants,
+        strict_cited_sources,
+        strict_cited_source_stale,
+        check_remote_sources,
+        strict_orphans,
+        strict,
+        with_externals_validate,
+        structural_only,
+    } = *opts;
+    let mut notes: Vec<String> = Vec::new();
 
     let ctx = ProjectContext::load_with_docs(cli)?;
     let ProjectContext {
@@ -6016,7 +6050,10 @@ fn cmd_validate(
         if let Some(ref baselines) = config.baselines {
             let scoped = store.scoped(bl, baselines);
             let scoped_graph = LinkGraph::build(&scoped, &schema);
-            println!("Baseline: {bl} ({} artifacts in scope)\n", scoped.len());
+            notes.push(format!(
+                "Baseline: {bl} ({} artifacts in scope)\n",
+                scoped.len()
+            ));
             (scoped, scoped_graph)
         } else {
             eprintln!("warning: --baseline specified but no baselines defined in rivet.yaml");
@@ -6148,13 +6185,11 @@ fn cmd_validate(
                     dangling.join(", ")
                 );
             }
-            if format != "json" {
-                println!(
-                    "Feature model + binding: {} features, {} bindings (OK)\n",
-                    fm.features.len(),
-                    fb.bindings.len()
-                );
-            }
+            notes.push(format!(
+                "Feature model + binding: {} features, {} bindings (OK)\n",
+                fm.features.len(),
+                fb.bindings.len()
+            ));
             (store, graph, None)
         }
         (None, Some(_), None) => {
@@ -6172,16 +6207,14 @@ fn cmd_validate(
 
     let doc_store = doc_store.unwrap_or_default();
 
-    // Print variant scope header (text mode only; JSON includes it in the output object)
+    // Variant scope header (text mode only; JSON includes it in the output object)
     if let Some((ref vname, bound_count)) = variant_scope_name {
-        if format != "json" {
-            println!(
-                "Variant '{}': {} artifacts in scope, {} resolved in project\n",
-                vname,
-                bound_count,
-                store.len()
-            );
-        }
+        notes.push(format!(
+            "Variant '{}': {} artifacts in scope, {} resolved in project\n",
+            vname,
+            bound_count,
+            store.len()
+        ));
     }
 
     // Core validation: use salsa incremental by default, --direct for legacy path.
@@ -6783,6 +6816,93 @@ fn cmd_validate(
     // prose-mention, near-duplicates, status enums) are dropped from this view.
     if structural_only {
         diagnostics.retain(|d| d.is_structural());
+    }
+
+    Ok(ValidationRun {
+        diagnostics,
+        store,
+        schema,
+        doc_store,
+        schema_provenance,
+        backlinks,
+        circular_deps,
+        cross_refs_checked,
+        cross_repo_broken,
+        cross_repo_diagnostics,
+        lifecycle_gaps,
+        unresolved_externals,
+        version_conflicts,
+        variant_scope_name,
+        notes,
+    })
+}
+
+/// Validate a full project (with rivet.yaml).
+#[allow(clippy::too_many_arguments)]
+fn cmd_validate(
+    cli: &Cli,
+    format: &str,
+    direct: bool,
+    skip_external_validation: bool,
+    baseline_name: Option<&str>,
+    track_convergence: bool,
+    model_path: Option<&std::path::Path>,
+    variant_arg: Option<&str>,
+    binding_path: Option<&std::path::Path>,
+    strict_variants: bool,
+    fail_on: &str,
+    min_severity: Option<&str>,
+    strict_cited_sources: bool,
+    strict_cited_source_stale: bool,
+    check_remote_sources: bool,
+    strict_orphans: bool,
+    strict: bool,
+    with_externals_validate: bool,
+    structural_only: bool,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let fail_on_threshold = parse_fail_on(fail_on)?;
+    // #357: optional DISPLAY floor — only print diagnostics at/above this
+    // severity. Reuses the same parser as --fail-on. None = show all.
+    let display_floor = min_severity.map(parse_fail_on).transpose()?;
+    check_for_updates();
+    let opts = ValidateOptions {
+        direct,
+        skip_external_validation,
+        baseline_name,
+        model_path,
+        variant_arg,
+        binding_path,
+        strict_variants,
+        strict_cited_sources,
+        strict_cited_source_stale,
+        check_remote_sources,
+        strict_orphans,
+        strict,
+        with_externals_validate,
+        structural_only,
+    };
+    let ValidationRun {
+        diagnostics,
+        store,
+        schema,
+        doc_store,
+        schema_provenance,
+        backlinks,
+        circular_deps,
+        cross_refs_checked,
+        cross_repo_broken,
+        cross_repo_diagnostics,
+        lifecycle_gaps,
+        unresolved_externals,
+        version_conflicts,
+        variant_scope_name,
+        notes,
+    } = run_validation(cli, &opts)?;
+    if format != "json" {
+        for note in &notes {
+            println!("{note}");
+        }
     }
 
     let errors = diagnostics
