@@ -7998,6 +7998,67 @@ fn verify_advances_on_marker_evidence_and_refuses_without() {
     );
 }
 
+/// #1037 suggestion 3: `verify --dry-run` reports the evidence and the
+/// would-be change but writes nothing; a refusal still exits non-zero.
+///
+/// rivet: verifies REQ-404
+#[test]
+fn verify_dry_run_reports_without_writing() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    let run = |args: &[&str]| {
+        Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .output()
+            .expect("run rivet")
+    };
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let reqs = "artifacts:\n  - id: REQ-9\n    type: requirement\n    title: T\n    status: implemented\n  - id: REQ-8\n    type: requirement\n    title: U\n    status: implemented\n";
+    std::fs::write(dir.join("artifacts/reqs.yaml"), reqs).unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("tests/t.rs"),
+        "// rivet: verifies REQ-9\nfn t() {}\n",
+    )
+    .unwrap();
+
+    let ok = run(&["verify", "REQ-9", "--dry-run"]);
+    let stdout = String::from_utf8_lossy(&ok.stdout);
+    assert!(
+        ok.status.success(),
+        "a dry run with evidence exits 0; stderr: {}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    assert!(
+        stdout.contains("dry run: REQ-9 would be advanced implemented -> verified"),
+        "the dry run must say what it would do; stdout: {stdout}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.join("artifacts/reqs.yaml")).unwrap(),
+        reqs,
+        "a dry run must not write"
+    );
+
+    let no = run(&["verify", "REQ-8", "--dry-run"]);
+    assert!(
+        !no.status.success(),
+        "a dry run without evidence still refuses"
+    );
+    assert!(
+        String::from_utf8_lossy(&no.stderr).contains("no verifying evidence"),
+        "the refusal is the same as a real run"
+    );
+}
+
 /// #1037: a `verifies` link counts as evidence only when the verifying
 /// artifact is itself verified (or released/accepted). Reproduces the meld
 /// case — the requirement's only verifier is `implemented` — and checks that

@@ -480,6 +480,7 @@ its own evidence.
 ```bash
 rivet verify REQ-042
 rivet verify REQ-042 --scan integration-tests/
+rivet verify REQ-042 --dry-run          # report evidence, write nothing
 ```
 
 This is an opt-in, auditable command: it refuses with an actionable message

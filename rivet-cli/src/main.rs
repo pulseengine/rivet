@@ -610,6 +610,12 @@ enum Command {
         /// tests/, else the project root).
         #[arg(long = "scan", value_name = "PATH")]
         scan: Vec<PathBuf>,
+
+        /// Report the evidence and whether the artifact would be advanced,
+        /// without writing anything (#1037). Refusals exit non-zero as in a
+        /// real run, so a traceability sweep can preview its effect.
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Show traceability coverage report
@@ -2790,7 +2796,7 @@ fn run(cli: Cli) -> Result<bool> {
                 cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref())
             }
         }
-        Command::Verify { id, scan } => cmd_verify(&cli, id, scan),
+        Command::Verify { id, scan, dry_run } => cmd_verify(&cli, id, scan, *dry_run),
         Command::Coverage {
             filter,
             format,
@@ -10070,7 +10076,7 @@ fn cmd_trace_results(cli: &Cli, id: &str, depth: usize, format: &str) -> Result<
 /// an incoming `verifies` link from an artifact that is itself verified or
 /// later (#1037), OR a `// rivet: verifies <ID>` source marker.
 /// Opt-in and auditable (no auto-advance); the artifact must be `implemented`.
-fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> {
+fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf], dry_run: bool) -> Result<bool> {
     use rivet_core::test_scanner;
 
     // Scope the loaded store/graph borrows so cmd_modify can reload below.
@@ -10160,6 +10166,11 @@ fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf]) -> Result<bool> 
             first.file.display(),
             first.line
         );
+    }
+
+    if dry_run {
+        println!("dry run: {id} would be advanced implemented -> verified (nothing written)");
+        return Ok(true);
     }
 
     // Advance via the shared modify write-path (validation + YAML edit). This is
