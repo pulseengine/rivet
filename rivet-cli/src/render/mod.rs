@@ -10,7 +10,8 @@ use rivet_core::validate::Diagnostic;
 use crate::serve::{ExternalInfo, RepoContext};
 
 pub(crate) mod artifacts;
-pub(crate) mod components;
+// #956: `render/components.rs` was a drifted fork of `serve/components.rs`
+// with one live caller; the render modules use `crate::serve::components`.
 pub(crate) mod coverage;
 pub(crate) mod diff;
 pub(crate) mod doc_linkage;
