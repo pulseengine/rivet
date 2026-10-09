@@ -2278,6 +2278,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.13.2
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -2337,6 +2338,7 @@ artifacts:
       priority: should
       category: interface
       baseline: v0.13.2
+      corrective: true
     links:
       - type: traces-to
         target: REQ-005
@@ -2411,6 +2413,7 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -2616,6 +2619,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -2659,6 +2663,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -2844,6 +2849,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -2879,6 +2885,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -2915,6 +2922,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -2955,6 +2963,7 @@ artifacts:
       priority: could
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -2996,6 +3005,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -3034,6 +3044,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -3153,6 +3164,7 @@ artifacts:
       priority: could
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -3750,6 +3762,7 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.14.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -3824,6 +3837,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-115
@@ -3860,6 +3874,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-062
@@ -3982,6 +3997,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -4022,6 +4038,7 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-085
@@ -4054,6 +4071,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-092
@@ -4126,6 +4144,7 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-029
@@ -4167,6 +4186,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-125
@@ -4251,6 +4271,7 @@ artifacts:
       priority: should
       category: non-functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-010
@@ -4378,6 +4399,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -4426,6 +4448,7 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.15.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-140
@@ -4470,6 +4493,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-062
@@ -4519,6 +4543,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-004
@@ -4560,6 +4585,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-146
@@ -4608,6 +4634,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-062
@@ -4700,6 +4727,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-158
@@ -4735,6 +4763,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-159
@@ -4829,6 +4858,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-135
@@ -4870,6 +4900,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-090
@@ -4940,6 +4971,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-135
@@ -5175,6 +5207,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: FEAT-001
@@ -5211,6 +5244,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-109
@@ -5276,6 +5310,7 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-051
@@ -5309,6 +5344,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: FEAT-001
@@ -5482,6 +5518,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -5516,6 +5553,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-115
@@ -5549,6 +5587,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -5583,6 +5622,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -5654,6 +5694,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-089
@@ -5818,6 +5859,7 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -5854,6 +5896,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-159
@@ -5885,6 +5928,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-159
@@ -5921,6 +5965,7 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -5960,6 +6005,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-159
@@ -6031,6 +6077,7 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -6069,6 +6116,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-105
@@ -6104,6 +6152,7 @@ artifacts:
     fields:
       priority: should
       category: non-functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -6140,6 +6189,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-031
@@ -6171,6 +6221,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-198
@@ -6211,6 +6262,7 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.16.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-196
@@ -6245,6 +6297,7 @@ artifacts:
       priority: must
       category: functional
       baseline: v0.16.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -6402,6 +6455,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.16.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-159
@@ -6493,6 +6547,7 @@ artifacts:
       priority: should
       category: non-functional
       baseline: v0.16.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-054
@@ -6728,6 +6783,7 @@ artifacts:
       priority: must
       category: non-functional
       baseline: v0.16.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-051
@@ -6854,6 +6910,7 @@ artifacts:
       priority: should
       category: non-functional
       baseline: v0.17.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-051
@@ -6896,6 +6953,7 @@ artifacts:
     fields:
       priority: must
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -6937,6 +6995,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-083
@@ -6988,6 +7047,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-031
@@ -7089,6 +7149,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -7177,6 +7238,7 @@ artifacts:
     fields:
       priority: should
       category: functional
+      corrective: true
     links:
       - type: traces-to
         target: REQ-010
@@ -7217,6 +7279,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.18.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-007
@@ -7300,6 +7363,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.18.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-010
@@ -7380,6 +7444,7 @@ artifacts:
       priority: should
       category: functional
       baseline: v0.19.0-track
+      corrective: true
     links:
       - type: traces-to
         target: REQ-008
@@ -7682,6 +7747,8 @@ artifacts:
     title: validate and validate --direct must produce identical results
     status: verified
     description: "A user reported `rivet validate` and `rivet validate --direct` returning different results on the same project (one with errors, one without). The self-link case was fixed in #627, but the reporter's broader example (salsa path vs library path divergence) may remain. Reproduce and close the remaining divergence so the two paths never disagree. #620, relates to REQ-089."
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-089
@@ -7696,6 +7763,8 @@ artifacts:
     title: rivet verify default scan finds member-crate markers in a mixed workspace
     status: verified
     description: "In a cargo workspace where the repo root has its OWN src/ or tests/ (not just member crates), `rivet verify`'s default scan misses `verifies` markers inside member crates — under-counting real test evidence. Make the default scan cover member-crate src/tests even when a root crate is present. #603."
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -7825,6 +7894,8 @@ artifacts:
     title: artifact serializer must not silently drop new model fields
     status: implemented
     description: "mutate::render_artifact_yaml is a hand-rolled allowlist emitter; any Artifact field not explicitly emitted is silently dropped on write. Currently latent (fields_per_variant, Link.external, provenance.federation are not reachable via add/batch/MCP), but it re-bites the moment those become settable. Resolved via the compile-time exhaustiveness guard (#634, shipped v0.25.0): the build now fails if an Artifact field is added without being wired into the emitter, so a new field can no longer be silently dropped. Same family as REQ-034/#476."
+    fields:
+      corrective: true
     release: v0.25.0
     links:
       - type: traces-to
@@ -8013,6 +8084,8 @@ artifacts:
     title: "pin CI nightly toolchain to a known-good date while upstream nightly ICEs"
     status: implemented
     description: "CI health. The Miri (safety + full), Code Coverage, and Fuzz jobs use `dtolnay/rust-toolchain@nightly` (unpinned → latest). Nightlies from 2026-07-14 ICE the compiler while building rivet-core (rustc panic in rustc_ast/src/attr/mod.rs, exit 104), reddening every nightly job repo-wide and masking the Miri UB/safety signal — while the core gates (Test/Clippy/Format) stayed green, so main was healthy but CI read red. Pin all four to nightly-2026-07-11 (the last run where Miri passed on main) so they keep ENFORCING on a working compiler. Not a versioned release (CI-config only, shipped binary unchanged). Unpin to @nightly once a newer nightly stops ICEing. Kani's exit-143 failures are a separate runner-shutdown flake, not this ICE."
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
@@ -8023,6 +8096,8 @@ artifacts:
     title: "per-PR CI gate builds the wasm seam (compose-witness component + wasm feature)"
     status: implemented
     description: "v0.30 (CI resilience). rivet's composition core is exposed as a Wasm component — compose-witness/ (cdylib + WIT in compose-witness/wit/, built via `cargo component build` or Bazel) — plus the host `wasm` feature (rivet-core/src/wasm_runtime.rs, wasmtime) and the spar-wasm browser assets. That component is the SEAM consumed downstream (melded → loomed → synth'd), so a broken/buggy wasm build is a downstream breakage. Today the wasm seam is built ONLY in release.yml, not per-PR ci.yml, so a change can rot the seam and nothing catches it until release. Add a per-PR CI job that at minimum runs `cargo build -p rivet-cli --features wasm` (cheap, host-side) and ideally `cargo component build` on compose-witness (needs cargo-component + wasi-sdk on the runner, mirror the release.yml wasm setup). Gate it behind the existing changes/paths-filter so it only runs when the composition core / wasm_runtime / compose-witness / WIT / wasm feature / spar-wasm assets change."
+    fields:
+      corrective: true
     release: v0.30.0
     provenance:
       created-by: ai-assisted
@@ -8034,6 +8109,8 @@ artifacts:
     title: "feature-model validate_tree mis-reports a shared child (diamond/DAG) as a cycle"
     status: implemented
     description: "Surfaced by REQ-266 coverage. FeatureModel::from_yaml -> validate_tree() detects cycles with a BFS that inserts each node into a global `visited` set on dequeue and errors if a node is seen twice (rivet-core/src/feature_model.rs ~1129). A feature reachable through two parents (a diamond: root->a, root->b, a->shared, b->shared) is enqueued from BOTH parents, dequeued twice, and wrongly reported as `cycle detected involving feature shared` — even though it is an acyclic DAG. Real feature models legitimately share a child (a common sub-feature under two optional branches). Fix: detect genuine cycles via the current DFS/BFS PATH (recursion stack), not global-visited-as-cycle; a node already fully visited on a different path is a shared child, not a cycle. The parent link is separately last-writer-wins (~888-892) which is acceptable, but the traversal must not treat re-encounter as a cycle. Regression test exists (ignored): rivet-core/tests/proptest_feature_model.rs::diamond_shared_child_is_not_a_cycle — un-ignore when fixed. Composition core touches the wasm seam, so verify `cargo build -p rivet-cli --features wasm` after the fix."
+    fields:
+      corrective: true
     release: v0.29.0
     links:
       - type: derives-from
@@ -8059,6 +8136,8 @@ artifacts:
     title: "self-hosted CI runner disk cleanup that actually frees space (#567)"
     status: implemented
     description: "v0.30 (CI resilience). #567: the self-hosted runner pool exhausts disk and every compile gate fails; the existing post-job cleanup hook frees nothing. Rust + Bazel + Docker layer caches accumulate across runs on a persistent runner. Add a reliable free-space step (a reusable composite action or a leading ci.yml step) that prunes the space hogs — `cargo` target/registry caches beyond a cap, Bazel disk cache, docker/buildx dangling images+build cache, and /tmp — and reports before/after free bytes so the effect is auditable (not a silent no-op like the current hook). Runs early enough to unblock the compile, and idempotent."
+    fields:
+      corrective: true
     release: v0.30.0
     provenance:
       created-by: ai-assisted
@@ -8070,6 +8149,8 @@ artifacts:
     title: "CI single-point-of-failure mitigation: hosted fallback + surfaced alert (#509 slice 2)"
     status: implemented
     description: "v0.30 (CI resilience). #509: every gating job is `runs-on: [self-hosted, ...]`, so when the pool goes offline all gates queue forever with no fallback (slice 1 shipped the liveness-alert workflow; this is slice 2). Reduce the SPOF: make at least the light, portable gates (e.g. Traceability `rivet validate` + docs check, YAML lint) able to run on GitHub-hosted `ubuntu-latest` as a fallback so a self-hosted outage does not zero out ALL verification on main — via a runner-label group or a hosted mirror job gated to run only when self-hosted is starved. Keep compile-heavy gates self-hosted. Document the SPOF + the liveness signal in AGENTS.md/ci so an outage is diagnosable, not a mystery."
+    fields:
+      corrective: true
     release: v0.30.0
     provenance:
       created-by: ai-assisted
@@ -8081,6 +8162,8 @@ artifacts:
     title: "static compliance export: honest AADL fallback (no forever-spinner) + inline SVG when component present (#468)"
     status: implemented
     description: "v0.30. #468: AADL diagrams in the STATIC compliance report are stuck on `Loading AADL diagram...` forever — the placeholder (document.rs:682, render/artifacts.rs:756) is filled client-side only by `rivet serve` (spar-WASM + /source-raw + /wasm endpoints that a static bundle lacks). The real inline-SVG render depends on a published spar-wasm asset (cross-repo, spar#259 — build.rs ships a stub today). Unblocked v0.30 slice: in static export, replace the misleading forever-`Loading...` placeholder with an HONEST fallback — show the raw AADL source (or a clear `view interactively in rivet serve` note) so the compliance report stops looking broken — AND wire the export-time host-side render path (wasm_runtime render_aadl_via_wasm) so real inline SVG activates automatically once a non-stub spar_wasm component is embedded, with no further code change. Does not fake the cross-repo dependency."
+    fields:
+      corrective: true
     release: v0.30.0
     provenance:
       created-by: ai-assisted
@@ -8117,6 +8200,8 @@ artifacts:
     title: "serve/export color-contrast audit — fix low-contrast (white on light grey) to WCAG AA (customer request)"
     status: verified
     description: "Customer-reported: white text on the light-grey background reads poorly. Audit the render/styles.rs palette (--bg #f5f5f7 grey, --surface #fff, --text-secondary #6e6e73) and every fixed color pair for WCAG AA (>=4.5:1 body text, >=3:1 large/UI) — white (#fff) on #f5f5f7 is ~1.05:1 and fails. Raise the failing pairs (darken text / adjust surface) without a full redesign, keeping the PulseEngine look. Applies to both serve and the static/compliance export (shared styles.rs). Add a small contrast check or documented palette rationale so it doesn't regress. MEASURED 2026-08-19 against the live palette in rivet-cli/src/render/styles.rs, which still carries the cited values (--bg #f5f5f7, --surface #fff, --text-secondary #6e6e73, --text #1d1d1f). 5 of 14 checked pairs fail WCAG AA body text at 4.5:1. The reported pair is confirmed and is the worst: white on --bg measures 1.09:1 (the issue estimated ~1.05). But it is NOT the most pervasive defect — the accent colour #3a86ff, used for LINKS, measures 3.20:1 on --bg and 3.48:1 on --surface, so every link in serve and export fails AA body text. White on accent is also 3.48:1, which passes the 3:1 UI threshold but fails 4.5:1 if the button label is body-size. Border #e5e5ea on --surface is 1.26:1 but is decorative and likely exempt. Passing comfortably: body text 15.46:1 and 16.83:1, secondary text 4.66:1 and 5.07:1, sidebar 6.72:1, and all three result colours between 5.07:1 and 6.08:1 — so this is a targeted fix to the accent and to any white-on-bg usage, not a redesign. ACCEPTANCE is therefore mechanical rather than visual: every body-text pair >= 4.5:1 and every UI/large pair >= 3:1, asserted by a unit test that computes relative luminance over the palette constants. That test is the regression guard the requirement already asks for, and it means this requirement can reach `verified` on evidence rather than on someone eyeballing a screenshot. RESOLVED 2026-08-21. Accent moved #3a86ff -> #2059b8 and accent-hover #2568d6 -> #18458d, hue preserved; 27 translucent rgba washes reshaded to the new rgb so tints match the colour they tint; `.stat-orange` darkened #e67e22 -> #c66c1d. Six unit tests in rivet-cli/src/render/styles.rs assert the palette, parsing hex values OUT OF the live CSS constant rather than copying them, so a stylesheet edit cannot drift away from its own audit. Three findings the original audit did not have. (1) The reported pair does NOT occur: no element paints white text on --bg. What a reader saw is the white label on the primary button at 3.48:1 and links at 3.20:1 — both real, both fixed. (2) Accent text sits on rgba(accent,.08/.12) washes in id chips, inline mono tags and source-line highlights; composited, three of those pairs measured 4.08-4.42:1 and failed. A naive fg/bg audit cannot see them because the background is translucent rather than a palette variable, so the test composites alpha. (3) `.stat-orange` measured 2.85:1 on --surface, failing even the 3:1 large-text bar, which the requirement's own audit missed. Also removed the drift class behind (2) and (3): five hand-copied hex literals of the accent lived outside the CSS in stats.rs, source.rs, doc_linkage.rs and serve/layout.rs, still painting the old blue after the palette moved. A single `styles::ACCENT_HEX` is now the source of truth, one test asserts the CSS agrees with it, and a static scan fails if the retired value reappears — negative-controlled by injecting it and confirming the scan goes red. Verified in rendered output, not just in source: `rivet export --format html` and `rivet serve` both emit --accent #2059b8 with zero retired references."
+    fields:
+      corrective: true
     release: v0.35.0
     provenance:
       created-by: ai-assisted
@@ -8142,6 +8227,8 @@ artifacts:
     title: "rivet check verification-evidence: nextest -E filtersets false-error as missing tests (downstream Ford/linc-mesh)"
     status: implemented
     description: "Downstream bug report (Ford linc-mesh, v0.30.0): `rivet check verification-evidence` emitted 22 false `no test matching` findings for verification steps whose `run` uses a nextest filterset, e.g. `cargo nextest run -p x --lib -E 'test(/message::/)'`. Root cause in rivet-core verification_evidence.rs: `-E`/`--filter-expr` was not in VALUE_FLAGS, so the parser (split_whitespace) grabbed the filterset expression — literal quotes included — as a bogus positional substring filter, then substring-matched it against bare `fn` names (which can never contain a `test(/re/)` string or a `mod::path` segment) → false negative → false `verified`-blocking error. Fix: (1) quote-aware tokenizer strips shell quotes and keeps a quoted filterset as one token; (2) `-E`/`--filter-expr` are value-taking, so the expression is consumed and never surfaces as a filter; (3) a nextest filterset step is detected and reported as SKIPPED (not verified) rather than errored — a skipped safety check must never read as passed. Reproduced + regression-tested (rivet-core unit + rivet-cli integration). Ships as v0.30.1. Does not evaluate filtersets (see REQ-281)."
+    fields:
+      corrective: true
     release: v0.31.0
     links:
       - type: traces-to
@@ -8192,6 +8279,8 @@ artifacts:
     title: "embedded docs truth-drift: diagnostics 'how to fix' snippets + json-output envelope contradict the binary"
     status: implemented
     description: "Weak-green audit (embedded-docs countercheck, v0.31.0) found 8 divergences across 5 topics in rivet-cli/src/docs.rs where the doc claims behavior the binary does not have — invisible to `rivet docs check` (token/format hygiene only). WRONG: (1) json-output doc (docs.rs:712-717) claims a `{command, data:{...}}` envelope, but NO command emits `data` — payload keys are top-level siblings of `command` (misleads integrators most); (2/3/4) diagnostics/required-field, allowed-values, unknown-field snippets use `rivet modify … --field K=V` — the flag is `--set-field` (`--field` errors); (5) diagnostics/known-type uses `rivet modify --type` which does not exist (no CLI type-change at all — YAML edit only); (6) diagnostics/broken-link uses `rivet add requirement REQ-099 --title` — wrong signature (`add --type requirement --title`) and ids are auto-generated (no custom-id flag); (7) unknown-link-type points to `rivet docs links` — topic does not exist (it's `rivet schema links`). STALE: (8) json-output coverage recipe uses `.entries[]` — key is `.rules[]`. All diagnostic severities + message strings are truthful (strong). Fix each snippet to match the binary; part of the weak-green audit ledger."
+    fields:
+      corrective: true
     release: v0.32.0
     provenance:
       created-by: ai-assisted
@@ -8203,6 +8292,8 @@ artifacts:
     title: "rivet docs check: parse embedded doc snippets + resolve doc-topic references (catch truth-drift mechanically)"
     status: proposed
     description: "Meta-fix for the weak-green docs class (REQ-284): `rivet docs check` today validates token/format hygiene, so a doc snippet whose flags don't parse or that references a non-existent `rivet docs <topic>` passes clean. Add two invariants: (a) shell every fenced ```bash rivet …``` snippet in the embedded docs through the clap parser (arg-validation / --help level, no execution) and fail on unknown args/subcommands; (b) assert every `rivet docs <topic>` / `rivet schema <name>` reference in doc prose resolves to a real topic. The countercheck showed this would have caught 6 of 8 REQ-284 divergences mechanically — turning an expensive human audit into a gate. This is the 'weak green' fix at the meta level: make the green prove the snippets are true, not just well-formed."
+    fields:
+      corrective: true
     release: backlog
     links:
       - type: derives-from
@@ -8231,6 +8322,8 @@ artifacts:
     title: "P0 data loss: modify --add-tag/--remove-tag drops the whole file when a tag needs quoting"
     status: implemented
     description: "Mutation-path stress test (user-reported: 'we very often get into failures' modifying artifacts) found a P0. rivet-core/src/yaml_edit.rs:828 re-emitted the tag flow list via `current_tags.join(\", \")` WITHOUT quoting individual tags — unlike the hardened sibling setters (set_title/status/field via yaml_quote_inline_scalar, #687) and the `add` path (mutate.rs). Any tag carrying a YAML flow indicator (`: `, `,`, `[`, `]`, `#`) breaks: a legitimately-quoted `\"release: v1.0\"` read back from the store is re-emitted bare (`release: v1.0`), turning the flow list into a map so the WHOLE FILE fails to parse — silently dropping EVERY artifact in it — while `modify` exits 0 reporting 'modified'. Reproduced: 2 artifacts -> benign `--add-tag simpletag` -> 0 artifacts. Same tag-mutation fragility class as #625, on the quoting axis. Fix: quote each tag via yaml_quote_inline_scalar before joining, mirroring the add path. Regression test (rivet-cli integration) asserts both artifacts survive + the quoted tag stays quoted. Also a silent-split variant (`--add-tag \"a,b\"` stored two tags) is closed by the same quoting."
+    fields:
+      corrective: true
     release: v0.32.0
     provenance:
       created-by: ai-assisted
@@ -8242,6 +8335,8 @@ artifacts:
     title: "CI mutation gate is vacuously green: reads a path cargo-mutants never writes (#768, cf. spar#381)"
     status: implemented
     description: "v0.33 gate-potency slice. Both `mutants-core` and the `mutants-cli` HARD gate run `cargo mutants --output mutants-out` (which writes the report to `mutants-out/mutants.out/`) then read `mutants-out/missed.txt` — a path that never exists. The `-f` test is always false, MISSED stays 0, `0 -gt 0` is false, exit 0 regardless of survivors. Evidence from rivet's own artifact `mutants-report-rivet-core-13-of-16` (id 7023721130, uploaded with `path: mutants-out/`): the artifact root contains exactly one entry, `mutants.out/`, whose `missed.txt` lists 5 real surviving mutants (yaml_cst.rs parser mutations) while CI printed `Surviving mutants: 0`. The artifact-upload globs (`mutants-out/*.json`, `mutants-out/outcomes.json`) are wrong for the same reason. Fix: read `mutants-out/mutants.out/missed.txt`, FAIL LOUDLY when the results file is absent (a missing report must never read as a clean one), then re-baseline real survivor counts. Ported from spar#381 after that repo found the identical bug. Status returned from verified to implemented (maintainer decision on CI evidence, 2026-10-09): its only evidence is the CI step that implements it; it returns to verified when a tool test exercises that step."
+    fields:
+      corrective: true
     release: v0.33.0
     provenance:
       created-by: ai-assisted
@@ -8253,6 +8348,8 @@ artifacts:
     title: "Format gate is green on unformatted tracked code: cargo fmt --all misses the fuzz/ workspace (#769, cf. spar#383)"
     status: implemented
     description: "v0.33 gate-potency slice. The required `Format` check runs `cargo fmt --all -- --check`; `--all` means all members of THIS workspace, not all crates in the repo. rivet has two `[workspace]` manifests (root + `fuzz/`), and `compose-witness/` carries its own Cargo.lock as well. Live on HEAD: root `cargo fmt --all -- --check` exits 0 while `cargo fmt --manifest-path fuzz/Cargo.toml -- --check` exits 1 with real drift in tracked files (fuzz/examples/oracle_smoke.rs:44,258; fuzz/fuzz_targets/artifact_ids.rs:38,66; fuzz/fuzz_targets/cli_argv.rs:188). Fix: derive the workspace list (`grep -rl '^\\[workspace\\]' --include=Cargo.toml`) and check each, so a newly added nested workspace cannot silently escape the gate. Ported from spar#383. Status returned from verified to implemented (maintainer decision on CI evidence, 2026-10-09): its only evidence is the CI step that implements it; it returns to verified when a tool test exercises that step."
+    fields:
+      corrective: true
     release: v0.33.0
     provenance:
       created-by: ai-assisted
@@ -8264,6 +8361,8 @@ artifacts:
     title: "check verification-evidence runs in no workflow — the anti-rot check nothing enforces (#770, cf. spar#388)"
     status: verified
     description: "v0.33 gate-potency slice. spar#388 found 7 verification artifacts citing tests that never existed (`cargo test -- <no match>` exits 0, so the gate scored them passing). rivet BUILT the checker for exactly that class — `rivet check verification-evidence` (REQ-236, hardened again in REQ-280 for nextest filtersets) — and `grep verification-evidence .github/workflows/*.yml` returns nothing: no workflow runs it, so the protection is opt-in-by-memory. Second, smaller defect: on an empty scan it prints `✓ verification-evidence: 0 named-test step(s) all reference an existing test` — a checkmark over nothing checked, the same weak-green shape the check exists to kill. Fix: (1) run it in the Traceability job (the binary is already built there); (2) reword the zero-steps case so an empty scan does not render as a pass."
+    fields:
+      corrective: true
     release: v0.33.0
     links:
       - type: traces-to
@@ -8280,6 +8379,8 @@ artifacts:
     title: "Detect-changed-areas filter is under-scoped and fails open: embedded schemas skip the compile matrix (#771, cf. spar#384)"
     status: implemented
     description: "v0.33 gate-potency slice. A `rust=false` verdict from the `changes` job skips Clippy, Test, MSRV, Semver, Miri, Proptest, Coverage and wasm-seam — and on GitHub a SKIPPED required context is indistinguishable from a passed one. The classifier only matches `(\\.rs$)|(Cargo\\.(toml|lock)$)|(^\\.github/workflows/)`, which misses real build inputs: `schemas/*.yaml` are compiled INTO the binary via `include_str!` (rivet-core/src/embedded.rs), so a schema-only edit — which changes binary content and can break the suite — skips the entire compile matrix; `.github/actions/**` composite actions used BY those jobs likewise skip. Third, the error path is the permissive path: if `git diff` fails (bad/absent base sha, shallow fetch) `changed` is empty, nothing matches, and the step exits 0 with rust=false. Fix: add the real build inputs (derive include_str!/include_dir! sources rather than retyping them) and fail CLOSED — an errored or empty diff must set rust=true. Ported from spar#384. Status returned from verified to implemented (maintainer decision on CI evidence, 2026-10-09): its only evidence is the CI step that implements it; it returns to verified when a tool test exercises that step."
+    fields:
+      corrective: true
     release: v0.33.0
     provenance:
       created-by: ai-assisted
@@ -8291,6 +8392,8 @@ artifacts:
     title: "modify --set-field must replace a sub-key's full on-disk extent, not just its first line (#806)"
     status: implemented
     description: "P0 data loss, reported externally and reproduced on main. The custom-fields write path in `mutate::modify_artifact_yaml` replaced the target sub-key with a single assignment (`editor.lines[i] = ...`), so any continuation lines belonging to that key — a block scalar body (`|`/`>`/`|-`), a nested block mapping, or a block list — were left ORPHANED. Two failure modes, both exiting 0 after printing `modified <ID>`: (1) the orphaned body folds into the new value as a multi-line plain scalar, silently corrupting it (intended `short` became `short first body line second body line`); (2) if a body line contains `: ` — ordinary prose — the file becomes unparseable, and since the loader drops a file it cannot parse, every artifact in that file vanishes. A 10-shape scouting matrix found 6 corrupting shapes; all 6 are green after the fix. The sibling `YamlEditor::set_field` has upheld this invariant since #613/#618/#625 via `field_block_end` + `splice`; the hardening was never propagated to this path 700 lines below, and the custom-fields path had no multi-line-value test at all. Fix mirrors the sibling, using `sub_indent` as the indent basis since custom fields sit one level deeper under `fields:`. Systemic follow-up in #809 (mutation-safety property harness) — this is the fourth data-loss bug in the same hand-rolled line-oriented writer after #573, #618/#625 and REQ-287. Status returned from verified to implemented (maintainer decision on CI evidence, 2026-10-09): its tests cover block-scalar bodies but not the nested map and block list under fields: that it names; it returns to verified when those are tested."
+    fields:
+      corrective: true
     release: v0.33.1
     links:
       - type: traces-to
@@ -8304,6 +8407,8 @@ artifacts:
     title: "Silent empty load: config typos and empty sources score green (#808)"
     status: verified
     description: "For a compliance tool, `validate` PASS and `coverage` 100% on a zero-artifact load is the worst failure direction. Reproducer shows two independent triggers: (case 1) a `generic-yaml` file with a near-miss root key (`requirements:` where `artifacts:` was expected) silently classifies as a non-artifact file; (case 2) a mis-keyed `sources:` (e.g. `typo_sources:`) at the top level of `rivet.yaml` disables every input, leaving the configured-sources loop with nothing to iterate — so the per-source `empty-source` diagnostic never fires either. Fix: (a) new `artifact-root-key-near-miss` diagnostic naming both the file and the offending key when a single-root-key generic-yaml file uses a plausible artifact-plural typo; (b) new `empty-source` diagnostic when a configured source yields zero artifacts; (c) new `unknown-config-key` diagnostic when `rivet.yaml` carries a top-level key outside the `ProjectConfig` schema (warning by default; hard-fail via `deny_unknown_fields` breaks legitimate downstream carrying of their own top-level keys like sigil's `schemas-path:`); (d) new `no-sources` diagnostic when the config declares zero sources at all — the case-2 gap the per-source loop cannot see, and also the plain `sources: []` case; (e) all four new diagnostics are Warning by default, Error under `--strict`; (f) `coverage` renders `n/a` (never `100.0%`) for zero-denominator rules, with a new `--strict-empty` flag that exits non-zero on empty load and `--fail-under` that also fails on empty load; (g) JSON output emits `null` percentages plus an `empty_scope: bool` field on every rule, closure entry, and the overall block so machine consumers can tell a satisfied gate from an empty one."
+    fields:
+      corrective: true
     release: v0.34.0
     provenance:
       created-by: ai-assisted
@@ -8315,6 +8420,8 @@ artifacts:
     title: "check verification-evidence is useless as a gate: blind to nested workspaces, and satisfied by an empty stub (#807)"
     status: verified
     description: "Reported externally and confirmed on main. Two independent defects that together make the check unable to gate. Defect 1 — false failures: a step running `cargo test --manifest-path compat/<crate>/Cargo.toml <name>` reports 'no test matching found' though the test exists. `--manifest-path` sits in VALUE_FLAGS purely so its value is not mistaken for the filter, and the value is then discarded; the scan root comes from `default_marker_scan_paths`, which returns the project root only when the root Cargo.toml declares `[workspace]` and otherwise scans just ./src and ./tests — so a nested independent workspace is invisible. Reporter saw 14 false failures, exit 1. Defect 2 — false passes: `filter_matches_any` is `names.iter().any(|n| n.contains(filter))` over every fn name collected from the scan roots, so it asserts only that a function of that name exists SOMEWHERE scanned, never that the step's command reaches it or that it asserts anything. Proven by the reporter: dropping `#[test] fn <missing name>() {}` into the root tests/ took findings 14 to 13. The check built for #556 ('a filter matching nothing exits 0 with 0 passed') is therefore satisfiable by exactly the stub it exists to catch. FIX ORDER IS LOAD-BEARING: Defect 1 must land before or with Defect 2 — fixing 2 alone converts every nested-workspace step from a false failure into a hard failure, making the reporter's 14 strictly worse. Related third property: an empty scan still exits 0, and on rivet's own repo the check examines 0 steps. Both defects are now shipped: Defect 1 (the discarded --manifest-path) in #830, Defect 2 (name-existence rather than test-reachability) under REQ-306. The umbrella is therefore discharged."
+    fields:
+      corrective: true
     release: v0.36.0
     links:
       - type: traces-to
@@ -8329,6 +8436,8 @@ artifacts:
     title: "Mutation-safety property harness for the YAML write path — one invariant, four data-loss bugs, no property test (#809)"
     status: proposed
     description: "Every mutating command writes through `rivet-core/src/yaml_edit.rs`, a ~2000-line line-oriented editor built on indentation heuristics. Hand-rolled deliberately (it preserves comments, key order and human formatting, which a serde round-trip destroys in version-controlled files) — but it has produced four data-loss bugs, each found by a user rather than a test: #573 flow-style `fields:` maps, #618/#625 block-list orphaning, REQ-287 unquoted tag emission, and #806 multi-line values in `fields:`. All four violate one invariant: replacing a key must consume that key's ENTIRE on-disk extent and change nothing else. #806 is the proof that examples are not enough — `set_field` upholds the invariant via `field_block_end` + `splice` and its comment names the history, while the custom-fields loop 700 lines below did a single-line assignment and had no multi-line-value test at all. The property must be stated as EXACT equality: parse before, mutate, parse after must succeed, every path except the target must be byte-identical, and the target must equal the intended value. 'It parses' is only a precondition — #806 mode 1 produced a perfectly parseable file whose value silently became 'short first body line second body line', so a parse-only assertion would green on the data loss. Corpus axis is scalar STYLE, not field name: plain, single/double-quoted, folded, literal, |- / |+ / |2, empty value, flow map, flow seq, block seq, nested block map, body containing colon / hash / leading dash, internal blank line, anchors, CRLF, tabs, last-field-of-last-artifact, unicode. Mutations: every --set-* flag, --add-tag/--remove-tag, --where bulk, plus `rivet add` and the MCP/batch writers. Lands as a proptest in rivet-core (fast, shrinks, runs in CI) plus a thin CLI-level test for flag wiring. Deliberately does NOT include migrating the writer to the in-tree rowan-yaml CST: that is an architecture decision with real cost for the maintainer to weigh, and the harness is the right thing to have in place BEFORE such a migration so it can prove behavior is preserved."
+    fields:
+      corrective: true
     release: v0.41.0
     links:
       - type: traces-to
@@ -8354,6 +8463,8 @@ artifacts:
     title: "CLI --help hygiene: internal REQ ids and issue refs leak into user-facing help text (#812)"
     status: verified
     description: "Help text is the product surface a new user meets first, and rivet's carries internal bookkeeping — REQ ids, GitHub issue numbers and doc paths that mean nothing outside this repo — with a top-level list long enough that the important commands do not stand out, and at least one entry reaching 405 characters. Fix: strip REQ/# references from user-facing help (they belong in artifact descriptions and commit trailers, which is where traceability already lives), cap entry length, and tighten the top-level command list so the common path is legible. Cross-check against REQ-297: the same discoverability finding (pulseengine.eu#166) applies here — if `docs`, `quickstart` and `context` are not visible in help, agents and humans alike hand-parse YAML instead."
+    fields:
+      corrective: true
     release: v0.34.0
     links:
       - type: traces-to
@@ -8368,6 +8479,8 @@ artifacts:
     title: "Per-PR mutation gate covers rivet-cli only — rivet-core changes get zero coverage while a mutation check reports on them (#816)"
     status: implemented
     description: "`mutants-core` is schedule-only (3677 mutants, moved off the every-push path to stop saturating runners); `mutants-cli` is the per-PR hard gate. So a PR changing rivet-core gets no mutation coverage at all, while the checks list shows a mutation job reporting on it. Made concrete by PR #810, a P0 data-loss fix in `rivet-core/src/yaml_edit.rs`: the rivet-core job was SKIPPED and the rivet-cli job FAILED with nothing in scope. A reviewer reading the checks would conclude mutation testing covered that PR; it did not. The original reasoning no longer holds: full-scope cost is what made mutants-core schedule-only, but `--in-diff` (REQ-288) made per-push cost proportional to CHANGED LINES rather than crate size, which is exactly what made mutants-cli affordable. Add a diff-scoped `mutants-core-pr` job mirroring mutants-cli — same fetch-depth 0, same fail-closed evidence check, same exit-status handling — and keep the schedule-only full-scope run for the long tail. Decide hard-gate vs advisory explicitly rather than by default: rivet-core has known-surviving mutants at full scope, but diff-scoped only asks whether the code this PR changed is covered, which is a fair bar; suggest advisory for one or two releases, then promote once the noise level is known. Particularly pointed because the current campaign (#806, #809) is specifically about mutation-path correctness in rivet-core — the code a mutation gate should be interrogating is the code it cannot see."
+    fields:
+      corrective: true
     release: v0.35.0
     links:
       - type: traces-to
@@ -8382,6 +8495,8 @@ artifacts:
     title: "dev verification type: declare steps/test-name/test-location so a dev-only project can feed the evidence gate (#748)"
     status: proposed
     description: "Downstream residual on #748 (reported from spar, 883 artifacts, dev schema). REQ-270 shipped the dev-native `verification` type in v0.29.0 (dev@0.2.0 -> 0.3.0), which resolved the headline complaint — a dev-only project can now put tests on the right side of the V and reach `verified` WITHOUT importing ASPICE's SWE.3 chain. What remains is field-level: of the four fields spar's hand-rolled workaround leans on, only `method` is declared. `steps` (142 spar artifacts), `test-name` (64) and `test-location` (64) are not, so migrating the 227 workaround artifacts onto `verification` fixes their V-side placement but reproduces the undeclared-field warnings — which is why pulseengine/spar#371 is still blocked. `steps` matters most: `fields.steps[].run` is exactly the shape `rivet check verification-evidence` reads (rivet-cli/src/main.rs:8205), the named-test-exists gate hardened by REQ-236 and REQ-280. Because dev's `verification` does not declare it, a dev-only project cannot feed that gate at all — very likely why the check reports `0 named-test step(s)` on rivet's own repo. Scope: declare `steps`, `test-name`, `test-location` on the dev `verification` type (bump dev schema version), and decide whether `verifies` should widen beyond `[requirement]` (the issue asked for `[any]`; verifying a design-decision or feature is currently inexpressible) — widening is a separate judgement call, not automatic."
+    fields:
+      corrective: true
     release: backlog
     links:
       - type: traces-to
@@ -8414,6 +8529,8 @@ artifacts:
     title: "Two coverage surfaces contradict each other: --tests reports 100% while the link rule reports 0% (#788, #787)"
     status: proposed
     description: "Reported against rivet 0.32.0 on pulseengine/varve v0.5.0. All 12 requirements are `status: verified`, advanced by `rivet verify` on the strength of `// rivet: verifies` source markers, and `rivet coverage --tests` reports 12/12 = 100 percent. The `requirement-verification` link rule reports 0 percent for the same 12 requirements. Both numbers are printed by the same tool about the same artifacts; at most one can be right, and a reader has no way to tell which. For a compliance tool the disagreement is worse than either number being wrong on its own, because it means neither can be cited. Paired with #787, which is plausibly the mechanism or part of it: `coverage --tests` attributes a `// rivet: verifies` marker to the PRECEDING helper fn rather than the FOLLOWING `#[test]` fn, so the marker set it counts may not be the set a reader believes it counted. Deliver: (1) root-cause the attribution bug in the marker scanner and fix it to bind to the next test-like item, not the previous item; (2) decide and document which surface is authoritative — link-based coverage or marker-based `--tests` — and make the non-authoritative one say so in its output rather than presenting a bare competing percentage; (3) a regression fixture holding both surfaces on the same artifact set so they can never silently diverge again. Same family as REQ-294 and the v0.33.0 gate work: a number that cannot be trusted is worse than an absent one."
+    fields:
+      corrective: true
     release: backlog
     links:
       - type: traces-to
@@ -8428,6 +8545,8 @@ artifacts:
     title: "Overlapping sources make every id collide with itself — 184 phantom errors masked 6 real ones (#746)"
     status: verified
     description: "Found while auditing spar's artifact set. When two configured `sources[]` paths overlap (one nested inside another, or the same tree reached twice), every artifact is loaded twice and `duplicate-artifact-id` fires against itself. On spar this produced 184 phantom errors which MASKED 6 genuine ones — the failure mode that matters, since a wall of false errors is functionally identical to no error reporting at all, and it actively caused a wrong number to be reported. Second, independent item in the same report: diagnostic output order is non-deterministic, so two runs over an unchanged tree produce different orderings and report diffing is useless — which is precisely how a compliance workflow detects drift between baselines. Fix: dedupe overlapping source paths at load time so each file is read once, and impose a total order on diagnostics before rendering. PR #759 carries the fix; it predates this artifact, which is being filed retroactively because the issue had no typed home and was therefore invisible to release planning."
+    fields:
+      corrective: true
     release: v0.34.0
     provenance:
       created-by: ai-assisted
@@ -8439,6 +8558,8 @@ artifacts:
     title: "serve: /api/v1/artifacts silently truncates at limit=1000 while the repo holds 1017 (#832)"
     status: implemented
     description: "`/api/v1/artifacts` caps `limit` at `.min(1000)` (rivet-cli/src/serve/api.rs:459, again at :630). This repo now holds 1017 artifacts, so a client asking for everything receives 1000 rows with no indication that 17 were dropped. Measured: `total: 1017, returned: 1000`. A cap is fine; a SILENT cap is not — the response carries `total` next to a short array, so the data needed to detect truncation is present but nothing marks the payload as partial, and every consumer reading `artifacts` as the full set is quietly wrong. Two consequences are already visible: serve_integration.rs:569 asserts `externals_unscoped > 0` on `origin=all&limit=1000`, i.e. it assumes that window contains every artifact (it passes today only because the externals happen to sort into positions 0-3); and before #746/#759 the ordering was non-deterministic, so WHICH 17 fell off the end varied run to run. Fix in order of value: (1) emit `truncated: true` (or `returned` alongside `total`) whenever `artifacts.len() < total` so consumers can fail loudly; (2) keep the window deterministic so truncation is at least reproducible; (3) decide the cap deliberately — either document 1000 as a paging boundary with a working offset/cursor, or let `limit=0`/`limit=all` mean no cap on the machine-readable endpoint. Step 1 alone converts this from silent to detectable. Verified NOT to affect the export path: `rivet export --format generic-yaml` emits 1017 of 1017."
+    fields:
+      corrective: true
     release: v0.35.0
     provenance:
       created-by: ai-assisted
@@ -8450,6 +8571,8 @@ artifacts:
     title: "ci: the Test job can produce no JUnit XML and still report success — three stacked silencers (#833)"
     status: implemented
     description: "The `Test` job's evidence step (.github/workflows/ci.yml:414-428) is named `Run tests (JUnit XML output)` and can satisfy none of that name while going green, because three independent silencers sit in a row: (1) `cargo install cargo-nextest --locked 2>/dev/null || true` swallows an install failure twice, by discarding stderr and by discarding the exit code, so a registry outage or an MSRV bump is indistinguishable from success; (2) the `else` branch falls back to `cargo test --all`, which emits no JUnit XML and drops the `ci` profile's `retries = 2` and `fail-fast = false` — silently removing the flake protection #494 added; (3) the upload step then carries `if-no-files-found: ignore`, so the missing artifact is not an error. Each silencer is individually defensible and their composition is not. Same family as #293, where `continue-on-error: true` on release.yml's `build-test-evidence` hid a real failure across four releases, each shipping a compliance bundle with no test evidence. Fix: install via `taiki-e/install-action` (already used for this exact tool in the Proptest job and in release.yml, so this makes three jobs consistent rather than introducing anything new), run nextest unconditionally, and flip `if-no-files-found` to `error` — that last is the part that makes the evidence claim checkable. The fix is only real if the gate can then go red, so whoever lands it must negative-control it: point the tool or the path at something nonexistent and confirm the job FAILS rather than skipping."
+    fields:
+      corrective: true
     release: v0.35.0
     provenance:
       created-by: ai-assisted
@@ -8461,6 +8584,8 @@ artifacts:
     title: "ci: Proptest (extended) runs cargo test without nextest retries, so the documented serve race reddens it (#835)"
     status: implemented
     description: "`.config/nextest.toml` carries `retries = 2` specifically because the serve/integration tests bind ports and spin up a server, so under CI parallelism one occasionally loses a timing/port race. The `Proptest (extended)` job runs those same tests under 10x load (`PROPTEST_CASES: 1000`, the worst case for that race) via `cargo test --all` — not nextest, therefore no `--profile ci`, therefore no retries. The protection that exists for this exact flake is absent in the job most likely to trigger it. Observed on PR #818: `api_artifacts_search` failed with `left: 0, right: 200`, i.e. no HTTP response at all rather than an error status — verbatim the failure mode `start_server()` documents in its own comment (`status=0 on api_artifacts_unfiltered / api_artifacts_search under Proptest load`). The same suite passed 2257/2257 in the `Test` job on the same commit, so the difference is the runner, not the code. Two costs already paid: #759 carried a red Proptest for 14 days and took a full investigation (including two hypotheses built and discarded) to establish as environmental; and a job that reddens on a known race trains reviewers to merge past it, which is how a real failure eventually gets waved through. Fix: either give the job the same retry semantics (`cargo nextest run --all --profile ci`, which reports a retry-passing test as FLAKY so the signal is kept rather than hidden), or exclude the serve/integration tests from this job entirely — they are not property tests and gain nothing from PROPTEST_CASES=1000, which is arguably cleaner and also cuts the job's runtime."
+    fields:
+      corrective: true
     release: v0.35.0
     provenance:
       created-by: ai-assisted
@@ -8472,6 +8597,8 @@ artifacts:
     title: "check verification-evidence is name-existence, not command-reachability — an empty stub satisfies it (#807 Defect 2)"
     status: verified
     description: "Second of the two defects in #807; Defect 1 (the discarded `--manifest-path`) shipped in #830. `filter_matches_any` is `names.iter().any(|n| n.contains(filter))` — it checks that a function name resembling the filter exists SOMEWHERE in the scanned tree, not that the step's command would actually reach that test. The reporter proved it: dropping an EMPTY `#[test] fn <missing_name>() {}` into the root `tests/` made a finding disappear. So the real test can error while a hollow one passes, and the check is satisfiable by exactly the stub it exists to catch — the same shape as #556 (`a filter matching nothing exits 0 with 0 passed`). Fixing this changes the check's semantics from name-existence to command-reachability: resolve the step's command to its actual target set (per manifest/package/test-target) and match only within that, plus reject empty-bodied test functions as evidence. That is a design change rather than a parser fix, which is why it was deliberately sequenced after Defect 1 — the issue notes that fixing 2 alone would have converted every nested-workspace step from a false failure into a hard failure. With Defect 1 landed, stricter matching now tightens real steps instead. Related: the check exits 0 on an empty scan (REQ-290 added the warning but not the exit code), so a project with no parseable steps still reads as a pass. Shipped as extract_test_fn_names in rivet-core, used by the evidence scan in place of extract_rust_fn_names: a candidate must carry a test-family attribute (test, tokio::test, rstest) AND a body holding more than whitespace and comments. This deliberately reverses the over-approximation the old extractor documents as the SAFE direction; it is not the safe direction, because a gate that can only under-report is a gate you cannot fail. The old function keeps its contract and its callers, so the change is additive. Verified against three fixtures in one file: a real test still counts, an empty-bodied test does not, and a non-test helper sharing the name does not. Full per-target command resolution is NOT implemented and remains unaddressed. The related empty-scan note is deliberately out of scope: REQ-290 decided that exit 0 there is the contract for callers and exposes empty_scan in JSON so a machine can tell a vacuous run from a pass, and that decision is pinned by its own test."
+    fields:
+      corrective: true
     release: v0.36.0
     links:
       - type: constrained-by
@@ -8518,6 +8645,8 @@ artifacts:
     title: "coverage: a goal declared `undeveloped: true` counts identically to one that was forgotten (#848)"
     status: implemented
     description: "Reported from scry's safety case. `rivet coverage` returns a true number that is not measuring what a reader assumes. Three of five safety goals carried GSN's `undeveloped: true` — the diamond notation for a goal DELIBERATELY not yet decomposed, a declaration of known incompleteness that is correct practice to write down — and coverage did not read the field at all, so a declared gap and an oversight contributed identically. Reproduced in rivet with a three-goal fixture: goal-has-support scored 1/3 = 33.3% with one supported goal, one declared undeveloped and one simply forgotten. The safety-case schema's own rule description already promised the exemption (\"unless marked undeveloped\") while `undeveloped` appeared in no Rust file — the semantics were documented and unimplemented. The figure misled in BOTH directions. False alarm: a project doing the right thing scored as if it had drifted, and the natural remedy is to add links until the number goes green, which is the cosmetic move a coverage gate exists to prevent. False comfort, the one that bites: a genuinely forgotten goal hides among the declared ones, because three accepted gaps becoming four reads as more of the same. Same shape as scry#117, where an MC/DC gate's green was real and measured a population that was 49% Rust stdlib. Fix landed as a schema-declared rule field `exempt-when-field`, NOT a hardcoded field name, so any schema can express its own notion of a declared accepted gap; safety-case wires it to `undeveloped` on goal-has-support. An exempt source leaves the denominator and is reported as its own named count with ids, never silently dropped. Only an explicit `true` exempts — `false` or absent keeps the source in scope, so an exemption is always something an author wrote on purpose. Measured after: the same fixture reports 1/2 = 50.0% plus \"1 declared exempt (not counted): G-002\", and with the forgotten goal removed 1/1 = 100.0% — so a forgotten goal now moves the figure 100% -> 50% where it is loud. Deliberately NOT applied to goal-has-context: `undeveloped` states that a goal is not yet decomposed into evidence and says nothing about whether it has context, so exempting that rule too would silently weaken a separate check. Reporter's remaining asks, not done here: `--fail-under` treating exemptions as a policy choice (allowed in development, blocking for a qualification claim, since an undeveloped ASIL D goal is fine in-flight and is a release blocker for certification)."
+    fields:
+      corrective: true
     release: v0.35.0
     provenance:
       created-by: ai-assisted
@@ -8529,6 +8658,8 @@ artifacts:
     title: "validate --explain reports the allowed-source set as [] for a rule that IS satisfiable (#852)"
     status: implemented
     description: "`rivet validate --explain REQ-001` prints \"needs an incoming 'verifies' from one of []\", which reads unambiguously as 'no artifact type may source this link' — i.e. the rule is structurally unsatisfiable. The reporter concluded exactly that and was about to file a schema gap before testing it. The `verification` type in `dev` declares `verifies -> [requirement]`, and its own description documents that it was ADDED to fix precisely this class (#721); adding one `verification` artifact flips the line to `[satisfied]` immediately. So the rule is satisfiable and the explain output simply does not consult the type registry for types whose LINK-FIELDS can source the required link — it appears to look only at an explicit from-types list on the rule and renders an empty list rather than deriving the set. The failure mode is a diagnostic that actively causes a wrong diagnosis: an empty `[]` is indistinguishable from 'unsatisfiable', which is a real and different condition rivet should be able to report. Fix shape: derive the allowed-source set from the schema's types (any type declaring a link-field of that link-type targeting this source-type) and render it; if the derived set is genuinely empty, say so explicitly ('no type in the loaded schemas can source this link — the rule is unsatisfiable') rather than printing bare brackets, so the two cases are distinguishable in the output rather than only in the reader's head."
+    fields:
+      corrective: true
     release: v0.35.0
     provenance:
       created-by: ai-assisted
@@ -8551,6 +8682,8 @@ artifacts:
     title: "A dead externals path: poisons cross-repo resolution and validate still reports '0 broken cross-refs' (#854)"
     status: implemented
     description: "Reported from synth (synth#1012) and reproduced locally at HEAD with a single external declaring both `git:` and a nonexistent `path:`. Two compounding behaviours. FIRST, a dead `path:` poisons resolution instead of falling back to the declared `git:` — one nonexistent path is enough that external artifacts are never loaded, so every cross-repo ref degrades into a local `link 'traces-to' targets 'X' which does not exist` error, INCLUDING refs into repos that synced fine. On the reporter's tree 38 of 50 errors were artifacts of the poisoned state and 12 real dangling refs were invisible behind them. `rivet lock` fails outright with `IO error: git rev-parse: No such file or directory (os error 2)` naming neither the external nor the path (measured exit 1). SECOND, and the more dangerous half, the summary line reports `FAIL (N errors, 0 warnings, 0 broken cross-refs)` in that state. `0 broken cross-refs` beside N unresolved-target errors means resolution never RAN, but it reads as 'the cross-repo graph is clean' — the same shape as REQ-309, where a zero denominator rendered as 100%, and as the `empty_scan` case in REQ-290. Measured locally: 1 unresolved-target ERROR alongside `0 broken cross-refs`, and the summary also reports `0 warnings` while printing a `warning:` line, so the cross-repo INCOMPLETE warning is excluded from its own count. Fix shape, in value order: (1) render the cross-ref figure as NOT CHECKED rather than 0 whenever external loading failed, so an unrun check can never read as a clean one; (2) count the INCOMPLETE warning in the warning total; (3) fall back to `git:` when `path:` does not resolve, or fail loudly naming the external and the path instead of degrading every downstream ref; (4) name the external and path in the `rivet lock` error."
+    fields:
+      corrective: true
     release: v0.35.0
     links:
       - type: traces-to
@@ -8583,6 +8716,8 @@ artifacts:
     description: "Found while verifying REQ-304/305 locally. `rivet_bin()` in 27 of 28 integration-test files reads `std::env::var(\"CARGO_BIN_EXE_rivet\")` — a RUNTIME lookup — and falls back to a hardcoded `<workspace_root>/target/debug/rivet`. Cargo sets that variable in the test process environment, so `cargo test` works. nextest spawns test processes itself and does NOT set it, so every one of those files falls through to the hardcoded path, which ignores `CARGO_TARGET_DIR` entirely. Measured: `cargo nextest run --all --profile ci` with `CARGO_TARGET_DIR=/tmp/rivet-build` gives 2304 tests run, 387 failed, every failure `spawn rivet: Os { code: 2, kind: NotFound }`; copying the binary to `<workspace>/target/debug/rivet` makes the same suite pass 8/8 on a sampled crate. The single file that uses the COMPILE-TIME macro `env!(\"CARGO_BIN_EXE_rivet\")` — mcp_integration.rs, changed in #834 for REQ-293 — passes under nextest untouched, which is the clean discriminator. CI does not hit this because it sets no CARGO_TARGET_DIR, so the fallback happens to resolve; the cost lands on local verification, where the documented workflow for this repo IS a custom target dir, meaning nextest-based CI changes cannot be validated locally without a workaround. Fix is mechanical: replace the runtime lookup with `env!(\"CARGO_BIN_EXE_rivet\")`, which cargo substitutes at compile time for integration tests and which is correct under any runner and any target directory, and delete the hardcoded fallback rather than repairing it — a fallback that silently resolves to the wrong path is how #293 shipped four releases of empty compliance bundles."
     release: v0.36.0
     tags: [test-infrastructure, weak-green]
+    fields:
+      corrective: true
     links:
       - type: derives-from
         target: REQ-304
@@ -8622,6 +8757,8 @@ artifacts:
     title: "The self-hosted fleet restarts mid-run, killing in-flight jobs and reporting them as failures (#862)"
     status: verified
     description: "Twice confirmed within two days, and each time it presents as a set of unrelated red checks that look like real regressions. On 2026-08-27 three jobs on three DIFFERENT runners (Code Coverage on 01-10, Mutation Testing rivet-cli on 01-9, Mutation Testing rivet-core PR-diff on 01-6) all started 04:54:38 and died within ten seconds of each other at 04:56:37 with `The runner has received a shutdown signal`; all three had been green on the previous commit of the same PR. On 2026-08-26 the same message at 04:33:47 killed WASM seam build, Test and Proptest across two labels within one second, and all three passed on re-run. The cost is not the re-run. The jobs report `failure`, not `cancelled`, and there is no failed STEP — the steps end `skipped` — so the GitHub UI shows a red X that is indistinguishable from a broken test, and only the raw log carries the reason. That indistinguishability has already produced one published misattribution (PR #855, where duplicate pull_request runs were blamed and a correction had to be issued) and it is the mechanism by which a genuinely red mutation gate could be waved through. Two things needed. First, find the cause: unattended upgrades, a systemd timer, a config-management run or an autoscaler reclaim would all produce this, and if it is scheduled, moving it outside working hours costs nothing. Second, make the state legible without opening logs — a post-job step that detects the shutdown and annotates the job would let a reader distinguish 'the runner went away' from 'the test failed' at a glance. Related: this same message is emitted by the HOSTED pool too, which is why the Kani attribution in #839 was wrong; the message alone does not identify which pool restarted. SCOPE SPLIT, decided with the maintainer on 2026-09-05: this artifact now covers only the SECOND half — making the state legible without opening logs. Shipped as classify_failure in tools/ci-diagnose/diagnose.sh, which separates three outcomes a red X conflates: a job that failed with NO failed step is the fleet-restart signature (runner-vanished), a step that failed with work still skipped after it never ran the work (setup-failed), and an ordinary failure that names its step (job-failed). Validated against a real Kani job on PR #888, which classifies as setup-failed — the same discriminator applied by hand all cycle, now mechanical. The FIRST half, finding the cause on the runner hosts, needs shell access to those machines and is deferred to REQ-323 at v0.37.0. It is recorded rather than dropped."
+    fields:
+      corrective: true
     release: v0.36.0
     links:
       - type: traces-to
@@ -8636,6 +8773,8 @@ artifacts:
     title: "The runner-liveness probe misdiagnoses in three distinct ways and re-fires instead of being fixed (#839, #849, #860, #867)"
     status: verified
     description: "The scheduled liveness probe auto-files an issue when a run sits queued, and it has now fired four times with guidance that sends the reader to the wrong conclusion. Three separate defects, each verified. (1) Its own diagnose hint says to run `gh api repos/pulseengine/rivet/actions/runners --jq .total_count` and reads `0 = pool offline`; runners here are registered at the ORG, so that command returns 0 on a perfectly healthy pool and can never say otherwise — measured repo-scope 0 against org-scope 12. (2) GitHub-hosted capacity appears in the runners API at NO scope, so no `total_count` query can distinguish 'self-hosted offline' from 'hosted starved', and hosted starvation is the mode this alert most often fires on — every queued job was `[ubuntu-latest]` on both #860 and #867 while self-hosted sat idle. (3) It counts queue age on runs that were CANCELLED: #867 reported 'queued 177m — runners are not picking up jobs' for run 33078970036, which was `completed/cancelled` and therefore never going to start. The compounding problem is that each alert auto-closes when the symptom clears, so the probe's own defects survive every occurrence and the next reader starts from the same wrong hint. Fix: skip completed runs when computing queue age; report the LABELS of the still-queued jobs rather than a duration alone; and branch the guidance — `[self-hosted, …]` plus a low online count is a pool problem, `[ubuntu-latest]` is hosted starvation and the self-hosted numbers are irrelevant. Four distinct runner failure modes are now documented across these issues (pool offline, pool saturated, hosted starvation, fleet restart) and this probe describes only the first. All three defects fixed. The queued-age loop now skips runs whose own status is completed, so a cancelled run can no longer be reported as stuck. The alarm classifies from the LABELS of the still-queued jobs via classify_stall and branches its guidance per mode instead of printing a duration. The diagnose hint that told every reader to run a repo-scope total_count query — which returns 0 on a healthy org-registered pool and can never say otherwise — is replaced by an org-scope PER-LABEL idle count compared against the labels of what is queued. A FIFTH mode was found while fixing this and is now covered: label-partitioned saturation, measured 2026-09-02 as online=12 busy=8, a third of the fleet idle, while every rust-cpu job queued because those idle runners carried only lean-mem. A global busy-versus-online count cannot see that. Validated against live data: with 5 hosted and 3 rust-cpu jobs queued and only lean-mem and light idle it returns label-saturated, and the control filtering to only hosted jobs returns hosted-starved."
+    fields:
+      corrective: true
     release: v0.36.0
     provenance:
       created-by: ai-assisted
@@ -8663,6 +8802,8 @@ artifacts:
     title: "coverage --tests skips shell scripts, so a gate-verified requirement cannot close its V (#870)"
     status: verified
     description: "`rivet coverage --tests` read `# rivet: verifies REQ-X` from a Python file but not the identical comment from a shell script — same convention, different extension. `detect_language` had no entry for `sh` at all, so `scan_file` returned before any pattern ran and the file was skipped silently. Reproduced: three files in one directory with one marker each; the .rs and .py markers were found, the .sh one reported `No test markers found`. This costs real evidence rather than tidiness. Not every falsifiable check is a unit test, and the ones that are not tend to guard the nastiest failures — the reporter's two examples are a gate that refuses any workflow redirecting key material into a file (proved by rejecting four shapes including one their own deposit workflow shipped) and one asserting the installer warns when a different binary wins the PATH lookup. Both run in CI, both have negative controls proving they can go red, and both are the sole evidence for their requirement, which therefore could not reach `verified` by any honest route. Fixed by giving shell its own language category rather than aliasing it to python — the comment pattern is the same but the enclosing-function regex differs (`name() {` and `function name` rather than `def`). Also added a shebang fallback for EXTENSIONLESS scripts, since a gate is frequently `tools/no-key-on-disk` rather than `tools/no-key-on-disk.sh`; the fallback is consulted only when a file has no extension, so a tree of images and binaries is not read looking for one, and a plain text file with no shebang is still correctly skipped. Verified by two markers in `rivet-core/src/test_scanner.rs`, hardened after the PR-diff mutation gate found three survivors in the new code: the zsh/ksh disjunct, the word-boundary sh match, and the shell arm of the enclosing-function lookup. The third is the instructive one — the test already exercised that arm and already passed, but projected every marker down to its target id and discarded the attributed name, so deleting the arm silently degraded a marker from its function name to a bare file-and-line and nothing noticed. Line coverage reported the arm fully covered. Each mutant was re-applied by hand and confirmed to redden exactly the assertion written for it."
+    fields:
+      corrective: true
     release: v0.36.0
     provenance:
       created-by: ai-assisted
@@ -8693,6 +8834,8 @@ artifacts:
     description: "Found empirically by the `yaml_footguns` fuzz target on a push-to-main run, from a six-byte input. `yaml_cst::parse_root` skips one LEADING `---` document-start marker, parses the first document, then bumps every remaining token into the Root node as trivia. A second document therefore vanished with no diagnostic: `extract_generic_artifacts` on a source declaring two artifacts across two documents returned exactly one, with an empty diagnostics list. This is a two-parser disagreement, which is the specific thing rivet cannot afford. The serde path already rejects the same input with `deserializing from YAML containing more than one document is not supported`, so a reader consuming the rowan path (the incremental, LSP and span-aware surfaces) saw a different file than a reader consuming the serde path, and neither was told. The shipped CLI was NOT affected, because it reads through the serde path and correctly exits 1; the divergence was confined to rivet-core. Fixed by making the two parsers agree rather than by implementing multi-document support: a DirectiveMarker reached in the trailing consume loop is a document SEPARATOR rather than the document START already skipped, so it now raises an Error. Loading both documents would have been a feature, and would silently widen what validate accepts. The rowan path additionally reports a line number, which the serde path does not. Pinned by two tests: one asserting the multi-document case is diagnosed, and one asserting a leading `---` remains ordinary single-document YAML, which is what forces the guard to distinguish separator from start. Negative-controlled by removing the guard and confirming the first test reddens while the second stays green. Regression-checked against rivet's own tree: 1035 artifacts still load and validate passes."
     release: v0.36.0
     tags: [silent-accept, parser, fuzz-found]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8704,6 +8847,8 @@ artifacts:
     description: "Reported against the built-in safety-case preset with no local customisation. Two defects, and the reported one is the smaller. FIRST, `required-backlink` was checked against the set of FORWARD link-type names, but a backlink names the INVERSE of a declared type — `supported-by` for `supports`, `scoped-by` for `scopes` — so two rules in a shipped preset were reported as naming unknown link types. The reporter's decisive observation is that the coverage engine resolves those same names and returns real counts, which is what rules out the schema being the wrong end; `inverse_map` is populated in both directions and is the index coverage already uses. `required-link` is left forward-only, because rules genuinely do name the forward type there. SECOND, and worse, `rivet schema validate` printed `Result: 2 error(s)` and exited 0: `cmd_validate` returned only a String, and its single caller printed it and returned Ok(true) unconditionally, so the command could never fail whatever it found. The report frames this as a check that cries wolf, but it could not gate anything at all — the same weak-green class as a check that never fires. Both halves are pinned by tests that redden independently: dropping the inverse lookup fails only the built-in-preset test, and restoring the always-succeed return fails only the process-exit test, which uses a backlink that is neither a forward name nor a declared inverse so widening the accepted set cannot quietly turn the check into a no-op. Warnings deliberately remain a pass, since an unknown target type can legitimately belong to a preset the project has not enabled. Confirmed no workflow invokes `schema validate`, so the exit-code change cannot break rivet's own gates, and rivet's own schemas report 0 errors. Cross-checked that `coverage --format json` still emits supported-by and scoped-by as backward rules, so the fix changed only what the validator ACCEPTS, not what a backlink resolves to. Out of scope and filed as observation only: `alternate-backlinks` link types are not validated at all, so that hole is a check that does not fire rather than one that fires wrongly."
     release: v0.36.0
     tags: [weak-green, validation, schema]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8715,6 +8860,8 @@ artifacts:
     description: "Split out of REQ-316 on 2026-09-05 with the maintainer, because it cannot be discharged from the repository. REQ-316 shipped the legibility half — a red X caused by a vanished runner is now mechanically distinguishable from a failed test. This is the other half: WHY the fleet restarts. Twice confirmed within two days, each time killing jobs across several runners within seconds of one another: 2026-08-27 at 04:56:37 across runners 01-10, 01-9 and 01-6, and 2026-08-26 at 04:33:47 across two labels. Both windows fall around 04:30-05:00 UTC, which is consistent with a scheduled task rather than with load. Candidates, each of which would produce exactly this signature: unattended-upgrades restarting the runner service, a systemd timer, a config-management run, or an autoscaler reclaiming instances. Requires shell access to the Hetzner hosts — inspect systemctl list-timers, the unattended-upgrades configuration and any autoscaler policy, then correlate against the two timestamps above. If it is scheduled, moving it outside working hours costs nothing and removes the failure mode entirely rather than making it legible. Until then the cost is bounded but real: every occurrence spends a re-run and invites a misattribution, and one has already been published and corrected (#855). ROOT CAUSE FOUND 2026-09-05 by the infrastructure maintainer on #862, not from this repository. `needrestart` is wired into dpkg via /etc/apt/apt.conf.d/99needrestart as a DPkg::Post-Invoke hook; running without a TTY under unattended-upgrades it restarts every service mapping an upgraded library, and github-runner@*.service was never excluded, so a library upgrade stops and starts all twelve runners mid-dpkg. apt-daily-upgrade.timer fires 06:00-06:45 CEST, which is 04:00-04:45 UTC — the window both incidents fall in. All three occurrences were matched to the second, each upgrading a library Runner.Listener links for HTTPS: 2026-08-26 curl and libcurl at +13s, 2026-08-27 libssl3t64 and openssl at +21s, 2026-09-02 libssh-4 and libgcrypt20 at +30s. The mechanism was negative-controlled: on 2026-09-04 the upgrade installed only gnupg, which the runners do not map, and no restart followed — it explains the non-events as well as the events. Fix deployed: an override_rc drop-in at /etc/needrestart/conf.d/90-github-runner.conf, chosen over blacklist_rc so the units stay visible in needrestart -b -r l and it remains possible to see which runners carry stale libraries. Stated trade-off: a runner keeps pre-upgrade shared libraries mapped until it next restarts, so security updates including openssl are patched on next restart rather than immediately; a drain-aware refresh timer is the follow-up if that proves too loose. NOT YET VERIFIED, which is why this artifact is implemented rather than verified: suppression of a real restart has not been demonstrated because that needs an actual library upgrade, and the maintainer is watching the next apt-daily-upgrade. This also corrects #839 — exit 143 on Kani in that window is this needrestart, not hosted-runner reclaim, confirming the note in REQ-316 that the shutdown message alone does not identify which pool restarted. Note that this removes A cause, not THE cause: runners also vanish on a broker-service wedge (8 of 12 offline for 4h49m on 2026-09-02) and under host memory pressure, so REQ-316 legibility remains worth having independently. SCOPE DECISION 2026-09-09: moved out of v0.37.0 to backlog. The work is DONE — #862 is closed, the root cause was found by the infrastructure maintainer and the suppression was demonstrated under a forced libssl3t64 reinstall, with 12 of 12 runners flagged by needrestart and 0 restarted while six other services were restarted in the same dpkg run. This is not a deferral of the work. It is a deferral of the VERIFICATION, because the evidence is externally owned and rivet cannot consume it: `rivet verify` accepts only an incoming `verifies` link or a source marker, and while `cited-source` could record a github reference, only kind `file` is actually verified, so citing the issue would turn the gate green on something rivet cannot check. That is exactly REQ-318 (#800), which is `proposed` and in backlog; this requirement is blocked on it and belongs in the same place until it lands. Leaving it in v0.37.0 would have made the release permanently uncuttable on a requirement whose work is complete."
     release: backlog
     tags: [ci, infrastructure, deferred]
+    fields:
+      corrective: true
     links:
       - type: refines
         target: REQ-316
@@ -8731,6 +8878,8 @@ artifacts:
     description: "Found on PR #893 while shipping REQ-320. The PR-diff mutation gate reported one survivor: rivet-core/src/proofs.rs:209, replacing the proof harness proof_coverage_percentage_bounds with unit. That module is gated behind `#[cfg(kani)]` at line 9, so `cargo test` never compiles it, and the gate runs `cargo mutants -- --lib`. No test the gate executes can observe the mutation, so the finding is unkillable by construction — it appeared only because the PR touched the file to add a struct field. This is the same defect class as the release it was found in: a gate that reports something nothing can act on trains its readers to ignore it, and the next real survivor in that report costs nothing to dismiss. Two candidate fixes. Exclude cfg-gated modules from the mutants scope, either via an `--exclude` argument in the workflow or a mutants.toml, which is cheap and honest about what the gate covers. Or run a separate mutation pass under `cargo kani`, which is the thorough answer and almost certainly not worth its runtime for four proof harnesses. Prefer the first. Note that the same file has already caused one real incident in the other direction: a struct field added without updating the cfg(kani) literal broke the Kani proofs, and the resulting CI signal was written off as flake six times, so the file needs to stay visible to SOMETHING even if the mutation gate stops reporting on it. IMPLEMENTED 2026-09-09 by the preferred route: a cargo-mutants config excluding cfg(kani) code, which fixes all three `cargo mutants` call sites in ci.yml from one place rather than editing each. THE CONFIG PATH IS THE WHOLE TRAP. cargo-mutants 27.0.0 reads `.cargo/mutants.toml` and SILENTLY IGNORES a root-level `mutants.toml`; the first version of this fix put the file at the root, the accompanying test passed, and `cargo mutants -p rivet-core --list` still enumerated 236 mutants in proofs.rs. A test that asserts a config exists proves nothing about whether the tool reads it, so the fix was verified by LISTING MUTANTS before and after: 236 to 0 in proofs.rs, total still 5610, and rivet-core/src/lib.rs retaining its 61 — that last number being the check that the exclusion did not quietly drop live code. THE ORACLE HAD TO BE NARROWED TWICE. Scanning for files that CONTAIN the string `#[cfg(kani)]` matches three files, and two are false positives whose exclusion would be actively harmful: rivet-core/src/lib.rs merely DECLARES the module and is ordinary code that must stay in scope, and rivet-cli/src/docs.rs contains the string inside a documentation topic. The invariant is therefore narrower — a file named by a `#[cfg(kani)] mod X;` declaration — and the test additionally asserts that those two files are NOT excluded, so a future broadening cannot silently remove real code from the gate. Then the exclusion assertion itself was found VACUOUS: it substring-matched the whole config file and so matched the rationale comment naming proofs.rs, not the exclude_globs entry, and deleting the real exclusion left the test green. Found because the negative control failed to redden. It now parses the exclude_globs array. RESIDUAL, STATED RATHER THAN CLOSED: this requirement warned that proofs.rs must stay visible to SOMETHING, because a struct field added without updating a cfg(kani) literal once broke the proofs and the signal was written off as flake six times. After this change the only thing compiling proofs.rs is `cargo kani`, and that job fails at its install action roughly half the time (#839 — measured 5 success, 6 failure, 11 absent over 22 CI runs on main, every failure at model-checking/kani-github-action@v1 with `cargo kani` skipped). A cheap type-check guard was attempted and does not exist: `RUSTFLAGS='--cfg kani' cargo check -p rivet-core` fails with unresolved import `kani`, because the kani crate is injected by the Kani compiler rather than resolvable from the registry. So the drift guard is genuinely weaker after this change, not merely relocated, and closing #839's install flakiness is what would restore it."
     release: v0.37.0
     tags: [ci, weak-green, mutation-testing]
+    fields:
+      corrective: true
     links:
       - type: derives-from
         target: REQ-320
@@ -8745,6 +8894,8 @@ artifacts:
     description: "Found on 2026-09-06 while watching the v0.36.0 release run, in the code REQ-317 shipped one day earlier. `create-release` sat queued behind its `needs` while `build-compliance` was still running, and `classify_stall` returned `hosted-starved` — because every queued job carried the `ubuntu-latest` label and the classifier reasons only about labels and runner capacity. The fleet was almost entirely idle at the time: online=12, busy=1, with spare capacity under every label. Nothing was starved; the job was simply waiting its turn. This is the same defect REQ-317 exists to fix, in its own fix: a diagnostic that confidently names a cause it cannot actually observe. It is reachable in production rather than theoretical, because the probe fires on a run queued longer than thirty minutes and this release's builds legitimately take that long — a slow release would have auto-filed an issue blaming GitHub-hosted capacity for a dependency wait. The fixture set had no dependency-blocked case, which is why it passed. Fix: a queued job whose `needs` are not all complete is not a stall at all and must be excluded before any capacity reasoning runs; the GitHub jobs API does not expose `needs`, so the workflow definition has to be read, or the classifier must take the set of still-incomplete job names and treat a queued job as blocked when the run has any incomplete job that is not itself queued for capacity. Prefer reading the workflow. Add `dependency-blocked` as an outcome so the distinction is visible rather than folded into `capacity-available`. IMPLEMENTED 2026-09-09. `classify_stall` gains a fourth outcome, `dependency-blocked`, and two optional arguments — the run's jobs with their status, and the workflow's needs graph. Jobs whose needs are not all complete are removed BEFORE any capacity reasoning; if that empties the queue the answer is dependency-blocked. With two arguments the function answers exactly as before, so a caller that cannot supply the graph gets the old answer rather than a silent reclassification. The needs graph is read from the workflow definition as the requirement preferred, by tools/ci-diagnose/workflow-needs.py, because the jobs API does not expose needs. TWO SUBTLETIES FOUND WHILE BUILDING IT, both of which would have made the fix inert rather than wrong. FIRST, `needs:` names job KEYS while the jobs API reports DISPLAY names, so a naive graph compares two different namespaces and matches nothing — every dependency wait would have continued to read as a capacity stall while appearing fixed. The extractor now resolves needs through the key-to-name map. SECOND, a matrix job is declared once as `Build ${{ matrix.target }}` and reported under many concrete names, so its template matches nothing; templated names are emitted as a prefix glob and matched by prefix. Both directions are negative-controlled: without the new branch the dependency case reports hosted-starved, and with the branch made unconditional the needs-complete case wrongly reports dependency-blocked. A need matching NO job is treated as complete, so an unknown or stale name can only cost the dependency-blocked answer and never invent one — verified by its own case. The liveness workflow consumes the new outcome by NOT filing an issue for it, emitting a notice instead, which is the behaviour change that matters: the incident that prompted this would have auto-filed an issue blaming GitHub-hosted capacity for a dependency wait. Validated end to end against a live run, where the extractor returned CI Gate's needs as display names matching what the jobs API reports."
     release: v0.37.0
     tags: [ci, weak-green, self-inflicted]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-317
@@ -8759,6 +8910,8 @@ artifacts:
     description: "Reported twice, from meld (#892) and earlier as #787. `find_enclosing_function` only ever scanned BACKWARDS from the marker line, so a marker written in the conventional place — on the line above the `#[test]` it annotates — was attributed to the function before it. Reproduced in three lines: a marker above `the_test_that_actually_verifies_it` reported `first_unrelated_test`. The damage is narrow and bad. The requirement mapping stays correct, so `rivet verify` still advances and coverage percentages are unaffected; what is wrong is the EVIDENCE LINE, which names a different test than the one that verifies the requirement. For a reader auditing the right-hand side of the V that line is the entire product — following it leads to a test that does not test the thing. Fixed by walking FORWARD first, but only across lines that may legitimately separate a marker from the item it annotates: attributes, comments and blank lines. The bound is what makes it correct rather than merely different — a marker INSIDE a function body has real code on the next line, so the walk stops and the existing backward scan returns the enclosing function, which is the shell convention REQ-319 relies on. Negative-controlled both ways at --lib scope: removing the forward walk reddens one test (the reported bug returns) and making the walk unbounded reddens two (the in-body case and the shell case), so the boundedness is load-bearing rather than decorative. Found while fixing it: the insertion of these tests spliced a doc comment into the middle of REQ-319 own doc comment, orphaning its marker onto the wrong function. cargo test and clippy both passed — doc comments concatenate harmlessly — and only `rivet coverage --tests` caught it, by reporting REQ-319 against the wrong test. The tool found a defect the compiler could not see."
     release: v0.37.0
     tags: [traceability, evidence, coverage]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-319
@@ -8789,6 +8942,8 @@ artifacts:
     description: "Reported from varve (#788). Plain `rivet coverage` reported the requirement-verification rule at 0 percent while `coverage --tests` reported 100 percent for the same requirements, from the same evidence. The link rule counts graph-level verifies backlinks from artifact-store test artifacts; a source marker is not a backlink, so it is invisible to that rule — while `rivet verify` accepts exactly those markers as sufficient evidence to advance a requirement to verified. Two views of one evidence set up to 100 points apart, with nothing telling a release gate or dashboard it is reading the narrower one. Reproduced on a minimal fixture (1/1 versus 0/1) and on rivet's own repository, where the rule reports 8.9 percent and the marker view reports 37.9 percent. Deliberately NOT fixed by folding markers into the rule, which is one of the two options the reporter offered: that would silently move a number that --fail-under gates on. Fixed by making the gap visible, which is what this tool already does for empty scopes (#808), unchecked cross-refs (#854) and unmodelled rules (REQ-320) — plain coverage now names the requirements counted as uncovered that DO carry marker evidence and points at the marker view. On rivet's own repository it names 98 of them. Scoped to rules whose link type is verifies: a marker is a verifies claim and says nothing about a satisfies backlink, so an unscoped note would announce marker evidence for rules a marker can never satisfy. That scoping was missing in the first implementation and was found only because a negative control failed to redden — the unscoped version reported 2 where the rule reported 1, and the assertion that caught it had to be written before the control meant anything."
     release: v0.37.0
     tags: [coverage, evidence, weak-green]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-320
@@ -8803,6 +8958,8 @@ artifacts:
     description: "Reported from fathom/gale (#887) as three papercuts in add and next-id. The first — no way to choose an id — shipped separately as `add --id` (#899, #880). These are the other two. PART 2: `next-id` given a hyphenated PREFIX stripped the hyphens, returning REQDRV-001 for REQ-DRV and REQDRVGRAPH-001 for REQ-DRV-GRAPH, neither of which matches a project whose convention is REQ-DRV-COMPONENT-NNN. Cause: the POSITIONAL argument routes through prefix_for_type, whose fallback flattens hyphens — correct for a type name (sw-req becomes SWREQ), wrong for a prefix. The --prefix flag was already verbatim and correct, so the tool could name the series, just not by the route the reporter took; the fix makes the positional agree rather than adding a third spelling. An argument that is already prefix-shaped, meaning uppercase alphanumerics and hyphens, is now taken literally, so a lowercase type name still resolves through the type and learns the project's convention. PART 3: `add --field release=v0.7.1` misfiled a first-class base field into custom fields. The value was not lost and `rivet get` displayed it, but `rivet list --release v0.7.1` returned zero artifacts — because release readiness is a query over the top-level release key. An artifact invisible to the very thing the field exists for, which looks correct on inspection, is the worst of the three possible outcomes. Now rejected with a message naming the field and the flag that works, following the reporter's own judgement that a rejection would have been fine and silence was not. Rejected rather than silently rerouted, because rerouting would make --field mean two different things depending on the name. Genuinely custom fields are unaffected. Both negative-controlled: removing the literal-prefix path reddens the next-id test, disabling the base-field guard reddens the add test."
     release: v0.37.0
     tags: [cli, usability, weak-green]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8814,6 +8971,8 @@ artifacts:
     description: "Reported from synth (#854), second half. The first half — a summary line reading 0 broken cross-refs beside dozens of unresolved-target errors — shipped as REQ-312 in v0.35.0 and now reads cross-refs NOT CHECKED, externals failed to load. This is the underlying friction: a dead `path:` poisoned resolution instead of falling back to `git:`. One nonexistent path was enough to stop every external loading, so every cross-repo ref — including ones whose repos had synced fine — degraded into a local target-does-not-exist error. The reporter's case was a path pointing at a volume that no longer existed. resolve_external_dir used ext.path unconditionally and never consulted the cache. It now falls back to the git cache when the path does not exist AND a git url is declared, and says so rather than substituting silently — this issue began with a reader unable to tell which source had been used. Only when git is declared: with no git url the dead path is left as-is so the resulting error still names the path the author wrote rather than a cache directory they never configured. Three negative controls, each reddening a different over- or under-reach: removing the fallback, falling back without a git url, and falling back even when the path is live. Verified end to end against the reporter's shape — the project moves from cross-refs NOT CHECKED to externals loaded and cross-refs actually checked. A control with a LIVE path pointing at identical content produces the identical result, which is what establishes that the fallback reaches parity with a working path rather than merely changing the symptom; the one cross-ref that still does not resolve in that fixture is a separate cross-ref validation question, unrelated to this fix, and present with a live path too. Known rough edge, not fixed here: the warning fires once per resolution call, so a single dead path emits it several times in one run."
     release: v0.37.0
     tags: [externals, resilience, cross-repo]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-312
@@ -8913,6 +9072,8 @@ artifacts:
     description: "Found 2026-09-09 while investigating why `rivet docs check` disagreed between the PATH binary and a fresh build. `yaml_edit::set_provenance` states its own semantics — if a provenance section already exists, it is replaced entirely — and `cmd_stamp` was its only production caller. So every sub-field the caller did not pass was dropped. Measured against this repository's own tree with rivet 0.36.0 and `rivet stamp all --created-by ai-assisted`, which is verbatim the PostToolUse hook in .claude/settings.json: provenance.model DELETED on 270 artifacts, session-id DELETED on 4, timestamp rewritten on 575, across 1026 stamped artifacts. The model field is the worse loss. CLAUDE.md documents the manual form as carrying --model, so the documented automatic invocation erased the field the documented manual invocation exists to set. For a repository shipping EU AI Act artifacts, which model generated an artifact IS the provenance, and it is the same field reviewer-independence checking depends on — two agents of one model are not two reviewers — so losing it silently removes the only evidence that could distinguish an independent AI review from an artifact reviewing itself. The timestamp is create-only by two independent in-tree definitions: model.rs documents the field as the ISO 8601 timestamp OF CREATION, and docs/design/polarion-reqif-fidelity.md maps it to Polarion's WorkItem.created. Advancing it therefore falsifies a creation date rather than updating a modification one, and a compliance timestamp that silently advances to now on every run is worse than an absent one because it looks authoritative. THE HARM WAS ALREADY NAMED IN THIS FUNCTION and only half fixed: a comment inside cmd_stamp records that a no-op filter had been causing `stamp all --missing-provenance` to overwrite timestamps on every existing artifact. That fix was applied to the filter and not to the behaviour underneath it, leaving the same harm reachable by the shorter command. FIX: a new `merge_provenance` alongside `set_provenance` rather than a change to it, since replace-entirely is deliberate, separately tested, and semver-relevant. Merge rules — created-by always written as a required argument; model, session-id and reviewed-by taken from the caller when supplied and preserved from the file when not; timestamp create-only so an existing value survives even an explicit one, with set_provenance remaining the deliberate re-stamp path; and any unrecognised sub-field carried over verbatim including nested continuation lines. That last rule exists for provenance.federation from `rivet supplier pull`, which has no parameter and therefore could not round-trip at all. No artifact carries a federation block today, which is why it is covered by a test rather than by the measurement. FLOW-STYLE PROVENANCE was the residual: 18 artifacts are written as `provenance: {created-by: x, model: y}` on one line, so a line-based walk of the block body sees nothing and dropped every sub-field. Handled by parsing the inline mapping; a flow mapping that does not close on its own line is REFUSED with an explanatory error rather than silently reformatted, since merging it would require rewriting the author's chosen layout. VERIFIED by re-running the measurement that found the defect: the same `stamp all` over the same 1026 artifacts now reports zero sub-field losses and zero timestamp changes. The only remaining differences are provenance ADDED to artifacts that had none, which is what stamp is for, and the 18 flow-style blocks normalised to block style with every value preserved."
     release: v0.37.0
     tags: [provenance, data-integrity, eu-ai-act, weak-green]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8924,6 +9085,8 @@ artifacts:
     description: "Reported from kiln (#907) while cutting v0.5.0. `rivet release status <VERSION>` aggregated artifacts across linked external projects, so when another repository happened to use the SAME version string its artifacts entered this project's readiness query. Concretely: all five kiln-owned artifacts were verified, and the release still read NOT cuttable because three gale requirements merely shared the label v0.5.0 — gale being on its own release timeline, which kiln cannot and should not verify or modify. The gate could therefore never go green no matter what kiln did, because the answer depended on another project's schedule. That pushes a maintainer toward either ignoring the gate, which defeats it, or hand-filtering the output, which is exactly the grep-the-YAML habit the tool exists to remove. Version strings collide readily across a multi-repo toolchain; v0.5.0 is about as common a label as exists. FIX per the reporter's own preferred option: externals are excluded from the verdict and reported in a clearly separated informational section, so cross-repo visibility — genuinely useful — is kept while the cuttable answer reflects only what this project controls. External artifacts carry a `prefix:ID` id, which is the same discriminator `rivet stamp` already applies; this makes the two commands agree rather than introducing a third convention. A new `external` array appears in the JSON output and a labelled section in the text output, both stating explicitly that they are not part of the verdict. SECOND SITE, FOUND BY WRITING THE TEST AND WORSE THAN THE REPORTED ONE: `rivet release notes` (REQ-327) had just shipped with the identical scoping and therefore listed an external project's unverified requirement as THIS release's WITHHELD SCOPE. Release status merely blocked a verdict; the note actively stated a falsehood about another project's work inside a document whose purpose is release evidence, under the ASPICE 11-03 heading limitations in relation to the committed scope. The reported issue and this one share a cause and are fixed together. Note the pattern this makes visible for the third time in two releases — #788 for coverage, REQ-327's own marker-blindness, and now this: the same question answered independently in two places drifts, and the drift is silent. Both call sites now apply the same filter, but the durable fix is REQ-333's requirement that a view be computed once in rivet-core and rendered rather than recomputed. Negative-controlled: all three tests were red before the change, with `cuttable: false` and `sup:REQ-EXT-1` appearing in `not_verified` and in `withheld` respectively."
     release: v0.37.0
     tags: [release, externals, cross-repo, weak-green]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-327
@@ -8940,6 +9103,8 @@ artifacts:
     description: "Reported from spar (#748) against dev@0.2.0, where the dev schema had NO verification type at all and the only ones rivet shipped were ASPICE's, whose required link fields point back into the ASPICE process model — so adopting unit-verification for a unit test forced adopting sw-detail-design and transitively sw-req and sw-arch-component. There was no I-use-dev-and-I-have-tests path. spar worked around it by hand-rolling a verification type on top of `feature` using undeclared fields, which put test suites on the IMPLEMENTATION side of the V and inflated implementation coverage: 194 of 311 requirements showed feature-stage coverage, but 172 of those were covered only by an artifact whose fields.test-name named a cargo test. PARTIALLY FIXED ALREADY, which is why this was re-measured rather than implemented from the report: #721 added a `verification` type to dev, so `requirement-verification` is no longer structurally unsatisfiable and a dev-only project can close the right side of its V. Re-measuring against dev@0.3.0 on a fresh `rivet init --preset dev` showed the residual precisely, and it is exactly what would have kept spar's workaround alive. FIRST, `verification.verifies` declared target-types of [requirement] only, so a verification measure could not verify a feature or a design decision — an acceptance test for a feature is a legitimate verification measure and was rejected with a link-target error. SECOND, the declared field set was [baseline, cited-source, method], so `test-name`, `test-location` and `steps` were all undeclared-field warnings. spar carries steps on 142 artifacts and test-name and test-location on 64 each, so migrating off the `feature` workaround would have swapped undeclared-field warnings on feature for the same warnings on verification — relocating the workaround rather than removing it. `method` was already declared with automated-test among its allowed values, so that field migrated cleanly. FIX: the three fields are declared, with `steps` typed `structured` and spelled the same as ASPICE unit-verification.steps so the two schemas agree on the field's shape and a project can move between them; and `verifies` is widened to [requirement, feature, design-decision]. Enumerated rather than left open, even though the report asked for [any], because an open target list stops the rule saying anything — a `verifies` link pointing INTO a verification is still wrong and should still be caught. dev bumped 0.3.0 to 0.4.0. Both halves negative-controlled independently: reverting target-types reddens the link assertion, removing the three field declarations reddens the field assertions. The first attempt at the second control did NOT redden, because the removal script anchored on `- name: cited-source`, which occurs under several artifact types, and so corrupted the file instead of removing the block — a reminder that a negative control which fails to redden must be examined before it is believed, since the fault is as likely to be in the control as in the assertion."
     release: v0.37.0
     tags: [schema, dev, verification, v-model]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -8975,6 +9140,8 @@ artifacts:
     description: "Found 2026-09-09 by diagnosing an auto-filed alert rather than trusting it. Issue #919 announced 'the self-hosted pool is OFFLINE (0 runners online)'. Measured at org scope at the same time: total=12 online=12 busy=7. The pool was entirely healthy. The four still-queued jobs all carried the `lean-mem` label, all four `lean-mem` runners existed and were online and BUSY, and the five idle runners carried light, rust-cpu, rust-cpu+light, rust-cpu+netns and rust-cpu+podman — none of them lean-mem. The true mode was label-partitioned saturation; nothing was down. CAUSE, at runner-liveness.yml line 96: the runner lookup was written `gh api ... 2>/dev/null || echo '{\"runners\":[]}'`, so a FAILED call was silently replaced by an EMPTY POOL, which classify_stall reads as every runner being down. Reproduced directly against the shipped classifier — with the empty-pool fallback it answers pool-offline, with the real runner list it answers label-saturated. The failure is not occasional: the lookup needs the `administration` permission, which is NOT a grantable GITHUB_TOKEN scope, so it 403s on every scheduled probe. Since hosted-starvation is decided from the queued jobs' labels alone and is checked first, ubuntu-latest stalls still classify correctly; the defect is confined to the self-hosted path and TOTAL within it — every such stall has been reported as pool-offline whatever its real cause, which is what the alert history looks like. THE WORKFLOW ALSO DOCUMENTED THE OPPOSITE. Its own header said a failed or empty lookup is logged and SKIPPED rather than raised as a false alarm. The code raised the loudest alarm available. A comment describing behaviour the code does not have is worse than no comment, because it stops a reader from checking; the header is corrected and now names what actually happens. FIX: an API failure and a genuinely empty pool are indistinguishable from the response BODY, so the exit code is the only discriminator and it was being discarded. The caller now captures it and passes an empty string for could-not-read, distinct from a successful `{\"runners\":[]}` which still means the pool really is empty and still answers pool-offline. classify_stall gains a `runners-unknown` outcome, and the probe still raises the queued-age alarm — that signal is authoritative and needs no runner data — while naming NO cause. This is the third member of the family REQ-317 and REQ-325 belong to, and the sharpest: the previous two named a cause the classifier could have observed but reasoned about wrongly, whereas this one named a cause it had no data for at all. Negative-controlled in both directions: removing the branch reddens the unavailable case, and making it unconditional reddens five cases including the genuinely-empty-pool guard. SECOND ROUTE, found 2026-09-09 while closing this requirement's own testing residual. The first fix discarded the payload on a non-zero exit code or an empty body, which is not enough: `gh api` can exit 0 while returning a GitHub error object such as a Bad credentials 401 body. That body is NON-EMPTY, so it survives the emptiness check, reaches jq, yields no `.runners` and therefore online=0, and the probe announces the pool is down for what is actually an auth failure. Verified directly — classify_stall answers pool-offline for that exact body. Same false alarm, different route, and the MORE LIKELY one in practice, since the token genuinely lacks the administration scope so a 401-shaped response is the expected failure rather than an exotic one. The original fix caught the case that was imagined and missed the one that actually happens. FIX: a `normalize_runner_fetch <exit_code> <body>` helper that requires the payload to BE a runner list — an object whose `.runners` is an array — and emits an empty string otherwise, which classify_stall answers as runners-unknown. A successful lookup returning an empty runners array passes through unchanged, because that is a genuinely empty pool and must still classify as offline. Extracting this into diagnose.sh is also what closes the testing residual recorded against this requirement: the exit-code handling previously lived only as shell inside runner-liveness.yml, so classify_stall was tested and its caller was not. Nine cases now cover the helper, including two end-to-end ones asserting that an error object reaches runners-unknown while a genuinely empty pool still reaches pool-offline. Negative-controlled both ways: removing the shape check reddens four cases, and discarding unconditionally reddens the three passthrough guards. Worth recording that four of the nine cases would PASS against a non-existent function, because a missing command emits nothing and nothing is what the discard cases expect — the passthrough cases are what make the set non-vacuous, so which cases went red matters and not merely that the oracle went red."
     release: v0.37.0
     tags: [ci, weak-green, self-inflicted, observability]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-317
@@ -8991,6 +9158,8 @@ artifacts:
     description: "Observed live 2026-09-09T22:30Z. The probe was itself QUEUED for ten minutes on ubuntu-latest while twelve self-hosted runners sat entirely idle (online=12 busy=0), and the condition it was queued behind is GitHub-hosted starvation — which is one of the five failure modes it exists to detect. A monitor that shares the failure mode it monitors is blind exactly when it is needed. Confirmed at runner-liveness.yml line 52, runs-on ubuntu-latest. THE OBVIOUS FIX IS NOT OBVIOUSLY RIGHT, which is why this is proposed rather than implemented. Moving the probe to self-hosted would make it immune to hosted starvation but blind to a self-hosted pool outage, which per the workflow's own header is the mode it primarily exists to catch. A single-runner-class probe cannot detect its own class's failure, so the choice is which blindness to accept. THE FALLBACK PATTERN THIS REPOSITORY ALREADY USES DOES NOT APPLY. ci.yml pairs a self-hosted job with an unconditional hosted mirror (traceability-hosted-fallback), which works because both run. A needs-based conditional fallback CANNOT work for this case: a starved job stays QUEUED rather than failing, so a dependent job waits on it forever instead of falling through. Two unconditional probe jobs would both work, but they race on creating the tracking issue, which is located by an HTML marker comment and would be created twice if both probes fire simultaneously. Workflow-level concurrency does not solve it either — the group serialises runs, not jobs within a run, and a starved run holding a non-cancelling group slot could deadlock a self-hosted twin behind it. ARGUMENT FOR SELF-HOSTED, recorded because it is not the intuitive answer: the two modes are not equally silent. #855 moved CI Gate and all eleven of its needs to self-hosted, so a self-hosted outage now blocks EVERY merge and is loud by construction — a maintainer discovers it within one pull request. Hosted starvation blocks only advisory jobs and the release workflows, which are ubuntu-latest only, so it is silent until a release is attempted and then blocks it. A probe should watch the mode that does not announce itself. On that reasoning self-hosted is the better placement despite being counterintuitive, and the self-hosted outage would be covered by the merge gate rather than by the probe. This is an architecture decision about what the alarm is FOR and should be made deliberately rather than defaulted into. DECIDED 2026-09-10 by the maintainer: self-hosted. The probe now runs on [self-hosted, linux, x64, light], accepting blindness to a self-hosted outage in exchange for coverage of hosted starvation, on the reasoning recorded above — a self-hosted outage blocks every merge through CI Gate and announces itself within one pull request, whereas hosted starvation is invisible until a release is attempted. The rationale is written into the workflow header beside the runs-on so the next reader does not have to reconstruct why the counterintuitive placement was chosen. A GENUINE RISK SURFACED WHILE IMPLEMENTING, and it would have turned this fix into a worse defect than the one it repairs. The probe is built entirely from `gh` calls, and `gh` ships preinstalled on GitHub-hosted images but NOT on this fleet: a survey of every workflow found that no self-hosted job in the repository used `gh` before this change, so its presence could not be assumed. Moving the probe without checking would have traded blind during hosted starvation for blind always — an alarm that is silently dead is worse than one that is merely wrong, because nothing distinguishes it from an alarm with nothing to report. Handled with two steps mirroring the zola guard already in ci.yml: install `gh` into RUNNER_TEMP when absent, needing no sudo and persisting nothing on the host, then ASSERT it is on PATH and fail loudly with a message naming the cause if it is not. Both directions negative-controlled locally — the assertion exits 0 with `gh` present and exits 1 emitting the error when PATH is reduced to /usr/bin:/bin. Note that `jq`, which diagnose.sh depends on, IS already proven available on self-hosted light, since the YAML Lint job runs diagnose_test.sh there. UNVERIFIED UNTIL IT RUNS: whether `gh` is already present on the Hetzner runners, and therefore whether the install path is exercised at all. The guard covers both cases, so the first scheduled run answers it either way."
     release: v0.38.0
     tags: [ci, observability, architecture]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -9046,6 +9215,8 @@ artifacts:
     description: "Written after testing the assumption rather than asserting it, which falsified both #930 recommendation 2 and this requirement as first drafted. THE CLAIM WAS that deny.toml lacks an `unmaintained` policy and that adding one would have surfaced serde_yaml. Both halves are wrong. cargo-deny 0.20.2 treats unmaintained as an ERROR BY DEFAULT — running `cargo deny check advisories` on the current tree exits 1 with three unmaintained errors, on bitmaps 2.1.0, im 15.1.0 and sized-chunks 0.6.5, none of which appear in the thirteen-entry ignore list. And serde_yaml is NOT among them, because THERE IS NO UNMAINTAINED ADVISORY FOR IT: the only advisory-db entry is RUSTSEC-2018-0005, a crash patched in 0.8.4 and irrelevant to 0.9.34. So no setting of any kind would have caught serde_yaml. Its deprecation is signalled only by the version string 0.9.34+deprecated and by the upstream repository being archived — neither of which is a machine-checkable fact any gate consumes. That is worth stating plainly, because the instinct on reading #930 is to reach for a configuration change, and the configuration change does not exist. WHAT IS ACTUALLY BROKEN, found while checking the above, is adjacent and larger. The Cargo Deny job runs `cargo deny check bans licenses sources` — the advisories check is NOT RUN IN CI AT ALL. The [advisories] section of deny.toml, including all thirteen carefully-reasoned RUSTSEC ignores, is therefore dead configuration for that job: it is never exercised, so the reasoning recorded in those comments protects nothing. The job name, Cargo Deny (licenses, bans, sources), is honest about this, which is why it went unnoticed. Advisory checking does exist as a separate Security Audit (RustSec) job running cargo-audit, but that job is NOT among CI Gate the eleven needs, so it cannot block a merge. The net position is that a tree which fails `cargo deny check advisories` locally merges cleanly. FIX, in order: run the advisories check in CI; expect it to fail immediately on the three unmaintained crates above and treat that as the point rather than an obstacle, since the existing ignore list shows the project already has a mechanism for accepting a known advisory with a written reason; then decide whether the check gates CI Gate or stays advisory, which is a policy question rather than a technical one. Negative control for whoever implements it: with the advisories check wired in and the three crates not yet ignored, CI must FAIL on the current tree. If it passes, the check is not running and the gate asserts nothing — which is precisely the state being repaired. NOTE FOR REQ-346: none of this changes the serde_yaml decision, it only removes one argument from it. The case for owning the deserialization path rests on the measured merge-key divergence and on the crate being archived, not on any gate having flagged it — because none can. IMPLEMENTED 2026-09-10. The deny job now runs `cargo deny check advisories bans licenses sources` and is renamed to Cargo Deny (advisories, licenses, bans, sources), because a job whose name omits what it checks is the same defect one level up. It is in CI Gate's needs, so advisory checking is now BLOCKING rather than absent. THE VERSION SKEW WAS THE REAL RISK AND IS HANDLED. CI pinned cargo-deny 0.16.4 while the policy was verified on 0.20.2, which treats unmaintained as an ERROR by default. Adding the advisories check while pinning a version whose behaviour was never tested is exactly how a gate passes vacuously, so CI is bumped to 0.20.2 — the version the behaviour was measured on. ROOT CAUSE OF THE THREE FAILURES IS A SINGLE CHAIN: gluesql-core to im to sized-chunks to bitmaps, all unmaintained, reached through the default-on sql feature that ships `rivet sql`. The minimal --no-default-features build of REQ-202 excludes the whole chain. Accepted rather than fixed, with the reason written into deny.toml: gluesql has not moved off im, and swapping the SQL engine is far larger than the exposure warrants. TWO THINGS FOUND WHILE DOING IT. First, the RUSTSEC ids were GUESSED on the first attempt and were wrong — cargo-deny answered with advisory-not-encountered warnings and the three errors persisted, so the ids were read from the tool's own output instead: RUSTSEC-2026-0247 for bitmaps, 0248 for im, 0251 for sized-chunks. Guessing an identifier into an ignore list produces an entry that silences nothing while appearing to, which is the failure this requirement is about. Second, and larger: TWELVE OF THE SIXTEEN EXISTING IGNORES WERE DEAD. RUSTSEC-2026-0085 through 0096 and 0103 all reported advisory-not-encountered, meaning they match nothing in the tree — resolved by the wasmtime 44 to 45 bump and by salsa moving off the affected thin-vec. Their rationale comments still said things like upgrade to wasmtime >=43 when available and remove when salsa >= 0.27 lands, instructions for work already done. So the section was dead configuration in a second sense beyond not being run: three quarters of it recorded history rather than decisions. All twelve removed, leaving four live entries each with a current reason. VERIFIED: cargo deny check advisories exits 0 with zero errors and zero advisory-not-encountered warnings; the full four-check command exits 0 reporting advisories ok, bans ok, licenses ok, sources ok. Negative-controlled by removing the im ignore, which reddens with exit 1 and the unmaintained error, and restoring it, which returns exit 0. Status returned from verified to implemented (maintainer decision on CI evidence, 2026-10-09): its only evidence is the ci.yml step marker on the step that implements it; it returns to verified when a tool test exercises that step."
     release: v0.38.0
     tags: [supply-chain, ci, weak-green]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-346
@@ -9062,6 +9233,8 @@ artifacts:
     description: "Maintainer observation, 2026-09-10, on reading that rivet has both its own YAML machinery and a deprecated external parser: this looks like a Frankenstein. It is, and the concern is structural rather than aesthetic. VERIFIED FROM THE CODE. lib.rs dispatches on the source format string. `stpa-yaml` routes to import_with_schema, which calls yaml_hir::extract_schema_driven and therefore rivet's OWN rowan CST at yaml_cst.rs. `generic` and `generic-yaml` route to GenericYamlAdapter, whose parse is serde_yaml::from_str at formats/generic.rs:191. rivet.yaml then declares safety/stpa as stpa-yaml and artifacts, safety/stpa-sec and safety/tool-qualification as generic-yaml. So this repository parses its own artifacts with two different YAML implementations depending on which directory the file sits in. THE TWO GRAMMARS DIFFER BY CONSTRUCTION, not by accident: yaml_cst.rs documents that it parses block mappings, block sequences, flow sequences, scalars and comments, and that it does NOT handle anchors, aliases, tags, flow mappings, complex keys, multi-document streams or merge keys, which produce Error nodes. serde_yaml handles most of those. So a document valid under one path may be rejected under the other, and the deciding factor is the directory it happens to live in rather than anything about the document. This is the defect class the project has spent two releases removing — two representations of the same thing with nothing asserting they agree — instantiated in the parse layer, which is the lowest and least visible place it could sit. WHAT IS VERIFIED AND WHAT IS NOT. The dispatch and the two parsers are verified by reading lib.rs, formats/generic.rs and rivet.yaml. The differing grammars are verified from yaml_cst.rs own documentation. NOT VERIFIED: whether the two paths actually disagree on a real document. A test placing an identical artifact with a flow-style provenance mapping under both a generic-yaml and an stpa-yaml source loaded successfully in both, but the comparison could not be completed because `rivet get` does not render provenance at all — confirmed by a control against REQ-346 in this repository, which carries provenance and shows none. So the tool cannot currently surface the field the test needed, and the equivalence question is open rather than answered either way. Establishing it is the first piece of work here, not an afterthought: a differential corpus test over all 706 artifacts through both paths would answer it and would be needed anyway before any parser change. NOTE THE INTERACTION WITH REQ-346. That requirement covers serde_yaml being unmaintained. This one would remain a defect even if serde_yaml were actively maintained, because the problem is having two grammars for one data format rather than the health of either. They resolve together — consolidating onto the rowan CST removes both — but they are separate arguments and should not be collapsed, since a migration to another external crate would fix REQ-346 and leave this untouched. THERE ARE THREE IMPLEMENTATIONS, NOT TWO, and rivet already owns the write path — maintainer observation, and it makes the charge precise rather than merely aesthetic. On artifacts/ specifically: READING into the store goes through serde_yaml via GenericYamlAdapter, while EDITING and WRITING go through yaml_edit.rs, which is rivet's own line-oriented comment-preserving editor at 2514 lines and 49 tests. Its only serde_yaml use is one narrow case at line 1057, parsing a flow mapping when setting a field inside one, plus test assertions. `rivet stamp`, `rivet modify` and `rivet release move` all write artifacts through it — this session alone used it to move five artifacts between releases and to rewrite provenance on 1026. So rivet ALREADY loads and writes the YAML in artifacts/ with its own code. The third implementation is yaml_cst.rs, the rowan CST at 1419 lines and 34 tests, reachable only for stpa-yaml sources. MEASURED SPLIT: 265 artifacts, 27 percent, load through rivet's own rowan CST via safety/stpa; 711 artifacts, 73 percent, load through serde_yaml via artifacts/, safety/stpa-sec and safety/tool-qualification. An earlier count of this said zero percent for the rowan path and was wrong — STPA files use hazards, sub-hazards and similar as top-level keys rather than artifacts, so a counter looking only for `artifacts:` missed all 265. WHAT THIS DOES TO THE SCOPE. The remaining dependency is narrower than replace-a-YAML-parser suggests. rivet already parses artifact files for editing, already writes them, and already owns a lossless CST for a quarter of them. The single thing serde_yaml still does that rivet does not is DESERIALIZE INTO TYPED STRUCTS for the store. That is a serde Deserializer over an existing CST, not a parser. Three implementations of one data format in one codebase, with the deprecated one holding the read path while the project's own code holds the write path, is the strongest argument for consolidation — and consolidating onto the CST resolves this requirement and REQ-346 together. MEASURED AND GATED 2026-09-11, AND THE FIRST VERSION OF THIS MEASUREMENT OVERCLAIMED TWICE. A differential gate now parses the corpus through both paths and compares a fingerprint of id, type, title, status, release, tags, sorted links and provenance, rather than ids alone, because matching id sequences would agree while the two disagreed about everything else. CORRECTION ONE, SCOPE. The gate first walked artifacts/ only, which is one of the four sources rivet.yaml declares, and the record then claimed every artifact file. It covered 644 of the corpus. The gate now drives its file list from the sources list in rivet.yaml, so it cannot drift from what the tool actually loads, and it partitions on a mechanical rule rather than on a path literal: a document with no top-level artifacts key is outside the serde path's grammar by construction, so comparing the two there would manufacture a divergence that does not exist. Present partition, printed by the gate rather than implied: 43 files across 4 sources, 26 compared, 12 rowan-only by shape which is the safety/stpa set keyed on hazards and similar, 5 config documents such as bindings and the variant files. Totals serde 715, rowan 1062. Both totals and the compared count are asserted non-zero, because two paths that find nothing agree vacuously. CORRECTION TWO, AND IT IS THE FINDING. The earlier record asserted that flow-style FIELD values, naming the eighteen provenance blocks specifically, were handled by both paths. That was asserted on no evidence and it is false, on exactly the eighteen cited. Adding provenance to the fingerprint reddened the gate immediately. THE CORPUS DOES NOT AGREE: 24 files agree, 2 differ, and every difference is one class, provenance, on 18 artifacts. Measured directly on requirements.yaml: serde reads provenance on 205 of 321 artifacts and rowan on 195, while the corpus writes provenance block-style 900 times and flow-style 18 times. The 10-artifact gap in that one file is precisely its flow-style share. THE MECHANISM, AND WHY IT IS THE DANGEROUS KIND. yaml_cst has a FlowSequence node and no FlowMapping node. A flow-mapped VALUE therefore yields no provenance and NO PARSE ERROR, while the artifact itself survives — which is why the artifact counts match at 321 and 321 and the loss is invisible to anything counting artifacts. This is distinct from, and more subtle than, an artifact written ITSELF as a flow mapping, where rowan loses the whole artifact. Both are pinned: the first by flow_style_field_value_silently_loses_provenance, which carries a block-style control so it cannot pass merely because rowan never reads provenance at all; the second by divergence_probe. THE PROBE NOW ASSERTS RATHER THAN PRINTS. It recorded the two paths' counts for five constructs as println output, so closing any of those gaps would have flipped a line from DIVERGE to agree with nothing reddening and no prompt to update this record. Each case now asserts its recorded pair: plain and quoted-key agree; flow-mapping is serde 1 rowan 0; an anchor with a merge key fails on both, differently, serde erroring and rowan yielding nothing; a multi-document stream errors under serde while rowan parses the first document, so rowan is the MORE permissive path there. Neither parser is a superset of the other. WHAT THE GATE ASSERTS, given the corpus genuinely diverges. Not zero differences — that would require dropping the field that disagrees, which is the weak-green move this requirement exists to catch. It asserts that the divergence set is EXACTLY the one characterized above: no divergence class other than provenance, and provenance on exactly 18 artifacts. A nineteenth reddens it, because someone has written data rivet's own CST cannot read. Eighteen becoming fewer reddens it too, because either the CST gained FlowMapping or the corpus was normalized, and either way this record must be updated rather than re-baselined. Artifact-count mismatches carry their own assertion and their own message, because losing an artifact is a worse failure than losing a field on one. CONSEQUENCE FOR REQ-346, NOW STRONGER THAN A LATENT RISK. That requirement proposes migrating the artifact read path onto the rowan CST. On this evidence the migration would today drop provenance on 18 artifacts in this repository alone — live data, not a hypothetical shape the corpus happens not to use. FlowMapping support in yaml_cst is therefore a precondition of REQ-346, not a follow-up to it. NEGATIVE CONTROLS, all four reddening on the specific message each claims: dropping provenance from the fingerprint reddens on the count changing, rather than passing with fewer differences; perturbing a title on one path reddens as a new divergence class; skipping one artifact on the rowan path reddens on the artifact-count assertion; collapsing the shape partition reddens on the stpa files being swallowed. A DIFFERENTIAL TEST ALREADY EXISTED AND COULD NOT HAVE FOUND THIS, which is worth recording because it is the reason the divergence survived. rivet-core/tests/differential_yaml.rs is proptest-based and states its purpose as any discrepancy between the two is a bug in one or the other. It generates documents from arb_artifact_yaml, which emits id, type, title and an optional status, in block style, and nothing else — no links, no tags, no provenance, no flow mappings — and compares them through an ExpectedArtifact carrying those same four fields. So the generator cannot produce the construct on which the two parsers differ, and the comparison could not see it even if it did. A differential test whose generator is confined to the subset both implementations already agree on is not a differential test; it is a shared-subset test with a differential name, and its green is the weak kind. The gate added here is complementary rather than duplicative: it is corpus-driven rather than generator-driven, so it is bounded by what the project actually wrote rather than by what a strategy was taught to write, and that is precisely what surfaced the eighteen. Widening the generator belongs with the fix in REQ-346, where it will go green, rather than here, where it would only redden. A GUARD THAT THE FIX ITSELF ALMOST REMOVED, recorded because it is a general hazard rather than a one-off. While the corpus diverged on 18 artifacts, the strongest negative control was narrowing the fingerprint: dropping provenance from it changed the divergence count and reddened the survey on its own. When REQ-353 closed the gap and the expected count became zero, that control stopped working — with the count at zero, dropping a component moves nothing and the survey passes clean. Re-running the four controls after the refactor is what caught it; the one guarding against hiding a divergence by narrowing the comparison had gone vacuous, which is the same weak-green shape this requirement exists to name, reintroduced by its own fix. The guard is now asserted on its own terms rather than as a side effect of the count. fingerprint_carries_every_component_it_claims builds a synthetic artifact with every component populated and asserts each one appears, so dropping any of id, type, title, status, release, tags, links or provenance reddens regardless of what the corpus holds or how many differences there are — confirmed for provenance, tags and release individually. Its corpus-side companion asserts that compared artifacts actually contributed provenance, 591 of them, so both paths quietly ceasing to read the field cannot leave the survey green over an unchecked comparison. CORRECTION 2026-09-16: THIS GATE WAS BLIND TO fields, AND REPORTED ZERO DIFFERENCES WHILE 110 ARTIFACTS DIVERGED. The fingerprint compared id, type, title, status, release, tags, sorted links and provenance. It omitted fields — which is precisely where serde_yaml::Value lives, and therefore the component a read-path migration is most likely to change. Measuring REQ-346's scope exposed it: the same corpus, with fields added to the fingerprint, went from agree 26 differ 0 to differ 10 across 110 artifacts. 108 of those were one live defect, filed as REQ-361: the rowan path did not fold greater-than block scalars or honour strip and keep chomping, and because rowan is the production path for safety/stpa, 148 of 154 STPA descriptions in the store disagreed with PyYAML. That defect was invisible to this gate twice over — once because fields was not fingerprinted, and once because safety/stpa sits in the rowan-only partition this gate never compares against any reference at all. Fixed in the same change that extends the fingerprint, leaving a residual of 2, each characterized against PyYAML rather than merely counted: REQ-277, whose top-level domain keys the serde loader drops (REQ-362, live), and DD-039, whose multi-line plain scalar the rowan HIR truncates (REQ-363, latent). KNOWN_DIVERGENCES is now 2 with both named in the source. The separator also changed from a vertical bar to the ASCII unit separator: serde_yaml renders multi-line strings as a literal block beginning with a vertical bar, and a stray one shifted every later component, misattributing a fields divergence. Negative controls on the extension: removing fields from the fingerprint — reintroducing the original blindness — reddens both the corpus survey and the shape guard fingerprint_carries_every_component_it_claims; reverting only the product-side folding fix reddens the corpus survey independently of the unit tests. WHAT REMAINS UNCHECKED, stated because this gate has now been wrong twice while green: the rowan-only partition. safety/stpa is still compared against nothing by this gate. The PyYAML comparison that found the corruption was run by hand. STATUS RETURNED FROM verified TO implemented on 2026-09-16, deliberately. The defect this artifact's title names is that nothing checks the two parsers agree, and that is still true for 12 of the 43 files under the declared sources: every safety/stpa file sits in the rowan-only partition and is compared against no reference. That partition is where the folded-scalar corruption lived, undetected, for as long as this artifact was marked verified. Acceptance is not met while the files that actually carried the defect are the ones left unchecked, so verified overstated it. It returns to verified when the rowan-only partition is compared against an independent reference — PyYAML, or serde_yaml::Value's generic parse of the same document — rather than by hand. ALSO ADDED: the pin is now asserted by IDENTITY, not only by count. KNOWN_DIVERGING_IDS names DD-039 and REQ-277, and the survey asserts the diverging set equals it. A count alone would have let a new defect swap into a fixed defect's budget with the total unchanged; confirmed by substituting a different id while holding the count at 2, which reddens. WHAT THIS DISCHARGES. The defect named in the title is that nothing checked the two agreed. Something does now, it runs in the workspace test suite, and it reports a real disagreement rather than a comfortable zero. The remaining half, that there are two parsers at all, is REQ-346's consolidation and is not claimed here. RETURNED TO verified on 2026-09-17, against the condition this record set. The rowan-only partition is now compared against an independent reference in the workspace test suite, not by hand. rowan_only_partition_matches_an_independent_parse parses every file in that partition with serde_yaml's generic Value, which knows nothing of rivet's schemas. For each artifact rowan extracts, it requires exactly one mapping carrying that id, and requires rowan's title, description, status and every field value to equal what that mapping or its nearest ancestor holds, with every link target present under it. Two schema behaviours are encoded explicitly rather than skipped. The ca key is yaml_hir's documented alias for id in control-action items, and uca-type is derived from the group key and is checked against exactly that key. It covers 12 files, 347 artifacts, 835 values and 62 derived values. The FIRST RUN FOUND A LIVE DEFECT, REQ-365, where every list-of-mapping field in safety/stpa/control-structure.yaml read as its first key names, 16 values in production. It is fixed in the same change, and that is why the comparison ends at 0 mismatches rather than being baselined. NEGATIVE CONTROLS, each restored. Reverting the REQ-365 fix gives exactly 16 mismatches. Disabling folded block scalars, the REQ-361 defect that lived in this partition while the artifact was marked verified, gives 412 mismatches and also reddens differential_survey. Dropping the ca alias from the reference gives 21. With PR 970 the artifacts-shaped partition agrees 26 of 26 with KNOWN_DIVERGENCES at 0. Both partitions are now checked, and the half this artifact does not claim, that there are two parsers at all, remains REQ-346."
     release: v0.38.0
     tags: [yaml, architecture, weak-green]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-346
@@ -9122,6 +9295,8 @@ artifacts:
     description: "Observed repeatedly and confirmed again on 2026-09-10 by #933. The probe alerts when a run has been queued past QUEUE_THRESHOLD_MINUTES, currently 30. The nightly CI cron at 03:00 runs Mutation Testing as a SIXTEEN-shard matrix, and the fleet has FOUR lean-mem runners, so most shards queue for hours by construction. On #933 the run was progressing normally — eleven shards completed, four in progress, three queued — and the fleet was healthy at online=12 busy=11. Nothing was wrong. NINETY-FIVE such alerts have been filed to date, which is roughly one a day. That is the failure mode this project has spent three releases removing, in its own alarm: a signal that fires on normal operation trains its readers to ignore it, and #855's published misattribution is what that looks like when a real one arrives. The alert is now HONEST about what it does not know, since REQ-342 replaced the false pool-offline claim with runners-unknown and #933 shows that working in production. Honest and frequent is better than wrong and frequent, but it is still frequent. OPTIONS, in cost order, all recorded on #919. Exclude scheduled runs from the probe, a one-line filter on event, which removes the whole class since a cron-triggered matrix is not what the probe exists to catch. Scope the probe to the jobs in CI Gate's needs, which ties the alarm to something with a defined consequence — those are the jobs whose queueing actually blocks a merge, and Mutation Testing is advisory and not among them. Raise the threshold, which is the weakest option because it delays the false alarm rather than removing it and makes the probe slower to report a real outage. Or reduce the shard count or add lean-mem capacity, which changes the workload rather than the signal and presumes the sixteen-way sharding has no reason behind it. RECOMMENDATION: scope to CI Gate's needs. It is more principled than filtering on event because it states what the alarm is FOR rather than what it is not, and it survives a future workflow that queues badly outside the cron. NOT IMPLEMENTED HERE DELIBERATELY: this changes what the alarm MEANS, which is a decision about its purpose rather than a defect fix, and it was surfaced to the maintainer twice without a decision. Filing it so it stops being invisible — per REQ-345, an untracked problem never appears in any readiness query, which is precisely how this one has persisted for ninety-five alerts. DISCHARGED 2026-09-15 BY REQ-354, WITHOUT THE REMEDY PROPOSED ABOVE, and the recommendation recorded above is formally WITHDRAWN. REQ-354 did not change what the alarm watches. It observed that the probe measured queue LATENCY while being named for LIVENESS, and that a queued job whose labels have an IN-PROGRESS sibling is behind a working runner rather than behind an outage — a fact readable from the jobs API the probe already had, needing no scope the token cannot hold. That removed this defect as a side effect of making the probe measure what its name claims. VERIFIED AGAINST THE RECURRING CONDITION, NOT AGAINST SILENCE. An absence of alerts proves nothing unless the trigger actually recurred, which is the vacuous-pass shape this project keeps finding, so the nightly runs were measured directly. REQ-354 merged 2026-09-11. Alerts had been filed on 09-05, 09-06, 09-07, 09-08, 09-09 twice, 09-10 and 09-11 — roughly one a day. Since the merge: ZERO alerts across four days, while every nightly hit the trigger. Measured shard queueing on the four scheduled runs after the merge: 16 shards each, longest queue 219, 217, 186 and 215 minutes against a 30-minute threshold. The exact condition that previously fired daily occurred on all four nights and filed nothing, and every runner-liveness run returned success. SO THE SCOPING IS NOT IMPLEMENTED AND SHOULD NOT BE. Narrowing the probe to CI Gate's needs would change which jobs the alarm watches — a real reduction in coverage — in exchange for a benefit that has already been collected by other means. Paying a cost for a benefit already banked is worse than doing nothing. The option is left recorded rather than deleted: if alerts return on a shape the liveness signal cannot distinguish, scoping is still the most principled of the four options in the list above. STATUS NOTE. Advanced to verified rather than rejected. The defect this artifact NAMES is discharged and measured; rejected is for a requirement that was wrong, and this one was not — only its proposed remedy was overtaken."
     release: v0.38.0
     tags: [ci, observability, weak-green, alarm-fatigue]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-342
@@ -9140,6 +9315,8 @@ artifacts:
     description: "Found 2026-09-10 while trying to advance two implemented artifacts whose evidence IS a CI gate. `rivet verify` accepts an incoming verifies link or a source marker and nothing else, and REQ-343, the liveness probe's runs-on, and REQ-347, the cargo-deny advisories check, are both configuration changes with no test to carry one. Placing a marker where the evidence actually lives turned out to be impossible for two independent reasons, and the second was only found because the first fix did not work. FIRST: detect_language had no entry for yml, yaml or toml, so scan_file returned before any pattern ran. That is the identical gap #870 and REQ-319 fixed for shell, whose own code comment records that a shell gate could never be evidence for a requirement. Config files use the same hash comment convention as Python and shell, so the pattern itself was never the obstacle. SECOND, and invisible until the first was fixed: scan_directory skips every entry whose name starts with a dot, so .github was never reached. Markers were placed in ci.yml and runner-liveness.yml, the tests passed, and `coverage --tests` still reported No test markers found for both requirements — which is what exposed it. .github is a real source directory in every GitHub repository and workflows are where CI gates live; it is now exempted while every other dot-dir, .git in particular, stays skipped because it is not source and is enormous. ATTRIBUTION IS DELIBERATELY NOT GUESSED. Config markers return None from find_enclosing_function and fall back to file:line. The catch-all regex matches `function name(`, which appears inside a YAML run block, so falling through would attribute a workflow marker to a shell helper several steps away — a plausible wrong name, which is exactly the shape of REQ-326's misattribution. An unambiguous ci.yml:657 is better evidence than a confident wrong one. THE SECOND TEST FOR THAT GUARD WAS INITIALLY VACUOUS and is worth recording. Its fixture contained no shell block, so the catch-all had nothing to match and returned None regardless; removing the guard changed nothing and the negative control stayed green. The fixture now contains a `function helper()` inside a `run: |` block — the actual hazard — and removing the guard now reddens with the marker attributed to helper. A guard tested against a document that cannot exercise the hazard is not tested. VERIFIED end to end: with markers placed on the cargo-deny check step and the probe's runs-on, `rivet coverage --tests` reports REQ-343 with 1 test marker and REQ-347 with 1 test marker, where both previously reported none. Both halves negative-controlled — removing the extension entry reddens two cases, restoring the blanket dot-skip reddens the .github case. THE PR-DIFF MUTATION GATE CAUGHT A GAP IN THIS CHANGE, which is worth recording because it landed in a change whose whole subject is guards tested against fixtures that cannot exercise them. Exempting .github turned the skip into a three-way condition — skip_dot or name equals target or name equals node_modules — and the gate reported one surviving mutant at test_scanner.rs:344:49, replacing the second or with and. The .github and .git tests cover the dot branch; nothing exercised the other two. Scanning target would walk build artefacts and could surface markers from vendored source, so the skip is load-bearing and was untested. Covered now, and negative-controlled by applying the mutant: both skipped directories become visible and the test reddens. The new test carries its own POSITIVE control — a real source file whose marker must be found — so the two skip assertions cannot pass on a scanner that simply found nothing, which is the vacuity shape this session kept hitting. NOTE ON THE CLASSIFIER: tools/ci-diagnose classify_failure reported this job as setup-failed, which is wrong. The mutation run itself succeeded and the check-surviving-mutants step failed afterwards, leaving later steps skipped, and the heuristic reads any skipped step after a failure as a setup problem. That is the sibling defect already noted against REQ-325 and it is now observed a second time; the classification would have sent a reader to the wrong place had the finding not been read directly."
     release: v0.38.0
     tags: [traceability, evidence, ci, weak-green]
+    fields:
+      corrective: true
     links:
       - type: derives-from
         target: REQ-343
@@ -9163,6 +9340,8 @@ artifacts:
     description: "Found by REQ-348 differential gate, and it is the precondition REQ-346 could not have landed without. yaml_cst had a FlowSequence node and no FlowMapping. A flow-mapped value therefore produced neither a mapping nor an error — the data was simply not there. On rivet own corpus that silently cost the provenance of 18 artifacts: serde read provenance on 205 of the 321 artifacts in requirements.yaml and rowan on 195, the gap being exactly that file flow-style share, while both paths reported 321 artifacts. A loss invisible to anything counting artifacts. An artifact written ITSELF as a flow mapping was worse still: rowan returned nothing at all for it. THE FIX IS DELIBERATELY SMALL. Brace tokens mirror the bracket tokens that already existed, and parse_flow_mapping emits a Mapping node — the same kind a block mapping produces, with MappingEntry, Key and Value children — rather than a distinct FlowMapping kind, so every HIR walker gained flow support without knowing flow exists. A separate kind would have meant each consumer that forgot to handle it silently reads nothing, which is the failure being fixed. The tree stays lossless: braces and commas are kept as tokens, so the style is recoverable and the text round-trips. Flow entry values terminate at a comma or closing brace rather than at end of line, which is the whole difference from the block form, and each is wrapped in its own Value node so that scalar_text sibling collection stops at the entry boundary instead of swallowing the rest of the mapping into the first value. Flow mappings nest in flow mappings, in flow sequences, and as sequence items. TWO FINDINGS FROM THE NEGATIVE CONTROLS, both of which would otherwise have shipped. Removing the opening brace from lex_plain_scalar break bytes was caught by no test. The standing rule is that a surviving mutant means the assertion is missing, but probing both lexer variants side by side showed the opposite: the break byte was WRONG. A block mapping whose KEY contains a brace lexed as four tokens and emitted two spurious diagnostics, expected colon after mapping key and expected mapping key found LBrace. Removing it fixes that and shrinks the lexer change to two token arms; a test written to cover the mutant would have frozen a bug in place. The same probe showed a flow mapping inside a flow SEQUENCE producing three unexpected-token errors, because parse_flow_sequence recursed for a nested bracket but let a brace fall to the error arm. Both are fixed and each is caught by exactly the test that claims it. EVIDENCE. The oracle was written first and watched go red: the proptest generator in differential_yaml.rs was widened to emit provenance in both flow and block style and to compare it, and proptest shrank the failure to the corpus shape exactly. Eleven unit tests live IN yaml_cst.rs rather than in tests/, because the mutation gate runs --lib and cannot see integration tests, and five deliberate mutations of the new code each redden only the test that names them. The corpus gate moved from 24 agree and 2 differ to 26 agree and 0 differ, and refused to go quietly green on the way: it is pinned to a count, so closing the gap reddened it and forced this record rather than a silent re-baseline."
     release: v0.38.0
     tags: [yaml, parser, weak-green]
+    fields:
+      corrective: true
     links:
       - type: derives-from
         target: REQ-348
@@ -9180,6 +9359,8 @@ artifacts:
     description: "The workflow is named Runner Liveness and its own header calls queued-run age the authoritative signal that directly measures the symptom. Queued age is LATENCY, not liveness, and the two need opposite responses: a saturated pool and a dead pool both show jobs stuck in queued. THE RIGHT ANSWER EXISTED AND HAD NO PATH TO IT. classify_stall already emits label-saturated, but reaching it requires the runner list, which requires the administration scope, which is not grantable to GITHUB_TOKEN. So every SCHEDULED probe 403s on that lookup and short-circuits at runners-unknown, which is an alarm. The classifier was correct and unreachable. Scale of the consequence, measured 2026-09-11: 95 closed and 2 open issues carry the title of this alert. THE FIX NEEDS NO NEW SCOPE, because liveness is observable from the jobs API the probe already reads. If a job requiring labels L is IN PROGRESS, a runner carrying at least L exists and is working; any queued job whose labels are a SUBSET of L is therefore waiting behind a live runner rather than behind an outage. The check is required of EVERY queued job rather than any, so a mix where some labels have live siblings and others have none still alarms and a real outage cannot hide behind one unrelated running job. When it cannot be shown for all, the answer is exactly what it was before. THE MODE IS DELIBERATELY DISTINCT from label-saturated rather than reusing it. That mode means capable runners exist and none is idle, established from the runner list, and its caller reports per-label idle counts read from that same list. Reached by the new path the list is absent, so reusing it would print idle by label none and imply an empty pool — the precise false alarm being removed. queue-behind-live-runners names what was actually observed. IT IS A NOTICE, NOT A PROBLEM, on the same grounds as dependency-blocked: the workflow charter, in its own words, is that when the pool goes offline every gate queues forever with no fallback and no alarm. A pool with jobs actively running on the labels the queued jobs need is not that condition. This stays inside the alarm charter rather than widening or narrowing it, and it is one line to reverse. WORKED EXAMPLE, the shape that filed the 96 alerts and the reason issue 940 was closed the same day: a 16-shard mutation matrix against 4 lean-mem runners serializes into four waves by construction, so shards queue past the 30-minute threshold every night. Measured at the time of the alert: org runners total 12, online 12, busy 12; the lean-mem label at 4 runners and 4 busy, running exactly 4 shards with 5 queued behind them. Nothing was down and every runner was working. EVIDENCE. The oracle was written first and watched go red on exactly one case, the saturation case, with all four controls already green: nothing running on those labels must still alarm, a running sibling on OTHER labels proves nothing, a readable offline pool still outranks the jobs signal, and dependency waits still short-circuit ahead of everything. Four mutations of the new code each redden only the controls that name the property — weakening every to any, weakening superset to any overlap, counting queued jobs as live, and running the check when the runner list is readable. NOTE THE RELATIONSHIP TO REQ-351, which is NOT resolved here. That requirement proposes scoping the probe to CI Gate needs, which changes WHICH jobs the alarm watches and is a monitoring-policy call for the maintainer. This one changes nothing about which jobs are watched; it stops the probe calling a demonstrably live pool dead."
     release: v0.38.0
     tags: [ci, monitoring, weak-green]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-351
@@ -9194,6 +9375,8 @@ artifacts:
     status: verified
     description: "rivet get is the single-artifact inspector — the command that answers what is the state of this artifact — and BOTH of its output branches are hand-rolled allowlists, the same shape as mutate render_artifact_yaml, where a field not explicitly emitted is silently dropped. The text branch rendered id, type, title, status, description, tags, fields, links and incoming links. The JSON branch rendered command, id, type, title, status, description, tags, links, incoming_links and fields. NEITHER rendered release or provenance, both of which are first-class Artifact struct fields, and neither has for as long as those fields have existed. THIS IS NOT COSMETIC AND IT HAS ALREADY COST WORK. REQ-348 own record names it: the comparison could not be completed because rivet get does not render provenance at all, confirmed by a control against REQ-346 which carries provenance and showed none. The inspector could not show the field the investigation needed, so the equivalence question was left open rather than answered either way; it was settled later only by writing a differential gate that bypassed the CLI entirely. The release omission is the same failure in the other dimension: release is what release readiness is queried on, so a scoped artifact looked unscoped in the one view a person is most likely to check. THE FIX IS STRUCTURAL RATHER THAN TWO PRINT STATEMENTS, because adding two lines leaves the next field to be dropped just as silently. cmd_get now destructures Artifact with a pattern carrying no rest-pattern, so a field added to the model breaks this build until someone decides how get should present it. That decision can still be to show nothing; it just has to be made rather than defaulted into. Verified as a compile-time oracle: removing provenance from the pattern yields error E0027, pattern does not mention field provenance. Text output gains a Release line printed unconditionally next to Status, because an artifact with no release is backlog and that is a fact worth showing rather than a line worth hiding, plus a Provenance block and a variant-overrides summary. JSON output gains release and provenance as null rather than omitted when unset, so a consumer can tell no release apart from this build does not report release. EVIDENCE. The oracle was written first and its VACUITY GUARD fired before the assertions did: the test reads release from get --format json rather than asserting on a literal, and that read failed, which is how the JSON branch was found to carry the same omission rather than only the text branch being at fault. Five negative controls, each reddening on the specific claim: dropping the Release line reddens on the label; printing the label with a hardcoded dash reddens on the value; dropping the Provenance block reddens on its label; dropping release from JSON reddens the vacuity guard; and removing a field from the destructuring pattern fails the build."
     tags: [cli, evidence, weak-green]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-348
@@ -9209,6 +9392,8 @@ artifacts:
     status: verified
     description: "Two findings reported by the maintainer 2026-09-15, both reproduced. A BRIDGE FIRES ONLY WHEN ALL ITS BASE SCHEMAS ARE LOADED, so the loaded schema set is itself a rigour selector: a repo that does not load iso-26262 gets no safety obligations, silently. That is legitimate as a maturity dimension, a proof-of-concept need not carry a safety chain, but it means the schema set has to be a DECLARED property of the release or variant rather than an incidental rivet.yaml edit — otherwise dropping one line removes obligations with no diagnostic. MEASURED, on a fixture with no artifacts so that nothing unrelated could fire. This isolation mattered: three earlier attempts showed exit 1 and looked like a diagnostic, when the real cause was unknown artifact type feature from the seeded artifacts of the schema that had just been dropped. With schemas common, stpa, dev the bridge loads and validate exits 0. With common, stpa the bridge is silently gone and validate still exits 0. THE WORSE CASE, WHICH WAS NOT IN THE REPORT: with common, stpa, stpa-dev.bridge — the bridge DECLARED EXPLICITLY and its base absent — validate also exited 0 and applied nothing. Naming a bridge is the only way a project can say it depends on that tier, and the declaration bought no assurance whatsoever. By contrast, naming a schema that does not exist at all exits 1, which is the precedent: an unsatisfiable declaration belongs in the same class as an unresolvable one. THE FIX MAKES THE DECLARATION LOAD-BEARING and adds no new directive, reusing the existing mechanism entirely. A bridge named in schemas whose extends bases are not all present is now an error naming the bridge, its bases and which are missing, with both remedies stated: add the schema, or remove the bridge to say the project does not carry that tier. Checked for on-disk local bridges on the same footing as built-in ones. DELIBERATELY SILENT ON UNDECLARED DORMANT BRIDGES. A project loading only stpa has five of them one base away, and an alarm that fires on every legitimate partial schema set is one people learn to ignore. Dormancy is reported on demand instead: rivet init now lists dormant bridges with the schemas each needs, so the tiers a project is not carrying are visible at the moment the choice is made rather than left to be inferred. SECOND FINDING, ALSO CONFIRMED: A DROPPED-IN BRIDGE IS NOT AUTO-DISCOVERED. discover_bridges iterates the compiled-in BRIDGE_SCHEMAS list, so an on-disk file can only OVERRIDE a built-in name; a new bridge name is unreachable by auto-discovery. Reproduced with schemas/local-demo.bridge.yaml declaring extends stpa, dev while both bases were loaded: zero mentions, while the built-in stpa-dev.bridge auto-loaded from embedded alongside it. Naming it explicitly loads it cleanly. The docs at docs.rs 3346 say both schemas will automatically load the supply-chain-dev.bridge, which is true for built-ins and reads as a general rule. Explicit declaration being the only route to load a local bridge is precisely why the check above is its only safety net. NOT CHANGED HERE: auto-discovery still does not scan schemas/ for unknown bridge names. Making it do so would change which schemas load for existing projects without anyone asking, which is a larger decision than this defect; the gap is recorded rather than silently closed. A SURVIVING MUTANT FOUND A MISSING ASSERTION AND THEN A WRONG TEST. Deleting the guard that limits the check to .bridge names reddened nothing. The first replacement test used embedded stpa-sec and still did not redden, because for an embedded non-bridge the extends list is never resolved at all — the lookup falls through BRIDGE_SCHEMAS and continues, so the guard is unreachable by that route. Only an ON-DISK plain schema exercises it. The corrected test reddens on that mutation. An existing test also had to change: bundled_bridges_are_loadable_by_explicit_name declared stpa-dev.bridge with common and stpa but WITHOUT dev, and it was passing while loading a link type that could never be used — constraint-satisfies declares source-types requirement, and requirement is declared only by dev. The fixture now includes dev and asserts that every source type the bridge link names is declared by some loaded schema, because asserting the link type merely EXISTS is what let the incomplete fixture look correct."
     tags: [schema, ci, weak-green]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -9221,6 +9406,8 @@ artifacts:
     status: verified
     description: "rivet check sources is the cited-source drift gate: it walks every cited-source, classifies it as match, drift, missing-hash, read-error, skipped-remote, stale or shape-error, and exits non-zero when anything has drifted. Its exit code was firing == 0 summed over drift, missing-hash, read-error and shape-error, plus stale under --strict. ON A CORPUS WITH NO CITED-SOURCES EVERY ONE OF THOSE COUNTERS IS ZERO, so the command exits 0 having checked nothing. Measured on this repository, which carries 325 artifacts and zero cited-source fields: the command prints No artifacts have a cited-source field and exits 0. THE TEXT OUTPUT IS HONEST AND THE EXIT CODE IS NOT. A human reading the terminal sees exactly what happened. A pipeline reads the exit code, and there 0 means sources verified when the population was empty. That is absence reported as success, sitting on the assurance chain, where citation freshness is the evidence an assessor would rely on. It is the same shape as a gate that runs, reports success, and checks less than its name claims — the defect class this project has spent several releases removing — instantiated in the one command whose entire purpose is tamper-evidence. RAISED IN CONTEXT. The maintainer reported that aadl-component carries source-ref as a plain string rather than cited-source, so architecture references have no sha256 drift detection and a file can change under a valid-looking reference. Checking that report surfaced this: cited-source is already a BASE field available on every artifact type since issue 556, so the capability is reachable today and a local schema extension would add a third mechanism rather than close a gap. But the gate that would enforce it passes vacuously, so adopting cited-source on aadl-component would have bought an assurance that was not being checked. This is the prerequisite, and the source-ref question is recorded separately because deprecating a schema field is a compatibility decision for the maintainer. THE FIX IS A CALLER-OPTED POSITIVE CONTROL, NOT A CHANGED DEFAULT. A project that legitimately carries no citations must keep exiting 0, so --min N defaults to 0 and the previous behaviour is unchanged. Stating an expected floor makes a corpus that LOST its citations fail rather than pass quietly, which is the regression this protects against as much as the empty case. The message distinguishes the two: an empty population is reported as checked nothing rather than as a missed threshold, because those have different causes and different fixes. MEETING THE FLOOR NEVER EXCUSES DRIFT, and that has its own test, because a flag that could mask the defect the command exists to find would be worse than the gap it closes. THE DECISION LIVES IN A PURE FUNCTION, check::sources::gate_reason, rather than inline in the command. rivet-cli has no lib target, so logic left in main.rs is reachable only through the binary and is invisible to the mutation gate; moving it into the module makes it unit-testable and mutable. FOUR NEGATIVE CONTROLS, each reddening only the tests that name the property: dropping the population check reddens the empty-corpus and shrunken-corpus cases; returning early once the floor is met reddens the two that prove drift and strict-stale still fire; disabling the strict stale term reddens the strict case; and an off-by-one on the comparison reddens the empty-corpus boundary."
     tags: [cli, evidence, weak-green, supply-chain]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -9232,6 +9419,8 @@ artifacts:
     status: verified
     description: "Approved 2026-09-15 from the maintainer report that aadl-component carries source-ref as a plain string rather than cited-source, so a referenced file can change under a valid-looking reference with no sha256 drift detection. MEASURED. source-ref is declared on THREE types, all as type string: aadl-component in aadl.yaml, design-decision in dev.yaml, and build-attestation in supply-chain.yaml. FIFTY-FIVE artifacts carry it — 19 aadl-component, 25 design-decision and 11 feature. cited-source is declared on eight types AND as a base field available to every artifact type since issue 556, and is carried by ZERO artifacts. So the drift-checked mechanism exists, is reachable everywhere, has working tooling, and is entirely unused, while the rot-prone one is in active use on 55 artifacts. TWO ANOMALIES FELL OUT OF THE COUNT. The feature type does NOT declare source-ref, yet eleven feature artifacts carry it; those are among the 53 unknown-field diagnostics rivet validate currently emits as warnings rather than errors. And external-anchor declares cited-source with type mapping rather than type cited-source, an untyped escape hatch on the very field whose point is to be typed. MIGRATE TO cited-source RATHER THAN RETYPE source-ref IN PLACE, which is the decision worth recording because retyping looks cheaper and is not. A plain string cannot satisfy the cited-source shape of uri, kind, sha256 and last-checked, so retyping costs the same migration of all 55 artifacts; and it would additionally force rivet check sources to discover a SECOND field name, adding a parallel mechanism where the whole complaint is that two mechanisms exist for one job. Migrating to the existing name gains working tooling immediately, because the drift checker already discovers cited-source by name. SCOPE HERE IS STEPS ONE AND TWO ONLY. Step one: a validate diagnostic on any source-ref naming cited-source as the replacement, plus external-anchor corrected to type cited-source. Step two: convert the 55 artifacts, then let rivet check sources --update --apply stamp the hashes — that machinery already exists, so the migration is a shape conversion and not new verification code. Step three, removing source-ref from the three schemas, is a breaking schema change and is scoped separately to v0.39.0. THE GATE IS REQ-357's --min. Once migrated, rivet check sources --min 55 makes a future deletion of citations fail loudly instead of passing as an empty population. SCOPE CORRECTED 2026-09-16 AFTER MEASURING THE VALUES, and the plan above was wrong in a way worth recording. It said migrate the 55. The 55 are not homogeneous and most are not citations at all. By shape: only 17 name a single resolvable file. The remainder are code-location NOTES — multi-file brace globs such as rivet-core/src/{sexpr,commits,reqif,formats/needs_json}.rs, line ranges spanning two files, bare prose, and URLs. A cited-source is a single URI carrying one sha256 by construction, so forcing a multi-file note into one would lose information rather than gain assurance. Splitting by type: aadl-component 19, design-decision 25, feature 11, and it is the aadl-component set — the population actually reported — that is migratable. HAD THE MIGRATION BEEN WRITTEN AGAINST A CLEAN FIXTURE it would have passed for the wrong reason, which is the failure mode this project keeps naming. Every one of the 55 fails a plain existence check, not because every reference is broken but because almost none is a bare path. THE REPORTED CONCERN IS CONFIRMED, AND WORSE THAN DRIFT. Two aadl-component references point at files that were DELETED, and nothing had ever flagged them: ARCH-ADAPT-STPA cited rivet-core/src/formats/stpa.rs, removed in #123 during the rowan migration, and ARCH-DASH-001 cited rivet-cli/src/serve.rs, removed in #40 when serve.rs was split into a serve/ directory. Both confirmed from git history. The file did not change under the reference — it vanished, and the reference still looked valid. Repointed to rivet-core/src/yaml_hir.rs and rivet-cli/src/serve/mod.rs, deliberately WITHOUT line anchors, because a drifted line number is a lie this check cannot catch and adding new ones would manufacture more of exactly this defect. A ROT CHECK NOW EXISTS FOR source-ref ITSELF, which matters precisely because the 36 note-shaped references can never migrate: rivet check sources reports any source-ref whose value is strictly path-shaped and whose file is absent. Placed there rather than in validate because resolving a path needs the project root, and validate(store, schema, graph) does not receive one. Conservative by construction: only a value with no whitespace, no brace or sentence punctuation, no scheme, and an optional numeric line or range suffix is resolved at all, so prose containing a real path is a false negative — the direction worth erring in. FOUR OF FIVE NEGATIVE CONTROLS SURVIVED THE FIRST ATTEMPT, which is the most useful thing that happened here. Each prose fixture tripped two or three guards at once, so deleting any single guard left the others catching it and three separate mutations went unnoticed; and rotted_source_refs, the collector, had no test whatsoever, so a mutation making it return nothing reddened nothing. Fixtures now isolate one guard each. A fifth survivor took a second pass: a URL fixture without a port is already declined by the colon-tail rule, making the scheme guard look redundant — with a numeric port the tail IS numeric, the base becomes the scheme and host, and it would be resolved as a repo-relative path that cannot exist, a false positive on a URL. All five mutations now redden on the test that names them. REMAINING, NOT DONE HERE: migrating the 17 resolvable aadl-component references to cited-source, which adds content-hash drift on top of existence. Recorded rather than started, because the existence check is the increment that reddens on real data today and the two rotted references were the urgent half."
     tags: [schema, evidence, supply-chain]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-357
@@ -9247,6 +9436,8 @@ artifacts:
     status: verified
     description: "Approved 2026-09-15, and the approved answer is deliberately NOT the obvious one. The maintainer reported that a bridge schema dropped into schemas/ is not auto-discovered: it must be named in rivet.yaml, while the docs read as though a dropped-in file would load once its bases are present. Confirmed by reading and by reproduction — discover_bridges iterates the compiled-in BRIDGE_SCHEMAS list, so an on-disk file can only OVERRIDE a built-in name and a new bridge name is unreachable. With both bases loaded and schemas/local-demo.bridge.yaml present declaring extends stpa and dev, the local bridge drew zero mentions while the built-in stpa-dev.bridge auto-loaded from embedded beside it. DO NOT MAKE LOCAL BRIDGES AUTO-LOAD. REQ-356 established that an explicitly declared bridge is CHECKED: its bases must all be present or the load fails. Auto-discovery is the opposite of that — obligations would appear and disappear according to which files happen to be sitting in a directory. That is precisely the silent rigour-selection hazard REQ-356 just closed, reintroduced one layer down, and it would land in exactly the repositories where a safety chain lives. For a hand-authored bridge such as an iso-26262 to ASPICE bridge in a platform repository, explicit declaration is the STRONGER position: the schema set becomes an auditable statement rather than a directory listing. MAKE DISCOVERY A REPORT RATHER THAN A LOAD. Two changes. First, correct the documentation: the claim that both schemas will automatically load the supply-chain-dev bridge is true only for the compiled-in list, and must say so rather than reading as a general rule. Second, extend the dormant-bridge listing already built for REQ-356 so it also scans schemas for files matching the bridge pattern and lists local ones as present but not declared, printing the line to add to rivet.yaml. Discovery becomes visible without becoming implicit, which is the whole distinction. NOT CHANGED: auto-discovery still covers built-ins only, by design rather than by omission."
     tags: [schema, docs]
+    fields:
+      corrective: true
     links:
       - type: constrained-by
         target: REQ-356
@@ -9262,6 +9453,8 @@ artifacts:
     status: proposed
     description: "Step three of the source-ref migration approved in REQ-358, scoped to v0.39.0 because it is a BREAKING SCHEMA CHANGE and belongs on a release boundary rather than inside one. Remove source-ref from aadl-component in aadl.yaml, design-decision in dev.yaml and build-attestation in supply-chain.yaml, after REQ-358 has migrated all 55 carrying artifacts to cited-source and the hashes are stamped. PRECONDITION, not a preference: removing the field while any artifact still carries it converts those artifacts to unknown-field diagnostics rather than to drift-checked citations, which would trade a rot-prone reference for a lost one. The check is mechanical — no artifact may carry source-ref, verified by parse rather than by grep, since the string appears throughout these descriptions. GATE AFTER REMOVAL: rivet check sources --min set to the migrated count, so a later deletion of citations fails as a shortfall instead of passing as an empty population."
     tags: [schema, breaking-change]
+    fields:
+      corrective: true
     links:
       - type: refines
         target: REQ-358
@@ -9277,6 +9470,8 @@ artifacts:
     status: verified
     description: "The rowan read path did not implement YAML block-scalar semantics, and it is the PRODUCTION path for safety/stpa. block_scalar_text in yaml_hir.rs joined body lines with a newline whether the header was a literal pipe or a folded greater-than, and always clipped to one trailing newline regardless of a strip or keep chomping indicator; its own comment said it matched YAML 1.2 default clip-chomping for the literal style, so folding and chomping were never considered. MEASURED IN PRODUCTION: 148 of 154 STPA descriptions in the loaded store disagreed with PyYAML. Example CTRL-CI, where PyYAML yields runs Rivet validation and rivet yielded runs Rivet newline validation. The three generic-yaml sources were unaffected, 0 mismatches over 717 descriptions and 1310 string fields, because they load through serde_yaml, which folds correctly. So the defect was confined to exactly the files the differential gate classified as rowan-only and never compared against anything. THE ON-DISK SOURCE WAS NEVER TOUCHED, which set the severity. A minimal STPA fixture with a three-line folded description was edited with rivet modify and then rivet stamp; the folded block stayed byte-identical and kept its greater-than indicator, while provenance was demonstrably written, so the check was not vacuous. The corruption was read-only, and correcting the reader corrects the store with no repair pass. A SECOND DEFECT, LATENT, FOUND WHILE FIXING THE FIRST: the description extractor tried scalar_text before block_scalar_text. The CST lexes a chomping indicator as a PlainScalar token inside the BlockScalar node, so a description written with a strip or keep indicator was read as the single character minus or plus. The other three call sites already tried the block scalar first; this one had the order backwards. No artifact in this repository uses a chomped block scalar, so no stored value was affected here. THE FIX IS A PORT OF PyYAML scan_block_scalar rather than a fresh reading of the spec, because the subtle cases — a blank line inside a folded scalar becoming a paragraph break, more-indented lines keeping their line breaks, keep-chomping retaining trailing blank lines — are exactly where a hand-derived rule goes wrong. Every expected value in the eight new unit tests is PyYAML output for the same document, captured before writing the code. EVIDENCE. Oracle first: seven of eight tests red, the eighth being the literal-clip control that is today's behaviour and must stay green so a fix that folds everything cannot pass. After the fix all eight are green, and the full yaml_hir and yaml_cst suites, 44 and 45 tests, still pass. The production store now matches PyYAML on every description and string field across all four sources, 148 mismatches to 0. Seven mutations each redden only the tests naming their rule: never folding, folding literals, ignoring chomping, folding more-indented lines, folding across blank lines, reverting the description call order, and keep-chomping dropping trailing blank lines."
     tags: [yaml, parser, data-loss]
+    fields:
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5
@@ -9289,6 +9484,8 @@ artifacts:
     status: verified
     description: Found by the extended differential gate while measuring REQ-346. REQ-277 writes category, priority and upstream-ref as TOP-LEVEL keys rather than under fields. The serde loader, which is the production path for artifacts/, drops all three with no diagnostic. rivet get REQ-277 --format json shows fields as an empty map; the filter matching priority should matches 150 artifacts and silently excludes REQ-277; rivet validate emits four diagnostics naming REQ-277, all traceability warnings, and none about the three lost keys. 204 other artifacts nest the same keys under fields and load correctly, so REQ-277 is the lone malformed artifact in this corpus — but the defect is the loader silently discarding data rather than refusing or warning, and any project can hit it. The rowan path reads the same keys, so the two parsers disagree; this is one of the two characterized divergences pinned in yaml_parser_differential.rs. LIVE, on the production path. The corpus fix is to move the three keys under fields; the systemic fix is to make an unrecognised top-level key on an artifact a diagnostic rather than a silent drop, with the file-level deny_unknown_fields in generic.rs as the obvious precedent for being loud. RESOLVED 2026-09-16 BY PRESERVING, NOT REFUSING — and the refusal suggested above was implemented first and was worse. Adding deny_unknown_fields to GenericArtifact passed its own oracle, but the corpus showed a consumer this scan had missed — tests/fixtures/spar-external, the simulated spar external declared in rivet.yaml, writes category and aadl-package at the artifact's top level on all three artifacts. Both are REQUIRED aadl-component fields. Before any change they were silently dropped too, so the defect was never one malformed artifact but a writing convention in use; under refusal the whole external reported loaded 0 artifacts. Two missing fields per artifact became zero artifacts. rivet's own CST path already promotes such keys into fields, so the fix makes the serde path agree — GenericArtifact gains a flattened extra map, merged into fields on load, with the canonical fields block winning any collision because that is the shape rivet add and rivet modify write. The loader preserves and the validator judges — a key that is not a schema field for the artifact's type still surfaces as unknown-field, and a typo of a REQUIRED key such as titel still fails loudly as a missing field. EFFECT, measured. REQ-277 now carries all three fields and the priority-should filter matches 151 artifacts, up from 150 and now including it. The spar external loads all three components with category and aadl-package present and no loaded-0 warning. The differential gate reddened at differ 1 as designed, since REQ-277 no longer diverges between the parsers; KNOWN_DIVERGENCES is now 1 with DD-039 the only id, and the identity pin still discriminates at that count. NEGATIVE CONTROLS. Restoring the original silent drop reddens the three preservation tests; letting the top-level key win a collision reddens the collision test; reinstating refusal — the rejected design — reddens four tests, so the decision is pinned by assertion.
     tags: [yaml, data-loss, weak-green]
+    fields:
+      corrective: true
     links:
       - type: derives-from
         target: REQ-346
@@ -9306,6 +9503,8 @@ artifacts:
     status: verified
     description: "Found by the extended differential gate after REQ-361 fixed block-scalar folding. DD-039 writes alternatives as a multi-line PLAIN scalar, with no pipe or greater-than indicator, continuing onto an indented second line. PyYAML and serde fold the continuation in and return the whole sentence. The rowan HIR's field extraction returns only the first line and drops the continuation. That is truncation, not a formatting difference. The CST itself consumes multi-line plain scalars, covered by the multiline_plain_scalar tests in yaml_cst.rs; the loss is at the HIR layer, where scalar_text collects sibling tokens only up to the first Newline. LATENT on this corpus: DD-039 loads through serde in production and no safety/stpa artifact uses a multi-line plain scalar, so no stored value is wrong today. It becomes live on any read-path migration onto the CST, which makes it a precondition of REQ-346, and for any STPA project that writes one. Pinned as the second of two characterized divergences in yaml_parser_differential.rs, so fixing it reddens the gate and forces the record to be updated. FIXED, AND THE FIX WAS IN TWO LAYERS, NOT ONE. In the HIR, scalar_text now folds a plain scalar across its internal line breaks the way YAML 1.2 section 7.3.3 and PyYAML do. A single break becomes one space, and n consecutive breaks become n-1 newlines, so a blank line inside the value survives as a newline. In the CST, is_plain_scalar_continuation now looks past blank lines before measuring the next line's indent, so a continuation separated by a blank line stays inside the Value node instead of ending the scalar. Fixing only the HIR would have folded two lines and still truncated at the first blank one. NEGATIVE CONTROLS, each run and restored. M1 removes the HIR fold, and the multi-line tests fail. M2 removes the CST blank-line skip, and plain_scalar_continues_across_a_blank_line fails. M3 emits n newlines instead of n-1, and M4 always emits a space; both fail the blank-line-as-newline test. M6 lets the CST absorb a comment line into the value, and it is caught only by a STRUCTURAL test, a_comment_line_is_never_inside_a_plain_scalar_value_node, because the HIR comment guard masks M6 at the text level. M5, which removes that HIR guard, SURVIVES, and that is recorded rather than papered over. The guard is unreachable while the CST invariant holds, and that invariant is exactly what the structural test pins. EVIDENCE. The differential gate reddened when the fix landed, where the pinned count was the previous number. With REQ-362 also on main the rivet paths now agree on the whole comparable corpus, KNOWN_DIVERGENCES is 0 and KNOWN_DIVERGING_IDS is empty, and the gate still asserts compared is greater than 0 so zero cannot be reached by comparing nothing."
     tags: [yaml, parser, data-loss]
+    fields:
+      corrective: true
     links:
       - type: traces-to
         target: REQ-361
@@ -9330,6 +9529,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      corrective: true
     links:
       - type: derives-from
         target: REQ-346
@@ -9352,6 +9552,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      corrective: true
     links:
       - type: derives-from
         target: REQ-348
@@ -9370,6 +9571,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      corrective: true
     links:
       - type: traces-to
         target: DD-028
@@ -9388,6 +9590,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      corrective: true
     links:
       - type: traces-to
         target: REQ-366
@@ -9408,6 +9611,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: DD-063
@@ -9428,6 +9632,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-327
@@ -9466,6 +9671,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-369
@@ -9486,6 +9692,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-370
@@ -9504,6 +9711,7 @@ artifacts:
     fields:
       category: functional
       priority: could
+      corrective: true
     links:
       - type: traces-to
         target: REQ-372
@@ -9555,6 +9763,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-374
@@ -9594,6 +9803,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: derives-from
         target: REQ-340
@@ -9655,6 +9865,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -9670,6 +9881,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -9715,6 +9927,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -9730,6 +9943,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -9745,6 +9959,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-400
@@ -9763,6 +9978,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-401
@@ -9781,6 +9997,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-375
@@ -9801,6 +10018,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-389
@@ -9821,6 +10039,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: FEAT-115
@@ -9839,6 +10058,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -9887,6 +10107,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -9950,6 +10171,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: DD-066
@@ -9968,6 +10190,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: refines
         target: REQ-387
@@ -9988,6 +10211,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: refines
         target: REQ-388
@@ -10006,6 +10230,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -10021,6 +10246,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      corrective: true
     links:
       - type: traces-to
         target: REQ-390
@@ -10039,6 +10265,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5

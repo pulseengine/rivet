@@ -427,6 +427,7 @@ artifacts:
         syntax. The test asserts the error message contains
         "key=value" so the user gets a pointer to the correct
         form rather than just "invalid".
+      corrective: true
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
