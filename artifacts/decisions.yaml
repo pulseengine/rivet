@@ -526,6 +526,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-026
+      - type: traces-to
+        target: DD-012
     fields:
       rationale: >
         Test code is the source of truth for what tests exist and what they
@@ -1148,6 +1150,10 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-004
+      - type: traces-to
+        target: REQ-006
+      - type: traces-to
+        target: FEAT-011
     fields:
       baseline: v0.4.3
       source-ref: rivet-core/src/{sexpr,commits,reqif,formats/needs_json}.rs
@@ -1226,6 +1232,12 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-004
+      - type: derives-from
+        target: DD-065
+      - type: traces-to
+        target: REQ-399
+      - type: traces-to
+        target: REQ-025
     fields:
       baseline: v0.4.3
       source-ref: rivet-core/src/formats/needs_json.rs:367-454,683-705 + rivet-core/src/lib.rs:252-255
@@ -1296,6 +1308,8 @@ artifacts:
         target: REQ-229
       - type: satisfies
         target: REQ-230
+      - type: traces-to
+        target: REQ-228
     fields:
       baseline: v0.20.0-track
       source-ref: "new: rivet-core/src/sql/ (executor + vtab module); rivet-cli/src/main.rs (cmd_sql); rivet-cli/src/serve.rs (POST /sql); rivet-cli/src/mcp.rs (rivet_sql tool)"
@@ -1358,6 +1372,12 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-231
+      - type: traces-to
+        target: REQ-229
+      - type: traces-to
+        target: REQ-230
+      - type: traces-to
+        target: DD-068
     fields:
       baseline: v0.20.0-track
       source-ref: "rivet-core/src/sql.rs (engine), rivet-core/Cargo.toml (deps)"
@@ -1520,6 +1540,10 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-249
+      - type: traces-to
+        target: REQ-177
+      - type: traces-to
+        target: REQ-220
     fields:
       baseline: v0.24.0-track
       source-ref: >
@@ -1572,6 +1596,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-250
+      - type: traces-to
+        target: REQ-252
     fields:
       baseline: v0.25.0-track
       source-ref: >
@@ -1716,6 +1742,8 @@ artifacts:
         target: REQ-263
       - type: satisfies
         target: REQ-266
+      - type: traces-to
+        target: REQ-265
     fields:
       baseline: v0.27.0-track
       source-ref: >
@@ -1788,6 +1816,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-265
+      - type: traces-to
+        target: DD-076
     fields:
       baseline: v0.29.0-track
       source-ref: >
@@ -1848,6 +1878,10 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-344
+      - type: traces-to
+        target: REQ-327
+      - type: traces-to
+        target: REQ-374
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -1905,6 +1939,14 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-398
+      - type: traces-to
+        target: REQ-396
+      - type: traces-to
+        target: REQ-397
+      - type: traces-to
+        target: DD-080
+      - type: traces-to
+        target: REQ-092
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5

@@ -92,3 +92,7 @@ artifacts:
         target: H-TQ-006
       - type: verifies
         target: H-TQ-007
+      - type: traces-to
+        target: L-TQ-001
+      - type: traces-to
+        target: REQ-381

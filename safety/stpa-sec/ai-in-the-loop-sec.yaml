@@ -86,6 +86,8 @@ artifacts:
     links:
       - type: prevents-sec-hazard
         target: SH-AI-002
+      - type: traces-to
+        target: REQ-047
     provenance: { created-by: ai-assisted, model: claude-opus-4-6, timestamp: "2026-04-13T18:00:00Z" }
 
   - id: SSC-AI-003

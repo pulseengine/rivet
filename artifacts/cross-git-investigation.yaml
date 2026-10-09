@@ -743,6 +743,8 @@ artifacts:
         target: FEAT-135
       - type: traces-to
         target: REQ-069
+      - type: traces-to
+        target: REQ-072
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7

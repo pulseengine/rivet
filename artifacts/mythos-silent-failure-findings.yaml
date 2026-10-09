@@ -163,6 +163,8 @@ artifacts:
         target: FEAT-135
       - type: traces-to
         target: REQ-075
+      - type: traces-to
+        target: REQ-050
 
   - id: REQ-082
     type: requirement

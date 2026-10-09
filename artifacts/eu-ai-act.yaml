@@ -191,6 +191,8 @@ artifacts:
     links:
       - type: mitigates
         target: RA-001
+      - type: traces-to
+        target: REQ-051
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
@@ -223,6 +225,12 @@ artifacts:
     links:
       - type: mitigates
         target: RA-002
+      - type: traces-to
+        target: REQ-055
+      - type: traces-to
+        target: REQ-058
+      - type: traces-to
+        target: REQ-059
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
@@ -344,6 +352,14 @@ artifacts:
     links:
       - type: governs
         target: DESIGN-001
+      - type: traces-to
+        target: RM-002
+      - type: traces-to
+        target: RA-002
+      - type: traces-to
+        target: REQ-017
+      - type: traces-to
+        target: REQ-001
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
@@ -382,6 +398,8 @@ artifacts:
     links:
       - type: monitors
         target: AI-SYS-001
+      - type: traces-to
+        target: REQ-017
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
@@ -420,6 +438,10 @@ artifacts:
     links:
       - type: evaluates
         target: DESIGN-001
+      - type: traces-to
+        target: REQ-052
+      - type: traces-to
+        target: REQ-053
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
@@ -458,6 +480,10 @@ artifacts:
     links:
       - type: transparency-for
         target: AI-SYS-001
+      - type: traces-to
+        target: REQ-048
+      - type: traces-to
+        target: REQ-051
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
