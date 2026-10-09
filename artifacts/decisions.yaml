@@ -1294,6 +1294,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-229
+      - type: satisfies
+        target: REQ-230
     fields:
       baseline: v0.20.0-track
       source-ref: "new: rivet-core/src/sql/ (executor + vtab module); rivet-cli/src/main.rs (cmd_sql); rivet-cli/src/serve.rs (POST /sql); rivet-cli/src/mcp.rs (rivet_sql tool)"
@@ -1401,6 +1403,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-246
+      - type: satisfies
+        target: REQ-256
     fields:
       baseline: v0.24.0-track
       source-ref: >
@@ -1702,6 +1706,16 @@ artifacts:
         target: REQ-259
       - type: satisfies
         target: REQ-264
+      - type: satisfies
+        target: REQ-260
+      - type: satisfies
+        target: REQ-261
+      - type: satisfies
+        target: REQ-262
+      - type: satisfies
+        target: REQ-263
+      - type: satisfies
+        target: REQ-266
     fields:
       baseline: v0.27.0-track
       source-ref: >
@@ -1851,6 +1865,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-340
+      - type: satisfies
+        target: REQ-380
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
