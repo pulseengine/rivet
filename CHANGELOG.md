@@ -6,6 +6,11 @@
 ## [Unreleased]
 
 ### Added
+- **`corrective: true` on a requirement** (dev schema 0.5.0) — a requirement
+  that fixes a defect or closes a gap is satisfied by its fix, not by a
+  feature or design decision, so it is exempt from `requirement-coverage`
+  (through the existing `exempt-when-field`, #848). It still needs
+  verification.
 - **CI traceability ratchet** (REQ-389) — a pull request now fails when it
   adds a traceability-rule warning or error on an artifact at implemented,
   verified, accepted or released that its base did not have, for example a
@@ -40,6 +45,9 @@
   verifies` marker was not read at all. All three now count. On this
   repository 32 more markers are found and 20 more artifacts carry marker
   evidence.
+- **`rivet validate` ignored `exempt-when-field`** (#848) — coverage left a
+  declared-exempt source (such as a GSN `undeveloped: true` goal) out of the
+  rule, but the validator still warned on it. Both now agree.
 - **The HTML export carries the dashboard's static sections** (REQ-400,
   #956) — it exported 10 of the dashboard's 18 nav sections. Traceability,
   verification, document linkage and test results (and externals, when

@@ -1057,6 +1057,15 @@ pub fn validate_structural_with_externals_and_variant(
             let Some(artifact) = store.get(id) else {
                 continue;
             };
+            // #848: a source that declares itself exempt (`exempt-when-field`
+            // set to an explicit `true`) is out of this rule's scope, as
+            // coverage already treats it; without this the validator warned
+            // on sources coverage had excluded.
+            if rule.exempt_when_field.as_deref().is_some_and(|field| {
+                artifact.fields.get(field) == Some(&rivet_yaml::Value::Bool(true))
+            }) {
+                continue;
+            }
 
             // Draft artifacts get downgraded to Info for traceability rule violations.
             // Active and approved artifacts receive full error-level enforcement.
@@ -2303,6 +2312,33 @@ then:
             Severity::Error,
             "active artifact traceability violation must be Error"
         );
+    }
+
+    /// #848: a source that sets the rule's `exempt-when-field` to an explicit
+    /// `true` is out of the rule's scope in validate, as in coverage. `false`
+    /// keeps it in scope.
+    // rivet: verifies REQ-389
+    #[test]
+    fn exempt_when_field_true_takes_a_source_out_of_the_rule() {
+        let mut schema = make_schema_with_forward_traceability_rule();
+        for rule in &mut schema.traceability_rules {
+            rule.exempt_when_field = Some("corrective".to_string());
+        }
+        let mut store = Store::new();
+        for (id, flag) in [("DD-010", true), ("DD-011", false)] {
+            let mut art = minimal_artifact(id, "design-decision");
+            art.status = Some("active".to_string());
+            art.fields
+                .insert("corrective".to_string(), rivet_yaml::Value::Bool(flag));
+            store.insert(art).unwrap();
+        }
+        let graph = LinkGraph::build(&store, &schema);
+        let flagged: Vec<String> = validate_structural(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "dd-needs-satisfies")
+            .filter_map(|d| d.artifact_id)
+            .collect();
+        assert_eq!(flagged, vec!["DD-011".to_string()]);
     }
 
     // rivet: verifies FEAT-070

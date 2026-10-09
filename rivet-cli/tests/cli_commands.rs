@@ -14288,3 +14288,79 @@ fn verifies_markers_count_for_validate_and_coverage() {
     assert_eq!(rule["covered"], 1, "{rule}");
     assert_eq!(rule["total"], 2, "{rule}");
 }
+
+/// A requirement marked `corrective: true` fixes a defect or closes a gap: it
+/// is satisfied by its fix, not by a feature, so the dev schema exempts it
+/// from requirement-coverage (maintainer decision). It still needs
+/// verification. validate (salsa and --direct) and coverage agree.
+// rivet: verifies REQ-389
+#[test]
+fn corrective_requirements_are_exempt_from_requirement_coverage_only() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: a fix\n    status: implemented\n    \
+         fields:\n      corrective: true\n  \
+         - id: REQ-002\n    type: requirement\n    title: a capability\n    status: implemented\n",
+    )
+    .unwrap();
+
+    let flagged = |args: &[&str], rule: &str| -> Vec<String> {
+        let out = Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .args(["--format", "json"])
+            .output()
+            .expect("validate");
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+        let mut ids: Vec<String> = v["diagnostics"]
+            .as_array()
+            .expect("diagnostics")
+            .iter()
+            .filter(|d| d["rule"] == rule)
+            .filter_map(|d| d["artifact_id"].as_str().map(str::to_string))
+            .collect();
+        ids.sort();
+        ids
+    };
+    for args in [&["validate"][..], &["validate", "--direct"][..]] {
+        assert_eq!(
+            flagged(args, "requirement-coverage"),
+            vec!["REQ-002"],
+            "{args:?}: the corrective requirement is exempt"
+        );
+        assert_eq!(
+            flagged(args, "requirement-verification"),
+            vec!["REQ-001", "REQ-002"],
+            "{args:?}: verification is still required of both"
+        );
+    }
+
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "coverage", "--format", "json"])
+        .output()
+        .expect("coverage");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
+    let rule = v["rules"]
+        .as_array()
+        .expect("rules")
+        .iter()
+        .find(|r| r["name"] == "requirement-coverage")
+        .expect("the rule")
+        .clone();
+    assert_eq!(
+        rule["total"], 1,
+        "coverage leaves the exempt source out: {rule}"
+    );
+}
