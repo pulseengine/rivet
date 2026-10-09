@@ -106,7 +106,7 @@ pub fn default_patterns() -> Vec<MarkerPattern> {
         // Rust comment: // rivet: verifies REQ-001
         MarkerPattern {
             language: "rust".into(),
-            pattern: Regex::new(r"//\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
+            pattern: Regex::new(r"//!?\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
                 .expect("valid regex"),
             link_type_group: 1,
             id_group: 2,
@@ -154,7 +154,7 @@ pub fn default_patterns() -> Vec<MarkerPattern> {
         // Generic comment (C, C++, Java, etc.): // rivet: verifies REQ-001
         MarkerPattern {
             language: "generic".into(),
-            pattern: Regex::new(r"//\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
+            pattern: Regex::new(r"//!?\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
                 .expect("valid regex"),
             link_type_group: 1,
             id_group: 2,
@@ -414,6 +414,33 @@ fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<Test
     }
 }
 
+/// The ids a marker names, read from where its pattern captured the first
+/// one: that id, any dotted suffix (`H-13.1`), then further ids after commas
+/// (`REQ-102, REQ-103`). Only artifact-id-shaped tokens continue the list, so
+/// prose after a comma is not read as an id.
+fn marker_ids(rest: &str) -> Vec<String> {
+    static FIRST: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"^[\w-]+(?:\.[0-9]+)*").ok());
+    static NEXT: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(r"^\s*,\s*([A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]+(?:\.[0-9]+)*)\b").ok()
+    });
+    let (Some(first), Some(next)) = (FIRST.as_ref(), NEXT.as_ref()) else {
+        return Vec::new();
+    };
+    let Some(m) = first.find(rest) else {
+        return Vec::new();
+    };
+    let mut ids = vec![m.as_str().to_string()];
+    let mut tail = &rest[m.end()..];
+    while let Some(c) = next.captures(tail) {
+        if let Some(id) = c.get(1) {
+            ids.push(id.as_str().to_string());
+        }
+        tail = &tail[c.get(0).map_or(tail.len(), |w| w.end())..];
+    }
+    ids
+}
+
 /// The text every built-in marker pattern contains.
 const MARKER_LITERAL: &str = "rivet";
 
@@ -469,12 +496,14 @@ fn scan_file(path: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMark
                     .get(pattern.link_type_group)
                     .map(|m| m.as_str())
                     .unwrap_or("verifies");
-                let target_id = caps
-                    .get(pattern.id_group)
-                    .map(|m| m.as_str().to_string())
-                    .unwrap_or_default();
-
-                if target_id.is_empty() {
+                // A marker may name several ids (`verifies SC-15, UCA-D-3`) and
+                // dotted ones (`H-13.1`); the pattern captures where the list
+                // starts and `marker_ids` reads the whole list.
+                let Some(first) = caps.get(pattern.id_group) else {
+                    continue;
+                };
+                let ids = marker_ids(&line[first.start()..]);
+                if ids.is_empty() {
                     continue;
                 }
 
@@ -491,13 +520,15 @@ fn scan_file(path: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMark
                         )
                     });
 
-                markers.push(TestMarker {
-                    test_name,
-                    file: path.to_path_buf(),
-                    line: line_idx + 1,
-                    link_type,
-                    target_id,
-                });
+                for target_id in ids {
+                    markers.push(TestMarker {
+                        test_name: test_name.clone(),
+                        file: path.to_path_buf(),
+                        line: line_idx + 1,
+                        link_type: link_type.clone(),
+                        target_id,
+                    });
+                }
 
                 // Don't double-match the same line with another pattern for the same language.
                 break;
@@ -605,6 +636,31 @@ mod tests {
     use crate::model::Artifact;
     use std::io::Write;
     use tempfile::TempDir;
+
+    /// A marker's whole id list counts: comma-separated ids, dotted STPA ids
+    /// and inner doc comments (`//!`) all used to lose ids silently. Prose
+    /// after a comma is not read as an id.
+    // rivet: verifies REQ-389
+    #[test]
+    fn marker_reads_id_lists_dotted_ids_and_inner_doc_comments() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let file = tmp.path().join("t.rs");
+        std::fs::write(
+            &file,
+            "//! rivet: verifies REQ-102, REQ-103, REQ-104\n\
+             // rivet: verifies SC-15, H-13.1\n#[test]\nfn a() {}\n\
+             // rivet: verifies REQ-7, and also the docs\n#[test]\nfn b() {}\n",
+        )
+        .unwrap();
+        let found = scan_source_files(&[file], &default_patterns());
+        let ids: Vec<&str> = found.iter().map(|m| m.target_id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["REQ-102", "REQ-103", "REQ-104", "SC-15", "H-13.1", "REQ-7"]
+        );
+        assert_eq!(marker_ids("REQ-1"), vec!["REQ-1"]);
+        assert_eq!(marker_ids("REQ-1."), vec!["REQ-1"]);
+    }
 
     /// The `rivet` literal pre-filter skips only patterns that need the
     /// literal: a custom pattern without it still matches a file that never

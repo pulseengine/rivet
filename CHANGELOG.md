@@ -34,6 +34,12 @@
   block merges.
 
 ### Fixed
+- **Source markers lost ids** (REQ-389) — a marker naming several ids
+  (`// rivet: verifies SC-15, UCA-D-3`) counted only the first, a dotted STPA
+  id (`H-13.1`) was cut to its parent (`H-13`), and a file-level `//! rivet:
+  verifies` marker was not read at all. All three now count. On this
+  repository 32 more markers are found and 20 more artifacts carry marker
+  evidence.
 - **The HTML export carries the dashboard's static sections** (REQ-400,
   #956) — it exported 10 of the dashboard's 18 nav sections. Traceability,
   verification, document linkage and test results (and externals, when
