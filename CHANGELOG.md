@@ -106,6 +106,17 @@
   never affected.
 
 ### Changed
+- **A `rivet: verifies` source marker counts as verification evidence in
+  coverage and validation** (REQ-389) — `rivet verify` and release readiness
+  accepted a marker, but the traceability rules counted only `verifies` links,
+  so a requirement verified through a marker still read as unverified in
+  `rivet validate`, `rivet coverage`, the dashboard, the API, MCP and `rivet
+  context`. Rules whose required backlink is `verifies` now credit markers on
+  every surface. **Behaviour change:** coverage rises where markers exist
+  (on this repository, requirement verification went from 7.2% to 44.1%), and
+  those warnings disappear. Markers are scanned only by commands that compute
+  coverage or verification. The rule descriptions in the shipped schemas still
+  read "a `verifies` backlink".
 - **Snapshots record an empty scope as `null`, not 100%** (REQ-400, #956) —
   `rivet snapshot` stored coverage as a number and wrote 100 for a rule or
   project with nothing to score, so a snapshot and every delta computed from

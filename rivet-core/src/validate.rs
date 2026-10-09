@@ -1133,7 +1133,10 @@ pub fn validate_structural_with_externals_and_variant(
                     .alternate_backlinks
                     .iter()
                     .any(|alt| matches(&alt.link_type, &alt.from_types));
-                if !primary && !alternate {
+                // REQ-389: a `verifies` source marker is verification
+                // evidence, as in coverage and `rivet verify` (REQ-329).
+                let marker = required_backlink == "verifies" && graph.has_marker_evidence(id);
+                if !primary && !alternate && !marker {
                     // Tell the author HOW to satisfy this, not just that it's
                     // unsatisfied (issue #350). Name the incoming link type and
                     // the artifact types that may form it, so they don't have
@@ -1684,6 +1687,31 @@ pub fn validate_variants(
     }
 
     diagnostics
+}
+
+/// Drop the findings of rules whose required backlink is `verifies` for
+/// artifacts a `// rivet: verifies <ID>` source marker names (REQ-389).
+///
+/// The direct path credits markers through [`LinkGraph::with_marker_evidence`];
+/// the incremental (salsa) path builds its own graph, so its findings are
+/// filtered here with the same rule, keeping both paths' verdicts identical.
+pub fn credit_marker_evidence(
+    diagnostics: &mut Vec<Diagnostic>,
+    schema: &Schema,
+    marker_verified: &std::collections::BTreeSet<String>,
+) {
+    let verifies_rules: std::collections::BTreeSet<&str> = schema
+        .traceability_rules
+        .iter()
+        .filter(|r| r.required_backlink.as_deref() == Some("verifies"))
+        .map(|r| r.name.as_str())
+        .collect();
+    diagnostics.retain(|d| {
+        !(verifies_rules.contains(d.rule.as_str())
+            && d.artifact_id
+                .as_deref()
+                .is_some_and(|id| marker_verified.contains(id)))
+    });
 }
 
 /// Validate document `[[ID]]` references against the artifact store.

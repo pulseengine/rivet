@@ -232,6 +232,9 @@ pub(crate) struct AppState {
     pub(crate) store: Store,
     pub(crate) schema: Schema,
     pub(crate) graph: LinkGraph,
+    /// Artifacts named by `// rivet: verifies` source markers (REQ-389),
+    /// rescanned on reload and carried into every graph built from `store`.
+    pub(crate) marker_verified: std::collections::BTreeSet<String>,
     pub(crate) doc_store: DocumentStore,
     pub(crate) result_store: ResultStore,
     pub(crate) context: RepoContext,
@@ -304,7 +307,8 @@ impl AppState {
                 scoped_store.upsert(a.clone());
             }
         }
-        let scoped_graph = rivet_core::links::LinkGraph::build(&scoped_store, &self.schema);
+        let scoped_graph = rivet_core::links::LinkGraph::build(&scoped_store, &self.schema)
+            .with_marker_evidence(self.marker_verified.iter().cloned());
 
         // Filter cached diagnostics to only those referring to in-scope artifacts.
         let scoped_diags: Vec<rivet_core::validate::Diagnostic> = self
@@ -548,8 +552,18 @@ pub(crate) fn reload_state(
     // ── Compute outputs from salsa ───────────────────────────────────
     let store = db.store(source_set, schema_set);
     let schema = db.schema(schema_set);
-    let graph = LinkGraph::build(&store, &schema);
-    let cached_diagnostics = db.diagnostics(source_set, schema_set);
+    // REQ-389: `verifies` source markers are verification evidence, as for
+    // `rivet verify`; the graph credits them, and the salsa diagnostics (built
+    // without them) are filtered the same way.
+    let marker_verified = crate::marker_verified_ids(project_path);
+    let graph =
+        LinkGraph::build(&store, &schema).with_marker_evidence(marker_verified.iter().cloned());
+    let mut cached_diagnostics = db.diagnostics(source_set, schema_set);
+    rivet_core::validate::credit_marker_evidence(
+        &mut cached_diagnostics,
+        &schema,
+        &marker_verified,
+    );
 
     // ── Load non-salsa state (docs, results, externals) ──────────────
     let (doc_store, result_store, doc_dirs) = load_docs_and_results(&config, project_path)?;
@@ -580,6 +594,7 @@ pub(crate) fn reload_state(
         store,
         schema,
         graph,
+        marker_verified,
         doc_store,
         result_store,
         context,
@@ -680,8 +695,15 @@ fn reload_state_incremental(state: &mut AppState) -> Result<()> {
     // ── Re-query salsa (incremental — only changed inputs recompute) ─
     state.store = salsa.db.store(salsa.source_set, salsa.schema_set);
     state.schema = salsa.db.schema(salsa.schema_set);
-    state.graph = LinkGraph::build(&state.store, &state.schema);
+    state.marker_verified = crate::marker_verified_ids(&project_path);
+    state.graph = LinkGraph::build(&state.store, &state.schema)
+        .with_marker_evidence(state.marker_verified.iter().cloned());
     state.cached_diagnostics = salsa.db.diagnostics(salsa.source_set, salsa.schema_set);
+    rivet_core::validate::credit_marker_evidence(
+        &mut state.cached_diagnostics,
+        &state.schema,
+        &state.marker_verified,
+    );
 
     // Drop the salsa lock before doing non-salsa work
     drop(salsa);

@@ -43,6 +43,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use regex::Regex;
 use serde::Serialize;
@@ -279,15 +280,26 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
     if language == "config" || language == "lean" || language == "rocq" {
         return None;
     }
+    // Compiled once per process. Compiling per marker cost most of a scan
+    // (1,034 markers on rivet's own tree, seconds in a debug build), which
+    // delayed dashboard startup once the dashboard scanned markers (REQ-389).
+    static RUST: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)").ok());
+    static PYTHON: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"def\s+(\w+)").ok());
+    // `name() {` and `function name {` are both POSIX-ish shell forms.
+    static SHELL: LazyLock<Option<Regex>> =
+        LazyLock::new(|| Regex::new(r"(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\s*\)").ok());
+    // Generic: covers C/C++/Java/Go-style function declarations
+    static GENERIC: LazyLock<Option<Regex>> = LazyLock::new(|| {
+        Regex::new(r"(?:pub\s+)?(?:fn|func|function|def|void|int|bool|auto)\s+(\w+)\s*\(").ok()
+    });
     let fn_pattern = match language {
-        "rust" => Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)").ok()?,
-        "python" => Regex::new(r"def\s+(\w+)").ok()?,
-        // `name() {` and `function name {` are both POSIX-ish shell forms.
-        "shell" => Regex::new(r"(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\s*\)").ok()?,
-        // Generic: covers C/C++/Java/Go-style function declarations
-        _ => Regex::new(r"(?:pub\s+)?(?:fn|func|function|def|void|int|bool|auto)\s+(\w+)\s*\(")
-            .ok()?,
-    };
+        "rust" => &*RUST,
+        "python" => &*PYTHON,
+        "shell" => &*SHELL,
+        _ => &*GENERIC,
+    }
+    .as_ref()?;
 
     // #892 / #787: look FORWARD first, but only across lines that can
     // legitimately sit between a marker and the item it annotates —
@@ -402,6 +414,9 @@ fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<Test
     }
 }
 
+/// The text every built-in marker pattern contains.
+const MARKER_LITERAL: &str = "rivet";
+
 /// Scan a single file for test markers.
 fn scan_file(path: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMarker>) {
     // Extension first. Only when the file has NO extension do we read it to
@@ -422,16 +437,33 @@ fn scan_file(path: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMark
         None => return,
     };
 
-    let lines: Vec<&str> = content.lines().collect();
-
     // Select patterns that match this language.
     let applicable: Vec<&MarkerPattern> = patterns
         .iter()
         .filter(|p| p.language == language || p.language == "generic")
         .collect();
 
+    // Literal pre-filter: every built-in marker contains `rivet`, so a line
+    // without it cannot match and a file without it has no markers. Running
+    // the regexes on every line of the tree made the scan take seconds,
+    // which delayed dashboard startup (REQ-389). Derived from each pattern's
+    // source, so a custom pattern without the literal is still applied.
+    let needs_literal: Vec<bool> = applicable
+        .iter()
+        .map(|p| p.pattern.as_str().contains(MARKER_LITERAL))
+        .collect();
+    if !content.contains(MARKER_LITERAL) && needs_literal.iter().all(|n| *n) {
+        return;
+    }
+
+    let lines: Vec<&str> = content.lines().collect();
+
     for (line_idx, line) in lines.iter().enumerate() {
-        for pattern in &applicable {
+        let has_literal = line.contains(MARKER_LITERAL);
+        for (pattern, needs) in applicable.iter().zip(&needs_literal) {
+            if *needs && !has_literal {
+                continue;
+            }
             if let Some(caps) = pattern.pattern.captures(line) {
                 let raw_link_type = caps
                     .get(pattern.link_type_group)
@@ -573,6 +605,35 @@ mod tests {
     use crate::model::Artifact;
     use std::io::Write;
     use tempfile::TempDir;
+
+    /// The `rivet` literal pre-filter skips only patterns that need the
+    /// literal: a custom pattern without it still matches a file that never
+    /// mentions `rivet`, and the built-in patterns still match a marker line.
+    // rivet: verifies REQ-389
+    #[test]
+    fn literal_prefilter_keeps_custom_patterns_without_the_literal() {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let file = tmp.path().join("t.rs");
+        std::fs::write(&file, "// covers: verifies REQ-7\nfn a() {}\n").unwrap();
+        let custom = vec![MarkerPattern {
+            language: "rust".into(),
+            pattern: Regex::new(r"//\s*covers:\s*(verifies)\s+([\w-]+)").unwrap(),
+            link_type_group: 1,
+            id_group: 2,
+        }];
+        let found = scan_source_files(&[file.clone()], &custom);
+        let ids: Vec<&str> = found.iter().map(|m| m.target_id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["REQ-7"],
+            "a custom pattern must not be filtered out"
+        );
+
+        std::fs::write(&file, "// rivet: verifies REQ-8\nfn b() {}\n").unwrap();
+        let found = scan_source_files(&[file], &default_patterns());
+        let ids: Vec<&str> = found.iter().map(|m| m.target_id.as_str()).collect();
+        assert_eq!(ids, vec!["REQ-8"]);
+    }
 
     /// Helper to create an artifact for the store.
     fn make_artifact(id: &str) -> Artifact {
