@@ -4113,6 +4113,8 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-029
+      - type: constraint-satisfies
+        target: SC-LSP-008
 
   - id: REQ-147
     type: requirement
@@ -4231,7 +4233,7 @@ artifacts:
     tags: [docs, dx, schema, user-reported, issue-350, duplicate-of-req-134]
     fields:
       priority: should
-      category: documentation
+      category: non-functional
       baseline: v0.15.0-track
     links:
       - type: traces-to
@@ -4541,6 +4543,8 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-146
+      - type: constraint-satisfies
+        target: SC-LSP-008
 
   - id: REQ-157
     type: requirement
@@ -4867,7 +4871,7 @@ artifacts:
     tags: [chore, dx, git, dogfooding, self-found, issue-422]
     fields:
       priority: should
-      category: process
+      category: non-functional
     links:
       - type: traces-to
         target: REQ-007
@@ -5241,7 +5245,7 @@ artifacts:
     tags: [ci, hooks, dx, fmt, dogfooding, self-found, issue-438]
     fields:
       priority: should
-      category: process
+      category: non-functional
     links:
       - type: traces-to
         target: REQ-051

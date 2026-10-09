@@ -118,6 +118,10 @@ artifacts:
     links:
       - type: leads-to
         target: AI-SYS-001
+      - type: risk-identified-by-stpa
+        target: H-AI-003
+      - type: risk-identified-by-stpa
+        target: H-TQ-005
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7
@@ -147,6 +151,14 @@ artifacts:
     links:
       - type: leads-to
         target: AI-SYS-001
+      - type: risk-identified-by-stpa
+        target: H-AI-001
+      - type: risk-identified-by-stpa
+        target: H-AI-002
+      - type: risk-identified-by-stpa
+        target: H-AI-004
+      - type: risk-identified-by-stpa
+        target: H-AI-005
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-7

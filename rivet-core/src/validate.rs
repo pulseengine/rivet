@@ -660,7 +660,13 @@ pub fn validate_structural_with_externals_and_variant(
         // two never diverge (the relaxation there now accepts digit-bearing
         // prefixes like `MAD1-101`, so only genuinely un-referenceable shapes
         // remain flagged here). Externally-prefixed ids are already skipped.
-        if crate::commits::looks_like_artifact_id_attempt(&artifact.id) {
+        // STPA numbers sub-hazards H-n.m by convention, and a sub-hazard is
+        // traced through its parent hazard, never cited in a trailer itself,
+        // so the warning only asks for a rename that would break the method's
+        // numbering.
+        if artifact.artifact_type != "sub-hazard"
+            && crate::commits::looks_like_artifact_id_attempt(&artifact.id)
+        {
             diagnostics.push(Diagnostic {
                 source_file: None,
                 line: None,
@@ -2908,6 +2914,10 @@ then:
         store
             .insert(minimal_artifact("MAD1-101", "requirement"))
             .unwrap();
+        // The STPA sub-hazard convention H-n.m is exempt.
+        store
+            .insert(minimal_artifact("H-3.3", "sub-hazard"))
+            .unwrap();
 
         let graph = LinkGraph::build(&store, &schema);
         let diags = validate(&store, &schema, &graph);
@@ -2919,7 +2929,8 @@ then:
         assert_eq!(
             flagged,
             vec!["H-3.2"],
-            "only the dotted-suffix id is un-referenceable; MAD1-101 is now valid"
+            "only the dotted-suffix requirement is flagged; MAD1-101 is valid and \
+             the sub-hazard H-3.3 follows the STPA convention"
         );
     }
 
