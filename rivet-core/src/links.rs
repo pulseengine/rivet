@@ -86,6 +86,10 @@ pub struct LinkGraph {
     graph: DiGraph<ArtifactId, String>,
     /// Map from artifact ID to petgraph node index (used for graph lookups).
     node_map: HashMap<ArtifactId, NodeIndex>,
+    /// Artifacts a `// rivet: verifies <ID>` source marker names (REQ-389).
+    /// Kept apart from `backward`: a marker is evidence, not an artifact, so
+    /// graph views, impact analysis and `rivet verify` never see it as a link.
+    marker_verified: std::collections::BTreeSet<ArtifactId>,
 }
 
 impl std::fmt::Debug for LinkGraph {
@@ -103,6 +107,7 @@ impl PartialEq for LinkGraph {
         self.forward == other.forward
             && self.backward == other.backward
             && self.broken == other.broken
+            && self.marker_verified == other.marker_verified
     }
 }
 
@@ -173,7 +178,27 @@ impl LinkGraph {
             broken,
             graph,
             node_map,
+            marker_verified: Default::default(),
         }
+    }
+
+    /// Record the artifacts that `// rivet: verifies <ID>` source markers name
+    /// (REQ-389). Every coverage computation then credits them for rules
+    /// whose required backlink is `verifies`, which is the evidence `rivet
+    /// verify` and release readiness already accept (REQ-329), so the
+    /// traceability rules stop reporting marker-verified requirements as
+    /// unverified.
+    #[must_use]
+    pub fn with_marker_evidence(mut self, ids: impl IntoIterator<Item = ArtifactId>) -> Self {
+        self.marker_verified.extend(ids);
+        self
+    }
+
+    /// Whether a `verifies` source marker names `id` (see
+    /// [`LinkGraph::with_marker_evidence`]).
+    #[must_use]
+    pub fn has_marker_evidence(&self, id: &str) -> bool {
+        self.marker_verified.contains(id)
     }
 
     /// Access the underlying petgraph directed graph.

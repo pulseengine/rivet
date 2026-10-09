@@ -534,6 +534,9 @@ pub fn compute_coverage(store: &Store, schema: &Schema, graph: &LinkGraph) -> Co
                             .alternate_backlinks
                             .iter()
                             .any(|alt| backlink_matches(&alt.link_type, &alt.from_types))
+                        // REQ-389: a `verifies` source marker is verification
+                        // evidence, as for `rivet verify` (REQ-329).
+                        || (link_type == "verifies" && graph.has_marker_evidence(id))
                 }
             };
 
@@ -1329,6 +1332,85 @@ mod tests {
             "self-backlink must not count REQ-001 as covered"
         );
         assert_eq!(entry.total, 1);
+    }
+
+    // rivet: verifies REQ-389
+    /// A `verifies` source marker covers a `verifies`-backlink rule, in
+    /// coverage and in the validator's rule check alike; it does not touch a
+    /// rule that asks for another backlink, and an unmarked artifact stays
+    /// uncovered.
+    #[test]
+    fn verifies_markers_credit_only_verifies_backlink_rules() {
+        let rule = |name: &str, backlink: &str| TraceabilityRule {
+            name: name.into(),
+            description: name.into(),
+            source_type: "requirement".into(),
+            required_link: None,
+            required_backlink: Some(backlink.into()),
+            target_types: vec![],
+            from_types: vec![],
+            severity: Severity::Warning,
+            alternate_backlinks: vec![],
+            exempt_when_field: None,
+        };
+        let mut file = minimal_schema("test");
+        file.traceability_rules =
+            vec![rule("verified", "verifies"), rule("satisfied", "satisfies")];
+        let schema = Schema::merge(&[file]);
+        let mut store = Store::new();
+        store
+            .insert(minimal_artifact("REQ-1", "requirement"))
+            .unwrap();
+        store
+            .insert(minimal_artifact("REQ-2", "requirement"))
+            .unwrap();
+
+        let plain = LinkGraph::build(&store, &schema);
+        let marked = LinkGraph::build(&store, &schema).with_marker_evidence(["REQ-1".to_string()]);
+        assert!(marked.has_marker_evidence("REQ-1") && !marked.has_marker_evidence("REQ-2"));
+
+        let entry = |g: &LinkGraph, name: &str| {
+            compute_coverage(&store, &schema, g)
+                .entries
+                .into_iter()
+                .find(|e| e.rule_name == name)
+                .unwrap()
+        };
+        assert_eq!(entry(&plain, "verified").covered, 0, "no marker, no credit");
+        let verified = entry(&marked, "verified");
+        assert_eq!(verified.covered, 1);
+        assert_eq!(verified.uncovered_ids, vec!["REQ-2".to_string()]);
+        assert_eq!(
+            entry(&marked, "satisfied").covered,
+            0,
+            "a marker is not a satisfies link"
+        );
+
+        let findings = |g: &LinkGraph| -> Vec<(String, String)> {
+            crate::validate::validate(&store, &schema, g)
+                .into_iter()
+                .filter(|d| d.rule == "verified" || d.rule == "satisfied")
+                .map(|d| (d.rule.clone(), d.artifact_id.clone().unwrap_or_default()))
+                .collect()
+        };
+        let marked_findings = findings(&marked);
+        assert!(!marked_findings.contains(&("verified".into(), "REQ-1".into())));
+        assert!(marked_findings.contains(&("verified".into(), "REQ-2".into())));
+        assert!(marked_findings.contains(&("satisfied".into(), "REQ-1".into())));
+
+        // The incremental path filters its findings with the same rule.
+        let mut from_salsa = crate::validate::validate(&store, &schema, &plain);
+        let markers: std::collections::BTreeSet<String> = ["REQ-1".to_string()].into();
+        crate::validate::credit_marker_evidence(&mut from_salsa, &schema, &markers);
+        let filtered: Vec<(String, String)> = from_salsa
+            .into_iter()
+            .filter(|d| d.rule == "verified" || d.rule == "satisfied")
+            .map(|d| (d.rule.clone(), d.artifact_id.clone().unwrap_or_default()))
+            .collect();
+        assert_eq!(
+            filtered, marked_findings,
+            "both paths reach the same findings"
+        );
     }
 
     /// Issue #349: schemas write `required-backlink` as either the forward

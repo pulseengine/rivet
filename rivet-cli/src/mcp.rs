@@ -88,7 +88,10 @@ fn load_project(project_dir: &Path) -> Result<McpProject> {
             .unwrap_or_default(),
         store: loaded.store,
         schema: loaded.schema,
-        graph: loaded.graph,
+        // REQ-389: `verifies` source markers are verification evidence.
+        graph: loaded
+            .graph
+            .with_marker_evidence(crate::marker_verified_ids(project_dir)),
     })
 }
 

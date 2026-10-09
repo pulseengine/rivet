@@ -12265,9 +12265,10 @@ fn add_without_id_still_derives_next_in_series() {
 /// requirement. Two views of one evidence set, 100 points apart, and a release
 /// gate reading the wrong one has no way to tell.
 ///
-/// This does NOT fold markers into the rule — that would silently move a number
-/// `--fail-under` gates on. It makes the gap visible, which is what the rest of
-/// this tool does with empty scopes, unchecked cross-refs and unmodelled rules.
+/// Since REQ-389 A1 the rule credits full `verifies` markers, so the gap left
+/// is a `partially-verifies` marker: evidence the rule does not count as full
+/// verification. The note makes that visible, as the rest of this tool does
+/// with empty scopes, unchecked cross-refs and unmodelled rules.
 ///
 /// rivet: verifies REQ-329
 #[test]
@@ -12291,7 +12292,7 @@ fn coverage_reports_marker_evidence_its_link_rules_cannot_see() {
     std::fs::create_dir_all(dir.join("tests")).unwrap();
     std::fs::write(
         dir.join("tests").join("t.rs"),
-        "// rivet: verifies REQ-001\n#[test]\nfn the_marker_test() { assert!(true); }\n",
+        "// rivet: partially-verifies REQ-001\n#[test]\nfn the_marker_test() { assert!(true); }\n",
     )
     .unwrap();
 
@@ -12342,8 +12343,9 @@ fn coverage_note_excludes_requirements_the_rule_already_covers() {
         .expect("init");
     assert!(init.status.success());
 
-    // REQ-COVERED has a real `verifies` backlink AND a marker.
-    // REQ-MARKED has only a marker.
+    // REQ-001 has a real `verifies` backlink AND a marker.
+    // REQ-002 has only a `partially-verifies` marker, which the rule does not
+    // credit (REQ-389 A1 credits only full `verifies` markers).
     std::fs::write(
         dir.join("artifacts").join("requirements.yaml"),
         "artifacts:\n  \
@@ -12357,7 +12359,7 @@ fn coverage_note_excludes_requirements_the_rule_already_covers() {
     std::fs::write(
         dir.join("tests").join("t.rs"),
         "// rivet: verifies REQ-001\n#[test]\nfn a() { assert!(true); }\n\n\
-         // rivet: verifies REQ-002\n#[test]\nfn b() { assert!(true); }\n",
+         // rivet: partially-verifies REQ-002\n#[test]\nfn b() { assert!(true); }\n",
     )
     .unwrap();
 
@@ -14189,4 +14191,69 @@ fn export_html_carries_the_static_dashboard_sections() {
         }
         out
     }
+}
+
+/// REQ-389 (A1): a `// rivet: verifies <ID>` source marker is verification
+/// evidence for `rivet validate` and `rivet coverage`, as it already was for
+/// `rivet verify`, so a marker-verified requirement no longer reads as
+/// unverified, and an unmarked one still does.
+///
+/// rivet: verifies REQ-389
+#[test]
+fn verifies_markers_count_for_validate_and_coverage() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/requirements.yaml"),
+        "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: T\n    status: implemented\n  - id: REQ-2\n    type: requirement\n    title: U\n    status: implemented\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("tests/t.rs"),
+        "// rivet: verifies REQ-1\nfn t() {}\n",
+    )
+    .unwrap();
+    let json = |args: &[&str]| -> serde_json::Value {
+        let out = Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .args(["--format", "json"])
+            .output()
+            .expect("run rivet");
+        serde_json::from_slice(&out.stdout).expect("json")
+    };
+
+    let verification_findings: Vec<String> = json(&["validate"])["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|d| d["rule"] == "requirement-verification")
+        .map(|d| d["artifact_id"].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(
+        verification_findings,
+        vec!["REQ-2".to_string()],
+        "only the unmarked requirement is reported"
+    );
+
+    let coverage = json(&["coverage"]);
+    let rule = coverage["rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "requirement-verification")
+        .expect("the rule")
+        .clone();
+    assert_eq!(rule["covered"], 1, "{rule}");
+    assert_eq!(rule["total"], 2, "{rule}");
 }

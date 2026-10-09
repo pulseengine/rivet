@@ -5907,6 +5907,10 @@ fn run_validation(cli: &Cli, opts: &ValidateOptions<'_>) -> Result<ValidationRun
         unknown_config_keys,
         ..
     } = ctx;
+    // REQ-389: `verifies` source markers are verification evidence, as for
+    // `rivet verify`; every graph this run builds carries them.
+    let markers = marker_verified_ids(&cli.project);
+    let graph = graph.with_marker_evidence(markers.iter().cloned());
 
     // #431: resolve which schema set (and version, and embedded-vs-vendored
     // source) this run validates against, so an upgrade-induced change in a
@@ -6050,7 +6054,8 @@ fn run_validation(cli: &Cli, opts: &ValidateOptions<'_>) -> Result<ValidationRun
     let (store, graph) = if let Some(bl) = baseline_name {
         if let Some(ref baselines) = config.baselines {
             let scoped = store.scoped(bl, baselines);
-            let scoped_graph = LinkGraph::build(&scoped, &schema);
+            let scoped_graph =
+                LinkGraph::build(&scoped, &schema).with_marker_evidence(markers.iter().cloned());
             notes.push(format!(
                 "Baseline: {bl} ({} artifacts in scope)\n",
                 scoped.len()
@@ -6133,7 +6138,8 @@ fn run_validation(cli: &Cli, opts: &ValidateOptions<'_>) -> Result<ValidationRun
                     scoped.upsert(art.clone());
                 }
             }
-            let scoped_graph = LinkGraph::build(&scoped, &schema);
+            let scoped_graph =
+                LinkGraph::build(&scoped, &schema).with_marker_evidence(markers.iter().cloned());
             let vname = resolved.name.clone();
             (scoped, scoped_graph, Some((vname, bound_ids.len())))
         }
@@ -6262,7 +6268,11 @@ fn run_validation(cli: &Cli, opts: &ValidateOptions<'_>) -> Result<ValidationRun
         } else {
             all_diags
         };
-        validate::reclassify_externals_diagnostics(scoped_diags, &store, &external_schemas)
+        let mut diags =
+            validate::reclassify_externals_diagnostics(scoped_diags, &store, &external_schemas);
+        // The salsa db builds its own graph without marker evidence.
+        validate::credit_marker_evidence(&mut diags, &schema, &markers);
+        diags
     };
     diagnostics.extend(validate::validate_documents(&doc_store, &store));
 
@@ -8333,7 +8343,14 @@ impl ReadinessCtx {
             .map(|r| r.ready_when.iter().cloned().collect())
             .unwrap_or_default();
         let mode = ReadinessMode::parse(rel.and_then(|r| r.require.as_deref()))?;
-        let mut cov = rivet_core::coverage::compute_coverage(&ctx.store, &ctx.schema, &ctx.graph);
+        // REQ-389: coverage credits the same source markers the outcomes below
+        // treat as `verifies` evidence.
+        let marker_graph = ctx
+            .graph
+            .clone()
+            .with_marker_evidence(marker_verified_ids(&cli.project));
+        let mut cov =
+            rivet_core::coverage::compute_coverage(&ctx.store, &ctx.schema, &marker_graph);
         // A rule the project declares it does not model must not block a
         // release in evidence mode — the same REQ-320 declaration `rivet
         // coverage` honours. A stale declaration is `rivet coverage`'s error
@@ -9586,11 +9603,15 @@ fn cmd_stats(
     // reported counts aren't silently computed over a partial graph.
     ctx.warn_parse_error_skips(cli);
     let mut store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
+    // REQ-389 A1: stats reports validate's warning count, so it credits the
+    // same `verifies` markers validate does.
+    let markers = marker_verified_ids(&cli.project);
     let mut graph = if baseline_name.is_some() {
         LinkGraph::build(&store, &ctx.schema)
     } else {
         ctx.graph
-    };
+    }
+    .with_marker_evidence(markers.iter().cloned());
 
     // Apply s-expression filter if provided.
     if let Some(filter_src) = sexpr_filter {
@@ -9605,7 +9626,7 @@ fn cmd_stats(
             }
         }
         store = filtered;
-        graph = LinkGraph::build(&store, &ctx.schema);
+        graph = LinkGraph::build(&store, &ctx.schema).with_marker_evidence(markers.iter().cloned());
     }
 
     // Compute stats once — both formats share the same data.
@@ -9857,6 +9878,20 @@ fn cmd_stats_qualification(cli: &Cli) -> Result<bool> {
 /// existed — so a workspace whose root ALSO has its own `tests/` (rivet itself)
 /// never recursed into member crates, and `rivet verify` reported "no evidence"
 /// for markers that lived in `rivet-cli/tests/` (#603, follow-up to #574).
+/// Artifact ids named by a `// rivet: verifies <ID>` source marker (REQ-389).
+/// Scanning takes seconds on a large tree, so only commands that compute
+/// coverage or verification call this, not every project load.
+fn marker_verified_ids(project: &std::path::Path) -> std::collections::BTreeSet<String> {
+    rivet_core::test_scanner::scan_source_files(
+        &default_marker_scan_paths(project),
+        &rivet_core::test_scanner::default_patterns(),
+    )
+    .into_iter()
+    .filter(|m| m.link_type == "verifies")
+    .map(|m| m.target_id)
+    .collect()
+}
+
 fn default_marker_scan_paths(project: &std::path::Path) -> Vec<std::path::PathBuf> {
     let is_workspace = std::fs::read_to_string(project.join("Cargo.toml"))
         .map(|c| c.lines().any(|l| l.trim_start().starts_with("[workspace]")))
@@ -10327,11 +10362,14 @@ fn cmd_coverage(
     let ctx = ProjectContext::load(cli)?;
     let mut store = apply_baseline_scope(ctx.store, baseline_name, &ctx.config);
     let schema = ctx.schema;
+    // REQ-389: `verifies` source markers are verification evidence.
+    let markers = marker_verified_ids(&cli.project);
     let mut graph = if baseline_name.is_some() {
         LinkGraph::build(&store, &schema)
     } else {
         ctx.graph
-    };
+    }
+    .with_marker_evidence(markers.iter().cloned());
 
     // Resolve `--variant` once so we can stamp the report header (and,
     // in a later phase, scope delegated chains). Today the variant
@@ -10356,7 +10394,7 @@ fn cmd_coverage(
             }
         }
         store = filtered;
-        graph = LinkGraph::build(&store, &schema);
+        graph = LinkGraph::build(&store, &schema).with_marker_evidence(markers.iter().cloned());
     }
 
     let mut report = coverage::compute_coverage(&store, &schema, &graph);
@@ -10660,10 +10698,12 @@ fn cmd_coverage(
     // requirement. Two views of one evidence set, up to 100 points apart, with
     // nothing telling a release gate it is reading the narrower one.
     //
-    // Deliberately does NOT fold markers into the rule: that would silently
-    // move a number `--fail-under` gates on. It makes the gap visible instead,
-    // which is what this tool already does for empty scopes (#808), unchecked
-    // cross-refs (#854) and unmodelled rules (REQ-320).
+    // Since REQ-389 A1 the rules credit full `verifies` markers, so what is
+    // left for this note is `partially-verifies` markers: evidence `rivet
+    // verify` accepts that the rules deliberately do not count as full
+    // verification. It makes that remaining gap visible, as this tool does for
+    // empty scopes (#808), unchecked cross-refs (#854) and unmodelled rules
+    // (REQ-320).
     if format != "json" {
         // Only rules that want `verifies` evidence. A marker IS a `verifies`
         // claim and says nothing about, say, a `satisfies` backlink — scoping
@@ -10873,7 +10913,12 @@ fn cmd_supplier_list(cli: &Cli, format: &str) -> Result<bool> {
 fn cmd_supplier_check(cli: &Cli, format: &str) -> Result<bool> {
     validate_format(format, &["text", "json"])?;
     let ctx = ProjectContext::load(cli)?;
-    let report = coverage::compute_coverage(&ctx.store, &ctx.schema, &ctx.graph);
+    // REQ-389: `verifies` source markers are verification evidence.
+    let graph = ctx
+        .graph
+        .clone()
+        .with_marker_evidence(marker_verified_ids(&cli.project));
+    let report = coverage::compute_coverage(&ctx.store, &ctx.schema, &graph);
 
     let interesting: Vec<_> = report
         .entries
@@ -12919,7 +12964,8 @@ fn cmd_export_html(
     // link graph is rebuilt so any downstream trace view stays consistent.
     if variant.is_some() {
         state.store = apply_variant_overlay(state.store, variant);
-        state.graph = rivet_core::links::LinkGraph::build(&state.store, &state.schema);
+        state.graph = rivet_core::links::LinkGraph::build(&state.store, &state.schema)
+            .with_marker_evidence(state.marker_verified.iter().cloned());
     }
 
     // ── Single-page mode (audit-bundle shape) ────────────────────────
@@ -15203,7 +15249,11 @@ fn cmd_context(cli: &Cli, stdout: bool, brief: bool) -> Result<bool> {
     let config = ctx.config;
     let store = ctx.store;
     let schema = ctx.schema;
-    let graph = ctx.graph;
+    // REQ-389: `verifies` source markers are verification evidence, so the
+    // agent-facing summary agrees with `rivet validate` and `rivet coverage`.
+    let graph = ctx
+        .graph
+        .with_marker_evidence(marker_verified_ids(&cli.project));
     let external_schemas = ctx.external_schemas;
     let doc_store = ctx.doc_store.unwrap_or_default();
     let diagnostics = validate::validate_with_externals(&store, &schema, &graph, &external_schemas);
