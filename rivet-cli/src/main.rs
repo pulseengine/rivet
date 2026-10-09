@@ -13081,6 +13081,13 @@ fn cmd_export_html(
         } else {
             String::new()
         };
+        // Externals appear in the nav only when the project configures them,
+        // as on the dashboard; the page is exported under the same condition.
+        let externals_nav = if state.externals.is_empty() {
+            String::new()
+        } else {
+            format!("<li><a href=\"{prefix}externals/index.html\">Externals</a></li>")
+        };
         let eu_ai_act_loaded = rivet_core::compliance::is_eu_ai_act_loaded(&state.schema);
         let eu_ai_act_nav = if eu_ai_act_loaded {
             let eu_count: usize = rivet_core::compliance::EU_AI_ACT_TYPES
@@ -13130,6 +13137,11 @@ document.addEventListener('DOMContentLoaded',function(){{
     <li><a href="{prefix}coverage/index.html">Coverage</a></li>
     <li><a href="{prefix}graph/index.html">Graph</a></li>
     <li><a href="{prefix}documents/index.html">Documents{doc_badge}</a></li>
+    <li><a href="{prefix}traceability/index.html">Traceability</a></li>
+    <li><a href="{prefix}verification/index.html">Verification</a></li>
+    <li><a href="{prefix}doc-linkage/index.html">Doc Linkage</a></li>
+    <li><a href="{prefix}results/index.html">Test Results</a></li>
+    {externals_nav}
     <li class="nav-divider"></li>
     {stpa_nav}
     {eu_ai_act_nav}
@@ -13227,6 +13239,38 @@ document.addEventListener('DOMContentLoaded',function(){{
     page_count += 1;
     write_page("help/index.html", "/help", "Help", out_dir)?;
     page_count += 1;
+    // #956: the dashboard nav has 18 sections; the export carried 10. These
+    // render to complete static pages. Left out on purpose: /diff (an
+    // interactive revision picker), /variants (a "use rivet serve" stub when
+    // rendered outside the server) and /source (it publishes the local project
+    // path and links to per-file pages that are not exported).
+    write_page(
+        "traceability/index.html",
+        "/traceability",
+        "Traceability",
+        out_dir,
+    )?;
+    page_count += 1;
+    write_page(
+        "verification/index.html",
+        "/verification",
+        "Verification",
+        out_dir,
+    )?;
+    page_count += 1;
+    write_page(
+        "doc-linkage/index.html",
+        "/doc-linkage",
+        "Document Linkage",
+        out_dir,
+    )?;
+    page_count += 1;
+    write_page("results/index.html", "/results", "Test Results", out_dir)?;
+    page_count += 1;
+    if !state.externals.is_empty() {
+        write_page("externals/index.html", "/externals", "Externals", out_dir)?;
+        page_count += 1;
+    }
     write_page(
         "help/schema/index.html",
         "/help/schema",

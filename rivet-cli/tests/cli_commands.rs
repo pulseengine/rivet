@@ -14117,3 +14117,76 @@ fn single_page_export_shows_the_declared_unmodelled_reason() {
         "the single page must show the declared unmodelled reason"
     );
 }
+
+/// #956 lower tier: the HTML export carried 10 of the dashboard's 18 nav
+/// sections. It now exports traceability, verification, document linkage and
+/// test results (and externals when configured), links them in its nav, and
+/// leaves out the server-only views; no page carries the "use rivet serve"
+/// stub.
+///
+/// rivet: verifies REQ-400
+#[test]
+fn export_html_carries_the_static_dashboard_sections() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    let out_dir = dir.join("d");
+    let out = Command::new(rivet_bin())
+        .args(["--project", dirs, "export", "--format", "html", "--output"])
+        .arg(&out_dir)
+        .output()
+        .expect("export");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let index = std::fs::read_to_string(out_dir.join("index.html")).unwrap();
+    for page in ["traceability", "verification", "doc-linkage", "results"] {
+        assert!(
+            out_dir.join(page).join("index.html").exists(),
+            "{page}/index.html must be exported"
+        );
+        assert!(
+            index.contains(&format!("href=\"{page}/index.html\"")),
+            "the nav must link {page}"
+        );
+    }
+    assert!(
+        !out_dir.join("externals").exists() && !index.contains("externals/index.html"),
+        "no externals configured, so no externals page or nav entry"
+    );
+    for page in ["diff", "variants", "source"] {
+        assert!(!out_dir.join(page).exists(), "{page} is server-only");
+    }
+    for entry in walk(&out_dir) {
+        let html = std::fs::read_to_string(&entry).unwrap_or_default();
+        assert!(
+            !html.contains("not yet available in VS Code"),
+            "{} carries the VS Code stub",
+            entry.display()
+        );
+    }
+
+    fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                out.extend(walk(&p));
+            } else if p.extension().is_some_and(|x| x == "html") {
+                out.push(p);
+            }
+        }
+        out
+    }
+}

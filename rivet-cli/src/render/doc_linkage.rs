@@ -220,7 +220,7 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
             &layout_opts,
         );
 
-        let svg = render_svg(&gl, &svg_opts);
+        let svg = drop_source_group_links(&render_svg(&gl, &svg_opts));
         html.push_str(
             "<div class=\"svg-viewer\" id=\"doc-graph-viewer\">\
             <div class=\"svg-viewer-toolbar\">\
@@ -335,4 +335,58 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
     html.push_str("</tbody></table></div>");
 
     html
+}
+
+/// #956: the graph library gives every node `data-href = base_url/id`, so a
+/// source-directory node (`artifacts/`) linked to `/documents/artifacts`, a
+/// document that does not exist; clicking it was a 404 on the dashboard and a
+/// dead link in the static export. A directory of YAML files has no document
+/// page, so its nodes carry no link.
+fn drop_source_group_links(svg: &str) -> String {
+    const NODE: &str = "class=\"node type-source-group\"";
+    let mut out = String::with_capacity(svg.len());
+    let mut rest = svg;
+    while let Some(at) = rest.find(NODE) {
+        let tag_end = rest[at..].find('>').map_or(rest.len(), |e| at + e);
+        out.push_str(&rest[..at]);
+        let tag = &rest[at..tag_end];
+        match tag.find(" data-href=\"") {
+            Some(h) => {
+                let after = h + " data-href=\"".len();
+                let close = tag[after..].find('"').map_or(tag.len(), |c| after + c + 1);
+                out.push_str(&tag[..h]);
+                out.push_str(&tag[close..]);
+            }
+            None => out.push_str(tag),
+        }
+        rest = &rest[tag_end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+#[cfg(test)]
+mod source_group_link_tests {
+    use super::drop_source_group_links;
+
+    // rivet: verifies REQ-400
+    #[test]
+    fn source_group_nodes_lose_their_link_and_documents_keep_theirs() {
+        let svg = concat!(
+            "<g class=\"node type-document\" data-id=\"DOC-1\" data-href=\"/documents/DOC-1\">",
+            "<rect/></g>",
+            "<g class=\"node type-source-group\" data-id=\"artifacts/\" data-href=\"/documents/artifacts\">",
+            "<rect/></g>",
+        );
+        let out = drop_source_group_links(svg);
+        assert!(
+            out.contains("data-id=\"DOC-1\" data-href=\"/documents/DOC-1\""),
+            "{out}"
+        );
+        assert!(
+            out.contains("<g class=\"node type-source-group\" data-id=\"artifacts/\"><rect/></g>"),
+            "{out}"
+        );
+        assert!(!out.contains("/documents/artifacts"), "{out}");
+    }
 }

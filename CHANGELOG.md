@@ -28,6 +28,13 @@
   block merges.
 
 ### Fixed
+- **The HTML export carries the dashboard's static sections** (REQ-400,
+  #956) — it exported 10 of the dashboard's 18 nav sections. Traceability,
+  verification, document linkage and test results (and externals, when
+  configured) are now exported and linked; the diff, variants and source views
+  stay server-only. The document-linkage graph linked each source-directory
+  node to a document page that does not exist, on the dashboard and in the
+  export; those nodes no longer carry a link.
 - **The coverage JSON schema matches the output** (REQ-400, #956) —
   `schemas/json/coverage-output.schema.json` still described the v0.4.1
   output: it required `overall.covered` and `overall.total` (the output has
