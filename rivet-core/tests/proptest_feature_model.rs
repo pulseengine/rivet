@@ -545,6 +545,7 @@ fn solve_accepts_valid_feature_constraint() {
 /// reached by two disjoint paths is a legal DAG edge, not a cycle. A genuine
 /// cycle (a feature that is its own ancestor) is still rejected -- see
 /// `genuine_cycle_is_rejected`.
+// rivet: verifies REQ-269
 #[test]
 fn diamond_shared_child_is_not_a_cycle() {
     let yaml = "kind: feature-model\n\

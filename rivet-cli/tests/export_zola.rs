@@ -105,6 +105,8 @@ fn content_markdown(dir: &std::path::Path) -> Vec<String> {
 /// `/<prefix>/artifacts/<slug>/` links (which break a sub-directory
 /// deploy). Cross-links and wiki-links that resolve use Zola internal
 /// `@/…md` links instead.
+// rivet: verifies REQ-115
+// rivet: partially-verifies REQ-118
 #[test]
 fn zola_export_uses_internal_links_not_absolute_paths() {
     let tmp = tempfile::tempdir().unwrap();
@@ -138,6 +140,7 @@ fn zola_export_uses_internal_links_not_absolute_paths() {
 /// REQ-116: the generated `rivet_artifact` shortcode must build its card
 /// link with `get_url(...)` (which honours `base_url`), not a hardcoded
 /// absolute `/<prefix>/artifacts/…` href.
+// rivet: verifies REQ-116
 #[test]
 fn zola_shortcode_card_uses_get_url() {
     let tmp = tempfile::tempdir().unwrap();

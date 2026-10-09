@@ -4179,6 +4179,7 @@ mod docs_pointer_tests {
     use super::*;
 
     // rivet: verifies REQ-382
+    // rivet: partially-verifies REQ-284
     #[test]
     fn every_rivet_docs_pointer_in_user_facing_text_resolves() {
         // `rivet docs` also accepts these, which are not topics.

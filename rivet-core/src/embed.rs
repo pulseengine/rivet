@@ -1791,6 +1791,7 @@ mod tests {
         assert_eq!(direct_ids, vec!["REQ-1".to_string(), "REQ-2".to_string()]);
     }
 
+    // rivet: verifies REQ-193
     #[test]
     fn query_embed_renders_rows_id_sorted_for_deterministic_docs() {
         // #415 / REQ-190: `{{query:...}}` embeds must render rows ascending by

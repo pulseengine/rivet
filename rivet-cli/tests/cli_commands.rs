@@ -435,6 +435,7 @@ fn vendored_bridges_load_on_disk_and_missing_ones_fall_back_to_the_binary() {
     );
 }
 
+// rivet: verifies REQ-220
 #[test]
 fn init_vendor_schemas_pins_schemas_on_disk() {
     let tmp = tempfile::tempdir().expect("create temp dir");
@@ -1254,6 +1255,7 @@ fn check_verification_evidence_non_empty_scan_still_reads_as_pass() {
 /// scoped to the flag and does not blanket-expand every step's scan.
 ///
 /// rivet: verifies REQ-236
+/// rivet: verifies REQ-295
 #[test]
 fn check_verification_evidence_scans_the_crate_named_by_manifest_path() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -3255,6 +3257,7 @@ fn list_json_artifact_fields() {
 /// description/tags/fields); `--full` adds them in bulk, matching the
 /// `get <ID> --format json` shape. Verify the presence/absence split and
 /// that `--full`'s `fields` equals `get`'s `fields` for the same id.
+// rivet: verifies REQ-211
 #[test]
 fn list_json_full_includes_rich_fields() {
     let root = project_root();
@@ -3845,6 +3848,7 @@ fn get_nonexistent_returns_error() {
 /// while leaving counts/exit untouched. rivet's own repo has 0 errors, so
 /// the filtered output must contain no `WARN:`/`INFO:` lines and must note
 /// what it suppressed.
+// rivet: partially-verifies REQ-137
 #[test]
 fn validate_min_severity_filters_display() {
     let output = Command::new(rivet_bin())
@@ -3872,6 +3876,7 @@ fn validate_min_severity_filters_display() {
 /// single artifact — its applicable traceability rules (satisfied or missing,
 /// and via which link) plus its links. REQ-001 is widely satisfied in rivet's
 /// own repo, so its rule must read "satisfied".
+// rivet: partially-verifies REQ-125
 #[test]
 fn validate_explain_shows_rule_status() {
     let output = Command::new(rivet_bin())
@@ -3930,6 +3935,7 @@ fn list_orphans_is_subset() {
 
 /// REQ-128: `rivet list --rank-by-backlinks` orders by inbound-link count
 /// (descending) and emits an `inbound_links` field on each artifact.
+// rivet: partially-verifies REQ-128
 #[test]
 fn list_rank_by_backlinks_orders_descending() {
     let root = project_root();
@@ -4088,6 +4094,7 @@ fn coverage_text_prints_required_link_for_failing_rules() {
 }
 
 /// `rivet coverage --format json` produces valid JSON with overall and rules.
+// rivet: verifies REQ-111
 #[test]
 fn coverage_json() {
     let output = Command::new(rivet_bin())
@@ -4202,6 +4209,7 @@ fn matrix_json() {
 /// chosen direction yields zero links but the opposite direction would, the
 /// command emits an actionable `--direction` hint on stderr. A matrix that
 /// does have links emits no such hint.
+// rivet: verifies REQ-152
 #[test]
 fn matrix_empty_emits_direction_hint() {
     let root = project_root();
@@ -4259,6 +4267,7 @@ fn matrix_empty_emits_direction_hint() {
 /// satisfies `requirement` (a forward link), so `--from design-decision --to
 /// requirement` (no flag) must produce a NON-empty matrix via `satisfies` —
 /// not the old empty `backward` default. Explicit `--direction` is unchanged.
+// rivet: verifies REQ-166
 #[test]
 fn matrix_infers_direction_when_omitted() {
     let root = project_root();
@@ -4355,6 +4364,7 @@ fn next_id_json() {
 
 /// `rivet next-id <type>` positional shorthand equals `--type <type>`, and a
 /// bare prefix positional works too (#447 / REQ-179).
+// rivet: verifies REQ-179
 #[test]
 fn next_id_positional_shorthand() {
     let run = |args: &[&str]| -> String {
@@ -5723,6 +5733,7 @@ fn schema_list_json_produces_valid_output() {
 
 /// `rivet schema get-json <name>` prints the path to the schema file,
 /// and `--content` reads the schema.
+// rivet: verifies REQ-189
 #[test]
 fn schema_get_json_returns_path_and_content() {
     let root_str = project_root();
@@ -7710,6 +7721,7 @@ fn supplier_pull_unknown_anchor_errors() {
 /// #353: `--quiet` suppresses the WARN-level log preamble (e.g. the externals
 /// "could not load" notice) while leaving the command's stdout and
 /// hard-error reporting intact.
+// rivet: partially-verifies REQ-151
 #[test]
 fn quiet_suppresses_warn_preamble() {
     let tmp = tempfile::tempdir().expect("create temp dir");
@@ -7767,6 +7779,7 @@ fn quiet_suppresses_warn_preamble() {
 /// artifacts, not the whole corpus. Regression for the bespoke baseline parser
 /// that diverged from the live loader and flagged hundreds of unchanged
 /// artifacts as added/changed. Here REQ-2 is untouched and must NOT appear.
+// rivet: verifies REQ-153
 #[test]
 fn impact_since_reports_only_real_changes() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -7867,6 +7880,7 @@ fn impact_since_reports_only_real_changes() {
 /// `stats`) must then print a loud "source(s) skipped" block to stderr
 /// instead of silently returning a smaller graph — while a clean project
 /// emits no such block.
+// rivet: verifies REQ-154
 #[test]
 fn list_reports_parse_error_skipped_sources() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -7930,6 +7944,8 @@ fn list_reports_parse_error_skipped_sources() {
 /// WARN exactly ONCE for a malformed `generic-yaml` source — it used to print
 /// twice (once from `ProjectContext::load`, once from the duplicate-id
 /// re-scan). The hard `artifact-parse-error` ERROR must still fire (FAIL).
+// rivet: verifies REQ-157
+// rivet: partially-verifies REQ-139
 #[test]
 fn validate_emits_single_skip_warn_for_malformed_source() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -9322,6 +9338,7 @@ fn shard_splits_source_into_per_id_files_reversibly() {
 /// it — the requirement→test evidence can no longer silently rot.
 ///
 /// rivet: verifies REQ-236
+// rivet: verifies REQ-225
 #[test]
 fn cited_source_accepted_on_sw_verification() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -9375,6 +9392,7 @@ fn cited_source_accepted_on_sw_verification() {
 /// #552: `rivet add --type <T>` must create a default file for the type when
 /// none exists yet, instead of erroring "no existing file found … use --file".
 /// You shouldn't need --file just to add the FIRST artifact of a type.
+// rivet: verifies REQ-223
 #[test]
 fn add_creates_default_file_for_a_new_type() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -9486,6 +9504,7 @@ fn add_with_per_id_layout_writes_one_file_per_artifact() {
 /// REQ-158 / #397: `rivet validate` emits a `near-duplicate-intent` INFO for a
 /// pair of same-type artifacts with highly similar titles, and NOT for a
 /// distinct one. `rivet add` emits a non-blocking note for a similar new title.
+// rivet: verifies REQ-158
 #[test]
 fn near_duplicate_intent_validate_and_add() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -9641,6 +9660,7 @@ fn validate_structural_gates_on_structural_only() {
 /// per-artifact traceability view — it must exit 0, render the artifact + its
 /// links, produce the SAME output as `validate --explain <id>`, and be
 /// deterministic across runs (REQ-167 / #415 sort fix on the link lists).
+// rivet: verifies REQ-167
 #[test]
 fn trace_command_renders_and_is_deterministic() {
     let root = project_root();
@@ -9685,6 +9705,7 @@ fn trace_command_renders_and_is_deterministic() {
 
 // ── agent CLI ergonomics (REQ-188) ─────────────────────────────────────
 
+// rivet: partially-verifies REQ-188
 #[test]
 fn link_positional_target_is_parsed() {
     // Regression: `rivet link <source> <target> --type <t>` (target as a second
@@ -9739,6 +9760,7 @@ fn link_no_target_is_reported() {
     );
 }
 
+// rivet: partially-verifies REQ-188
 #[test]
 fn init_preset_help_lists_all_presets() {
     // The --preset help must list every preset `resolve_preset` accepts, with
@@ -9770,6 +9792,7 @@ fn init_preset_help_lists_all_presets() {
     }
 }
 
+// rivet: partially-verifies REQ-188
 #[test]
 fn modify_help_has_no_duplicated_summary() {
     let out = Command::new(rivet_bin())
@@ -9912,6 +9935,7 @@ fn modify_add_tag_preserves_quoted_tags_and_does_not_drop_the_file() {
 /// `rivet query --format json` must carry the same `command` envelope field as
 /// list/stats/coverage/validate, and expose the keys query-output.schema.json
 /// documents. REQ-189 (envelope consistency).
+// rivet: verifies REQ-189
 #[test]
 fn query_json_output_has_command_envelope() {
     let out = Command::new(rivet_bin())
@@ -9950,6 +9974,7 @@ fn query_json_output_has_command_envelope() {
 /// query/matrix/diff/impact). commits was the last one missing it. REQ-192.
 /// (Exit code is not asserted: a repo with broken trailers exits non-zero but
 /// still emits the JSON document.)
+// rivet: verifies REQ-192
 #[test]
 fn commits_json_output_has_command_envelope() {
     let out = Command::new(rivet_bin())
@@ -9974,6 +9999,7 @@ fn commits_json_output_has_command_envelope() {
 /// `rivet snapshot diff <baseline>` must accept the baseline path positionally
 /// (previously it errored "unexpected argument" — only --baseline worked).
 /// Mirrors the next-id/query/link positional shorthands. REQ-194.
+// rivet: verifies REQ-194
 #[test]
 fn snapshot_diff_accepts_positional_baseline() {
     let tmp = tempfile::tempdir().expect("create temp dir");
@@ -10024,6 +10050,7 @@ fn snapshot_diff_accepts_positional_baseline() {
 /// `rivet variant solve --variant <name>` must resolve a bare name from
 /// artifacts/variants/<name>.yaml, like `query --variant` already does (#466);
 /// a direct path must still work (additive). REQ-195.
+// rivet: verifies REQ-195
 #[test]
 fn variant_solve_accepts_bare_variant_name() {
     let root = project_root();
@@ -10077,6 +10104,7 @@ fn variant_solve_accepts_bare_variant_name() {
 /// #518: a source file broken by a parse error must make MUTATING / ID-allocating
 /// commands (next-id, add) HARD-FAIL — not silently skip the file and allocate an
 /// ID that collides with its (now-invisible) artifacts.
+// rivet: verifies REQ-216
 #[test]
 fn mutating_commands_refuse_on_parse_broken_source() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -10152,6 +10180,7 @@ fn mutating_commands_refuse_on_parse_broken_source() {
 /// cryptic "EOF while parsing". Now such invocations also emit a one-line JSON
 /// error envelope on stdout, while non-JSON invocations keep clap's stderr-only
 /// behavior.
+// rivet: verifies REQ-219
 #[test]
 fn json_consumers_get_an_error_envelope_on_parse_failure() {
     // `--project` after the subcommand is a parse error; with --format json we
@@ -10197,6 +10226,7 @@ fn json_consumers_get_an_error_envelope_on_parse_failure() {
 /// commit trailer / subject) but absent from the working tree — the
 /// reverted-but-burned trap (e.g. REQ-209). Git awareness is best-effort and
 /// can be disabled with RIVET_NEXTID_NO_GIT.
+// rivet: verifies REQ-218
 #[test]
 fn next_id_skips_ids_burned_in_git_history() {
     let tmp = tempfile::tempdir().expect("temp dir");
@@ -11879,6 +11909,7 @@ commits:
 ///     every `fn` in the file.
 ///
 /// rivet: verifies REQ-306
+/// rivet: verifies REQ-295
 #[test]
 fn check_verification_evidence_rejects_hollow_and_non_test_names() {
     let tmp = tempfile::tempdir().expect("temp dir");

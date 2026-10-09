@@ -210,6 +210,7 @@ mod tests {
         (store, schema, graph)
     }
 
+    // rivet: verifies REQ-160
     #[test]
     fn execute_returns_results_sorted_by_id() {
         // REQ-159 / #415: deterministic order regardless of insertion order.
@@ -255,6 +256,7 @@ mod tests {
         assert!(r.truncated);
     }
 
+    // rivet: verifies REQ-190
     #[test]
     fn execute_sexpr_returns_matches_sorted_by_id() {
         // #415: matches must be ascending by id regardless of insertion order
@@ -270,6 +272,7 @@ mod tests {
         assert_eq!(ids, vec!["REQ-001", "REQ-002", "REQ-030", "REQ-100"]);
     }
 
+    // rivet: verifies REQ-190
     #[test]
     fn execute_sexpr_limit_truncates_to_lowest_ids_deterministically() {
         // #415: with a limit, the kept subset must be the lowest-id `cap`

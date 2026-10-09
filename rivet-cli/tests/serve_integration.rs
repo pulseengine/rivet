@@ -717,6 +717,7 @@ fn api_artifacts_filter_by_type() {
 
 /// REQ-253: the HTML `/artifacts` view applies the s-expression predicate
 /// filter (same evaluator as the JSON API), narrowing to matching artifacts.
+// rivet: partially-verifies REQ-253
 #[test]
 fn artifacts_html_sexpr_filter_narrows_results() {
     let (mut child, port) = start_server();

@@ -2974,6 +2974,7 @@ then:
     /// was correctly linked. Accept either spelling.
     ///
     /// rivet: fixes REQ-004
+    // rivet: verifies REQ-131
     #[test]
     fn required_backlink_inverse_name_is_satisfied_by_forward_link() {
         use crate::schema::LinkTypeDef;
@@ -3148,6 +3149,7 @@ then:
 
     // #550: a type may declare its OWN `status` field allowed-values, which
     // override the global lifecycle enum for artifacts of that type.
+    // rivet: partially-verifies REQ-224
     #[test]
     fn per_type_status_field_overrides_global_enum() {
         let mut file = minimal_schema("defect");

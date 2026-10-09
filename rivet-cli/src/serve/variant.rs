@@ -514,6 +514,7 @@ mod tests {
     /// captured as a diagnostic + `model_error`, and `resolve()` must
     /// return that parse error — NOT the misleading "no feature model
     /// configured" message (a broken config is not an absent one).
+    // rivet: partially-verifies REQ-260
     #[test]
     fn discover_broken_model_records_diagnostic_and_resolve_reports_parse_error() {
         let dir = tmpdir();
@@ -570,6 +571,7 @@ mod tests {
     /// `rivet_yaml::from_str::<VariantConfig>` only accepted the flat shape,
     /// so init-scaffolded files were silently invisible on the dashboard
     /// (#514 regression on the serve path).
+    // rivet: verifies REQ-262
     #[test]
     fn discover_accepts_wrapped_variant_shape() {
         let dir = tmpdir();

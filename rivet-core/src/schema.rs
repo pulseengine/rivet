@@ -2238,6 +2238,7 @@ mod tests {
     /// Issue #154: when a bridge / overlay schema declares the same-name
     /// type as a base schema, the base's `fields` were silently dropped.
     /// After the fix, the two field-sets must union by name.
+    // rivet: partially-verifies REQ-134
     #[test]
     fn merge_same_name_artifact_type_unions_fields() {
         let base = mk_schema_file(
@@ -2422,6 +2423,7 @@ mod tests {
         td
     }
 
+    // rivet: verifies REQ-148
     #[test]
     fn coverage_rule_flags_unsatisfiable_from_type() {
         // Mirrors aspice `swe1-has-verification`: sw-req needs an incoming
@@ -2473,6 +2475,7 @@ mod tests {
         );
     }
 
+    // rivet: partially-verifies REQ-156
     #[test]
     fn consistency_diagnostics_aggregates_conditional_and_coverage_checks() {
         // REQ-156 / #410: the single chokepoint both validation paths call
@@ -2537,6 +2540,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-148
     #[test]
     fn coverage_rule_silent_when_all_from_types_linkable() {
         // Both verifiers can target sw-req -> no diagnostic.

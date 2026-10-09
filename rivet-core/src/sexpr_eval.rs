@@ -2081,6 +2081,7 @@ mod tests {
 
     /// `(bogus A B)` — unknown head symbol. Note should reference the
     /// supported forms.
+    // rivet: verifies REQ-142
     #[test]
     #[cfg_attr(miri, ignore)]
     fn parse_error_unknown_head_surfaces_note() {

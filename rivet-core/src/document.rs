@@ -2140,6 +2140,7 @@ See frontmatter.
     }
 
     // rivet: verifies REQ-033
+    // rivet: partially-verifies REQ-273
     #[test]
     fn render_aadl_code_block_placeholder() {
         let content = "---\nid: DOC-001\ntitle: Architecture\n---\n\n## Overview\n\n```aadl\nroot: FlightControl::Controller.Basic\n```\n\nSome text after.\n";

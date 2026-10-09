@@ -75,6 +75,7 @@ fn run(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
 }
 
 /// `--dry-run` lists the matched artifacts and writes nothing.
+// rivet: verifies REQ-141
 #[test]
 fn modify_where_dry_run_changes_nothing() {
     let proj = scratch_project();
@@ -106,6 +107,7 @@ fn modify_where_dry_run_changes_nothing() {
 }
 
 /// `--where` applies to every match in one pass and leaves non-matches alone.
+// rivet: verifies REQ-141
 #[test]
 fn modify_where_applies_to_all_matches() {
     let proj = scratch_project();
@@ -142,6 +144,7 @@ fn modify_where_applies_to_all_matches() {
 
 /// A `--where` that matches nothing is a loud no-op (exit 0, explicit
 /// message), so an agent never reads silence as success.
+// rivet: verifies REQ-141
 #[test]
 fn modify_where_empty_match_is_loud_noop() {
     let proj = scratch_project();
@@ -164,6 +167,7 @@ fn modify_where_empty_match_is_loud_noop() {
 }
 
 /// Passing both a positional ID and `--where` is rejected by clap.
+// rivet: verifies REQ-141
 #[test]
 fn modify_id_and_where_are_mutually_exclusive() {
     let proj = scratch_project();

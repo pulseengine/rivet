@@ -484,6 +484,7 @@ mod tests {
         assert_eq!(orphans[0], "LONE");
     }
 
+    // rivet: verifies REQ-191
     #[test]
     fn orphans_are_id_sorted_for_deterministic_output() {
         // #415: orphan output (stats/validate/list) must be reproducible. Insert

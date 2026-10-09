@@ -30,6 +30,8 @@
 # Skips with exit 0 and a notice if `zola` is not installed, so the CI job
 # can gate on availability without turning into a hard failure on runners
 # that lack zola.
+#
+# rivet: verifies REQ-138
 
 set -euo pipefail
 

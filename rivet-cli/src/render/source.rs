@@ -1033,6 +1033,7 @@ mod tests {
     /// REQ-144: an id must match as a whole token, not a substring of a
     /// longer id. The reported bug: `SWR-001` was linked inside
     /// `SDV-BCM-SWR-001`, creating a phantom trace edge.
+    // rivet: verifies REQ-144
     #[test]
     fn id_token_match_is_whole_token_not_substring() {
         // The substring case must NOT match.
