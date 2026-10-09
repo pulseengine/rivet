@@ -956,31 +956,52 @@ mod tests {
         assert_eq!(strip_html_from_text(""), "");
     }
 
-    /// End-to-end: load the spar WASM component, preopen a directory with
-    /// real AADL files, call the renderer, and verify the SVG output.
+    /// The spar WASM component under test, from `SPAR_WASM_PATH` (REQ-389).
     ///
-    /// Set `SPAR_WASM_PATH` to override the default component location.
-    /// The test is skipped if the component or AADL files are not found.
+    /// These tests used to fall back to a hardcoded path that exists nowhere
+    /// and return early when it was missing, so `call_render` never ran in CI
+    /// and two mutants survived. Now: with `RIVET_REQUIRE_SPAR_WASM` set (CI
+    /// builds the component at the commit Cargo.lock pins), a missing
+    /// component FAILS the test; without it (a local run), the test says it is
+    /// skipping and why.
+    fn spar_wasm_component() -> Option<std::path::PathBuf> {
+        let required = std::env::var_os("RIVET_REQUIRE_SPAR_WASM").is_some();
+        match std::env::var_os("SPAR_WASM_PATH").map(std::path::PathBuf::from) {
+            Some(p) if p.exists() => Some(p),
+            other => {
+                let why = match other {
+                    Some(p) => format!("SPAR_WASM_PATH={} does not exist", p.display()),
+                    None => "SPAR_WASM_PATH is not set".to_string(),
+                };
+                assert!(
+                    !required,
+                    "RIVET_REQUIRE_SPAR_WASM is set but {why}: the WASM tests must run here"
+                );
+                eprintln!("SKIPPED (proves nothing): {why}; set it to a built spar_wasm.wasm");
+                None
+            }
+        }
+    }
+
+    /// End-to-end: load the spar WASM component, preopen a directory with
+    /// real AADL files, call the renderer, and verify the SVG output. A render
+    /// error fails the test; it used to be printed and passed (REQ-389).
     // rivet: verifies REQ-008
+    // rivet: verifies REQ-389
     #[test]
     fn render_aadl_via_wasm() {
-        // Only run if the WASM component exists
-        let wasm_path = std::env::var("SPAR_WASM_PATH").unwrap_or_else(|_| {
-            "/Volumes/Home/git/pulseengine/spar/target/wasm32-wasip2/release/spar_wasm.wasm".into()
-        });
-        let path = std::path::Path::new(&wasm_path);
-        if !path.exists() {
-            eprintln!("Skipping: WASM component not found at {}", path.display());
+        let Some(path) = spar_wasm_component() else {
             return;
-        }
+        };
+        let path = path.as_path();
 
-        // The AADL example directory
         let aadl_dir =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/aadl/aadl");
-        if !aadl_dir.exists() {
-            eprintln!("Skipping: AADL example not found at {}", aadl_dir.display());
-            return;
-        }
+        assert!(
+            aadl_dir.exists(),
+            "the AADL example ships in the repository: {}",
+            aadl_dir.display()
+        );
 
         let runtime = WasmAdapterRuntime::with_defaults().unwrap();
         let adapter = runtime.load_adapter(path).unwrap();
@@ -988,41 +1009,21 @@ mod tests {
         // Call render with the AADL directory preopened
         let result = adapter.call_render("FlightControl::Controller.Basic", &[], Some(&aadl_dir));
 
-        match result {
-            Ok(svg) => {
-                assert!(svg.contains("<svg"), "output should be SVG");
-                assert!(svg.contains("</svg>"), "SVG should be complete");
-                assert!(svg.contains("data-id"), "nodes should have data-id");
-
-                // Write to temp for inspection
-                let out = std::env::temp_dir().join("rivet-wasm-test");
-                std::fs::create_dir_all(&out).ok();
-                let svg_path = out.join("wasm-rendered.svg");
-                std::fs::write(&svg_path, &svg).unwrap();
-                eprintln!("SVG written to: {}", svg_path.display());
-            }
-            Err(e) => {
-                // Some WASM/WASI issues are expected in test environments
-                eprintln!("Render returned error (may be expected): {:?}", e);
-            }
-        }
+        let svg = result.unwrap_or_else(|e| panic!("the render must succeed: {e:?}"));
+        assert!(svg.contains("<svg"), "output should be SVG");
+        assert!(svg.contains("</svg>"), "SVG should be complete");
+        assert!(svg.contains("data-id"), "nodes should have data-id");
     }
 
     /// Load the real spar WASM component and call the renderer interface.
-    ///
-    /// Set `SPAR_WASM_PATH` to override the default component location.
-    /// The test is skipped if the component file does not exist.
     // rivet: verifies REQ-008
+    // rivet: verifies REQ-389
     #[test]
     fn load_spar_wasm_component() {
-        let wasm_path = std::env::var("SPAR_WASM_PATH").unwrap_or_else(|_| {
-            "/Volumes/Home/git/pulseengine/spar/target/wasm32-wasip2/release/spar_wasm.wasm".into()
-        });
-        let path = Path::new(&wasm_path);
-        if !path.exists() {
-            eprintln!("Skipping: WASM component not found at {}", path.display());
+        let Some(path) = spar_wasm_component() else {
             return;
-        }
+        };
+        let path = path.as_path();
 
         let runtime = WasmAdapterRuntime::with_defaults().unwrap();
         let adapter = runtime.load_adapter(path).unwrap();
