@@ -92,6 +92,15 @@
   never affected.
 
 ### Changed
+- **Snapshots record an empty scope as `null`, not 100%** (REQ-400, #956) —
+  `rivet snapshot` stored coverage as a number and wrote 100 for a rule or
+  project with nothing to score, so a snapshot and every delta computed from
+  it said 100% where the CLI, dashboard, API and MCP say n/a. Snapshot format
+  v2 stores `null`; a delta against a `null` side is `null`; v1 snapshots still
+  read. **Behaviour change:** consumers of snapshot JSON must accept `null`
+  for `coverage.overall` and each rule's `percentage`. In rivet-core,
+  `CoverageData.overall`, `CoverageRuleData.percentage` and the matching delta
+  fields are now `Option<f64>`.
 - **Kani runs only the proofs that verify** (REQ-391, #839) — on Linux only
   1 of the 27 harnesses verified; 25 timed out on CBMC's model of `String`,
   `Vec` and `HashMap`, and one stopped on an unsupported system call. Those

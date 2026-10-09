@@ -16663,10 +16663,10 @@ fn cmd_snapshot_capture(
     rivet_core::snapshot::write_to_file(&snap, &out_path).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     eprintln!(
-        "Snapshot captured: {} ({} artifacts, {:.1}% coverage, {} diagnostics)",
+        "Snapshot captured: {} ({} artifacts, {} coverage, {} diagnostics)",
         out_path.display(),
         snap.stats.total,
-        snap.coverage.overall,
+        rivet_core::coverage::format_percentage(snap.coverage.overall),
         snap.diagnostics.errors + snap.diagnostics.warnings + snap.diagnostics.infos,
     );
 
@@ -16779,10 +16779,10 @@ fn cmd_snapshot_list(cli: &Cli) -> Result<bool> {
         for entry in &entries {
             if let Ok(snap) = rivet_core::snapshot::read_from_file(&entry.path()) {
                 println!(
-                    "  {} — {} artifacts, {:.1}% cov, {} errors ({})",
+                    "  {} — {} artifacts, {} cov, {} errors ({})",
                     entry.file_name().to_string_lossy(),
                     snap.stats.total,
-                    snap.coverage.overall,
+                    rivet_core::coverage::format_percentage(snap.coverage.overall),
                     snap.diagnostics.errors,
                     snap.created_at,
                 );
@@ -18028,7 +18028,14 @@ fn print_delta_text(
             format!("{v:.1}%")
         }
     };
-    println!("  Coverage: {}", fsign(delta.coverage.overall));
+    // REQ-400: no change to report when either snapshot had nothing in scope.
+    println!(
+        "  Coverage: {}",
+        delta
+            .coverage
+            .overall
+            .map_or_else(|| "n/a".to_string(), fsign)
+    );
     println!(
         "  Diagnostics: {} new, {} resolved, errors {}",
         delta.diagnostics.new_count,
@@ -18060,13 +18067,20 @@ fn format_delta_markdown(
         baseline.stats.total as isize + delta.stats.total,
         sign(delta.stats.total),
     ));
-    let cov = baseline.coverage.overall + delta.coverage.overall;
-    let cov_delta = if delta.coverage.overall > 0.0 {
-        format!("+{:.1}%", delta.coverage.overall)
-    } else {
-        format!("{:.1}%", delta.coverage.overall)
+    // REQ-400: either side may have nothing in scope (null); then neither the
+    // current value nor the change can be derived from baseline + delta.
+    let cov = baseline
+        .coverage
+        .overall
+        .zip(delta.coverage.overall)
+        .map(|(b, d)| b + d);
+    let cov_label = rivet_core::coverage::format_percentage(cov);
+    let cov_delta = match delta.coverage.overall {
+        Some(d) if d > 0.0 => format!("+{d:.1}%"),
+        Some(d) => format!("{d:.1}%"),
+        None => "n/a".to_string(),
     };
-    md.push_str(&format!("| Coverage | {cov:.1}% | {cov_delta} |\n"));
+    md.push_str(&format!("| Coverage | {cov_label} | {cov_delta} |\n"));
     md.push_str(&format!(
         "| Errors | {} | {} |\n",
         baseline.diagnostics.errors as isize + delta.diagnostics.errors,
