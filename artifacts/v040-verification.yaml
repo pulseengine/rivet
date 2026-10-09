@@ -506,3 +506,5 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-007
+      - type: satisfies
+        target: REQ-235

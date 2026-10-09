@@ -30,6 +30,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-004
+      - type: satisfies
+        target: REQ-061
       - type: depends-on
         target: DD-058
     fields:
@@ -132,6 +134,8 @@ artifacts:
         target: REQ-004
       - type: satisfies
         target: REQ-010
+      - type: satisfies
+        target: REQ-061
     fields:
       ai-usage: >
         The file-scope allow blocks were landed by a Claude Code
