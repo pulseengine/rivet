@@ -1029,7 +1029,7 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         for top in &tree {
             render_trace_hop(top, trace.len(), &mut tree_html);
         }
-        html.push_str(&crate::render::components::collapsible_tree(
+        html.push_str(&crate::serve::components::collapsible_tree(
             "Test Result Trace",
             &tree_html,
             "trace-results-tree",
