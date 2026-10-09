@@ -4,7 +4,11 @@
   "title": "rivet coverage --format json",
   "description": "Machine-readable output produced by `rivet coverage --format json`.",
   "type": "object",
-  "required": ["command", "rules", "overall"],
+  "required": [
+    "command",
+    "rules",
+    "overall"
+  ],
   "additionalProperties": true,
   "properties": {
     "command": {
@@ -25,49 +29,186 @@
         ],
         "additionalProperties": true,
         "properties": {
-          "name": { "type": "string" },
-          "description": { "type": ["string", "null"] },
-          "source_type": { "type": "string" },
-          "link_type": { "type": ["string", "null"] },
-          "direction": { "type": ["string", "null"] },
-          "covered": { "type": "integer", "minimum": 0 },
-          "total": { "type": "integer", "minimum": 0 },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_type": {
+            "type": "string"
+          },
+          "link_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "direction": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "covered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
           "percentage": {
-            "type": "number",
+            "type": [
+              "number",
+              "null"
+            ],
             "minimum": 0,
-            "maximum": 100
+            "maximum": 100,
+            "description": "Percent covered; null when there is nothing to score (empty scope, REQ-387)."
           },
           "uncovered_ids": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
+          },
+          "accounted_percentage": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "empty_scope": {
+            "type": "boolean"
+          },
+          "external_boundary": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "external_boundary_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unmodelled": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The declared reason when the rule is listed in coverage.unmodelled-rules."
           }
         }
       }
     },
     "overall": {
       "type": "object",
-      "required": ["covered", "total", "percentage"],
+      "description": "Project-wide coverage. checks_covered and checks_total are per-rule check sums (an artifact counted once per rule), not distinct artifacts (REQ-110).",
+      "required": [
+        "checks_covered",
+        "checks_total",
+        "percentage"
+      ],
       "properties": {
-        "covered": { "type": "integer", "minimum": 0 },
-        "total": { "type": "integer", "minimum": 0 },
+        "checks_covered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "checks_total": {
+          "type": "integer",
+          "minimum": 0
+        },
         "percentage": {
-          "type": "number",
+          "type": [
+            "number",
+            "null"
+          ],
           "minimum": 0,
-          "maximum": 100
+          "maximum": 100,
+          "description": "Percent covered; null when there is nothing to score (empty scope, REQ-387)."
+        },
+        "empty_scope": {
+          "type": "boolean"
+        },
+        "external_boundary": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     },
     "threshold": {
       "type": "object",
       "description": "Present when --fail-under is set. Added in v0.4.1.",
-      "required": ["fail_under", "passed"],
+      "required": [
+        "fail_under",
+        "passed"
+      ],
       "properties": {
         "fail_under": {
           "type": "number",
           "minimum": 0,
           "maximum": 100
         },
-        "passed": { "type": "boolean" }
+        "passed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "closure": {
+      "type": "array",
+      "description": "V-closure per source type with two or more rules: the share of artifacts that satisfy every rule at once.",
+      "items": {
+        "type": "object",
+        "required": [
+          "source_type",
+          "rule_names",
+          "total",
+          "closed",
+          "percentage"
+        ],
+        "properties": {
+          "source_type": {
+            "type": "string"
+          },
+          "rule_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "closed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "percentage": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Percent covered; null when there is nothing to score (empty scope, REQ-387)."
+          },
+          "empty_scope": {
+            "type": "boolean"
+          },
+          "open_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   }

@@ -28,6 +28,13 @@
   block merges.
 
 ### Fixed
+- **The coverage JSON schema matches the output** (REQ-400, #956) —
+  `schemas/json/coverage-output.schema.json` still described the v0.4.1
+  output: it required `overall.covered` and `overall.total` (the output has
+  `checks_covered` and `checks_total`) and typed every percentage as a number
+  in [0, 100], where an empty scope gives `null`. The schema now documents the
+  real output, and a test validates all five `--format json` outputs against
+  their schemas in full rather than checking key presence.
 - **The single-page export names a declared unmodelled rule's reason**
   (REQ-400, #956) — it showed a bare `n/a` for a rule the project lists in
   `coverage.unmodelled-rules`, where the dashboard and `rivet coverage` show
