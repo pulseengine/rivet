@@ -120,8 +120,12 @@ fn lookup_type<'a>(
 /// (`\b[A-Z][A-Z0-9]*-[0-9]+\b` picked `TR-001` out of `CM-TR-001`),
 /// which both suggested a false trace to an unrelated `TR-001` and
 /// silently skipped the whole `CM-TR-001` id.
+///
+/// A dotted suffix belongs to the id (`H-1.2`, the STPA sub-hazard
+/// convention): without it the match stopped at the dot and read `H-1.2` as a
+/// mention of the parent `H-1`, asking for a link the prose never claimed.
 static ID_MENTION_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]+\b").unwrap());
+    LazyLock::new(|| Regex::new(r"\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]+(?:\.[0-9]+)*\b").unwrap());
 
 /// A single validation diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3812,6 +3816,16 @@ then:
             "message should name the mentioned id: {}",
             diags[0].message
         );
+    }
+
+    /// A dotted id is one mention, not a mention of its parent: `B-1.2` in
+    /// prose does not ask for a link to `B-1`. (The sentence-final `B-1.` in
+    /// the test above still matches `B-1`.)
+    // rivet: verifies REQ-004
+    #[test]
+    fn prose_mention_reads_a_dotted_id_whole() {
+        let diags = prose_mention_diags(Some("A refinement such as B-1.2 here."), vec![], vec![]);
+        assert!(diags.is_empty(), "B-1.2 is not a mention of B-1: {diags:?}");
     }
 
     // rivet: verifies REQ-004
