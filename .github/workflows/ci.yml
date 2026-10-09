@@ -418,6 +418,26 @@ jobs:
             cargo run --release -q -p rivet-cli -- commits --range "${range}"
             exit 1
           fi
+      # Gate 3 (REQ-389): the traceability ratchet. The whole-store warning
+      # count is too large to gate on, so this fails only on what the PR adds:
+      # a traceability-rule warning or error on an artifact at implemented or
+      # later that the base did not have. One binary (this PR's) judges both
+      # trees, so a rule change cannot pass as an artifact change.
+      - name: traceability ratchet tests (REQ-389)
+        run: |
+          cargo build --release -q -p rivet-cli
+          RIVET=target/release/rivet bash tools/ci/traceability-ratchet_test.sh
+      - name: traceability ratchet — no new findings in this PR (REQ-389)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          base="$(git merge-base "${{ github.event.pull_request.base.sha }}" HEAD)"
+          # Self-hosted runners keep the clone between jobs: drop a stale one.
+          rm -rf "${RUNNER_TEMP}/ratchet-base"
+          git worktree prune
+          git worktree add --detach "${RUNNER_TEMP}/ratchet-base" "${base}"
+          python3 tools/ci/traceability-ratchet.py target/release/rivet \
+            "${RUNNER_TEMP}/ratchet-base" .
 
   # REQ-272 / #509: single-point-of-failure mitigation. Every gate above runs
   # on the self-hosted pool; when it goes offline, ALL of main's verification
