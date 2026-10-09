@@ -271,7 +271,7 @@ ucas:
     title: Core engine does not re-validate bindings when artifacts change
     controller: CTRL-CORE
     control-action: CA-CORE-1
-    uca-type: too-late
+    uca-type: too-early-too-late
     context: >
       Artifacts are modified (IDs renamed, deleted) between binding file
       creation and validation run. salsa caches stale binding validation.
@@ -289,7 +289,7 @@ ucas:
     title: S-expression evaluator applies wrong quantifier scope in nested expressions
     controller: CTRL-CORE
     control-action: CA-CORE-1
-    uca-type: wrong-action
+    uca-type: providing
     context: >
       User writes (forall (where type "req") (exists (linked-by satisfies)
       (where type "spec"))) — evaluator binds the inner (where) to the
