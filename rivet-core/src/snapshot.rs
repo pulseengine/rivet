@@ -449,10 +449,16 @@ mod tests {
 
         let mut later = scored.clone();
         later.coverage.overall = Some(75.0);
-        later.coverage.rules = vec![rule(Some(75.0))];
+        later.coverage.rules = vec![CoverageRuleData {
+            covered: 3,
+            total: 4,
+            ..rule(Some(75.0))
+        }];
         let d = compute_delta(&scored, &later);
         assert_eq!(d.coverage.overall, Some(25.0));
         assert_eq!(d.coverage.rules[0].percentage, Some(25.0));
+        assert_eq!(d.coverage.rules[0].covered, 2, "3 - 1");
+        assert_eq!(d.coverage.rules[0].total, 2, "4 - 2");
 
         let mut emptied = later.clone();
         emptied.coverage.rules = vec![rule(None)];
