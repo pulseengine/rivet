@@ -144,6 +144,7 @@ fn validate_accepts_model_plus_binding_without_variant() {
 
 /// Model + binding where a binding key is not a feature must fail with a
 /// clear diagnostic (not a silent pass).
+// rivet: verifies REQ-259
 #[test]
 fn validate_flags_unknown_features_in_binding() {
     let (_keep, dir, model, _binding) = setup_variant_project();
@@ -184,6 +185,7 @@ fn validate_flags_unknown_features_in_binding() {
 /// must FAIL loud. Before the fix, the union of `binding.artifacts` flowed
 /// through scoped validate with phantom IDs silently dropped — the
 /// mirror-image gap of the unknown-feature-KEY check.
+// rivet: verifies REQ-258
 #[test]
 fn validate_flags_dangling_artifact_id_in_binding() {
     let (_keep, dir, model, _binding) = setup_variant_project();

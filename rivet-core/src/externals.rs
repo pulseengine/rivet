@@ -1254,6 +1254,7 @@ mod tests {
     // `linc-mesh:A-AVTP-STREAM` was misread as a local id because the prefix
     // check rejected the hyphen. (REQ-143)
     // rivet: verifies REQ-020
+    // rivet: verifies REQ-143
     #[test]
     fn external_prefix_with_hyphen() {
         assert_eq!(
@@ -1277,6 +1278,7 @@ mod tests {
     // slug, so the ref stays local (guards an uppercase-led id with a colon
     // from being misread as cross-repo). (REQ-143)
     // rivet: verifies REQ-020
+    // rivet: verifies REQ-143
     #[test]
     fn non_slug_prefix_stays_local() {
         assert_eq!(

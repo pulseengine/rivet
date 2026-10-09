@@ -1501,6 +1501,7 @@ artifacts:
     /// (salsa) silently passed a status-gate violation that
     /// `rivet validate --direct` / `rivet check gaps-json` correctly failed.
     // rivet: verifies REQ-029
+    // rivet: verifies REQ-146
     #[test]
     fn validation_rules_evaluated_in_validate_all() {
         let db = RivetDatabase::new();

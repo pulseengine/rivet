@@ -1145,6 +1145,7 @@ mod tests {
     // #530: a consumer project must be able to load a bundled bridge schema by
     // its `<a>-<b>.bridge` name in `schemas:` — previously only auto-discovered,
     // never resolvable by explicit name (failed as "not found").
+    // rivet: verifies REQ-221
     #[test]
     fn bundled_bridges_are_loadable_by_explicit_name() {
         let empty = std::path::Path::new("/nonexistent-schemas-dir");

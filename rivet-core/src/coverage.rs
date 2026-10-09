@@ -1421,6 +1421,7 @@ mod tests {
     /// test pins the fix: both conventions must produce identical coverage.
     ///
     /// rivet: fixes REQ-004
+    // rivet: verifies REQ-131
     #[test]
     fn required_backlink_matches_inverse_link_type_name() {
         use crate::schema::LinkTypeDef;

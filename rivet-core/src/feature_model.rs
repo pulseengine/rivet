@@ -1860,6 +1860,7 @@ mod tests {
     // #514: `VariantConfig::from_yaml_str` must accept both the flat form and
     // the `variant:`-wrapped feature-model-bindings form that `rivet variant
     // init` scaffolds, so init→check stops disagreeing.
+    // rivet: partially-verifies REQ-217
     #[test]
     fn variant_config_accepts_flat_and_wrapped_forms() {
         let flat = "name: a\nselects: [x, y]\n";
@@ -2338,6 +2339,7 @@ constraints:
 
     // ── REQ-259: constraint feature-names must resolve to real features ──
 
+    // rivet: verifies REQ-259
     #[test]
     fn constraint_referencing_unknown_feature_fails_loud() {
         // REQ-259 / DD-076: a constraint referencing a feature NAME that

@@ -1308,6 +1308,7 @@ mod tests {
     // #479: burned IDs (claimed in git history but absent from the working
     // tree) must raise the allocation floor so next-id never reissues them.
     // rivet: verifies REQ-031
+    // rivet: verifies REQ-218
     #[test]
     fn next_id_considering_skips_burned_ids() {
         let store = make_test_store(); // REQ-001, REQ-002 present -> bare next is REQ-003.
@@ -1548,6 +1549,7 @@ mod tests {
         assert!(yaml.contains("target: REQ-001"));
     }
 
+    // rivet: verifies REQ-198
     #[test]
     fn render_artifact_yaml_multiline_and_colon_is_valid_parseable_yaml() {
         // Regression: a newline in the description emitted a folded `>` scalar
@@ -1574,6 +1576,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-199
     #[test]
     fn render_artifact_yaml_nested_field_value_stays_structured() {
         // A list/map field value (reachable via batch/MCP) must serialize as an
@@ -1602,6 +1605,7 @@ mod tests {
         assert_eq!(owners[1].as_str(), Some("bob"));
     }
 
+    // rivet: partially-verifies REQ-203
     #[test]
     fn render_artifact_yaml_emits_provenance_when_present() {
         // Issue #476: `rivet add --created-by` stamps provenance at creation;

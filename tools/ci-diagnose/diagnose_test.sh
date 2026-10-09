@@ -257,6 +257,7 @@ YAML
 
 # ── classify_stall: liveness vs latency (REQ-354) ─────────────────────────
 # rivet: verifies REQ-354
+# rivet: verifies REQ-351
 #
 # The probe is named "Runner Liveness" and its authoritative signal is queued
 # AGE, which is latency. Those differ, and the difference is the whole alarm:

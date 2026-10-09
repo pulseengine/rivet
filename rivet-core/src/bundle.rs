@@ -506,6 +506,7 @@ mod tests {
     // REQ-168 / #428: bundling a graph sink (a requirement that everything
     // links TO but which links OUT to nothing) must include its realizers
     // when --incoming is set, and the order must be deterministic.
+    // rivet: verifies REQ-168
     #[test]
     fn incoming_includes_backlink_sources_deterministically() {
         use crate::links::LinkGraph;

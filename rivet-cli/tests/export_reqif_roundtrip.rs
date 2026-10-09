@@ -149,6 +149,7 @@ fn reqif_export_has_specification_and_roundtrips_via_cli() {
 /// A file-format export (`reqif`/`generic-yaml`) to a directory `--output`
 /// fails with an actionable message, not a raw "Is a directory" OS error.
 /// REQ-182 (self-found by dogfooding).
+// rivet: verifies REQ-182
 #[test]
 fn export_reqif_to_directory_gives_actionable_error() {
     let proj = tempfile::tempdir().unwrap();
@@ -188,6 +189,7 @@ fn export_reqif_to_directory_gives_actionable_error() {
 /// `--all-features` build), `import` resolves to the distinct custom-WASM-adapter
 /// command, which has no `--format` — so this assertion must not run there
 /// (it was a perpetual red in the `--all-features` test-evidence job; #293).
+// rivet: verifies REQ-184
 #[cfg(not(feature = "wasm"))]
 #[test]
 fn import_alias_works_for_reqif() {

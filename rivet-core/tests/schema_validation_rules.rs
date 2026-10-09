@@ -138,6 +138,7 @@ fn aspice_status_gate_rules_loaded_and_fire() {
 /// verified requirement/design from approved -> implemented must not
 /// re-fire "needs an approved req/design"; only a target still BELOW
 /// approved (draft / proposed) should.
+// rivet: verifies REQ-165
 #[test]
 fn aspice_status_gate_accepts_forward_target_status() {
     let schema = Schema::merge(&[parse_schema("aspice")]);

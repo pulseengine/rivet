@@ -3136,6 +3136,7 @@ mod tests {
         (store, schema, graph, diagnostics)
     }
 
+    // rivet: verifies REQ-201
     #[test]
     fn render_section_graph_over_budget_skips_layout() {
         // REQ-201: a graph above the node budget must NOT be laid out (etch's
@@ -4096,6 +4097,7 @@ mod tests {
         assert!(nav.contains(">Results<"), "nav missing Results label");
     }
 
+    // rivet: partially-verifies REQ-196
     #[test]
     fn static_export_replaces_perpetual_aadl_loading_with_honest_note() {
         // A static HTML export has no `rivet serve` JS to fill the

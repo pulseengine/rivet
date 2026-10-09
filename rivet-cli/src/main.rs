@@ -22600,6 +22600,7 @@ mod lsp_tests {
 
     // ── artifact_id_completions (deterministic ordering, #415) ─────────
 
+    // rivet: partially-verifies REQ-204
     #[test]
     fn artifact_id_completions_are_sorted_by_id() {
         // Insert ids out of order; the completion list must come back
@@ -23617,6 +23618,7 @@ mod export_static_links_tests {
         );
     }
 
+    // rivet: partially-verifies REQ-105
     #[test]
     fn rewrites_absolute_links_with_depth_prefix() {
         let mut a = BTreeSet::new();

@@ -355,6 +355,7 @@ fn attests_transform_allowed_targets_are_enforced() {
 /// `requirement-verification` coverage rule and draws no gate error. A
 /// certificate whose recheck was never run fails validation when it
 /// claims `verifies` — it cannot silently count as coverage.
+// rivet: verifies REQ-222
 #[test]
 fn recheck_split_governs_verification_coverage() {
     let gate = "V-ordeal-cert-recheck-gates-verifies";

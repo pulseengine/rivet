@@ -216,6 +216,7 @@ fn coverage_filter_runs_cleanly() {
 
 // ── query: positional s-expression shorthand (REQ-187) ─────────────────
 
+// rivet: verifies REQ-187
 #[test]
 fn query_positional_sexpr_works_without_flag() {
     // `rivet query '(...)'` must work as a positional, mirroring
@@ -242,6 +243,7 @@ fn query_positional_sexpr_works_without_flag() {
     );
 }
 
+// rivet: verifies REQ-187
 #[test]
 fn query_positional_and_flag_are_equivalent() {
     // A single-match filter keeps this independent of result ordering (#415)
@@ -276,6 +278,7 @@ fn query_positional_and_flag_are_equivalent() {
     );
 }
 
+// rivet: verifies REQ-187
 #[test]
 fn query_without_any_sexpr_is_reported() {
     let output = Command::new(rivet_bin())

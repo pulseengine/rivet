@@ -550,6 +550,7 @@ mod tests {
     /// a "requirement needs an incoming verifies" rule from `compute_coverage`,
     /// and requires them to be the same set. The fixture's expected answer is
     /// pinned too, so agreement on an empty set cannot pass.
+    // rivet: partially-verifies REQ-231
     #[test]
     fn join_matches_the_coverage_uncovered_set() {
         use crate::coverage::compute_coverage;

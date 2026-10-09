@@ -1959,6 +1959,7 @@ artifacts:
 
     /// issue #360: `ModifyParams.set_description` (wired to the CLI
     /// `--set-description` flag) writes the top-level `description` field.
+    // rivet: partially-verifies REQ-136
     #[test]
     fn modify_applies_set_description_param() {
         let content = "\
@@ -2442,6 +2443,7 @@ artifacts:
         );
     }
 
+    // rivet: partially-verifies REQ-293
     #[test]
     fn set_field_replaces_block_literal_without_orphaning_body() {
         let out = set_rationale(
@@ -2497,6 +2499,7 @@ artifacts:
 
     /// The mode that reaches the user loudest: an orphaned body line containing
     /// `: ` makes the whole file unparseable, so every artifact in it vanishes.
+    // rivet: partially-verifies REQ-293
     #[test]
     fn set_field_replaces_block_literal_whose_body_contains_a_colon() {
         let out = set_rationale(
@@ -2556,6 +2559,7 @@ artifacts:
     }
 
     /// A following artifact must not be swallowed by the extent computation.
+    // rivet: partially-verifies REQ-293
     #[test]
     fn set_field_replacing_block_literal_leaves_the_next_artifact_intact() {
         let out = set_rationale(

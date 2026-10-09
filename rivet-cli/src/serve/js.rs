@@ -1276,6 +1276,7 @@ mod tests {
     /// broken/unsupported `build-wasm.sh` (it needs a local spar checkout +
     /// toolchain). They must give an honest "not bundled in this build" status
     /// with the tracking issue. REQ-197 / #468.
+    // rivet: partially-verifies REQ-197
     #[test]
     fn aadl_wasm_fallback_messages_are_honest() {
         assert!(

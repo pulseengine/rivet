@@ -758,6 +758,7 @@ mod tests {
 
     /// REQ-145: an explicit `<property name="rivet_tc_id" value="...">` on a
     /// testcase is the artifact id, overriding the classname/name heuristic.
+    // rivet: verifies REQ-145
     #[test]
     fn test_rivet_tc_id_property_wins() {
         let xml = r#"<?xml version="1.0"?>
@@ -790,6 +791,7 @@ mod tests {
     /// REQ-145 (back-compat): with no such property the classname/name
     /// behaviour is unchanged, and an unrelated suite-level/other property is
     /// ignored.
+    // rivet: verifies REQ-145
     #[test]
     fn test_no_rivet_tc_id_property_keeps_classname_name() {
         let xml = r#"<?xml version="1.0"?>
