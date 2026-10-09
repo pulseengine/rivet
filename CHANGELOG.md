@@ -6,6 +6,12 @@
 ## [Unreleased]
 
 ### Added
+- **CI traceability ratchet** (REQ-389) — a pull request now fails when it
+  adds a traceability-rule warning or error on an artifact at implemented,
+  verified, accepted or released that its base did not have, for example a
+  requirement promoted to implemented with no verifying test. The existing
+  backlog does not fail; only what a change adds does. Both trees are judged
+  by the pull request's own binary (`tools/ci/traceability-ratchet.py`).
 - **`rivet verify --dry-run`** (REQ-404, #1037) — reports the evidence and
   whether the artifact would be advanced, without writing; a refusal still
   exits non-zero, so a traceability sweep can preview its effect.
