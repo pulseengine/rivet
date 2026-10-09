@@ -244,6 +244,9 @@ ucas:
       Without bindings, the system cannot determine which artifacts belong
       to the variant. Validating the entire artifact set as if it were the
       variant gives a false PASS.
+    links:
+      - type: traces-to
+        target: CA-CORE-1
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-6
@@ -262,6 +265,9 @@ ucas:
       An invalid variant configuration (e.g., autonomous + ASIL B when the
       model requires ASIL D for autonomous) should be rejected before
       artifact validation begins. Skipping the solver masks configuration errors.
+    links:
+      - type: traces-to
+        target: CA-CORE-1
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-6
@@ -280,6 +286,9 @@ ucas:
       Binding validation must be invalidated when the artifact store changes.
       If salsa's dependency tracking doesn't cover the binding→artifact edge,
       stale bindings persist across incremental runs.
+    links:
+      - type: traces-to
+        target: CA-CORE-1
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-6
@@ -299,6 +308,9 @@ ucas:
       Nested quantifier scoping is the most error-prone part of the evaluator.
       Wrong scoping can make a traceability rule vacuously true (exists
       over the whole artifact set instead of the linked subset).
+    links:
+      - type: traces-to
+        target: CA-CORE-1
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-6
@@ -318,6 +330,9 @@ ucas:
       A variant that "passes" but has many unbound features is misleadingly
       reported as compliant. The CLI must report binding coverage alongside
       traceability coverage.
+    links:
+      - type: traces-to
+        target: CA-CLI-1
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-6

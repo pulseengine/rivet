@@ -27,6 +27,8 @@ artifacts:
         target: REQ-004
       - type: satisfies
         target: REQ-010
+      - type: traces-to
+        target: DD-058
     fields:
       rationale: >
         Eleven fixes in one release was not a deliberate architectural

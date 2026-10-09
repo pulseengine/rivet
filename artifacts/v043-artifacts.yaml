@@ -136,6 +136,8 @@ artifacts:
         target: REQ-010
       - type: satisfies
         target: REQ-061
+      - type: traces-to
+        target: DD-059
     fields:
       ai-usage: >
         The file-scope allow blocks were landed by a Claude Code
@@ -183,6 +185,8 @@ artifacts:
         target: REQ-004
       - type: satisfies
         target: REQ-010
+      - type: traces-to
+        target: DD-058
     fields:
       rationale: >
         The SCRC family exists because each lint catches a class of
@@ -227,6 +231,8 @@ artifacts:
         target: REQ-046
       - type: depends-on
         target: DD-050
+      - type: traces-to
+        target: REQ-004
     fields:
       rationale: >
         The user's v0.4.3 direction was explicit: "1 Rust Cargo Bazel

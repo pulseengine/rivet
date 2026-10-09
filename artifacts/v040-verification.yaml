@@ -31,6 +31,8 @@ artifacts:
         target: REQ-030
       - type: satisfies
         target: REQ-012
+      - type: traces-to
+        target: DD-054
     fields:
       rationale: >
         Tool qualification for ISO 26262 TCL 1 requires evidence that

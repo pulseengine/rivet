@@ -162,6 +162,9 @@ loss-scenarios:
       - No ETag or timestamp comparison before local writes
       - No merge/diff presentation for conflicting changes
       - OSLC client assumes remote is authoritative for all fields
+    links:
+      - type: traces-to
+        target: H-6
     provenance:
       created-by: ai-assisted
       timestamp: 2026-04-07T03:40:26Z
@@ -215,6 +218,9 @@ loss-scenarios:
       - Status mapping is hardcoded rather than configurable
       - No validation that all remote statuses have explicit mappings
       - External tool added new statuses after the mapping was created
+    links:
+      - type: traces-to
+        target: H-3
     provenance:
       created-by: ai-assisted
       timestamp: 2026-04-07T03:40:26Z
@@ -690,6 +696,11 @@ loss-scenarios:
       - Multiple rendering paths with inconsistent escaping
       - serve.rs generates HTML via string formatting, not a template engine
       - No Content-Security-Policy header to mitigate XSS
+    links:
+      - type: traces-to
+        target: L-2
+      - type: traces-to
+        target: L-3
     provenance:
       created-by: ai-assisted
       timestamp: 2026-04-07T03:40:26Z
