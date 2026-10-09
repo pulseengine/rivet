@@ -1366,7 +1366,9 @@ fn test_schema_metadata_loading() {
     // `verifies` to feature + design-decision, so a dev project can record
     // a real verification measure without undeclared fields (#748 /
     // REQ-339).
-    assert_eq!(dev.schema.version, "0.4.0");
+    // 0.5.0: the optional `corrective` field exempts a defect-fixing
+    // requirement from requirement-coverage (REQ-389).
+    assert_eq!(dev.schema.version, "0.5.0");
     assert!(
         dev.schema.description.is_some(),
         "dev schema should have a description"

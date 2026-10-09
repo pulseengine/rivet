@@ -9,7 +9,7 @@
 
 schema:
   name: dev
-  version: "0.4.0"
+  version: "0.5.0"
   extends: [common]
   description: >
     Software development tracking types. Used to manage requirements,
@@ -44,6 +44,13 @@ artifact-types:
           where kind is one of file | url | github | oslc | reqif |
           polarion. Phase 1 only verifies kind: file. See
           `rivet docs schema-cited-sources` for the full reference.
+      - name: corrective
+        type: boolean
+        required: false
+        description: >
+          The requirement fixes a defect or closes a gap. It is satisfied by
+          its fix, not by a feature or design decision, so it is exempt from
+          requirement-coverage; it still needs verification.
     link-fields:
       - name: satisfies
         link-type: satisfies
@@ -242,6 +249,7 @@ traceability-rules:
     required-backlink: satisfies
     from-types: [design-decision, feature]
     severity: warning
+    exempt-when-field: corrective
 
   # #555: close the right side of the V. `verifies` exists as a link type but
   # nothing flagged a requirement that is implemented yet has zero tests/
