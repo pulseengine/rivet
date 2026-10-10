@@ -147,8 +147,18 @@ fn build_argv(input: &ArgvInput) -> Vec<String> {
 /// `{"error": ...}` on stdout with exit 2 rather than going quiet. The only
 /// case this exempts is the one where the user explicitly asked for help.
 fn is_clap_short_circuit(argv: &[String]) -> bool {
-    argv.iter()
-        .any(|a| a == "--help" || a == "-h" || a == "--version" || a == "-V")
+    argv.iter().any(|a| {
+        a == "--help"
+            || a == "--version"
+            // A short-flag cluster (`-h`, `-he-h-eln`) that contains `h` or
+            // `V` may request help or the version, which clap prints as text
+            // with exit 0 whatever `--format` says. Conservative: a cluster
+            // where `h` is a flag's value (`-th`) is skipped too.
+            || (a.len() >= 2
+                && a.starts_with('-')
+                && !a.starts_with("--")
+                && a[1..].chars().any(|c| c == 'h' || c == 'V'))
+    })
 }
 
 /// Returns true if the argv requested JSON output.
