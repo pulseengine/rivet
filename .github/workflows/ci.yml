@@ -1406,14 +1406,24 @@ jobs:
           # No `+nightly`: that selects whatever toolchain is named `nightly`
           # on the runner and bypasses the REQ-267 pin, which the toolchain
           # step above made the default.
-          TARGETS=$(cargo fuzz list 2>/dev/null || true)
+          #
+          # `--target` is the host triple. install-action ships a musl build of
+          # cargo-fuzz, and cargo-fuzz defaults to the triple it was built for,
+          # so every target failed to compile (sanitizer vs static libc) while
+          # `|| true` kept this step green: it fuzzed nothing. The build is
+          # now a step of its own that fails loudly; only a fuzz run's finding
+          # stays non-blocking.
+          set -euo pipefail
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          TARGETS="$(cargo fuzz list)"
           if [ -z "$TARGETS" ]; then
             echo "::notice::No fuzz targets defined — skipping"
             exit 0
           fi
+          cargo fuzz build --target "$host"
           for target in $TARGETS; do
             echo "::group::Fuzzing $target"
-            cargo fuzz run "$target" -- -max_total_time=30 || true
+            cargo fuzz run --target "$host" "$target" -- -max_total_time=30 || true
             echo "::endgroup::"
           done
 
