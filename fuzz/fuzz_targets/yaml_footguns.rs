@@ -129,10 +129,17 @@ fn probe(yaml: &str) {
             );
             // Link targets must also be source-present substrings.
             for l in &a.links {
-                assert!(
-                    !l.target.is_empty(),
-                    "silent-accept: link with empty target (phantom link)\nYAML:\n{yaml}"
-                );
+                // A literally written `target: ""` is preserved, not
+                // synthesised, and validation rejects it as a broken link
+                // (maintainer decision: both validate paths error). Only an
+                // empty target the source never wrote is a phantom.
+                if l.target.is_empty() {
+                    assert!(
+                        writes_empty_target(yaml),
+                        "silent-accept: link with empty target (phantom link)\nYAML:\n{yaml}"
+                    );
+                    continue;
+                }
                 assert!(
                     yaml.contains(&l.target),
                     "silent-accept: link target {:?} not present in source\nYAML:\n{yaml}",
@@ -153,10 +160,13 @@ fn probe(yaml: &str) {
             );
         }
         for l in &a.links {
-            assert!(
-                !l.target.is_empty(),
-                "silent-accept: yaml_hir phantom link (empty target)\nYAML:\n{yaml}"
-            );
+            if l.target.is_empty() {
+                assert!(
+                    writes_empty_target(yaml),
+                    "silent-accept: yaml_hir phantom link (empty target)\nYAML:\n{yaml}"
+                );
+                continue;
+            }
             assert!(
                 yaml.contains(&l.target),
                 "silent-accept: yaml_hir link target {:?} not present in source\nYAML:\n{yaml}",
@@ -390,4 +400,9 @@ fn replace_field_value(yaml: &str, field: &str, new_value: &str) -> String {
         }
     }
     out
+}
+
+/// Whether the source literally writes an empty link target.
+fn writes_empty_target(yaml: &str) -> bool {
+    yaml.contains("target: \"\"") || yaml.contains("target: ''")
 }

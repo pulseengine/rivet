@@ -14364,3 +14364,46 @@ fn corrective_requirements_are_exempt_from_requirement_coverage_only() {
         "coverage leaves the exempt source out: {rule}"
     );
 }
+
+/// An explicit `target: ""` is a malformed link: both validate paths report it
+/// as a broken link (maintainer decision). The salsa path used to drop it, so
+/// the default `rivet validate` passed where `--direct` failed. Found by the
+/// yaml_footguns fuzzer, which failed on it every scheduled run.
+// rivet: verifies REQ-028
+#[test]
+fn an_empty_link_target_fails_validate_on_both_paths() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    let dirs = dir.to_str().unwrap();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--dir", dirs])
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts").join("requirements.yaml"),
+        "artifacts:\n  \
+         - id: REQ-001\n    type: requirement\n    title: Seed\n    status: draft\n    \
+         links:\n      - type: derives-from\n        target: \"\"\n",
+    )
+    .unwrap();
+    for args in [&["validate"][..], &["validate", "--direct"][..]] {
+        let out = Command::new(rivet_bin())
+            .args(["--project", dirs])
+            .args(args)
+            .output()
+            .expect("validate");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !out.status.success(),
+            "{args:?} must fail on an empty link target; stdout:\n{text}"
+        );
+        assert!(
+            text.contains("link 'derives-from' targets '' which does not exist"),
+            "{args:?} must name the broken link; stdout:\n{text}"
+        );
+    }
+}

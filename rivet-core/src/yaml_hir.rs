@@ -1044,6 +1044,11 @@ fn extract_links(value_node: &SyntaxNode, diagnostics: &mut Vec<ParseDiagnostic>
         // Issue #288: when `target:` is a mapping (cross-org link
         // types), the structured payload lands here.
         let mut external: Option<crate::model::ExternalLinkTarget> = None;
+        // An explicit `target:` key, even an empty one. `target: ""` is a
+        // malformed link, not "no link": it is kept so validation reports the
+        // broken link, as the serde (`--direct`) path does. Dropping it here
+        // made the default validate PASS where --direct reported an error.
+        let mut target_present = false;
 
         for entry in map.children() {
             if node_kind(&entry) != SyntaxKind::MappingEntry {
@@ -1065,6 +1070,7 @@ fn extract_links(value_node: &SyntaxNode, diagnostics: &mut Vec<ParseDiagnostic>
                     }
                 }
                 "target" => {
+                    target_present = true;
                     // Issue #288: a structured `target:` is a YAML
                     // mapping nested under the link entry. The CST
                     // may surface this as a `Mapping` child of the
@@ -1102,7 +1108,7 @@ fn extract_links(value_node: &SyntaxNode, diagnostics: &mut Vec<ParseDiagnostic>
             }
         }
 
-        if !link_type.is_empty() && !target.is_empty() {
+        if !link_type.is_empty() && target_present {
             links.push(Link {
                 link_type,
                 target,
@@ -1142,7 +1148,9 @@ fn extract_links_via_serde(
     match rivet_yaml::from_str::<Vec<Link>>(trimmed) {
         Ok(raws) => raws
             .into_iter()
-            .filter(|l| !l.link_type.is_empty() && !l.target.is_empty())
+            // An empty `target` is kept for validation to report (see the
+            // block form above); only a typeless entry is dropped.
+            .filter(|l| !l.link_type.is_empty())
             .collect(),
         Err(err) => {
             diagnostics.push(ParseDiagnostic {
@@ -2939,6 +2947,42 @@ hazards:
             "null shorthand must not yield a phantom link; got links={:?}",
             art.links
         );
+    }
+
+    /// An explicit `target: ""` is a malformed link, not "no link": the rowan
+    /// path keeps it, block and flow form alike, so validation reports it as
+    /// the serde path does. (Shorthand `losses: null` above stays "no link".)
+    // rivet: verifies REQ-028
+    #[test]
+    fn explicit_empty_link_target_is_kept_for_validation() {
+        let schema = test_schema();
+        for source in [
+            "hazards:\n  - id: H-001\n    title: T\n    links:\n      - type: leads-to-loss\n        target: \"\"\n",
+            "hazards:\n  - id: H-001\n    title: T\n    links: [{type: leads-to-loss, target: \"\"}]\n",
+        ] {
+            let result = extract_schema_driven(source, &schema, None);
+            let art = &result.artifacts[0].artifact;
+            let empty: Vec<&str> = art
+                .links
+                .iter()
+                .filter(|l| l.target.is_empty())
+                .map(|l| l.link_type.as_str())
+                .collect();
+            assert_eq!(empty, vec!["leads-to-loss"], "source:\n{source}");
+        }
+        // A link needs both keys: an entry without `type:` or without
+        // `target:` is dropped, and a complete one is kept.
+        let source = "hazards:\n  - id: H-001\n    title: T\n    links:\n      \
+                      - target: L-1\n      - type: leads-to-loss\n      \
+                      - type: leads-to-loss\n        target: L-2\n";
+        let result = extract_schema_driven(source, &schema, None);
+        let kept: Vec<(&str, &str)> = result.artifacts[0]
+            .artifact
+            .links
+            .iter()
+            .map(|l| (l.link_type.as_str(), l.target.as_str()))
+            .collect();
+        assert_eq!(kept, vec![("leads-to-loss", "L-2")]);
     }
 
     /// rivet: fixes REQ-028

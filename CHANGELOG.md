@@ -39,6 +39,11 @@
   block merges.
 
 ### Fixed
+- **`rivet validate` passed a link with an empty target** — an explicit
+  `target: ""` was dropped by the default (incremental) path, so `validate`
+  passed while `validate --direct` reported the broken link. Both paths now
+  report it. Shorthand `losses: null` still means "no link". Found by the
+  yaml_footguns fuzzer, which had failed on it on every scheduled run.
 - **Source markers lost ids** (REQ-389) — a marker naming several ids
   (`// rivet: verifies SC-15, UCA-D-3`) counted only the first, a dotted STPA
   id (`H-13.1`) was cut to its parent (`H-13`), and a file-level `//! rivet:
