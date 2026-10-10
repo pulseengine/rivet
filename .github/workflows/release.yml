@@ -248,8 +248,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@nightly
+      # REQ-267: the same dated nightly as ci.yml's nightly jobs.
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267)
         with:
+          toolchain: nightly-2026-07-11
           components: llvm-tools-preview
           targets: wasm32-wasip2
 

@@ -41,8 +41,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # REQ-267: the same dated nightly as ci.yml's nightly jobs; `cargo fuzz`
+      # below uses it as the default (no `+nightly`, which would bypass it).
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267)
+        with:
+          toolchain: nightly-2026-07-11
 
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
@@ -67,7 +71,7 @@ jobs:
           RIVET_BIN: ${{ github.workspace }}/target/release/rivet
         run: |
           cd fuzz
-          cargo +nightly fuzz run "$TARGET" -- \
+          cargo fuzz run "$TARGET" -- \
             -max_total_time=900 \
             -timeout=30 \
             -rss_limit_mb=2048
