@@ -1108,7 +1108,7 @@ fn extract_links(value_node: &SyntaxNode, diagnostics: &mut Vec<ParseDiagnostic>
             }
         }
 
-        if !link_type.is_empty() && (!target.is_empty() || target_present) {
+        if !link_type.is_empty() && target_present {
             links.push(Link {
                 link_type,
                 target,
@@ -2970,6 +2970,19 @@ hazards:
                 .collect();
             assert_eq!(empty, vec!["leads-to-loss"], "source:\n{source}");
         }
+        // A link needs both keys: an entry without `type:` or without
+        // `target:` is dropped, and a complete one is kept.
+        let source = "hazards:\n  - id: H-001\n    title: T\n    links:\n      \
+                      - target: L-1\n      - type: leads-to-loss\n      \
+                      - type: leads-to-loss\n        target: L-2\n";
+        let result = extract_schema_driven(source, &schema, None);
+        let kept: Vec<(&str, &str)> = result.artifacts[0]
+            .artifact
+            .links
+            .iter()
+            .map(|l| (l.link_type.as_str(), l.target.as_str()))
+            .collect();
+        assert_eq!(kept, vec![("leads-to-loss", "L-2")]);
     }
 
     /// rivet: fixes REQ-028
