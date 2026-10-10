@@ -196,11 +196,16 @@ fn probe(yaml: &str) {
             }
         }
     }
+    // The HIR reads `target: null` as the text `null`. That is a silent
+    // coercion only when nothing rejects the document: the serde path fails
+    // to parse a null target, and that parse error fails `rivet validate` on
+    // both paths (while the HIR's link to `null` is reported as broken). So
+    // a null-ish HIR target is a finding only when serde accepted the input.
     for sa in &hir.artifacts {
         for l in &sa.artifact.links {
             let t = l.target.trim();
             assert!(
-                t != "null" && t != "~" && t != "NULL" && t != "Null",
+                serde_result.is_err() || (t != "null" && t != "~" && t != "NULL" && t != "Null"),
                 "silent-accept: hir link target coerced from YAML null: {:?}\nYAML:\n{yaml}",
                 l.target
             );
