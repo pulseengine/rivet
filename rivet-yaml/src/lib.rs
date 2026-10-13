@@ -19,6 +19,8 @@
 /// Lossless rowan CST of a YAML document (moved from rivet-core, REQ-346):
 /// the base of rivet's own parser.
 pub mod cst;
+/// Scalar text from the CST: folding, unescaping, block scalars (REQ-346).
+pub mod cst_text;
 mod error;
 #[allow(
     clippy::unwrap_used,
