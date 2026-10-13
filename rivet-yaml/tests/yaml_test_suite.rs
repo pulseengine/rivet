@@ -92,6 +92,7 @@ fn cases(root: &Path) -> Vec<PathBuf> {
     out
 }
 
+// rivet: verifies REQ-346
 #[test]
 fn rivet_yaml_is_never_silently_wrong_on_the_yaml_test_suite() {
     let Ok(root) = std::env::var("YAML_TEST_SUITE") else {

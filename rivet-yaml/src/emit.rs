@@ -505,6 +505,7 @@ mod tests {
     }
 
     /// Expected text is serde_yaml's, from `tests/golden/emitter_strings.txt`.
+    // rivet: verifies REQ-346
     #[test]
     fn scalar_styles_follow_libyaml() {
         assert_eq!(s("a b"), "a b\n");
@@ -527,6 +528,7 @@ mod tests {
         );
     }
 
+    // rivet: verifies REQ-346
     #[test]
     fn block_layout_matches_serde_yaml() {
         let v: Value = crate::from_str(

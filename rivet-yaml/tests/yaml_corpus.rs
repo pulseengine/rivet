@@ -80,6 +80,7 @@ fn yaml_blocks(markdown: &str) -> Vec<String> {
 
 /// Parse → emit → parse gives back the same value, and emitting that again
 /// gives the same text.
+// rivet: verifies REQ-346
 #[test]
 fn every_corpus_document_round_trips_through_the_emitter() {
     let docs = documents();
@@ -112,6 +113,7 @@ fn every_corpus_document_round_trips_through_the_emitter() {
 }
 
 /// The emitter writes each string exactly as serde_yaml did.
+// rivet: verifies REQ-346
 #[test]
 fn emitter_matches_the_serde_yaml_golden() {
     let golden = include_str!("golden/emitter_strings.txt");

@@ -977,6 +977,7 @@ mod tests {
 
     /// Plain scalars take their YAML 1.2 core type when the target accepts
     /// anything, and their text when it asks for a string.
+    // rivet: verifies REQ-346
     #[test]
     fn plain_scalars_are_typed_by_the_target() {
         let v: Value =
@@ -1086,6 +1087,7 @@ mod tests {
         Requirement,
     }
 
+    // rivet: verifies REQ-346
     #[test]
     fn typed_errors_carry_the_path_and_position() {
         let a: Vec<Art> = from_str("- id: R-1\n  kind: requirement\n  links: [R-2]\n").unwrap();
