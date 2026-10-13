@@ -21,6 +21,7 @@
 pub mod cst;
 /// Scalar text from the CST: folding, unescaping, block scalars (REQ-346).
 pub mod cst_text;
+mod de;
 mod error;
 #[allow(
     clippy::unwrap_used,
@@ -126,7 +127,27 @@ pub fn from_str<T>(s: &str) -> Result<T>
 where
     T: serde::de::DeserializeOwned,
 {
+    de::from_str(s)
+}
+
+/// The serde_yaml delegate [`from_str`] used before REQ-346 S3, kept only for
+/// the differential tests until serde_yaml is removed.
+#[doc(hidden)]
+pub fn __from_str_serde_yaml<T>(s: &str) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
     serde_yaml::from_str(s).map_err(Error::from)
+}
+
+/// rivet's own deserializer (REQ-346 S3), compared against [`from_str`]'s
+/// serde_yaml delegate by the differential tests until it replaces it.
+#[doc(hidden)]
+pub fn __from_str_owned<T>(s: &str) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    de::from_str(s)
 }
 
 /// Serialize a `T` to YAML text.

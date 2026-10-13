@@ -726,14 +726,18 @@ fn divergence_probe() {
             1,
             1,
         ),
-        // Both fail, differently: serde rejects the merge key outright, rowan
-        // yields nothing.
+        // Both fail loudly, differently. Merge keys are not supported, so the
+        // second artifact lacks `type`: the serde-shaped reader rejects the
+        // file ("artifacts[1]: missing field `type`"), and since the CST lexes
+        // anchors (REQ-346) rowan reads both artifacts and validation reports
+        // R-2's empty type ("unknown artifact type ''"). Before anchors were
+        // lexed rowan yielded nothing here.
         (
             "anchor+merge",
             "artifacts:\n  - &b\n    id: R-1\n    type: requirement\n    title: t\n    status: draft\n  - <<: *b\n    id: R-2\n"
                 .to_owned(),
             -1,
-            0,
+            2,
         ),
         // Rowan is the MORE permissive path here: serde rejects a
         // multi-document stream, rowan parses the first document.

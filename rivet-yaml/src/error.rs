@@ -17,8 +17,21 @@ pub struct Error(Box<ErrorImpl>);
 /// Alias for a `Result` with the error type `rivet_yaml::Error`.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Where in the input an error arose: serde_yaml's `Pos`, rendered the same
+/// way (`path: message at line L column C`).
+pub(crate) struct Pos {
+    pub(crate) path: String,
+    /// 1-based line and column.
+    pub(crate) line: usize,
+    pub(crate) column: usize,
+}
+
 pub(crate) enum ErrorImpl {
-    Message(String),
+    Message(String, Option<Pos>),
+    /// The CST rejected the input (rivet's own parser, REQ-346).
+    Syntax(String, Pos),
+    RecursionLimitExceeded,
+    BytesUnsupported,
     /// A parse or emit error from the step-2 delegate. See the module docs.
     Delegate(serde_yaml::Error),
     ScalarInMerge,
@@ -42,7 +55,21 @@ impl From<serde_yaml::Error> for Error {
 impl ErrorImpl {
     fn message(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorImpl::Message(msg) => f.write_str(msg),
+            ErrorImpl::Message(msg, None) => f.write_str(msg),
+            ErrorImpl::Message(msg, Some(pos)) => {
+                if pos.path != "." {
+                    write!(f, "{}: ", pos.path)?;
+                }
+                f.write_str(msg)?;
+                write!(f, " at line {} column {}", pos.line, pos.column)
+            }
+            ErrorImpl::Syntax(msg, pos) => {
+                write!(f, "{msg} at line {} column {}", pos.line, pos.column)
+            }
+            ErrorImpl::RecursionLimitExceeded => f.write_str("recursion limit exceeded"),
+            ErrorImpl::BytesUnsupported => {
+                f.write_str("serialization and deserialization of bytes in YAML is not implemented")
+            }
             ErrorImpl::Delegate(err) => Display::fmt(err, f),
             ErrorImpl::ScalarInMerge => {
                 f.write_str("expected a mapping or list of mappings for merging, but found scalar")
@@ -64,7 +91,10 @@ impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self.0.as_ref() {
             ErrorImpl::Delegate(err) => err.source(),
-            ErrorImpl::Message(_)
+            ErrorImpl::Message(..)
+            | ErrorImpl::Syntax(..)
+            | ErrorImpl::RecursionLimitExceeded
+            | ErrorImpl::BytesUnsupported
             | ErrorImpl::ScalarInMerge
             | ErrorImpl::TaggedInMerge
             | ErrorImpl::ScalarInMergeElement
@@ -86,7 +116,10 @@ impl Debug for Error {
         let inner = self.0.as_ref();
         match inner {
             ErrorImpl::Delegate(err) => Debug::fmt(err, f),
-            ErrorImpl::Message(_)
+            ErrorImpl::Message(..)
+            | ErrorImpl::Syntax(..)
+            | ErrorImpl::RecursionLimitExceeded
+            | ErrorImpl::BytesUnsupported
             | ErrorImpl::ScalarInMerge
             | ErrorImpl::TaggedInMerge
             | ErrorImpl::ScalarInMergeElement
@@ -108,12 +141,23 @@ impl Debug for Error {
 
 impl serde::ser::Error for Error {
     fn custom<T: Display>(msg: T) -> Self {
-        new(ErrorImpl::Message(msg.to_string()))
+        new(ErrorImpl::Message(msg.to_string(), None))
     }
 }
 
 impl serde::de::Error for Error {
     fn custom<T: Display>(msg: T) -> Self {
-        new(ErrorImpl::Message(msg.to_string()))
+        new(ErrorImpl::Message(msg.to_string(), None))
+    }
+}
+
+impl Error {
+    /// Attach a position to an error a `Visitor` raised without one, as
+    /// serde_yaml's `fix_mark` does. Errors that already carry one keep it.
+    pub(crate) fn fix_pos(mut self, pos: impl FnOnce() -> Pos) -> Self {
+        if let ErrorImpl::Message(_, none @ None) = self.0.as_mut() {
+            *none = Some(pos());
+        }
+        self
     }
 }
