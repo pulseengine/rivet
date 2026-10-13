@@ -891,8 +891,9 @@ jobs:
         with:
           tool: cargo-nextest
       - name: Run Miri over the unsafe/CST surface
-        # sexpr.rs + yaml_cst.rs hold the only real `unsafe` in rivet-core
-        # (`std::mem::transmute` of raw SyntaxKind for the rowan parsers).
+        # sexpr.rs holds rivet-core's `std::mem::transmute` of raw SyntaxKind;
+        # the YAML CST (rivet-yaml/src/cst.rs since REQ-346) uses a safe table
+        # instead, and its tests still exercise the rowan fork's unsafe internals.
         # bazel.rs has the third transmute but its tests touch salsa/process
         # internals — covered by the nightly full sweep, not the PR gate.
         #
@@ -904,8 +905,8 @@ jobs:
         # so we gate on the stricter one. (rust-analyzer/rowan #210/#211/#212 are
         # all closed-unmerged; upstream is rewriting rowan — Cargo.toml.)
         run: |
-          cargo miri nextest run -p rivet-core --lib --test-threads 24 \
-            -E 'test(sexpr::) | test(yaml_cst::)'
+          cargo miri nextest run -p rivet-core -p rivet-yaml --lib --test-threads 24 \
+            -E 'test(sexpr::) | test(cst::)'
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation"
         timeout-minutes: 20
@@ -933,7 +934,7 @@ jobs:
           tool: cargo-nextest
       - name: Run full Miri sweep
         run: |
-          cargo miri nextest run -p rivet-core --lib --test-threads 24 \
+          cargo miri nextest run -p rivet-core -p rivet-yaml --lib --test-threads 24 \
             -E 'not (test(bazel) | test(db) | test(externals) | test(export) | test(providers) | test(test_scanner) | test(yaml_edit) | test(markdown) | test(parse_actual_hazards) | test(stpa_hazard) | test(yaml_hir) | test(feature_model) | test(doc_check) | test(sexpr_eval) | test(query_embed) | test(parse_query) | test(execute_sexpr))'
         timeout-minutes: 90
         env:
@@ -1333,7 +1334,7 @@ jobs:
           # it to tell "ran fine, nothing in scope" apart from "crashed"
           # — both leave no mutants-out/.
           set +e
-          cargo mutants -p rivet-core --timeout 60 --jobs 1 --output mutants-out --in-diff pr.diff -- --lib
+          cargo mutants -p rivet-core -p rivet-yaml --timeout 60 --jobs 1 --output mutants-out --in-diff pr.diff -- --lib
           echo "$?" > mutants-exit-status
           set -e
           echo "cargo-mutants exit status: $(cat mutants-exit-status)"

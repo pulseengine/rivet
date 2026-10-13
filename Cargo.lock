@@ -3079,6 +3079,7 @@ version = "0.41.0"
 dependencies = [
  "indexmap 2.14.0",
  "itoa",
+ "rowan 0.16.2",
  "ryu",
  "serde",
  "serde_json",

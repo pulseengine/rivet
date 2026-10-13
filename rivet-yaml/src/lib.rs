@@ -16,6 +16,9 @@
 
 #![forbid(unsafe_code)]
 
+/// Lossless rowan CST of a YAML document (moved from rivet-core, REQ-346):
+/// the base of rivet's own parser.
+pub mod cst;
 mod error;
 #[allow(
     clippy::unwrap_used,

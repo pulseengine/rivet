@@ -122,6 +122,41 @@ impl From<SyntaxKind> for rowan::SyntaxKind {
     }
 }
 
+/// Every `SyntaxKind`, indexed by its discriminant.
+const SYNTAX_KINDS: [SyntaxKind; SyntaxKind::Error as usize + 1] = {
+    use SyntaxKind::*;
+    [
+        Whitespace,
+        Newline,
+        Comment,
+        Dash,
+        Colon,
+        Comma,
+        LBracket,
+        RBracket,
+        LBrace,
+        RBrace,
+        Pipe,
+        Gt,
+        PlainScalar,
+        SingleQuotedScalar,
+        DoubleQuotedScalar,
+        BlockScalarLine,
+        DirectiveMarker,
+        DocumentEnd,
+        Root,
+        Mapping,
+        MappingEntry,
+        Key,
+        Value,
+        Sequence,
+        SequenceItem,
+        FlowSequence,
+        BlockScalar,
+        Error,
+    ]
+};
+
 // ── Language definition ─────────────────────────────────────────────────
 
 /// Rowan language tag for YAML.
@@ -132,9 +167,13 @@ impl rowan::Language for YamlLanguage {
     type Kind = SyntaxKind;
 
     fn kind_from_raw(raw: rowan::SyntaxKind) -> SyntaxKind {
-        assert!(raw.0 <= SyntaxKind::Error as u16);
-        // SAFETY: SyntaxKind is repr(u16) with contiguous discriminants.
-        unsafe { std::mem::transmute(raw.0) }
+        // A table lookup rather than a transmute: rivet-yaml forbids unsafe
+        // code. `syntax_kind_table_matches_discriminants` pins the table to
+        // the enum, so a new variant out of place fails a test, not memory.
+        match SYNTAX_KINDS.get(usize::from(raw.0)) {
+            Some(kind) => *kind,
+            None => panic!("raw syntax kind {} is out of range", raw.0),
+        }
     }
 
     fn kind_to_raw(kind: SyntaxKind) -> rowan::SyntaxKind {
@@ -1304,6 +1343,18 @@ pub fn offset_to_line_col(line_starts: &[u32], offset: u32) -> (u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn syntax_kind_table_matches_discriminants() {
+        for (i, kind) in SYNTAX_KINDS.iter().enumerate() {
+            assert_eq!(
+                *kind as usize, i,
+                "{kind:?} is out of place in SYNTAX_KINDS"
+            );
+            let raw = rowan::SyntaxKind(u16::try_from(i).unwrap());
+            assert_eq!(<YamlLanguage as rowan::Language>::kind_from_raw(raw), *kind);
+        }
+    }
 
     fn parse_and_check(source: &str) -> SyntaxNode {
         let (green, errors) = parse(source);
