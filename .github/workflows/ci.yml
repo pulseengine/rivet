@@ -1024,40 +1024,95 @@ jobs:
   mutants-core:
     name: Mutation Testing (rivet-core ${{ matrix.shard_id }})
     needs: [test]
-    # NON-GATING (continue-on-error) and runner-heavy: 16 shards x 45min on the
-    # self-hosted lean-mem pool. Run it NIGHTLY (+ manual) only, not every push —
+    # NON-GATING (continue-on-error) and runner-heavy on the self-hosted
+    # lean-mem pool. 64 shards (maintainer decision, 2026-10-13): at 16 shards a
+    # shard held ~374 mutants, about three hours at --jobs 2, so every shard hit
+    # the 45-minute timeout and was cancelled — no shard completed from at
+    # least 2026-10-02 to 2026-10-13. A 64th holds ~94 (~50 minutes with the
+    # baseline build), so each shard can finish and report; the total compute
+    # is unchanged. Run it NIGHTLY (+ manual) only, not every push —
     # on every push it saturated the pool and queued the gating jobs for hours
     # (#498). The hard-gate rivet-cli mutants run per-push in `mutants-cli` below.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, linux, x64, lean-mem]
-    timeout-minutes: 45
+    timeout-minutes: 75
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { crate: rivet-core, shard: '0/16', shard_id: '00-of-16' }
-          - { crate: rivet-core, shard: '1/16', shard_id: '01-of-16' }
-          - { crate: rivet-core, shard: '2/16', shard_id: '02-of-16' }
-          - { crate: rivet-core, shard: '3/16', shard_id: '03-of-16' }
-          - { crate: rivet-core, shard: '4/16', shard_id: '04-of-16' }
-          - { crate: rivet-core, shard: '5/16', shard_id: '05-of-16' }
-          - { crate: rivet-core, shard: '6/16', shard_id: '06-of-16' }
-          - { crate: rivet-core, shard: '7/16', shard_id: '07-of-16' }
-          - { crate: rivet-core, shard: '8/16', shard_id: '08-of-16' }
-          - { crate: rivet-core, shard: '9/16', shard_id: '09-of-16' }
-          - { crate: rivet-core, shard: '10/16', shard_id: '10-of-16' }
-          - { crate: rivet-core, shard: '11/16', shard_id: '11-of-16' }
-          - { crate: rivet-core, shard: '12/16', shard_id: '12-of-16' }
-          - { crate: rivet-core, shard: '13/16', shard_id: '13-of-16' }
-          - { crate: rivet-core, shard: '14/16', shard_id: '14-of-16' }
-          - { crate: rivet-core, shard: '15/16', shard_id: '15-of-16' }
+          - { crate: rivet-core, shard: '0/64', shard_id: '00-of-64' }
+          - { crate: rivet-core, shard: '1/64', shard_id: '01-of-64' }
+          - { crate: rivet-core, shard: '2/64', shard_id: '02-of-64' }
+          - { crate: rivet-core, shard: '3/64', shard_id: '03-of-64' }
+          - { crate: rivet-core, shard: '4/64', shard_id: '04-of-64' }
+          - { crate: rivet-core, shard: '5/64', shard_id: '05-of-64' }
+          - { crate: rivet-core, shard: '6/64', shard_id: '06-of-64' }
+          - { crate: rivet-core, shard: '7/64', shard_id: '07-of-64' }
+          - { crate: rivet-core, shard: '8/64', shard_id: '08-of-64' }
+          - { crate: rivet-core, shard: '9/64', shard_id: '09-of-64' }
+          - { crate: rivet-core, shard: '10/64', shard_id: '10-of-64' }
+          - { crate: rivet-core, shard: '11/64', shard_id: '11-of-64' }
+          - { crate: rivet-core, shard: '12/64', shard_id: '12-of-64' }
+          - { crate: rivet-core, shard: '13/64', shard_id: '13-of-64' }
+          - { crate: rivet-core, shard: '14/64', shard_id: '14-of-64' }
+          - { crate: rivet-core, shard: '15/64', shard_id: '15-of-64' }
+          - { crate: rivet-core, shard: '16/64', shard_id: '16-of-64' }
+          - { crate: rivet-core, shard: '17/64', shard_id: '17-of-64' }
+          - { crate: rivet-core, shard: '18/64', shard_id: '18-of-64' }
+          - { crate: rivet-core, shard: '19/64', shard_id: '19-of-64' }
+          - { crate: rivet-core, shard: '20/64', shard_id: '20-of-64' }
+          - { crate: rivet-core, shard: '21/64', shard_id: '21-of-64' }
+          - { crate: rivet-core, shard: '22/64', shard_id: '22-of-64' }
+          - { crate: rivet-core, shard: '23/64', shard_id: '23-of-64' }
+          - { crate: rivet-core, shard: '24/64', shard_id: '24-of-64' }
+          - { crate: rivet-core, shard: '25/64', shard_id: '25-of-64' }
+          - { crate: rivet-core, shard: '26/64', shard_id: '26-of-64' }
+          - { crate: rivet-core, shard: '27/64', shard_id: '27-of-64' }
+          - { crate: rivet-core, shard: '28/64', shard_id: '28-of-64' }
+          - { crate: rivet-core, shard: '29/64', shard_id: '29-of-64' }
+          - { crate: rivet-core, shard: '30/64', shard_id: '30-of-64' }
+          - { crate: rivet-core, shard: '31/64', shard_id: '31-of-64' }
+          - { crate: rivet-core, shard: '32/64', shard_id: '32-of-64' }
+          - { crate: rivet-core, shard: '33/64', shard_id: '33-of-64' }
+          - { crate: rivet-core, shard: '34/64', shard_id: '34-of-64' }
+          - { crate: rivet-core, shard: '35/64', shard_id: '35-of-64' }
+          - { crate: rivet-core, shard: '36/64', shard_id: '36-of-64' }
+          - { crate: rivet-core, shard: '37/64', shard_id: '37-of-64' }
+          - { crate: rivet-core, shard: '38/64', shard_id: '38-of-64' }
+          - { crate: rivet-core, shard: '39/64', shard_id: '39-of-64' }
+          - { crate: rivet-core, shard: '40/64', shard_id: '40-of-64' }
+          - { crate: rivet-core, shard: '41/64', shard_id: '41-of-64' }
+          - { crate: rivet-core, shard: '42/64', shard_id: '42-of-64' }
+          - { crate: rivet-core, shard: '43/64', shard_id: '43-of-64' }
+          - { crate: rivet-core, shard: '44/64', shard_id: '44-of-64' }
+          - { crate: rivet-core, shard: '45/64', shard_id: '45-of-64' }
+          - { crate: rivet-core, shard: '46/64', shard_id: '46-of-64' }
+          - { crate: rivet-core, shard: '47/64', shard_id: '47-of-64' }
+          - { crate: rivet-core, shard: '48/64', shard_id: '48-of-64' }
+          - { crate: rivet-core, shard: '49/64', shard_id: '49-of-64' }
+          - { crate: rivet-core, shard: '50/64', shard_id: '50-of-64' }
+          - { crate: rivet-core, shard: '51/64', shard_id: '51-of-64' }
+          - { crate: rivet-core, shard: '52/64', shard_id: '52-of-64' }
+          - { crate: rivet-core, shard: '53/64', shard_id: '53-of-64' }
+          - { crate: rivet-core, shard: '54/64', shard_id: '54-of-64' }
+          - { crate: rivet-core, shard: '55/64', shard_id: '55-of-64' }
+          - { crate: rivet-core, shard: '56/64', shard_id: '56-of-64' }
+          - { crate: rivet-core, shard: '57/64', shard_id: '57-of-64' }
+          - { crate: rivet-core, shard: '58/64', shard_id: '58-of-64' }
+          - { crate: rivet-core, shard: '59/64', shard_id: '59-of-64' }
+          - { crate: rivet-core, shard: '60/64', shard_id: '60-of-64' }
+          - { crate: rivet-core, shard: '61/64', shard_id: '61-of-64' }
+          - { crate: rivet-core, shard: '62/64', shard_id: '62-of-64' }
+          - { crate: rivet-core, shard: '63/64', shard_id: '63-of-64' }
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: mutants-${{ matrix.crate }}-${{ matrix.shard_id }}
+          # One cache for all shards: 64 per-shard caches would churn the
+          # repository's cache quota. The first shard to finish saves it.
+          key: mutants-${{ matrix.crate }}
       - name: Install cargo-mutants
         uses: taiki-e/install-action@v2
         with:
@@ -1282,7 +1337,7 @@ jobs:
   # same fetch-depth 0, same fail-closed evidence check, same exit-status
   # handling — but for rivet-core. Closes the gap where a PR that only
   # touches rivet-core got zero mutation coverage while a mutation check
-  # reported on it. The full-scope 16-shard `mutants-core` matrix above
+  # reported on it. The full-scope 64-shard `mutants-core` matrix above
   # stays schedule-only for the long tail (3677 mutants, known-surviving
   # ones outside PR diffs).
   #
