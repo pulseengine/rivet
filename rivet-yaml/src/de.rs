@@ -255,6 +255,17 @@ impl Builder<'_> {
     /// Tags (`!t`) are not supported. The CST lexes them as plain text, so
     /// they are caught here rather than read as strings that start with `!`.
     fn refuse_unsupported(&self, text: &str, offset: usize) -> Result<()> {
+        // A value that starts with a quote is a quoted scalar in YAML; the
+        // lexer hands back an unclosed one as plain text (it must, inside
+        // block scalar bodies), so here it is an error, not a string that
+        // happens to start with a quote.
+        if text.starts_with(['\'', '"']) {
+            return Err(syntax_error(
+                self.lines,
+                "found unterminated quoted scalar",
+                offset,
+            ));
+        }
         if text.starts_with('!') {
             return Err(syntax_error(
                 self.lines,
@@ -945,5 +956,178 @@ impl<'de> de::Deserializer<'de> for EmptyDe {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf unit_struct newtype_struct tuple tuple_struct enum
         identifier ignored_any
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "test code: a failure should panic with a clear message"
+)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::{Value, from_str};
+
+    fn err(src: &str) -> String {
+        from_str::<Value>(src).unwrap_err().to_string()
+    }
+
+    /// Plain scalars take their YAML 1.2 core type when the target accepts
+    /// anything, and their text when it asks for a string.
+    #[test]
+    fn plain_scalars_are_typed_by_the_target() {
+        let v: Value =
+            from_str("a: 1\nb: -2\nc: 1.5\nd: true\ne: ~\nf: x y\ng: '1'\nh: 012\n").unwrap();
+        assert_eq!(v["a"], Value::from(1u64));
+        assert_eq!(v["b"], Value::from(-2i64));
+        assert_eq!(v["c"], Value::from(1.5f64));
+        assert_eq!(v["d"], Value::Bool(true));
+        assert_eq!(v["e"], Value::Null);
+        assert_eq!(v["f"], Value::from("x y"));
+        assert_eq!(v["g"], Value::from("1"), "a quoted number stays a string");
+        assert_eq!(
+            v["h"],
+            Value::from("012"),
+            "a leading zero keeps digits a string"
+        );
+        let m: BTreeMap<String, String> = from_str("year: 2024\nflag: true\n").unwrap();
+        assert_eq!(m["year"], "2024");
+        assert_eq!(m["flag"], "true");
+    }
+
+    #[test]
+    fn options_units_and_empty_collections() {
+        let m: BTreeMap<String, Option<u32>> = from_str("a: 3\nb:\nc: null\n").unwrap();
+        assert_eq!(m["a"], Some(3));
+        assert_eq!(m["b"], None);
+        assert_eq!(m["c"], None);
+        let empty: BTreeMap<String, Vec<u8>> = from_str("a:\n").unwrap();
+        assert!(
+            empty["a"].is_empty(),
+            "an empty value reads as an empty sequence"
+        );
+        let none: Option<u32> = from_str("").unwrap();
+        assert_eq!(none, None, "an empty document reads as a missing value");
+        assert_eq!(
+            err("a: [1"),
+            "expected ']' to close flow sequence at line 1 column 6"
+        );
+    }
+
+    #[test]
+    fn flow_items_span_tokens_and_keep_quotes() {
+        let v: Value = from_str("a: [b c, 'd, e', {k: v}, [x], \"q\"]\n").unwrap();
+        let items = v["a"].as_sequence().unwrap();
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[0], Value::from("b c"));
+        assert_eq!(items[1], Value::from("d, e"));
+        assert_eq!(items[2]["k"], Value::from("v"));
+        assert_eq!(items[3][0], Value::from("x"));
+        assert_eq!(items[4], Value::from("q"));
+    }
+
+    #[test]
+    fn anchors_and_aliases_expand() {
+        let v: Value = from_str("a: &x one\nb: *x\nc: &l\n  - p\nd: *l\ne: [&i q, *i]\n").unwrap();
+        assert_eq!(v["b"], Value::from("one"));
+        assert_eq!(v["d"][0], Value::from("p"));
+        assert_eq!(v["e"][1], Value::from("q"));
+        assert_eq!(
+            err("a: *missing\n"),
+            "unknown anchor `missing` at line 1 column 4"
+        );
+    }
+
+    #[test]
+    fn alias_expansion_is_capped() {
+        // Each level doubles: 2^21 leaves passes the cap of one million copies.
+        let mut doc = String::from("a0: &a0 [x, x]\n");
+        for i in 1..=21 {
+            doc.push_str(&format!("a{i}: &a{i} [*a{}, *a{}]\n", i - 1, i - 1));
+        }
+        assert!(
+            err(&doc).starts_with("repetition limit exceeded"),
+            "{}",
+            err(&doc)
+        );
+    }
+
+    #[test]
+    fn unsupported_and_invalid_yaml_is_reported_where_it_is() {
+        assert_eq!(
+            err("a: 1\nb: !tag x\n"),
+            "YAML tags are not supported; write the value out in full at line 2 column 4"
+        );
+        assert_eq!(
+            err("title: a: b\n"),
+            "mapping values are not allowed in this context at line 1 column 9"
+        );
+        // A colon in a trailing comment is not part of the value.
+        assert_eq!(
+            from_str::<Value>("a: b # c: d\n").unwrap()["a"],
+            Value::from("b")
+        );
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    #[allow(dead_code, reason = "fields are read through Debug in assertions")]
+    struct Art {
+        id: String,
+        kind: Kind,
+        links: Vec<String>,
+    }
+
+    #[derive(serde::Deserialize, Debug, PartialEq)]
+    #[serde(rename_all = "lowercase")]
+    enum Kind {
+        Requirement,
+    }
+
+    #[test]
+    fn typed_errors_carry_the_path_and_position() {
+        let a: Vec<Art> = from_str("- id: R-1\n  kind: requirement\n  links: [R-2]\n").unwrap();
+        assert_eq!(a[0].kind, Kind::Requirement);
+        assert_eq!(
+            from_str::<Vec<Art>>(
+                "- id: R-1\n  kind: requirement\n  links: []\n- id: R-2\n  links: []\n"
+            )
+            .unwrap_err()
+            .to_string(),
+            ".[1]: missing field `kind` at line 4 column 3"
+        );
+        assert_eq!(
+            from_str::<Vec<Art>>("- id: R-1\n  kind: requirement\n  links: x\n")
+                .unwrap_err()
+                .to_string(),
+            ".[0].links: invalid type: string \"x\", expected a sequence at line 3 column 10"
+        );
+        assert_eq!(
+            from_str::<Vec<Art>>("- id: R-1\n  kind: {a: 1}\n  links: []\n")
+                .unwrap_err()
+                .to_string(),
+            ".[0].kind: invalid type: map, expected a YAML tag starting with '!' at line 2 column 9"
+        );
+    }
+
+    #[test]
+    fn roots_may_be_any_node() {
+        assert_eq!(from_str::<Value>("1.5\n").unwrap(), Value::from(1.5f64));
+        assert_eq!(from_str::<Value>("'x'\n").unwrap(), Value::from("x"));
+        assert_eq!(from_str::<Value>("[1, 2]\n").unwrap()[1], Value::from(2u64));
+        assert_eq!(
+            from_str::<Value>("{a: b}\n").unwrap()["a"],
+            Value::from("b")
+        );
+        assert_eq!(
+            from_str::<Value>("# c\n  - x\n").unwrap()[0],
+            Value::from("x")
+        );
+        assert_eq!(
+            from_str::<Value>("a: ...\nb: 1\n").unwrap()["b"],
+            Value::from(1u64)
+        );
     }
 }

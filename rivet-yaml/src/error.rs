@@ -1,12 +1,8 @@
 //! Error type for `rivet-yaml`.
 //!
-//! REQ-346 step 2: `from_str` / `to_string` still delegate to serde_yaml's
-//! libyaml-backed parser and emitter, so its errors are carried verbatim in
-//! `ErrorImpl::Delegate` — `Display` and `Debug` are forwarded unchanged so
-//! every message a test or a user already sees stays byte-identical. That
-//! variant is removed when rivet's own parser and emitter replace the delegate.
-//! The remaining variants are the ones the ported value model constructs, with
-//! serde_yaml 0.9.34's exact message text.
+//! Messages keep serde_yaml 0.9.34's wording and form (`path: message at line
+//! L column C`), so what a user or a test already matches on is unchanged
+//! now that rivet parses and emits YAML itself (REQ-346).
 
 use std::error::Error as StdError;
 use std::fmt::{self, Debug, Display};
@@ -32,8 +28,6 @@ pub(crate) enum ErrorImpl {
     Syntax(String, Pos),
     RecursionLimitExceeded,
     BytesUnsupported,
-    /// A parse or emit error from the step-2 delegate. See the module docs.
-    Delegate(serde_yaml::Error),
     ScalarInMerge,
     TaggedInMerge,
     ScalarInMergeElement,
@@ -44,12 +38,6 @@ pub(crate) enum ErrorImpl {
 
 pub(crate) fn new(inner: ErrorImpl) -> Error {
     Error(Box::new(inner))
-}
-
-impl From<serde_yaml::Error> for Error {
-    fn from(err: serde_yaml::Error) -> Self {
-        new(ErrorImpl::Delegate(err))
-    }
 }
 
 impl ErrorImpl {
@@ -70,7 +58,6 @@ impl ErrorImpl {
             ErrorImpl::BytesUnsupported => {
                 f.write_str("serialization and deserialization of bytes in YAML is not implemented")
             }
-            ErrorImpl::Delegate(err) => Display::fmt(err, f),
             ErrorImpl::ScalarInMerge => {
                 f.write_str("expected a mapping or list of mappings for merging, but found scalar")
             }
@@ -90,7 +77,6 @@ impl ErrorImpl {
 impl StdError for Error {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self.0.as_ref() {
-            ErrorImpl::Delegate(err) => err.source(),
             ErrorImpl::Message(..)
             | ErrorImpl::Syntax(..)
             | ErrorImpl::RecursionLimitExceeded
@@ -115,7 +101,6 @@ impl Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let inner = self.0.as_ref();
         match inner {
-            ErrorImpl::Delegate(err) => Debug::fmt(err, f),
             ErrorImpl::Message(..)
             | ErrorImpl::Syntax(..)
             | ErrorImpl::RecursionLimitExceeded

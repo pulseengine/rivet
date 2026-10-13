@@ -23,6 +23,14 @@
 //! and this corpus is that migration's gate — it has to exist before the
 //! change, not after.
 //!
+//! REQ-346 (2026-10-13): serde_yaml is gone. The "serde" side of this test is
+//! now `rivet_yaml::from_str`, rivet's own deserializer, which reads the CST
+//! through a different path (serde-style typed deserialization) from the
+//! artifact extractor (`yaml_hir`). Before serde_yaml was removed, the
+//! deserializer was proven byte-for-byte equal to serde_yaml on every YAML file
+//! and docs YAML block in this repository; that parity is the record this
+//! gate now inherits, and the two paths are no longer independent parsers.
+//!
 //! The corpus is driven from the `sources:` list in `rivet.yaml`, not from a
 //! path literal. A gate that hardcodes `artifacts/` silently covers two thirds
 //! of the declared sources while reporting "every artifact file" — the exact
@@ -49,7 +57,7 @@ fn workspace_root() -> PathBuf {
 /// what the tool actually loads.
 fn project_config(root: &Path) -> (Vec<String>, Vec<String>) {
     let raw = std::fs::read_to_string(root.join("rivet.yaml")).expect("read rivet.yaml");
-    let doc: serde_yaml::Value = serde_yaml::from_str(&raw).expect("parse rivet.yaml");
+    let doc: rivet_yaml::Value = rivet_yaml::from_str(&raw).expect("parse rivet.yaml");
     let schemas = doc["project"]["schemas"]
         .as_sequence()
         .expect("project.schemas")
@@ -96,12 +104,12 @@ fn fingerprint(a: &rivet_core::model::Artifact) -> String {
     let prov = a.provenance.as_ref().map_or_else(
         || "-".to_owned(),
         |p| {
-            serde_yaml::to_string(p)
+            rivet_yaml::to_string(p)
                 .unwrap_or_default()
                 .replace('\n', ";")
         },
     );
-    // `fields` is where `serde_yaml::Value` lives, so it is the component a
+    // `fields` is where `rivet_yaml::Value` lives, so it is the component a
     // read-path migration is most likely to change — and the one the first
     // version of this fingerprint left out. `BTreeMap` iterates in key order,
     // so the rendering is deterministic.
@@ -109,12 +117,12 @@ fn fingerprint(a: &rivet_core::model::Artifact) -> String {
         .fields
         .iter()
         .map(|(k, v)| {
-            let rendered = serde_yaml::to_string(v).unwrap_or_default();
+            let rendered = rivet_yaml::to_string(v).unwrap_or_default();
             format!("{k}={}", rendered.trim_end().replace('\n', ";"))
         })
         .collect::<Vec<_>>()
         .join(",");
-    // SEP is the ASCII unit separator, not `|`. `serde_yaml::to_string` emits
+    // SEP is the ASCII unit separator, not `|`. `rivet_yaml::to_string` emits
     // `|` for multi-line block scalars and titles may contain one, and a
     // stray `|` shifts every component after it — misattributing a `fields`
     // divergence to whatever came earlier.
@@ -243,7 +251,7 @@ fn first_differing_component(a: &str, b: &str) -> &'static str {
 /// a divergence, it is a different grammar layer. Partition on the mechanical
 /// rule rather than on a path literal, and print each partition's size.
 fn has_artifacts_key(content: &str) -> bool {
-    serde_yaml::from_str::<serde_yaml::Value>(content)
+    rivet_yaml::from_str::<rivet_yaml::Value>(content)
         .ok()
         .and_then(|v| v.get("artifacts").cloned())
         .is_some()
@@ -254,7 +262,7 @@ fn has_artifacts_key(content: &str) -> bool {
 /// HISTORY, because the number has been wrong twice and both times the gate
 /// said it was fine. It was 18 (flow-style provenance) until REQ-353 added
 /// `FlowMapping`, then 0. That 0 was a weak green: the fingerprint omitted
-/// `fields`, which is where `serde_yaml::Value` lives. Adding `fields` took the
+/// `fields`, which is where `rivet_yaml::Value` lives. Adding `fields` took the
 /// same corpus from `agree=26 differ=0` to `differ=10` across **110**
 /// artifacts. 108 of them were one defect — rowan did not fold `>` block
 /// scalars or honour `-`/`+` chomping — and that defect was LIVE: the rowan
@@ -464,7 +472,7 @@ fn differential_survey() {
 /// chain of `(key, mapping)` ancestors that leads to it (outermost first; the
 /// last element is the artifact's own mapping, and its key is the key of the
 /// sequence it sits in).
-type IdChain<'a> = Vec<(Option<&'a str>, &'a serde_yaml::Mapping)>;
+type IdChain<'a> = Vec<(Option<&'a str>, &'a rivet_yaml::Mapping)>;
 
 /// Keys that carry an artifact id. `ca` mirrors yaml_hir's documented alias —
 /// "`ca` is an alias for `id` in STPA control-action items" — which is schema
@@ -472,17 +480,17 @@ type IdChain<'a> = Vec<(Option<&'a str>, &'a serde_yaml::Mapping)>;
 const ID_KEYS: &[&str] = &["id", "ca"];
 
 fn index_ids<'a>(
-    v: &'a serde_yaml::Value,
+    v: &'a rivet_yaml::Value,
     key: Option<&'a str>,
     chain: &mut IdChain<'a>,
     out: &mut std::collections::BTreeMap<String, Vec<IdChain<'a>>>,
 ) {
     match v {
-        serde_yaml::Value::Mapping(m) => {
+        rivet_yaml::Value::Mapping(m) => {
             chain.push((key, m));
             if let Some(id) = ID_KEYS
                 .iter()
-                .find_map(|k| m.get(*k).and_then(serde_yaml::Value::as_str))
+                .find_map(|k| m.get(*k).and_then(rivet_yaml::Value::as_str))
             {
                 out.entry(id.to_owned()).or_default().push(chain.clone());
             }
@@ -491,7 +499,7 @@ fn index_ids<'a>(
             }
             chain.pop();
         }
-        serde_yaml::Value::Sequence(s) => {
+        rivet_yaml::Value::Sequence(s) => {
             for child in s {
                 index_ids(child, key, chain, out);
             }
@@ -501,18 +509,18 @@ fn index_ids<'a>(
 }
 
 /// Compare through a neutral representation. The reference values are
-/// `serde_yaml::Value` (the independent oracle) and rivet's are
+/// `rivet_yaml::Value` (the independent oracle) and rivet's are
 /// `rivet_yaml::Value` (REQ-346), so the two sides are no longer the same
 /// type — which is the point of the oracle. Both serialize to the same JSON.
 fn json<T: serde::Serialize>(v: &T) -> serde_json::Value {
     serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
 }
 
-fn strings_under(v: &serde_yaml::Value, out: &mut Vec<String>) {
+fn strings_under(v: &rivet_yaml::Value, out: &mut Vec<String>) {
     match v {
-        serde_yaml::Value::String(s) => out.push(s.clone()),
-        serde_yaml::Value::Sequence(s) => s.iter().for_each(|c| strings_under(c, out)),
-        serde_yaml::Value::Mapping(m) => m.values().for_each(|c| strings_under(c, out)),
+        rivet_yaml::Value::String(s) => out.push(s.clone()),
+        rivet_yaml::Value::Sequence(s) => s.iter().for_each(|c| strings_under(c, out)),
+        rivet_yaml::Value::Mapping(m) => m.values().for_each(|c| strings_under(c, out)),
         _ => {}
     }
 }
@@ -557,7 +565,7 @@ fn rowan_only_partition_matches_an_independent_parse() {
         if parsed.artifacts.is_empty() {
             continue;
         }
-        let reference: serde_yaml::Value = match serde_yaml::from_str(&content) {
+        let reference: rivet_yaml::Value = match rivet_yaml::from_str(&content) {
             Ok(v) => v,
             Err(e) => {
                 mismatches.push(format!(
@@ -603,7 +611,7 @@ fn rowan_only_partition_matches_an_independent_parse() {
                 ("description", a.description.as_deref()),
                 ("status", a.status.as_deref()),
             ] {
-                if let Some(want) = own.get(key).and_then(serde_yaml::Value::as_str) {
+                if let Some(want) = own.get(key).and_then(rivet_yaml::Value::as_str) {
                     values_compared += 1;
                     if got != Some(want) {
                         mismatches.push(format!(
@@ -650,7 +658,7 @@ fn rowan_only_partition_matches_an_independent_parse() {
             }
             let mut present = Vec::new();
             for (_, m) in chain {
-                strings_under(&serde_yaml::Value::Mapping((*m).clone()), &mut present);
+                strings_under(&rivet_yaml::Value::Mapping((*m).clone()), &mut present);
             }
             for l in &a.links {
                 if !present.iter().any(|s| s == &l.target) {

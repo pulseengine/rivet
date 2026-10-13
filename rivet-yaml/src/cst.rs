@@ -264,6 +264,7 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                         || bytes[after] == b'\n'
                         || bytes[after] == b'\r'
                         || bytes[after] == b' '
+                        || bytes[after] == b'\t'
                     {
                         pos += 3;
                         tokens.push(Token {
@@ -276,6 +277,7 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                 // `- ` or `-\n` = sequence indicator
                 if pos + 1 >= bytes.len()
                     || bytes[pos + 1] == b' '
+                    || bytes[pos + 1] == b'\t'
                     || bytes[pos + 1] == b'\n'
                     || bytes[pos + 1] == b'\r'
                 {
@@ -297,6 +299,7 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
             b':' => {
                 if pos + 1 >= bytes.len()
                     || bytes[pos + 1] == b' '
+                    || bytes[pos + 1] == b'\t'
                     || bytes[pos + 1] == b'\n'
                     || bytes[pos + 1] == b'\r'
                 {
@@ -444,6 +447,38 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
     }
 
     tokens
+}
+
+/// The content indentation of the block scalar whose header (`|` or `>`) is
+/// at `header` and whose body starts at `body`, inside a collection at column
+/// `parent_indent` (see `Parser::parse_block_scalar`). Shared with
+/// `cst_text::block_scalar_text`, so the tree and the text agree.
+pub fn block_scalar_indent(src: &[u8], header: usize, body: usize, parent_indent: usize) -> usize {
+    let header_line = src.get(header..body).unwrap_or(&[]);
+    let explicit = header_line
+        .iter()
+        .skip(1)
+        .take_while(|b| !matches!(b, b' ' | b'\t' | b'#' | b'\n' | b'\r'))
+        .find(|b| b.is_ascii_digit() && **b != b'0')
+        .map(|b| usize::from(b - b'0'));
+    if let Some(n) = explicit {
+        return parent_indent.saturating_add(n);
+    }
+    let mut indent = parent_indent.saturating_add(1);
+    let mut pos = body;
+    while pos < src.len() {
+        let spaces = src[pos..].iter().take_while(|b| **b == b' ').count();
+        indent = indent.max(spaces);
+        let after = pos.saturating_add(spaces);
+        match src.get(after) {
+            Some(b'\n') => pos = after.saturating_add(1),
+            Some(b'\r') if src.get(after.saturating_add(1)) == Some(&b'\n') => {
+                pos = after.saturating_add(2);
+            }
+            _ => break,
+        }
+    }
+    indent
 }
 
 /// Whether `pos` is the first byte of a line: where `---` and `...` are
@@ -1068,6 +1103,13 @@ impl<'src> Parser<'src> {
                         self.bump();
                     }
                 }
+                // `- - p` then `  - q`: a sequence nested in the item, at the
+                // inner dash's column. Without this arm the item read as null
+                // and the nested items became siblings (REQ-346).
+                Some(SyntaxKind::Dash) => {
+                    let column = self.current_indent();
+                    self.parse_block_sequence(column);
+                }
                 Some(
                     SyntaxKind::PlainScalar
                     | SyntaxKind::SingleQuotedScalar
@@ -1331,8 +1373,16 @@ impl<'src> Parser<'src> {
         }
     }
 
+    /// A block scalar (`|` or `>`). Its content indentation is the explicit
+    /// indicator added to `parent_indent` (the enclosing collection's column),
+    /// or else, as libyaml scans it, the largest of: the spaces on leading
+    /// blank lines, the first content line's spaces, and `parent_indent + 1`.
+    /// Only spaces indent; a tab is content. The scalar ends at the first
+    /// non-blank line indented less than that (REQ-346): ending only at the
+    /// parent's column took in lower-indented comment lines as content.
     fn parse_block_scalar(&mut self, parent_indent: usize) {
         self.builder.start_node(SyntaxKind::BlockScalar.into());
+        let header_offset = self.byte_offset;
         self.bump(); // consume `|` or `>`
 
         // Optional chomp/keep indicator and width on the same line
@@ -1352,45 +1402,29 @@ impl<'src> Parser<'src> {
             self.bump();
         }
 
-        // Consume continuation lines (indented deeper than parent)
+        let content_indent = block_scalar_indent(
+            self.source_bytes,
+            header_offset,
+            self.byte_offset,
+            parent_indent,
+        );
+
         loop {
             if self.at_eof() {
                 break;
             }
-            // Check if next content line is indented deeper
-            let mut lookahead = self.pos;
-            let mut line_indent = 0;
-            let mut is_blank = true;
-            while lookahead < self.tokens.len() {
-                match self.tokens[lookahead].kind {
-                    SyntaxKind::Whitespace => {
-                        line_indent = self.tokens[lookahead].text.len();
-                        lookahead += 1;
-                    }
-                    SyntaxKind::Newline => {
-                        // Blank line — keep it as part of block scalar
-                        break;
-                    }
-                    _ => {
-                        is_blank = false;
-                        break;
-                    }
-                }
+            let line_start = self.byte_offset;
+            let line_end = self.source_bytes[line_start..]
+                .iter()
+                .position(|b| *b == b'\n')
+                .map_or(self.source_bytes.len(), |i| line_start + i);
+            let line = &self.source_bytes[line_start..line_end];
+            let spaces = line.iter().take_while(|b| **b == b' ').count();
+            let blank = line[spaces..].iter().all(|b| *b == b'\r');
+            if !blank && spaces < content_indent {
+                break;
             }
-
-            if is_blank && lookahead < self.tokens.len() {
-                // Blank line: consume whitespace + newline
-                while self.pos <= lookahead && !self.at_eof() {
-                    self.bump_as(SyntaxKind::BlockScalarLine);
-                }
-                continue;
-            }
-
-            if line_indent <= parent_indent {
-                break; // Back to parent indent or less — end of block scalar
-            }
-
-            // Consume the entire line as BlockScalarLine
+            // Consume the whole line, its break included.
             while !self.at_eof() && !self.at(SyntaxKind::Newline) {
                 self.bump_as(SyntaxKind::BlockScalarLine);
             }
@@ -1452,7 +1486,11 @@ impl<'src> Parser<'src> {
         }
         match self.tokens[la].kind {
             SyntaxKind::Newline => false, // blank line
-            SyntaxKind::Dash => false,    // sequence indicator
+            // A more-indented `- …` line inside a plain scalar is text, not a
+            // sequence: YAML (and libyaml) fold it into the scalar
+            // (yaml-test-suite AB8U). Reading it as a nested sequence split
+            // one value into two, silently.
+            SyntaxKind::Dash => true,
             SyntaxKind::Comment => false, // comment-only line
             SyntaxKind::PlainScalar
             | SyntaxKind::SingleQuotedScalar

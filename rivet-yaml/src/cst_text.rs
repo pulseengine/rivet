@@ -249,6 +249,8 @@ pub fn unescape_double_quoted(s: &str) -> String {
                 Some('"') => result.push('"'),
                 Some('n') => result.push('\n'),
                 Some('t') => result.push('\t'),
+                // `\` followed by a literal tab is a tab (YAML 1.2 `ns-esc-tab`).
+                Some('\t') => result.push('\t'),
                 Some('r') => result.push('\r'),
                 Some('/') => result.push('/'),
                 Some('0') => result.push('\0'),
@@ -386,32 +388,61 @@ pub fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         return Some(String::new());
     }
 
-    // Find common indent prefix of non-empty lines.
-    let min_indent = body_lines
-        .iter()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| l.len() - l.trim_start().len())
-        .min()
-        .unwrap_or(0);
+    // Content indentation as the CST measured it (REQ-346): the explicit
+    // indicator over the enclosing collection's column, else the first content
+    // line's spaces. Only spaces indent, so a tab after them is content.
+    let body_start = raw.find('\n').map_or(raw.len(), |i| i + 1);
+    let indent =
+        crate::cst::block_scalar_indent(raw.as_bytes(), 0, body_start, enclosing_column(&block));
 
-    // Dedent. A blank line becomes "" so the folding pass can tell a paragraph
-    // break from a content line.
+    // Dedent by exactly `indent` spaces. A line of only spaces is empty unless
+    // it is longer than the indentation, when the excess is content.
     let dedented: Vec<&str> = body_lines
         .iter()
         .map(|line| {
-            if line.trim().is_empty() {
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            let spaces = line.len() - line.trim_start_matches(' ').len();
+            if spaces >= indent {
+                line.get(indent..).unwrap_or("")
+            } else if line.trim_start_matches(' ').is_empty() {
                 ""
-            } else if line.len() > min_indent && line.is_char_boundary(min_indent) {
-                // min_indent counts only leading whitespace bytes, which are
-                // always valid UTF-8 boundaries; the check is defensive.
-                &line[min_indent..]
             } else {
-                line // fallback: don't strip
+                // Less indented than the content: the CST ends the scalar
+                // before such a line, so this is only reached on odd input.
+                line.trim_start_matches(' ')
             }
         })
         .collect();
 
     Some(fold_and_chomp(&dedented, folded, chomp))
+}
+
+/// The column of the collection a block scalar belongs to: the mapping
+/// entry's or sequence item's first token. Found by walking back to the line
+/// start token by token, not by slicing the source, which would be quadratic.
+fn enclosing_column(block: &SyntaxNode) -> usize {
+    let owner = block.ancestors().find(|n| {
+        matches!(
+            n.kind(),
+            SyntaxKind::MappingEntry | SyntaxKind::SequenceItem
+        )
+    });
+    let Some(first) = owner.and_then(|n| n.first_token()) else {
+        return 0;
+    };
+    let mut column = 0usize;
+    let mut token = first.prev_token();
+    while let Some(t) = token {
+        // The line break may be a `Newline` or the last `BlockScalarLine` of a
+        // block scalar just above, so look for the break in the text itself.
+        if let Some(i) = t.text().rfind('\n') {
+            column = column.saturating_add(t.text().len().saturating_sub(i + 1));
+            break;
+        }
+        column = column.saturating_add(t.text().len());
+        token = t.prev_token();
+    }
+    column
 }
 
 /// YAML block-scalar chomping indicator.
@@ -487,4 +518,59 @@ fn fold_and_chomp(lines: &[&str], folded: bool, chomp: Chomp) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cst::{SyntaxNode, parse};
+
+    /// The block scalar under `key` in `src`, read as text.
+    fn block(src: &str) -> String {
+        let (green, errors) = parse(src);
+        assert!(errors.is_empty(), "{errors:?}");
+        let root = SyntaxNode::new_root(green);
+        let holder = root
+            .descendants()
+            .find(|n| {
+                matches!(n.kind(), SyntaxKind::Value | SyntaxKind::SequenceItem)
+                    && n.children().any(|c| c.kind() == SyntaxKind::BlockScalar)
+            })
+            .expect("a block scalar");
+        block_scalar_text(&holder).expect("block text")
+    }
+
+    #[test]
+    fn double_quoted_escapes_and_folding() {
+        assert_eq!(unescape_double_quoted("a\\tb\\nc"), "a\tb\nc");
+        assert_eq!(
+            unescape_double_quoted("tab\\\tx"),
+            "tab\tx",
+            "`\\` + literal tab"
+        );
+        assert_eq!(unescape_double_quoted("\\x41\\u00e9\\U0001F600"), "Aé😀");
+        assert_eq!(unescape_double_quoted("one\n  two"), "one two");
+        assert_eq!(unescape_double_quoted("one\n\n  two"), "one\ntwo");
+        assert_eq!(unquote_single_quoted("it''s\n  here"), "it's here");
+        assert_eq!(
+            unquote_scalar(SyntaxKind::SingleQuotedScalar, "'a''b'"),
+            "a'b"
+        );
+    }
+
+    #[test]
+    fn block_scalars_follow_the_indentation_rules() {
+        assert_eq!(block("k: |\n  a\n  b\n"), "a\nb\n");
+        assert_eq!(block("k: >-\n  a\n  b\n"), "a b");
+        assert_eq!(block("k: |+\n  a\n\n"), "a\n\n");
+        // An explicit indicator counts from the key's column.
+        assert_eq!(block("k: |1\n  a\n"), " a\n");
+        assert_eq!(block("- |1\n  a\n"), " a\n");
+        // A tab after the indentation is content.
+        assert_eq!(block("k: |-\n \tbar\n"), "\tbar");
+        // Spaces past the indentation on an otherwise blank line are content.
+        assert_eq!(block("k: |\n  x\n   \n"), "x\n \n");
+        // A less-indented comment line ends the scalar.
+        assert_eq!(block("a: |-\n  # text\n # Clip\nb: 1\n"), "# text");
+    }
 }

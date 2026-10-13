@@ -22,6 +22,10 @@
   exits non-zero, so a traceability sweep can preview its effect.
 
 ### Security
+- **serde_yaml and unsafe-libyaml are removed** (REQ-346) — rivet now
+  parses and writes YAML with its own code. serde_yaml was archived upstream
+  and RUSTSEC-2024-0449 marks its unsafe-libyaml dependency unmaintained with
+  no upgrade.
 - **wasmtime 48.0.3 → 48.0.5** (REQ-402; RUSTSEC-2026-0321 to
   RUSTSEC-2026-0327) — seven advisories against the WASM adapter runtime: a
   native stack buffer overflow from an unvalidated async callback result count,
@@ -39,6 +43,13 @@
   block merges.
 
 ### Fixed
+- **YAML read fixes in the artifact extractor** (REQ-346), found by the
+  yaml-test-suite: `...` or `---` inside a value (`title: ...`) ended the
+  document and dropped the rest of the file; a block scalar took in
+  less-indented comment lines after it and ignored an explicit indentation
+  indicator (`|2`); a flow sequence or scalar on the line after its key, a
+  flow collection spanning lines, an indented root sequence and `- - x`
+  nested sequences failed to parse.
 - **`rivet validate` passed a link with an empty target** — an explicit
   `target: ""` was dropped by the default (incremental) path, so `validate`
   passed while `validate --direct` reported the broken link. Both paths now
@@ -131,6 +142,14 @@
   never affected.
 
 ### Changed
+- **rivet reads and writes YAML with its own parser and emitter** (REQ-346).
+  Artifacts, schemas and config read exactly as before: on every YAML file
+  and docs YAML block in this repository the new path matched serde_yaml
+  byte for byte, and files rivet writes are unchanged. Error messages keep
+  serde_yaml's form (`artifacts[1]: missing field 'type' at line 7 column 5`).
+  **Behaviour change:** YAML tags (`!tag value`) are now refused with their
+  position; serde_yaml accepted them. Conformance is gated in CI against the
+  official yaml-test-suite: no case is read silently wrong.
 - **A `rivet: verifies` source marker counts as verification evidence in
   coverage and validation** (REQ-389) — `rivet verify` and release readiness
   accepted a marker, but the traceability rules counted only `verifies` links,

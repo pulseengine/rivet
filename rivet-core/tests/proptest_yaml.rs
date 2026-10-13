@@ -67,7 +67,11 @@ fn yaml_block_scalar_entry() -> impl Strategy<Value = String> {
     (
         yaml_key(),
         prop::sample::select(vec!["|", ">"]),
-        prop::collection::vec("[a-zA-Z0-9 _!?.]{1,40}", 1..5),
+        // Each line starts with a non-space: a first line with leading spaces,
+        // or a line of only spaces, would set a deeper content indentation
+        // than the lines after it, which YAML (and libyaml) reject. The CST
+        // used to accept it by dedenting to the least-indented line (REQ-346).
+        prop::collection::vec("[a-zA-Z0-9_!?.][a-zA-Z0-9 _!?.]{0,39}", 1..5),
     )
         .prop_map(|(k, indicator, lines)| {
             let mut result = format!("{k}: {indicator}\n");

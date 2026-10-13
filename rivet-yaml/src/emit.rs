@@ -491,3 +491,68 @@ fn write_literal(out: &mut String, s: &str, indent: usize) {
         }
     }
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "test code: a failure should panic with a clear message"
+)]
+mod tests {
+    use crate::{Mapping, Value, to_string};
+
+    fn s(text: &str) -> String {
+        to_string(&Value::from(text)).unwrap()
+    }
+
+    /// Expected text is serde_yaml's, from `tests/golden/emitter_strings.txt`.
+    #[test]
+    fn scalar_styles_follow_libyaml() {
+        assert_eq!(s("a b"), "a b\n");
+        assert_eq!(s("1"), "'1'\n", "would read back as a number");
+        assert_eq!(s("true"), "'true'\n");
+        assert_eq!(s(""), "''\n");
+        assert_eq!(s("- x"), "'- x'\n", "a block indicator");
+        assert_eq!(s("a: b"), "'a: b'\n");
+        assert_eq!(s("it's"), "it's\n");
+        assert_eq!(s("tab\there"), "\"tab\\there\"\n", "not printable: escaped");
+        assert_eq!(s("ls\u{2028}x"), "'ls\u{2028}  x'\n");
+        assert_eq!(s("line\n"), "|\n  line\n");
+        assert_eq!(s("line\n\n"), "|+\n  line\n\n");
+        assert_eq!(s("a\nb"), "|-\n  a\n  b\n");
+        assert_eq!(s(" lead\nx"), "|2-\n   lead\n  x\n");
+        assert_eq!(
+            s("trail \nx"),
+            "\"trail \\nx\"\n",
+            "trailing space forbids a block"
+        );
+    }
+
+    #[test]
+    fn block_layout_matches_serde_yaml() {
+        let v: Value = crate::from_str(
+            "a:\n  b: 1\nc:\n- x\n- y\nd: {}\ne: []\nf:\n- k: 1\n  j: 2\n- - p\n  - q\ng: |-\n  l1\n  l2\n",
+        )
+        .unwrap();
+        assert_eq!(
+            to_string(&v).unwrap(),
+            "a:\n  b: 1\nc:\n- x\n- y\nd: {}\ne: []\nf:\n- k: 1\n  j: 2\n- - p\n  - q\ng: |-\n  l1\n  l2\n"
+        );
+    }
+
+    #[test]
+    fn keys_that_cannot_be_simple_use_the_complex_form() {
+        let mut m = Mapping::new();
+        m.insert(Value::from("line\n"), Value::from("v"));
+        assert_eq!(to_string(&m).unwrap(), "? |\n  line\n: v\n");
+        let long = "k".repeat(129);
+        let mut m = Mapping::new();
+        m.insert(Value::from(long.as_str()), Value::from("v"));
+        assert_eq!(to_string(&m).unwrap(), format!("? {long}\n: v\n"));
+        let mut m = Mapping::new();
+        m.insert(Value::from("k".repeat(128).as_str()), Value::from("v"));
+        assert!(
+            to_string(&m).unwrap().starts_with("kkk"),
+            "128 bytes is still simple"
+        );
+    }
+}

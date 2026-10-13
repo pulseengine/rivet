@@ -38,6 +38,14 @@
 //! serde_yaml is the oracle (a dev-dependency, independent of rivet's parser).
 //! Where the test can know the intended value it also checks serde_yaml
 //! against that, so a generator bug cannot pass as agreement.
+//!
+//! REQ-346 (2026-10-13): serde_yaml is gone. The "serde" side of this test is
+//! now `rivet_yaml::from_str`, rivet's own deserializer, which reads the CST
+//! through a different path (serde-style typed deserialization) from the
+//! artifact extractor (`yaml_hir`). Before serde_yaml was removed, the
+//! deserializer was proven byte-for-byte equal to serde_yaml on every YAML file
+//! and docs YAML block in this repository; that parity is the record this
+//! gate now inherits, and the two paths are no longer independent parsers.
 
 use proptest::prelude::*;
 use rivet_core::yaml_hir::extract_generic_artifacts;

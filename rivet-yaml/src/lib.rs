@@ -1,18 +1,21 @@
-//! rivet's own YAML value model and serde entry points (REQ-346).
+//! rivet's own YAML: value model, parser and emitter (REQ-346).
 //!
-//! serde_yaml was archived upstream in 2024 (0.9.34+deprecated) and reads every
-//! artifact rivet loads. This crate gives rivet ownership of that dependency in
-//! stages, each landing with zero behaviour change and its own oracle:
+//! serde_yaml was archived upstream in 2024 (0.9.34+deprecated) and read every
+//! artifact rivet loaded. This crate replaced it in stages:
 //!
 //! 1. **The value model** — `Value`, `Mapping`, `Number`, and the serde
-//!    (de)serializers over them — ported verbatim from serde_yaml 0.9.34 so
-//!    semantics are identical by construction. The public API mirrors
-//!    serde_yaml's, so migrating a call site is a path rename.
-//! 2. **Parsing** (`from_str`) — delegates to serde_yaml for now; replaced by
-//!    rivet's lossless CST, which refuses anchors, aliases, merge keys, tags,
-//!    multi-document streams and complex keys.
-//! 3. **Emitting** (`to_string`) — delegates to serde_yaml for now; replaced by
-//!    a rivet-owned emitter behind a round-trip differential.
+//!    (de)serializers over them — ported from serde_yaml 0.9.34, so the public
+//!    API mirrors serde_yaml's and migrating a call site is a path rename.
+//! 2. **Parsing** (`from_str`) — rivet's lossless CST ([`cst`]) and a serde
+//!    deserializer over it (`de`). Anchors and aliases are expanded; tags,
+//!    merge keys, complex keys and multi-document streams are refused.
+//! 3. **Emitting** (`to_string`) — a port of libyaml's scalar-style rules with
+//!    serde_yaml's settings, so the files rivet writes are unchanged.
+//!
+//! Before serde_yaml was removed, parser and emitter were compared with it on
+//! every YAML file and docs YAML block in this repository and agreed byte for
+//! byte; `tests/yaml_corpus.rs` keeps the round-trip and a golden of
+//! serde_yaml's emitter output.
 
 #![forbid(unsafe_code)]
 
@@ -131,26 +134,6 @@ where
     de::from_str(s)
 }
 
-/// The serde_yaml delegate [`from_str`] used before REQ-346 S3, kept only for
-/// the differential tests until serde_yaml is removed.
-#[doc(hidden)]
-pub fn __from_str_serde_yaml<T>(s: &str) -> Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    serde_yaml::from_str(s).map_err(Error::from)
-}
-
-/// rivet's own deserializer (REQ-346 S3), compared against [`from_str`]'s
-/// serde_yaml delegate by the differential tests until it replaces it.
-#[doc(hidden)]
-pub fn __from_str_owned<T>(s: &str) -> Result<T>
-where
-    T: serde::de::DeserializeOwned,
-{
-    de::from_str(s)
-}
-
 /// Serialize a `T` to YAML text.
 ///
 /// REQ-346 step 2: delegates to serde_yaml's emitter.
@@ -159,16 +142,6 @@ where
     T: ?Sized + serde::Serialize,
 {
     Ok(emit::emit(&to_value(value)?))
-}
-
-/// The serde_yaml emitter [`to_string`] used before REQ-346 S5, kept only for
-/// the differential tests until serde_yaml is removed.
-#[doc(hidden)]
-pub fn __to_string_serde_yaml<T>(value: &T) -> Result<String>
-where
-    T: ?Sized + serde::Serialize,
-{
-    serde_yaml::to_string(value).map_err(Error::from)
 }
 
 mod private {

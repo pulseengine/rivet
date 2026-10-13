@@ -622,7 +622,7 @@ fn roundtrip_dev_to_aspice_keeps_artifact_count_constant() {
     fn count_ids(snap: &BTreeMap<String, String>) -> usize {
         let mut n = 0usize;
         for content in snap.values() {
-            let Ok(v) = serde_yaml::from_str::<serde_yaml::Value>(content) else {
+            let Ok(v) = rivet_yaml::from_str::<rivet_yaml::Value>(content) else {
                 continue;
             };
             if let Some(arts) = v.get("artifacts").and_then(|a| a.as_sequence()) {

@@ -505,6 +505,19 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      # REQ-346: rivet parses YAML itself, and yaml-test-suite is the oracle
+      # that does not come from rivet (rivet-yaml/tests/yaml_test_suite.rs).
+      # Cloned outside the workspace so rivet's own repository walkers never
+      # read its deliberately malformed inputs. The test fails under CI if
+      # this is missing, so it cannot skip.
+      - name: Fetch yaml-test-suite (pinned)
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/yaml-test-suite"
+          rm -rf "$dir"
+          git clone --quiet --filter=blob:none https://github.com/yaml/yaml-test-suite "$dir"
+          git -C "$dir" checkout --quiet 6e6c296ae9c9d2d5c4134b4b64d01b29ac19ff6f
+          echo "YAML_TEST_SUITE=$dir" >> "$GITHUB_ENV"
       - name: Run tests (JUnit XML output)
         run: cargo nextest run --all --profile ci
       # nextest does not run doctests. They used to be covered only by the
@@ -968,6 +981,19 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
+      # REQ-346: rivet parses YAML itself, and yaml-test-suite is the oracle
+      # that does not come from rivet (rivet-yaml/tests/yaml_test_suite.rs).
+      # Cloned outside the workspace so rivet's own repository walkers never
+      # read its deliberately malformed inputs. The test fails under CI if
+      # this is missing, so it cannot skip.
+      - name: Fetch yaml-test-suite (pinned)
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/yaml-test-suite"
+          rm -rf "$dir"
+          git clone --quiet --filter=blob:none https://github.com/yaml/yaml-test-suite "$dir"
+          git -C "$dir" checkout --quiet 6e6c296ae9c9d2d5c4134b4b64d01b29ac19ff6f
+          echo "YAML_TEST_SUITE=$dir" >> "$GITHUB_ENV"
       - name: Run proptest with 10x cases
         run: cargo nextest run --all --profile ci
         env:
@@ -1693,6 +1719,19 @@ jobs:
           tool: cargo-llvm-cov,cargo-nextest
       - name: Build release binary
         run: cargo build --release
+      # REQ-346: rivet parses YAML itself, and yaml-test-suite is the oracle
+      # that does not come from rivet (rivet-yaml/tests/yaml_test_suite.rs).
+      # Cloned outside the workspace so rivet's own repository walkers never
+      # read its deliberately malformed inputs. The test fails under CI if
+      # this is missing, so it cannot skip.
+      - name: Fetch yaml-test-suite (pinned)
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/yaml-test-suite"
+          rm -rf "$dir"
+          git clone --quiet --filter=blob:none https://github.com/yaml/yaml-test-suite "$dir"
+          git -C "$dir" checkout --quiet 6e6c296ae9c9d2d5c4134b4b64d01b29ac19ff6f
+          echo "YAML_TEST_SUITE=$dir" >> "$GITHUB_ENV"
       - name: Run tests with JUnit output
         run: cargo nextest run --all --profile ci
       - name: Generate coverage
