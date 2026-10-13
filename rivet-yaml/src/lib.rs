@@ -22,6 +22,7 @@ pub mod cst;
 /// Scalar text from the CST: folding, unescaping, block scalars (REQ-346).
 pub mod cst_text;
 mod de;
+mod emit;
 mod error;
 #[allow(
     clippy::unwrap_used,
@@ -154,6 +155,16 @@ where
 ///
 /// REQ-346 step 2: delegates to serde_yaml's emitter.
 pub fn to_string<T>(value: &T) -> Result<String>
+where
+    T: ?Sized + serde::Serialize,
+{
+    Ok(emit::emit(&to_value(value)?))
+}
+
+/// The serde_yaml emitter [`to_string`] used before REQ-346 S5, kept only for
+/// the differential tests until serde_yaml is removed.
+#[doc(hidden)]
+pub fn __to_string_serde_yaml<T>(value: &T) -> Result<String>
 where
     T: ?Sized + serde::Serialize,
 {

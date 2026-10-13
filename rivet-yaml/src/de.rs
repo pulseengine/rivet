@@ -21,8 +21,8 @@ use crate::cst::{self, SyntaxKind, SyntaxNode};
 use crate::cst_text;
 use crate::error::{self, ErrorImpl, Pos};
 use crate::scalar::{
-    digits_but_not_number, parse_bool, parse_f64, parse_null, parse_signed_int, parse_unsigned_int,
-    visit_int,
+    digits_but_not_number, parse_bool, parse_f64, parse_negative_int, parse_null, parse_signed_int,
+    parse_unsigned_int, visit_int,
 };
 use crate::{Error, Result};
 
@@ -561,6 +561,19 @@ fn visit_scalar<'de, V: Visitor<'de>>(visitor: V, v: &str) -> Result<V::Value> {
         }
     }
     visitor.visit_str(v)
+}
+
+/// Whether a string must be quoted so it reads back as a string: it would
+/// otherwise type as null, a bool or a number, or it is a digit string with a
+/// leading zero (serde_yaml's `InferScalarStyle`, used by the emitter).
+pub(crate) fn visit_hint(v: &str) -> bool {
+    v.is_empty()
+        || parse_null(v.as_bytes()).is_some()
+        || parse_bool(v).is_some()
+        || parse_unsigned_int(v, u128::from_str_radix).is_some()
+        || parse_negative_int(v, i128::from_str_radix).is_some()
+        || digits_but_not_number(v)
+        || parse_f64(v).is_some()
 }
 
 /// A visitor that accepts nothing, used to phrase an invalid-type error the

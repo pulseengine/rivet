@@ -135,7 +135,7 @@ pub(crate) fn parse_signed_int<T>(
     from_str_radix(unpositive, 10).ok()
 }
 
-fn parse_negative_int<T>(
+pub(crate) fn parse_negative_int<T>(
     scalar: &str,
     from_str_radix: fn(&str, radix: u32) -> Result<T, ParseIntError>,
 ) -> Option<T> {
