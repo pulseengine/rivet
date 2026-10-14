@@ -291,6 +291,13 @@ jobs:
         run: bash tools/release/openvsx-publish_test.sh
       - name: Mutation test-process memory cap tests (#1031)
         run: bash tools/ci/memcap_test.sh
+      # CI steps count as verification evidence only with a gate test: these
+      # fail if the Kani proof selection or the release test-evidence build
+      # regresses, neither of which blocks a PR on its own.
+      - name: Kani proof selection gate test (REQ-391)
+        run: bash tools/ci/kani-selection_test.sh
+      - name: Release test-evidence build gate test (REQ-403)
+        run: bash tools/release/test-evidence_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
