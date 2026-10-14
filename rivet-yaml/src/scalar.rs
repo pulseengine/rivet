@@ -22,14 +22,14 @@ use std::num::ParseIntError;
 // two-argument `Result<T, E>`; a defaulted parameter serves both spellings.
 type Result<T, E = crate::Error> = std::result::Result<T, E>;
 
-fn parse_null(scalar: &[u8]) -> Option<()> {
+pub(crate) fn parse_null(scalar: &[u8]) -> Option<()> {
     match scalar {
         b"null" | b"Null" | b"NULL" | b"~" => Some(()),
         _ => None,
     }
 }
 
-fn parse_bool(scalar: &str) -> Option<bool> {
+pub(crate) fn parse_bool(scalar: &str) -> Option<bool> {
     match scalar {
         "true" | "True" | "TRUE" => Some(true),
         "false" | "False" | "FALSE" => Some(false),
@@ -37,7 +37,7 @@ fn parse_bool(scalar: &str) -> Option<bool> {
     }
 }
 
-fn parse_unsigned_int<T>(
+pub(crate) fn parse_unsigned_int<T>(
     scalar: &str,
     from_str_radix: fn(&str, radix: u32) -> Result<T, ParseIntError>,
 ) -> Option<T> {
@@ -75,7 +75,7 @@ fn parse_unsigned_int<T>(
     from_str_radix(unpositive, 10).ok()
 }
 
-fn parse_signed_int<T>(
+pub(crate) fn parse_signed_int<T>(
     scalar: &str,
     from_str_radix: fn(&str, radix: u32) -> Result<T, ParseIntError>,
 ) -> Option<T> {
@@ -135,7 +135,7 @@ fn parse_signed_int<T>(
     from_str_radix(unpositive, 10).ok()
 }
 
-fn parse_negative_int<T>(
+pub(crate) fn parse_negative_int<T>(
     scalar: &str,
     from_str_radix: fn(&str, radix: u32) -> Result<T, ParseIntError>,
 ) -> Option<T> {

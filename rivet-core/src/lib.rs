@@ -93,7 +93,10 @@ pub mod test_scanner;
 pub mod validate;
 pub mod variant_emit;
 pub mod verification_evidence;
-pub mod yaml_cst;
+/// The lossless YAML CST lives in rivet-yaml (REQ-346): the parser that reads
+/// artifacts and the one that edits them are the same code. Re-exported so
+/// `rivet_core::yaml_cst::…` paths keep working.
+pub use rivet_yaml::cst as yaml_cst;
 pub mod yaml_edit;
 pub mod yaml_hir;
 

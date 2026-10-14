@@ -31,6 +31,14 @@
 //! This is the rivet equivalent of gale's FFI model equivalence testing:
 //! the rowan parser is our "implementation" and serde_yaml is the "reference model."
 //!
+//! REQ-346 (2026-10-13): serde_yaml is gone. The "serde" side of this test is
+//! now `rivet_yaml::from_str`, rivet's own deserializer, which reads the CST
+//! through a different path (serde-style typed deserialization) from the
+//! artifact extractor (`yaml_hir`). Before serde_yaml was removed, the
+//! deserializer was proven byte-for-byte equal to serde_yaml on every YAML file
+//! and docs YAML block in this repository; that parity is the record this
+//! gate now inherits, and the two paths are no longer independent parsers.
+//!
 //! REQ-348 note: until 2026-09-11 the generator emitted only block-style
 //! `id`/`type`/`title`/`status` and compared only those four fields — the
 //! subset both parsers already agree on. A differential test confined to the
@@ -166,7 +174,7 @@ proptest! {
         let rowan_result = extract_generic_artifacts(&yaml);
 
         // --- Track 2: serde_yaml reference model ---
-        let serde_result: serde_yaml::Value = serde_yaml::from_str(&yaml)
+        let serde_result: rivet_yaml::Value = rivet_yaml::from_str(&yaml)
             .expect("serde_yaml must parse our generated YAML");
         let serde_artifacts = serde_result["artifacts"]
             .as_sequence()
@@ -301,7 +309,7 @@ artifacts:
     status: approved
 ";
     let rowan = extract_generic_artifacts(yaml);
-    let serde: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+    let serde: rivet_yaml::Value = rivet_yaml::from_str(yaml).unwrap();
 
     assert_eq!(rowan.artifacts.len(), 1);
     assert_eq!(rowan.artifacts[0].artifact.id, "REQ-001");
@@ -330,7 +338,7 @@ artifacts:
     title: Third
 ";
     let rowan = extract_generic_artifacts(yaml);
-    let serde: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+    let serde: rivet_yaml::Value = rivet_yaml::from_str(yaml).unwrap();
     let serde_arts = serde["artifacts"].as_sequence().unwrap();
 
     assert_eq!(rowan.artifacts.len(), serde_arts.len());
@@ -357,7 +365,7 @@ artifacts:
         target: DD-001
 ";
     let rowan = extract_generic_artifacts(yaml);
-    let serde: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+    let serde: rivet_yaml::Value = rivet_yaml::from_str(yaml).unwrap();
 
     assert_eq!(rowan.artifacts.len(), 1);
     assert_eq!(rowan.artifacts[0].artifact.links.len(), 2);

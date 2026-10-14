@@ -111,6 +111,11 @@ pub enum SyntaxKind {
     /// A `|` or `>` block scalar with continuation lines.
     BlockScalar,
 
+    /// `&name` before a node: the node is recorded under that name.
+    Anchor,
+    /// `*name`: the node recorded under that name, repeated here.
+    Alias,
+
     // ── Error recovery ──────────────────────────────────────────────
     /// A span the parser could not interpret.
     Error,
@@ -122,6 +127,43 @@ impl From<SyntaxKind> for rowan::SyntaxKind {
     }
 }
 
+/// Every `SyntaxKind`, indexed by its discriminant.
+const SYNTAX_KINDS: [SyntaxKind; SyntaxKind::Error as usize + 1] = {
+    use SyntaxKind::*;
+    [
+        Whitespace,
+        Newline,
+        Comment,
+        Dash,
+        Colon,
+        Comma,
+        LBracket,
+        RBracket,
+        LBrace,
+        RBrace,
+        Pipe,
+        Gt,
+        PlainScalar,
+        SingleQuotedScalar,
+        DoubleQuotedScalar,
+        BlockScalarLine,
+        DirectiveMarker,
+        DocumentEnd,
+        Root,
+        Mapping,
+        MappingEntry,
+        Key,
+        Value,
+        Sequence,
+        SequenceItem,
+        FlowSequence,
+        BlockScalar,
+        Anchor,
+        Alias,
+        Error,
+    ]
+};
+
 // ── Language definition ─────────────────────────────────────────────────
 
 /// Rowan language tag for YAML.
@@ -132,9 +174,13 @@ impl rowan::Language for YamlLanguage {
     type Kind = SyntaxKind;
 
     fn kind_from_raw(raw: rowan::SyntaxKind) -> SyntaxKind {
-        assert!(raw.0 <= SyntaxKind::Error as u16);
-        // SAFETY: SyntaxKind is repr(u16) with contiguous discriminants.
-        unsafe { std::mem::transmute(raw.0) }
+        // A table lookup rather than a transmute: rivet-yaml forbids unsafe
+        // code. `syntax_kind_table_matches_discriminants` pins the table to
+        // the enum, so a new variant out of place fails a test, not memory.
+        match SYNTAX_KINDS.get(usize::from(raw.0)) {
+            Some(kind) => *kind,
+            None => panic!("raw syntax kind {} is out of range", raw.0),
+        }
     }
 
     fn kind_to_raw(kind: SyntaxKind) -> rowan::SyntaxKind {
@@ -207,13 +253,18 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
             }
             // Dash: could be `---` (directive marker), `- ` (sequence item), or plain scalar
             b'-' => {
-                if pos + 2 < bytes.len() && bytes[pos + 1] == b'-' && bytes[pos + 2] == b'-' {
+                if at_line_start(bytes, pos)
+                    && pos + 2 < bytes.len()
+                    && bytes[pos + 1] == b'-'
+                    && bytes[pos + 2] == b'-'
+                {
                     // Check it's `---` at start of line or followed by whitespace/newline/EOF
                     let after = pos + 3;
                     if after >= bytes.len()
                         || bytes[after] == b'\n'
                         || bytes[after] == b'\r'
                         || bytes[after] == b' '
+                        || bytes[after] == b'\t'
                     {
                         pos += 3;
                         tokens.push(Token {
@@ -226,6 +277,7 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                 // `- ` or `-\n` = sequence indicator
                 if pos + 1 >= bytes.len()
                     || bytes[pos + 1] == b' '
+                    || bytes[pos + 1] == b'\t'
                     || bytes[pos + 1] == b'\n'
                     || bytes[pos + 1] == b'\r'
                 {
@@ -247,6 +299,7 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
             b':' => {
                 if pos + 1 >= bytes.len()
                     || bytes[pos + 1] == b' '
+                    || bytes[pos + 1] == b'\t'
                     || bytes[pos + 1] == b'\n'
                     || bytes[pos + 1] == b'\r'
                 {
@@ -320,7 +373,18 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                 });
             }
             // Document end marker
-            b'.' if pos + 2 < bytes.len() && bytes[pos + 1] == b'.' && bytes[pos + 2] == b'.' => {
+            // Only at the start of a line and followed by a break, space or
+            // the end: `title: ...` is a value, and reading it as the end of
+            // the document dropped everything after it.
+            b'.' if at_line_start(bytes, pos)
+                && pos + 2 < bytes.len()
+                && bytes[pos + 1] == b'.'
+                && bytes[pos + 2] == b'.'
+                && matches!(
+                    bytes.get(pos + 3),
+                    None | Some(b' ' | b'\t' | b'\n' | b'\r')
+                ) =>
+            {
                 pos += 3;
                 tokens.push(Token {
                     kind: SyntaxKind::DocumentEnd,
@@ -354,6 +418,23 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                     }
                 }
             }
+            // Anchor `&name` or alias `*name` at the start of a node (REQ-346).
+            // The name runs to white space or a flow indicator. A lone `&` or
+            // `*` is plain text, as is either one inside a scalar (`R&D`).
+            b'&' | b'*' if bytes.get(pos + 1).is_some_and(|c| is_anchor_char(*c)) => {
+                pos += 1;
+                while bytes.get(pos).is_some_and(|c| is_anchor_char(*c)) {
+                    pos += 1;
+                }
+                tokens.push(Token {
+                    kind: if b == b'&' {
+                        SyntaxKind::Anchor
+                    } else {
+                        SyntaxKind::Alias
+                    },
+                    text: &source[start..pos],
+                });
+            }
             // Plain scalar (anything else)
             _ => {
                 pos = lex_plain_scalar(source, bytes, pos);
@@ -366,6 +447,53 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
     }
 
     tokens
+}
+
+/// The content indentation of the block scalar whose header (`|` or `>`) is
+/// at `header` and whose body starts at `body`, inside a collection at column
+/// `parent_indent` (see `Parser::parse_block_scalar`). Shared with
+/// `cst_text::block_scalar_text`, so the tree and the text agree.
+pub fn block_scalar_indent(src: &[u8], header: usize, body: usize, parent_indent: usize) -> usize {
+    let header_line = src.get(header..body).unwrap_or(&[]);
+    let explicit = header_line
+        .iter()
+        .skip(1)
+        .take_while(|b| !matches!(b, b' ' | b'\t' | b'#' | b'\n' | b'\r'))
+        .find(|b| b.is_ascii_digit() && **b != b'0')
+        .map(|b| usize::from(b - b'0'));
+    if let Some(n) = explicit {
+        return parent_indent.saturating_add(n);
+    }
+    let mut indent = parent_indent.saturating_add(1);
+    let mut pos = body;
+    while pos < src.len() {
+        let spaces = src[pos..].iter().take_while(|b| **b == b' ').count();
+        indent = indent.max(spaces);
+        let after = pos.saturating_add(spaces);
+        match src.get(after) {
+            Some(b'\n') => pos = after.saturating_add(1),
+            Some(b'\r') if src.get(after.saturating_add(1)) == Some(&b'\n') => {
+                pos = after.saturating_add(2);
+            }
+            _ => break,
+        }
+    }
+    indent
+}
+
+/// Whether `pos` is the first byte of a line: where `---` and `...` are
+/// document markers. Elsewhere they are text.
+fn at_line_start(bytes: &[u8], pos: usize) -> bool {
+    pos == 0 || bytes.get(pos - 1) == Some(&b'\n')
+}
+
+/// A character of an anchor or alias name: anything but white space and the
+/// flow indicators (YAML 1.2 `ns-anchor-char`).
+fn is_anchor_char(c: u8) -> bool {
+    !matches!(
+        c,
+        b' ' | b'\t' | b'\n' | b'\r' | b',' | b'[' | b']' | b'{' | b'}'
+    )
 }
 
 /// Scan a quoted scalar whose opening quote is at `start`, returning the
@@ -571,6 +699,28 @@ impl<'src> Parser<'src> {
 
     /// Consume newlines and comments, but NOT leading whitespace on a new line
     /// (since whitespace determines YAML structure).
+    /// Trivia inside `[...]` or `{...}`: indentation carries no structure in
+    /// flow context, so line-leading whitespace is eaten too (`eat_trivia`
+    /// stops there, because in block context it is the indent). Without this a
+    /// flow collection could not continue on a second line.
+    /// An anchor (`&name`) before a value: kept in the tree, ahead of the
+    /// node it names, then parsing continues with the node itself.
+    fn eat_anchor(&mut self) {
+        if self.at(SyntaxKind::Anchor) {
+            self.bump();
+            self.eat_spaces();
+        }
+    }
+
+    fn eat_flow_trivia(&mut self) {
+        while matches!(
+            self.current_kind(),
+            Some(SyntaxKind::Newline | SyntaxKind::Comment | SyntaxKind::Whitespace)
+        ) {
+            self.bump();
+        }
+    }
+
     fn eat_trivia(&mut self) {
         loop {
             match self.current_kind() {
@@ -633,12 +783,65 @@ impl<'src> Parser<'src> {
             self.bump();
             self.eat_trivia();
         }
-        // Parse root content (mapping or sequence)
+        // Root content: any node (REQ-346). A document may be a single scalar
+        // (`1.5`, `"text"`) or a flow collection as well as a block mapping or
+        // sequence; reading every document as a mapping failed with "expected
+        // ':' after mapping key".
         if !self.at_eof() {
-            if self.at(SyntaxKind::Dash) {
-                self.parse_block_sequence(0);
-            } else {
-                self.parse_block_mapping(0);
+            // The root may be indented (`  - id: H-1` under a comment line);
+            // its column is the first token's, not 0. Indented blank and
+            // comment lines before it are trivia, indentation included.
+            loop {
+                self.eat_trivia();
+                if self.at(SyntaxKind::Whitespace)
+                    && matches!(
+                        self.tokens.get(self.pos + 1).map(|t| t.kind),
+                        Some(SyntaxKind::Comment | SyntaxKind::Newline) | None
+                    )
+                {
+                    self.bump();
+                    continue;
+                }
+                break;
+            }
+            if self.at(SyntaxKind::Whitespace) {
+                self.bump();
+            }
+            let root_indent = self.current_indent();
+            self.eat_anchor();
+            match self.current_kind() {
+                Some(SyntaxKind::Dash) => self.parse_block_sequence(root_indent),
+                Some(SyntaxKind::LBracket) => self.parse_flow_sequence(),
+                Some(SyntaxKind::LBrace) => self.parse_flow_mapping(),
+                Some(SyntaxKind::Alias) => self.bump(),
+                Some(
+                    SyntaxKind::PlainScalar
+                    | SyntaxKind::SingleQuotedScalar
+                    | SyntaxKind::DoubleQuotedScalar,
+                ) if !self.peek_colon_after_scalar() => self.parse_next_line_scalar(0),
+                _ => self.parse_block_mapping(root_indent),
+            }
+            // Anything left but trivia and markers is content the root node
+            // did not take, and reading it as trivia would drop it silently.
+            self.eat_trivia();
+            if self.at(SyntaxKind::Whitespace) {
+                self.bump();
+            }
+            if self.at(SyntaxKind::DocumentEnd) {
+                self.bump();
+                self.eat_trivia();
+                if self.at(SyntaxKind::Whitespace) {
+                    self.bump();
+                }
+            }
+            if !self.at_eof() && !self.at(SyntaxKind::DirectiveMarker) {
+                self.errors.push(ParseError {
+                    offset: self.byte_offset,
+                    message: format!(
+                        "unexpected {:?} after the document's value",
+                        self.current_kind()
+                    ),
+                });
             }
         }
         // Consume any remaining tokens.
@@ -742,6 +945,7 @@ impl<'src> Parser<'src> {
         // Value
         self.eat_spaces();
         self.builder.start_node(SyntaxKind::Value.into());
+        self.eat_anchor();
 
         match self.current_kind() {
             // Block scalar: | or >
@@ -761,7 +965,8 @@ impl<'src> Parser<'src> {
             Some(
                 SyntaxKind::PlainScalar
                 | SyntaxKind::SingleQuotedScalar
-                | SyntaxKind::DoubleQuotedScalar,
+                | SyntaxKind::DoubleQuotedScalar
+                | SyntaxKind::Alias,
             ) => {
                 // Consume all tokens on this line as part of the value
                 while !self.at_eof()
@@ -817,7 +1022,26 @@ impl<'src> Parser<'src> {
                         // disappears from the salsa validate path (REQ-091).
                         self.parse_block_sequence(child_indent);
                     } else if child_indent > entry_indent {
-                        self.parse_block_mapping(child_indent);
+                        // A value on the line after its key can be any node,
+                        // not only a nested mapping (REQ-346): rivet.yaml's own
+                        // `trace-exempt-artifacts:` is a flow sequence written
+                        // there, under comment lines. Reading it as a mapping
+                        // failed with "expected mapping key, found LBracket".
+                        match self.current_kind() {
+                            Some(SyntaxKind::LBracket) => self.parse_flow_sequence(),
+                            Some(SyntaxKind::LBrace) => self.parse_flow_mapping(),
+                            Some(SyntaxKind::Pipe | SyntaxKind::Gt) => {
+                                self.parse_block_scalar(entry_indent);
+                            }
+                            Some(
+                                SyntaxKind::PlainScalar
+                                | SyntaxKind::SingleQuotedScalar
+                                | SyntaxKind::DoubleQuotedScalar,
+                            ) if !self.peek_colon_after_scalar() => {
+                                self.parse_next_line_scalar(entry_indent);
+                            }
+                            _ => self.parse_block_mapping(child_indent),
+                        }
                     }
                     // Else: empty value.
                 }
@@ -856,6 +1080,7 @@ impl<'src> Parser<'src> {
             self.builder.start_node(SyntaxKind::SequenceItem.into());
             self.bump(); // consume `-`
             self.eat_spaces();
+            self.eat_anchor();
 
             // Item value
             match self.current_kind() {
@@ -870,6 +1095,20 @@ impl<'src> Parser<'src> {
                 }
                 Some(SyntaxKind::Pipe | SyntaxKind::Gt) => {
                     self.parse_block_scalar(indent);
+                }
+                Some(SyntaxKind::Alias) => {
+                    self.bump();
+                    self.eat_spaces();
+                    if self.at(SyntaxKind::Comment) {
+                        self.bump();
+                    }
+                }
+                // `- - p` then `  - q`: a sequence nested in the item, at the
+                // inner dash's column. Without this arm the item read as null
+                // and the nested items became siblings (REQ-346).
+                Some(SyntaxKind::Dash) => {
+                    let column = self.current_indent();
+                    self.parse_block_sequence(column);
                 }
                 Some(
                     SyntaxKind::PlainScalar
@@ -954,7 +1193,7 @@ impl<'src> Parser<'src> {
         self.bump(); // consume `[`
 
         loop {
-            self.eat_trivia();
+            self.eat_flow_trivia();
             if self.at_eof() || self.at(SyntaxKind::RBracket) {
                 break;
             }
@@ -963,9 +1202,15 @@ impl<'src> Parser<'src> {
                 Some(
                     SyntaxKind::PlainScalar
                     | SyntaxKind::SingleQuotedScalar
-                    | SyntaxKind::DoubleQuotedScalar,
+                    | SyntaxKind::DoubleQuotedScalar
+                    | SyntaxKind::Alias,
                 ) => {
                     self.bump();
+                }
+                // `[&a x, *a]`: the anchor names the item that follows it.
+                Some(SyntaxKind::Anchor) => {
+                    self.bump();
+                    continue;
                 }
                 Some(SyntaxKind::LBracket) => {
                     self.parse_flow_sequence(); // nested
@@ -984,7 +1229,7 @@ impl<'src> Parser<'src> {
                     self.builder.finish_node();
                 }
             }
-            self.eat_trivia();
+            self.eat_flow_trivia();
             if self.at(SyntaxKind::Comma) {
                 self.bump();
             }
@@ -1022,7 +1267,7 @@ impl<'src> Parser<'src> {
         self.bump(); // consume `{`
 
         loop {
-            self.eat_trivia();
+            self.eat_flow_trivia();
             if self.at_eof() || self.at(SyntaxKind::RBrace) {
                 break;
             }
@@ -1073,6 +1318,10 @@ impl<'src> Parser<'src> {
         self.eat_spaces();
         if self.at(SyntaxKind::Colon) {
             self.bump();
+        } else if self.at(SyntaxKind::Comma) || self.at(SyntaxKind::RBrace) {
+            // `{a, b}`: a key with no value, which YAML reads as null.
+            self.builder.finish_node();
+            return;
         } else {
             self.errors.push(ParseError {
                 offset: self.byte_offset,
@@ -1084,6 +1333,7 @@ impl<'src> Parser<'src> {
         self.eat_spaces();
 
         self.builder.start_node(SyntaxKind::Value.into());
+        self.eat_anchor();
         match self.current_kind() {
             Some(SyntaxKind::LBrace) => self.parse_flow_mapping(),
             Some(SyntaxKind::LBracket) => self.parse_flow_sequence(),
@@ -1106,8 +1356,33 @@ impl<'src> Parser<'src> {
         self.builder.finish_node(); // MappingEntry
     }
 
+    /// A scalar that starts on the line after its key: the line, then any
+    /// continuation lines indented deeper than the key.
+    fn parse_next_line_scalar(&mut self, entry_indent: usize) {
+        loop {
+            while !self.at_eof() && !self.at(SyntaxKind::Newline) && !self.at(SyntaxKind::Comment) {
+                self.bump();
+            }
+            if self.at(SyntaxKind::Comment) {
+                self.bump();
+            }
+            if !(self.at(SyntaxKind::Newline) && self.is_plain_scalar_continuation(entry_indent)) {
+                break;
+            }
+            self.bump(); // newline
+        }
+    }
+
+    /// A block scalar (`|` or `>`). Its content indentation is the explicit
+    /// indicator added to `parent_indent` (the enclosing collection's column),
+    /// or else, as libyaml scans it, the largest of: the spaces on leading
+    /// blank lines, the first content line's spaces, and `parent_indent + 1`.
+    /// Only spaces indent; a tab is content. The scalar ends at the first
+    /// non-blank line indented less than that (REQ-346): ending only at the
+    /// parent's column took in lower-indented comment lines as content.
     fn parse_block_scalar(&mut self, parent_indent: usize) {
         self.builder.start_node(SyntaxKind::BlockScalar.into());
+        let header_offset = self.byte_offset;
         self.bump(); // consume `|` or `>`
 
         // Optional chomp/keep indicator and width on the same line
@@ -1127,45 +1402,29 @@ impl<'src> Parser<'src> {
             self.bump();
         }
 
-        // Consume continuation lines (indented deeper than parent)
+        let content_indent = block_scalar_indent(
+            self.source_bytes,
+            header_offset,
+            self.byte_offset,
+            parent_indent,
+        );
+
         loop {
             if self.at_eof() {
                 break;
             }
-            // Check if next content line is indented deeper
-            let mut lookahead = self.pos;
-            let mut line_indent = 0;
-            let mut is_blank = true;
-            while lookahead < self.tokens.len() {
-                match self.tokens[lookahead].kind {
-                    SyntaxKind::Whitespace => {
-                        line_indent = self.tokens[lookahead].text.len();
-                        lookahead += 1;
-                    }
-                    SyntaxKind::Newline => {
-                        // Blank line — keep it as part of block scalar
-                        break;
-                    }
-                    _ => {
-                        is_blank = false;
-                        break;
-                    }
-                }
+            let line_start = self.byte_offset;
+            let line_end = self.source_bytes[line_start..]
+                .iter()
+                .position(|b| *b == b'\n')
+                .map_or(self.source_bytes.len(), |i| line_start + i);
+            let line = &self.source_bytes[line_start..line_end];
+            let spaces = line.iter().take_while(|b| **b == b' ').count();
+            let blank = line[spaces..].iter().all(|b| *b == b'\r');
+            if !blank && spaces < content_indent {
+                break;
             }
-
-            if is_blank && lookahead < self.tokens.len() {
-                // Blank line: consume whitespace + newline
-                while self.pos <= lookahead && !self.at_eof() {
-                    self.bump_as(SyntaxKind::BlockScalarLine);
-                }
-                continue;
-            }
-
-            if line_indent <= parent_indent {
-                break; // Back to parent indent or less — end of block scalar
-            }
-
-            // Consume the entire line as BlockScalarLine
+            // Consume the whole line, its break included.
             while !self.at_eof() && !self.at(SyntaxKind::Newline) {
                 self.bump_as(SyntaxKind::BlockScalarLine);
             }
@@ -1227,7 +1486,11 @@ impl<'src> Parser<'src> {
         }
         match self.tokens[la].kind {
             SyntaxKind::Newline => false, // blank line
-            SyntaxKind::Dash => false,    // sequence indicator
+            // A more-indented `- …` line inside a plain scalar is text, not a
+            // sequence: YAML (and libyaml) fold it into the scalar
+            // (yaml-test-suite AB8U). Reading it as a nested sequence split
+            // one value into two, silently.
+            SyntaxKind::Dash => true,
             SyntaxKind::Comment => false, // comment-only line
             SyntaxKind::PlainScalar
             | SyntaxKind::SingleQuotedScalar
@@ -1304,6 +1567,18 @@ pub fn offset_to_line_col(line_starts: &[u32], offset: u32) -> (u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn syntax_kind_table_matches_discriminants() {
+        for (i, kind) in SYNTAX_KINDS.iter().enumerate() {
+            assert_eq!(
+                *kind as usize, i,
+                "{kind:?} is out of place in SYNTAX_KINDS"
+            );
+            let raw = rowan::SyntaxKind(u16::try_from(i).unwrap());
+            assert_eq!(<YamlLanguage as rowan::Language>::kind_from_raw(raw), *kind);
+        }
+    }
 
     fn parse_and_check(source: &str) -> SyntaxNode {
         let (green, errors) = parse(source);

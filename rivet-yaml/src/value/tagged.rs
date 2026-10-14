@@ -34,29 +34,22 @@ pub struct Tag {
 
 /// A `Tag` + `Value` representing a tagged YAML scalar, sequence, or mapping.
 ///
+/// rivet's parser does not read YAML tags (REQ-346): a document containing one
+/// is an error. A `TaggedValue` is built in code instead.
+///
 /// ```
-/// use rivet_yaml::value::TaggedValue;
-/// use std::collections::BTreeMap;
+/// use rivet_yaml::value::{Tag, TaggedValue};
+/// use rivet_yaml::Value;
 ///
-/// let yaml = "
-///     scalar: !Thing x
-///     sequence_flow: !Thing [first]
-///     sequence_block: !Thing
-///       - first
-///     mapping_flow: !Thing {k: v}
-///     mapping_block: !Thing
-///       k: v
-/// ";
-///
-/// let data: BTreeMap<String, TaggedValue> = rivet_yaml::from_str(yaml).unwrap();
-/// assert!(data["scalar"].tag == "Thing");
-/// assert!(data["sequence_flow"].tag == "Thing");
-/// assert!(data["sequence_block"].tag == "Thing");
-/// assert!(data["mapping_flow"].tag == "Thing");
-/// assert!(data["mapping_block"].tag == "Thing");
-///
+/// let tagged = TaggedValue {
+///     tag: Tag::new("Thing"),
+///     value: Value::String("x".into()),
+/// };
+/// assert!(tagged.tag == "Thing");
 /// // The leading '!' in tags are not significant. The following is also true.
-/// assert!(data["scalar"].tag == "!Thing");
+/// assert!(tagged.tag == "!Thing");
+///
+/// assert!(rivet_yaml::from_str::<Value>("scalar: !Thing x").is_err());
 /// ```
 #[derive(Clone, PartialEq, PartialOrd, Hash, Debug)]
 pub struct TaggedValue {

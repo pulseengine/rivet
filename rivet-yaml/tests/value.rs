@@ -134,7 +134,6 @@ Sequence:
   - true
 EmptySequence: []
 EmptyMapping: {}
-Tagged: !tag true
 ";
 
     let value: Value = rivet_yaml::from_str(yaml).unwrap();
@@ -150,13 +149,20 @@ Tagged: !tag true
     ],
     "EmptySequence": Sequence [],
     "EmptyMapping": Mapping {},
-    "Tagged": TaggedValue {
-        tag: !tag,
-        value: Bool(true),
-    },
 }"#;
 
     assert_eq!(debug, expected);
+}
+
+/// rivet's own parser refuses YAML tags (REQ-346) rather than read `!tag true`
+/// as a string or guess at a type; serde_yaml accepted them.
+#[test]
+fn tags_are_refused_with_their_position() {
+    let err = rivet_yaml::from_str::<Value>("a: 1\nTagged: !tag true\n").unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "YAML tags are not supported; write the value out in full at line 2 column 9"
+    );
 }
 
 #[test]

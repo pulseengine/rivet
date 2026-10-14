@@ -6251,8 +6251,8 @@ fn variant_matrix_emits_github_actions_fragment() {
     assert!(stdout.contains("attr_asil: \"QM\""));
     assert!(stdout.contains("runner: ubuntu-latest"));
     // Round-trips as YAML.
-    let _: serde_yaml::Value =
-        serde_yaml::from_str(&stdout).expect("emitted fragment is valid YAML");
+    let _: rivet_yaml::Value =
+        rivet_yaml::from_str(&stdout).expect("emitted fragment is valid YAML");
 }
 
 /// `--variant NAME` restricts the matrix to a single entry.
