@@ -142,6 +142,12 @@
   never affected.
 
 ### Changed
+- **API: the YAML CST moved to `rivet-yaml`** (REQ-346) — `rivet_core::yaml_cst`
+  is now a re-export of `rivet_yaml::cst`, so every path
+  (`rivet_core::yaml_cst::{SyntaxKind, YamlLanguage, Token, ParseError, lex,
+  parse, line_starts, offset_to_line_col}`) still resolves. cargo-semver-checks
+  cannot follow re-exports of another crate's items and reports them removed;
+  this is recorded as an accepted 0.41 change (maintainer decision).
 - **rivet reads and writes YAML with its own parser and emitter** (REQ-346).
   Artifacts, schemas and config read exactly as before: on every YAML file
   and docs YAML block in this repository the new path matched serde_yaml
