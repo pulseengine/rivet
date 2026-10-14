@@ -6902,7 +6902,12 @@ artifacts:
         - The `Verus Proofs` job runs on `ubuntu-latest` with
           `cachix/install-nix-action` and its check goes GREEN (the proofs run,
           no Install-Nix failure).
-        - The `Miri` job `timeout-minutes` is 45.
+        - The `Miri` job `timeout-minutes` was raised to 45 by this fix. It was
+          later superseded, not regressed: #521 ran Miri under cargo-nextest
+          (process-per-test), so the PR-gate job `Miri (safety surface)` now
+          carries a 20 min step cap inside a 30 min job-level
+          `timeout-minutes`, and the nightly `Miri (full, nightly)` job has its
+          own 120 min budget. The 45 min value no longer applies.
         - `actionlint` clean (modulo pre-existing custom runner-label notes).
         - A subsequent main CI run is green on all non-`continue-on-error` jobs.
     tags: [ci, reliability, verus, miri, nix, dogfooding]

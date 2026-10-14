@@ -313,8 +313,8 @@ To explicitly skip traceability for any other commit, add: `Trace: skip`
 - **CLI command** -> `Implements: REQ-007` (CLI and serve pattern)
 - **STPA-related** -> `Implements: REQ-002` (STPA artifact support)
 - **Validation fix** -> `Fixes: REQ-004` (validation engine)
-- **Dashboard/serve** -> `Refs: FEAT-001` or relevant FEAT-NNN
-- **MCP server** -> `Refs: FEAT-010, REQ-022`
+- **Dashboard/serve** -> `Refs: FEAT-009` or relevant FEAT-NNN
+- **MCP server** -> `Refs: FEAT-080`
 - **Test addition** -> `Verifies: REQ-NNN` for the requirement being tested
 
 ### Retroactive Traceability Map
