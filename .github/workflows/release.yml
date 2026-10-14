@@ -44,6 +44,20 @@ jobs:
             os: ubuntu-latest
             archive: tar.gz
             cross: true
+          # #980: musl beside gnu — glibc 2.39 floor on the gnu assets
+          # excludes Alpine (musl), distroless-static (none), and older
+          # LTS distros. Static musl builds pick up the slack without
+          # regressing gnu consumers. varve resolves a Linux host to the
+          # gnu triple, so the musl archive fills the gnu-keyed slot in
+          # the rolling layer per pulseengine/varve#175.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            archive: tar.gz
+            cross: true
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            archive: tar.gz
+            cross: true
           - target: x86_64-apple-darwin
             os: macos-14
             archive: tar.gz
@@ -79,6 +93,22 @@ jobs:
       - name: Strip binary (Unix)
         if: runner.os != 'Windows'
         run: strip "target/${{ matrix.target }}/release/rivet" 2>/dev/null || true
+
+      # #980: assert the musl archives are statically linked. A musl build
+      # that silently resolved to the host dynamic loader would ship with
+      # the same portability floor as the gnu asset — the whole point of
+      # publishing a second triple is defeated. Fail the release step
+      # rather than ship a mislabelled archive.
+      - name: Verify static linking (musl)
+        if: contains(matrix.target, '-musl')
+        run: |
+          set -euo pipefail
+          BIN="target/${{ matrix.target }}/release/rivet"
+          file "$BIN"
+          file "$BIN" | grep -q 'statically linked' || {
+            echo "::error::expected statically linked binary for ${{ matrix.target }}"
+            exit 1
+          }
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
