@@ -5,6 +5,30 @@
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-10-14
+
+v0.41.0 is about **owning what rivet reads and proving what it claims**.
+Every artifact rivet loads used to pass through serde_yaml, an archived crate
+whose unmaintained C port failed the advisory gate on every pull request; rivet
+now reads and writes YAML with its own parser and emitter, judged against the
+official yaml-test-suite.
+
+- **Its own YAML.** The lossless CST that already backed editing now feeds a
+  serde deserializer and a libyaml-compatible emitter. Before serde_yaml was
+  removed the two agreed byte for byte on every YAML file and docs block in
+  this repository; after, the pinned yaml-test-suite is the oracle in CI: 402
+  cases, none read silently wrong. Tags are refused rather than guessed, and
+  anchors expand under a copy cap.
+- **Surfaces that agree.** The static export, MCP, snapshots and the coverage
+  JSON now give the same answer as `rivet validate` (REQ-400), and link-type
+  source and target restrictions are enforced instead of documented (REQ-401).
+- **Gates that can fail.** A pull request that adds a traceability finding on
+  implemented work now fails; a link with an empty target fails validation on
+  both paths; Kani runs only the proofs that verify instead of dying before any
+  ran; and `rivet verify --dry-run` shows the evidence before it is written.
+- **Supply chain.** wasmtime and rustls advisories are cleared, and the
+  advisory gate now sees dependencies behind features.
+
 ### Added
 - **musl Linux release assets** (#980) — `rivet-<tag>-x86_64-unknown-linux-musl.tar.gz`
   and the aarch64 equivalent now ship alongside the gnu archives, built with
@@ -19,7 +43,7 @@
   feature or design decision, so it is exempt from `requirement-coverage`
   (through the existing `exempt-when-field`, #848). It still needs
   verification.
-- **CI traceability ratchet** (REQ-389) — a pull request now fails when it
+- **CI traceability ratchet** (part of REQ-389, which continues in the next release) — a pull request now fails when it
   adds a traceability-rule warning or error on an artifact at implemented,
   verified, accepted or released that its base did not have, for example a
   requirement promoted to implemented with no verifying test. The existing
@@ -75,7 +99,7 @@
   passed while `validate --direct` reported the broken link. Both paths now
   report it. Shorthand `losses: null` still means "no link". Found by the
   yaml_footguns fuzzer, which had failed on it on every scheduled run.
-- **Source markers lost ids** (REQ-389) — a marker naming several ids
+- **Source markers lost ids** (part of REQ-389) — a marker naming several ids
   (`// rivet: verifies SC-15, UCA-D-3`) counted only the first, a dotted STPA
   id (`H-13.1`) was cut to its parent (`H-13`), and a file-level `//! rivet:
   verifies` marker was not read at all. All three now count. On this
@@ -119,7 +143,7 @@
   source was FAIL on the command line and PASS over MCP. It now runs the CLI's
   own validation step, reports each diagnostic's `rule` and the count of broken
   cross-repo references, and reads the project from disk on each call.
-- **`rivet validate` output is byte-identical across runs** (REQ-029, #1049) —
+- **`rivet validate` output is byte-identical across runs** (#1049, a REQ-029 regression) —
   the salsa conditional-rule query iterated the backing store's `HashMap`
   directly, so warnings for `ai-generated-needs-review` and other
   conditional rules reordered between runs. The direct `validate` path
@@ -177,7 +201,7 @@
   position; serde_yaml accepted them. Conformance is gated in CI against the
   official yaml-test-suite: no case is read silently wrong.
 - **A `rivet: verifies` source marker counts as verification evidence in
-  coverage and validation** (REQ-389) — `rivet verify` and release readiness
+  coverage and validation** (part of REQ-389) — `rivet verify` and release readiness
   accepted a marker, but the traceability rules counted only `verifies` links,
   so a requirement verified through a marker still read as unverified in
   `rivet validate`, `rivet coverage`, the dashboard, the API, MCP and `rivet
@@ -212,7 +236,7 @@
   `verify` now refuses a requirement whose only evidence is a link from an
   unverified artifact; verify that artifact first, or add a
   `// rivet: verifies <ID>` marker. Already-verified artifacts are unchanged.
-- **The release publishes to Open VSX without a stored token** (REQ-397) —
+- **The release publishes to Open VSX without a stored token** (toward REQ-397, verified against these assets after the release) —
   with trusted publishing, the release job exchanges its GitHub OIDC token for
   a five-minute token that can publish only this extension. The job chooses
   its mode explicitly: an `OVSX_PAT` secret publishes with the token, the
