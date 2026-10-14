@@ -1022,7 +1022,7 @@ jobs:
   # lex(). Need targeted tests before this can be flipped. See the
   # per-crate `continue-on-error` below.
   mutants-core:
-    name: Mutation Testing (rivet-core ${{ matrix.shard_id }})
+    name: Mutation Testing (${{ matrix.crate }} ${{ matrix.shard_id }})
     needs: [test]
     # NON-GATING (continue-on-error) and runner-heavy on the self-hosted
     # lean-mem pool. 64 shards (maintainer decision, 2026-10-13): at 16 shards a
@@ -1033,6 +1033,10 @@ jobs:
     # is unchanged. Run it NIGHTLY (+ manual) only, not every push —
     # on every push it saturated the pool and queued the gating jobs for hours
     # (#498). The hard-gate rivet-cli mutants run per-push in `mutants-cli` below.
+    # rivet-yaml has its own 16 shards (1564 mutants, ~98 each, same budget as a
+    # rivet-core shard): it owns the YAML parser/emitter since REQ-346, and the
+    # PR-diff job cannot judge it because the moved cst.rs counts as all-new.
+    # Shards run `--lib` like the rest, so tests/yaml_test_suite.rs is not seen.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, linux, x64, lean-mem]
     timeout-minutes: 75
@@ -1105,6 +1109,22 @@ jobs:
           - { crate: rivet-core, shard: '61/64', shard_id: '61-of-64' }
           - { crate: rivet-core, shard: '62/64', shard_id: '62-of-64' }
           - { crate: rivet-core, shard: '63/64', shard_id: '63-of-64' }
+          - { crate: rivet-yaml, shard: '0/16', shard_id: '00-of-16' }
+          - { crate: rivet-yaml, shard: '1/16', shard_id: '01-of-16' }
+          - { crate: rivet-yaml, shard: '2/16', shard_id: '02-of-16' }
+          - { crate: rivet-yaml, shard: '3/16', shard_id: '03-of-16' }
+          - { crate: rivet-yaml, shard: '4/16', shard_id: '04-of-16' }
+          - { crate: rivet-yaml, shard: '5/16', shard_id: '05-of-16' }
+          - { crate: rivet-yaml, shard: '6/16', shard_id: '06-of-16' }
+          - { crate: rivet-yaml, shard: '7/16', shard_id: '07-of-16' }
+          - { crate: rivet-yaml, shard: '8/16', shard_id: '08-of-16' }
+          - { crate: rivet-yaml, shard: '9/16', shard_id: '09-of-16' }
+          - { crate: rivet-yaml, shard: '10/16', shard_id: '10-of-16' }
+          - { crate: rivet-yaml, shard: '11/16', shard_id: '11-of-16' }
+          - { crate: rivet-yaml, shard: '12/16', shard_id: '12-of-16' }
+          - { crate: rivet-yaml, shard: '13/16', shard_id: '13-of-16' }
+          - { crate: rivet-yaml, shard: '14/16', shard_id: '14-of-16' }
+          - { crate: rivet-yaml, shard: '15/16', shard_id: '15-of-16' }
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
