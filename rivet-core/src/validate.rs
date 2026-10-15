@@ -765,23 +765,27 @@ pub fn validate_structural_with_externals_and_variant(
             ) || ft.starts_with("list<");
             if structured {
                 if let Some(s) = effective_fields.get(&field.name).and_then(|v| v.as_str()) {
-                    let rewrite_hint = match ft {
-                        "mapping" => format!(
+                    // One sequence hint for `sequence`, `list` and
+                    // `list<...>` — the three names a schema may give the
+                    // same shape — so the `rewrite_hint` match carries one
+                    // arm per on-disk form, not three.
+                    let sequence_like =
+                        matches!(ft, "sequence" | "list") || ft.starts_with("list<");
+                    let rewrite_hint = if ft == "mapping" {
+                        format!(
                             "rivet modify {} --set-field '{}={{k: v, k: v}}'",
                             artifact.id, field.name
-                        ),
-                        "sequence" | "list" => format!(
+                        )
+                    } else if sequence_like {
+                        format!(
                             "rivet modify {} --set-field '{}=[a, b, c]'",
                             artifact.id, field.name
-                        ),
-                        _ if ft.starts_with("list<") => format!(
-                            "rivet modify {} --set-field '{}=[a, b, c]'",
-                            artifact.id, field.name
-                        ),
-                        _ => format!(
+                        )
+                    } else {
+                        format!(
                             "rivet modify {} --set-field {}={}",
                             artifact.id, field.name, s
-                        ),
+                        )
                     };
                     diagnostics.push(Diagnostic {
                         source_file: None,
@@ -2711,6 +2715,7 @@ then:
                 ("tags", "sequence"),
                 ("legacy-list", "list"),
                 ("standards", "list<string>"),
+                ("flag", "boolean"),
                 ("note", "string"),
             ],
         );
@@ -2737,6 +2742,11 @@ then:
                 "standards",
                 rivet_yaml::Value::String("[\"ISO26262\"]".into()),
             ),
+            // A boolean-declared field is `structured` too (REQ-385's
+            // original arms) and must land in the plain-hint branch of
+            // the rewrite_hint cascade — pins the fallthrough so the
+            // sequence-like arm cannot swallow it.
+            ("C-5", "flag", rivet_yaml::Value::String("true".into())),
             // Not flagged: the typed value matches the declared type.
             ("C-OK-M", "produced-by", valid_mapping),
             ("C-OK-S", "tags", valid_sequence),
@@ -2761,28 +2771,41 @@ then:
                 "C-2".to_string(),
                 "C-3".to_string(),
                 "C-4".to_string(),
+                "C-5".to_string(),
             ],
-            "only the string-in-structured-field cases are flagged"
+            "every string-in-structured-field case is flagged, boolean included"
         );
-        // The rewrite hint names the structured flow syntax, not `=string`,
-        // so a caller copying the hint lands a real mapping.
-        let mapping_msg = &diags
-            .iter()
-            .find(|d| d.rule == "field-type-mismatch" && d.artifact_id.as_deref() == Some("C-1"))
-            .unwrap()
-            .message;
+
+        // The rewrite hint for each declared shape uses the corresponding
+        // flow syntax: a mapping gets `{k: v, k: v}`; `sequence`, `list`
+        // and `list<...>` each get `[a, b, c]`; a boolean (and the other
+        // non-structural-shape typed fields) gets the plain `name=value`.
+        // Asserting each case kills the mutation surface on both the
+        // outer `structured` match set and the inner `sequence_like`
+        // check — delete either and this fixture reddens.
+        let msg_for = |id: &str| -> &str {
+            &diags
+                .iter()
+                .find(|d| d.rule == "field-type-mismatch" && d.artifact_id.as_deref() == Some(id))
+                .unwrap_or_else(|| panic!("no field-type-mismatch for {id}"))
+                .message
+        };
         assert!(
-            mapping_msg.contains("{k: v, k: v}"),
-            "mapping hint uses flow syntax: {mapping_msg}"
+            msg_for("C-1").contains("{k: v, k: v}"),
+            "mapping hint uses flow mapping syntax: {}",
+            msg_for("C-1")
         );
-        let list_msg = &diags
-            .iter()
-            .find(|d| d.rule == "field-type-mismatch" && d.artifact_id.as_deref() == Some("C-4"))
-            .unwrap()
-            .message;
+        for id in ["C-2", "C-3", "C-4"] {
+            let m = msg_for(id);
+            assert!(
+                m.contains("[a, b, c]"),
+                "{id}'s sequence-like hint uses `[a, b, c]`, not the plain form: {m}"
+            );
+        }
+        let bool_msg = msg_for("C-5");
         assert!(
-            list_msg.contains("[a, b, c]"),
-            "list<..> hint uses flow sequence syntax: {list_msg}"
+            bool_msg.contains("--set-field flag=true") && !bool_msg.contains("[a, b, c]"),
+            "boolean hint uses the plain `name=value` form, not sequence-like: {bool_msg}"
         );
     }
 
