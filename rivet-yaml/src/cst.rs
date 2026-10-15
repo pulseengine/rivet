@@ -1595,6 +1595,40 @@ mod tests {
         root
     }
 
+    /// The `...` document-end marker is one token of exactly three dots; two
+    /// dots, or dots with something between them, are not a marker, and input
+    /// that ends in `..` must not read past its end. The nightly mutation sweep
+    /// found every mutant of this lexer arm alive: nothing tested it.
+    // rivet: verifies REQ-028
+    #[test]
+    fn lexes_the_document_end_marker_and_only_it() {
+        let kinds = |src: &str| -> Vec<(SyntaxKind, String)> {
+            lex(src)
+                .into_iter()
+                .map(|t| (t.kind, t.text.to_string()))
+                .collect()
+        };
+        let ends = |src: &str| {
+            kinds(src)
+                .into_iter()
+                .filter(|(k, _)| *k == SyntaxKind::DocumentEnd)
+                .map(|(_, t)| t)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ends("a: 1\n...\n"), vec!["..."]);
+        // The marker is followed by exactly what came after it.
+        let after: Vec<SyntaxKind> = kinds("a: 1\n...\nb")
+            .into_iter()
+            .skip_while(|(k, _)| *k != SyntaxKind::DocumentEnd)
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(after.len(), 3, "{after:?}");
+        assert_eq!(after[0], SyntaxKind::DocumentEnd);
+        for not_a_marker in ["a: 1\n.x.\n", "a: 1\n..x\n", "a: 1\nx.. \n", "a: 1\n.."] {
+            assert!(ends(not_a_marker).is_empty(), "{not_a_marker:?}");
+        }
+    }
+
     /// A document SEPARATOR must be diagnosed; a document START must not be.
     ///
     /// `parse_root` skips one leading `---` and then consumes the rest of the
