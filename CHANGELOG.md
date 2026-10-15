@@ -6,6 +6,14 @@
 ## [Unreleased]
 
 ### Added
+- **musl Linux release assets** (#980) — `rivet-<tag>-x86_64-unknown-linux-musl.tar.gz`
+  and the aarch64 equivalent now ship alongside the gnu archives, built with
+  `cross` and verified statically linked at release time. The gnu assets still
+  carry a glibc floor that excludes Alpine, distroless-static, and older LTS
+  distros; the musl archives pick up those targets without regressing anyone
+  on the gnu triple. varve resolves a Linux host to the gnu triple
+  (pulseengine/varve#175), so the musl archive is what the rolling layer
+  ingests for its Linux platform keys.
 - **`corrective: true` on a requirement** (dev schema 0.5.0) — a requirement
   that fixes a defect or closes a gap is satisfied by its fix, not by a
   feature or design decision, so it is exempt from `requirement-coverage`
