@@ -5,7 +5,7 @@
 
 ## [Unreleased]
 
-## [0.41.0] - 2026-10-14
+## [0.41.0] - 2026-10-15
 
 v0.41.0 is about **owning what rivet reads and proving what it claims**.
 Every artifact rivet loads used to pass through serde_yaml, an archived crate
@@ -67,7 +67,18 @@ official yaml-test-suite.
   was affected:** source builds with `--features wasm` and `rivet-core` used as
   a library with that feature. The published binaries are built without it and
   contain no wasmtime. A test now fails on every `cargo test` run if
-  `Cargo.lock` resolves an affected version again.
+  `Cargo.lock` resolves an affected release again.
+- **wasmtime 48.0.5 → 48.0.6** (RUSTSEC-2026-0353 to RUSTSEC-2026-0364) —
+  host panics in component start functions and after traps, a missed
+  async-entrypoint check and unaligned exception-tag data. Same exposure as
+  above: `--features wasm` builds only. The `Cargo.lock` floor test now
+  rejects 48.0.5 and 49.0.2.
+- **rustls 0.23.45 → 0.23.46** (RUSTSEC-2026-0346 to RUSTSEC-2026-0349) —
+  four advisories in the TLS stack: ECH-rejection data leakage, unbounded
+  certificate decompression, a key-exchange downgrade and session secrets in
+  `Debug` output. rustls reaches rivet only through reqwest behind
+  `rivet-core`'s optional `oslc` feature; the published binaries are built
+  without it.
 - **The advisory gate now sees feature-gated dependencies** (REQ-402, #1034) —
   `cargo deny`, the only advisory check in CI Gate, analysed default features
   only, so it passed on wasmtime 48.0.3. It now analyses every feature. The
@@ -83,13 +94,14 @@ official yaml-test-suite.
   flow collection spanning lines, an indented root sequence and `- - x`
   nested sequences failed to parse.
 - **`rivet add --field` and `rivet validate` on mapping / sequence fields**
-  (REQ-385, #1021) — `--field 'produced-by={name: X, version: Y}'` on an
+  (#1021, extending the v0.40.0 fix for REQ-385) —
+  `--field 'produced-by={name: X, version: Y}'` on an
   `ordeal-certificate` (and every other `type: mapping` field) wrote the
   quoted string literal, so `recheck.command` and `produced-by.version` read
   as `None` for every consumer. `rivet validate` accepted it because
   `field-type-mismatch` covered only boolean/numeric declared types.
   `rivet add` now routes through the same coercion helper `rivet modify`
-  uses (REQ-385 / #1008), parses the value against the schema's declared
+  uses (#1008, REQ-385), parses the value against the schema's declared
   `type: mapping` / `sequence` / `list` / `list<...>`, and refuses an input
   that is not of that shape rather than silently storing a string. The
   validate check grows the same arms, so a legacy string that landed before
