@@ -38,8 +38,8 @@ Quick reference for common work:
 - Validation changes -> `Implements: REQ-004` or `Fixes: REQ-004`
 - Schema changes -> `Implements: REQ-010`
 - CLI commands -> `Implements: REQ-007`
-- Dashboard/serve -> `Refs: FEAT-001`
-- MCP server -> `Refs: FEAT-010`
+- Dashboard/serve -> `Refs: FEAT-009`
+- MCP server -> `Refs: FEAT-080`
 - STPA artifacts -> `Implements: REQ-002`
 - Test additions -> `Verifies: REQ-NNN` (the requirement being tested)
 
