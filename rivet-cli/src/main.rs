@@ -19345,9 +19345,27 @@ fn cmd_add(
     }
 
     // Build fields map
+    //
+    // #1021: `--field k=v` used to store `v` unconditionally as
+    // `Value::String`, ignoring the schema's declared `type`. On an
+    // `ordeal-certificate` the result was `produced-by: "{name: ordeal,
+    // version: 0.23.0}"` — a quoted string literal — and `rivet validate`
+    // accepted it (REQ-385's field-type-mismatch check covered only
+    // boolean/numeric). Route through the sibling `rivet modify` helper so
+    // the two write paths share one coercion contract: structured declared
+    // types (mapping, sequence/list, boolean, numeric) are parsed and
+    // written as real YAML; a parse failure refuses the add instead of
+    // silently falling back to a string.
     let mut fields_map: BTreeMap<String, rivet_yaml::Value> = BTreeMap::new();
     for (key, value) in fields {
-        fields_map.insert(key.clone(), rivet_yaml::Value::String(value.clone()));
+        let typed_scalar = mutate::typed_field_scalar(&schema, artifact_type, key, value)
+            .with_context(|| format!("validating --field {key}={value} against schema"))?;
+        let typed_value = match typed_scalar {
+            Some(s) => rivet_yaml::from_str::<rivet_yaml::Value>(&s)
+                .with_context(|| format!("parsing typed --field value for '{key}' as YAML: {s}"))?,
+            None => rivet_yaml::Value::String(value.clone()),
+        };
+        fields_map.insert(key.clone(), typed_value);
     }
 
     // Build links

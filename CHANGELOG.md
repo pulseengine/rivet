@@ -50,6 +50,18 @@
   indicator (`|2`); a flow sequence or scalar on the line after its key, a
   flow collection spanning lines, an indented root sequence and `- - x`
   nested sequences failed to parse.
+- **`rivet add --field` and `rivet validate` on mapping / sequence fields**
+  (REQ-385, #1021) — `--field 'produced-by={name: X, version: Y}'` on an
+  `ordeal-certificate` (and every other `type: mapping` field) wrote the
+  quoted string literal, so `recheck.command` and `produced-by.version` read
+  as `None` for every consumer. `rivet validate` accepted it because
+  `field-type-mismatch` covered only boolean/numeric declared types.
+  `rivet add` now routes through the same coercion helper `rivet modify`
+  uses (REQ-385 / #1008), parses the value against the schema's declared
+  `type: mapping` / `sequence` / `list` / `list<...>`, and refuses an input
+  that is not of that shape rather than silently storing a string. The
+  validate check grows the same arms, so a legacy string that landed before
+  this fix is now flagged with the flow-syntax rewrite hint.
 - **`rivet validate` passed a link with an empty target** — an explicit
   `target: ""` was dropped by the default (incremental) path, so `validate`
   passed while `validate --direct` reported the broken link. Both paths now

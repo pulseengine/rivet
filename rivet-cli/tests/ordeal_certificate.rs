@@ -162,6 +162,173 @@ fn ref_indirection_fails_with_legible_unsupported_error() {
     );
 }
 
+/// #1021: `rivet add --field 'produced-by={name: X, version: Y}'` on an
+/// `ordeal-certificate` used to write `produced-by: "{name: X, version:
+/// Y}"` — a quoted string literal — and `rivet validate` accepted it
+/// because REQ-385's field-type-mismatch check covered only
+/// boolean/numeric. This replays the body's repro and pins:
+///   1. the written file carries a real YAML mapping, not a string;
+///   2. `recheck.command` is reachable as a nested scalar (what consuming
+///      rules read), not an opaque string;
+///   3. a non-mapping value is refused with a legible error, not silently
+///      stored.
+///
+/// rivet: verifies REQ-385
+#[test]
+fn add_coerces_mapping_declared_fields_from_the_cli() {
+    use rivet_yaml::Value;
+
+    let tmp = cert_project("artifacts: []\n");
+    let project = tmp.path().to_str().unwrap();
+    let target = tmp.path().join("artifacts").join("evidence.yaml");
+
+    // The body's repro, condensed. One `--field` per mapping to cover the
+    // three `type: mapping` fields on `ordeal-certificate`.
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project,
+            "add",
+            "--type",
+            "ordeal-certificate",
+            "--id",
+            "OC-ADD-1",
+            "--status",
+            "verified",
+            "--title",
+            "mapping-coercion repro",
+            "--file",
+            target.to_str().unwrap(),
+            "--field",
+            "format=ordeal-cert/v1",
+            "--field",
+            "verdict=unsat",
+            "--field",
+            "produced-by={name: ordeal, version: 0.23.0}",
+            "--field",
+            "checked-by={name: ordeal-lrat, version: 0.23.0}",
+            "--field",
+            "attests-claim=x",
+            "--field",
+            "cnf-sha256=3f786850e387550fdab836ed7e6dc881de23001b8e6f5f9db38f3ba4a4f4a1a5",
+            "--field",
+            "proof-sha256=89e6c98d92887913cadf06b2adb97f26cde4849b4b1a3b7ec1cbb06cd261f4d9",
+            "--field",
+            "recheck={command: x, expect-exit: 0}",
+        ])
+        .output()
+        .expect("run rivet add");
+    assert!(
+        out.status.success(),
+        "add must succeed. stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // Parse the written file and verify every `type: mapping` field is a
+    // real YAML mapping — not a quoted string literal of the flow syntax.
+    let written = std::fs::read_to_string(&target).expect("read written file");
+    let doc: Value = rivet_yaml::from_str(&written).expect("parse written file");
+    let artifacts = doc
+        .get("artifacts")
+        .and_then(Value::as_sequence)
+        .expect("artifacts: sequence present");
+    let added = artifacts
+        .iter()
+        .find(|a| a.get("id").and_then(Value::as_str) == Some("OC-ADD-1"))
+        .expect("OC-ADD-1 is in the file");
+    let fields = added
+        .get("fields")
+        .and_then(Value::as_mapping)
+        .expect("fields: mapping present");
+    for key in ["produced-by", "checked-by", "recheck"] {
+        let v = fields
+            .get(key)
+            .unwrap_or_else(|| panic!("field '{key}' present"));
+        assert!(
+            v.as_mapping().is_some(),
+            "field '{key}' must be a real YAML mapping, not {v:?} — \
+             on-disk form:\n{written}"
+        );
+    }
+    // `recheck.command` is the specific nested scalar #1021 flagged as
+    // unreachable when the parent was a string.
+    let command = fields
+        .get("recheck")
+        .and_then(|v| v.get("command"))
+        .and_then(Value::as_str);
+    assert_eq!(
+        command,
+        Some("x"),
+        "recheck.command must be reachable as a nested string"
+    );
+
+    // Validate the project the add produced — no field-type-mismatch, no
+    // other blocker on the mapping fields.
+    let v = run_validate(&tmp);
+    let v_out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&v.stdout),
+        String::from_utf8_lossy(&v.stderr)
+    );
+    assert!(
+        !v_out.contains("field-type-mismatch"),
+        "no field-type-mismatch on the added artifact:\n{v_out}"
+    );
+}
+
+/// A `--field` value that cannot parse as the declared type must be
+/// refused up front with a legible error — never silently stored as a
+/// quoted string, which was the whole shape of #1021.
+///
+/// rivet: verifies REQ-385
+#[test]
+fn add_refuses_a_non_mapping_value_for_a_mapping_declared_field() {
+    let tmp = cert_project("artifacts: []\n");
+    let project = tmp.path().to_str().unwrap();
+    let target = tmp.path().join("artifacts").join("evidence.yaml");
+
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            project,
+            "add",
+            "--type",
+            "ordeal-certificate",
+            "--id",
+            "OC-ADD-BAD-1",
+            "--status",
+            "draft",
+            "--title",
+            "non-mapping refused",
+            "--file",
+            target.to_str().unwrap(),
+            "--field",
+            "format=ordeal-cert/v1",
+            "--field",
+            "verdict=unsat",
+            "--field",
+            "produced-by=just-a-string",
+            "--field",
+            "attests-claim=x",
+        ])
+        .output()
+        .expect("run rivet add");
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "add must refuse a non-mapping value for a mapping-declared field:\n{text}"
+    );
+    assert!(
+        text.contains("produced-by") && text.contains("mapping"),
+        "the error must name the field and the declared type:\n{text}"
+    );
+}
+
 /// The docs topic is served: `rivet docs schema/ordeal-certificate`
 /// explains the shape, the SAT boundary, and the recheck contract.
 #[test]
