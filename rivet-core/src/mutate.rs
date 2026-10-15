@@ -362,14 +362,18 @@ pub struct ModifyParams {
 /// REQ-385 / #1008: the YAML scalar a `set_fields` value must be written as,
 /// given the type the schema declares for that field on `artifact_type`.
 ///
-/// `Ok(Some(s))` — the field is declared `boolean`/`bool`, `integer` or
-/// `number`; `s` is the canonical plain scalar (`true`, `42`, `1.5`) to write
-/// UNQUOTED so it parses back as that type. `Ok(None)` — any other declared
-/// type, or no declaration: the value is a string and is quoted as before.
+/// `Ok(Some(s))` — the field is declared with a non-string structural type
+/// (`boolean`/`bool`, `integer`, `number`, `mapping`, `sequence`/`list`, or
+/// a parameterised `list<...>`); `s` is the canonical form (`true`, `42`,
+/// `1.5`, `{k: v}`, `[a, b]`) to write UNQUOTED so it parses back as that
+/// type. `Ok(None)` — any other declared type (string et al.), or no
+/// declaration: the value is a string and is quoted as before.
 ///
 /// Without this, `--set-field backlog=true` wrote `backlog: "true"` — a
 /// string — and `exempt-when-field`, which only honours a boolean `true`,
-/// silently did not apply.
+/// silently did not apply. The same shape bit `type: mapping` fields on
+/// `ordeal-certificate` (#1021): `--field 'produced-by={name: X, version: Y}'`
+/// was stored as the quoted string literal.
 ///
 /// # Errors
 /// [`Error::Validation`] when the value does not parse as the declared type,
@@ -393,7 +397,16 @@ pub fn typed_field_scalar(
             field.field_type
         ))
     };
-    match field.field_type.as_str() {
+    // Parse the CLI value as YAML and require it to decode to the declared
+    // structural shape. The returned `String` is the raw trimmed input: it
+    // is written unquoted by `yaml_edit`, so a flow scalar like
+    // `{name: X, version: Y}` or `[a, b, c]` lands as a real mapping or
+    // sequence on disk — not the quoted string literal #1021 reported.
+    let parse_structured = |what: &str| -> Result<rivet_yaml::Value, Error> {
+        rivet_yaml::from_str::<rivet_yaml::Value>(v).map_err(|_| bad(what))
+    };
+    let ft = field.field_type.as_str();
+    match ft {
         "boolean" | "bool" => match v {
             "true" | "false" => Ok(Some(v.to_string())),
             _ => Err(bad("a boolean (use true or false)")),
@@ -406,6 +419,17 @@ pub fn typed_field_scalar(
             Ok(n) if n.is_finite() => Ok(Some(v.to_string())),
             _ => Err(bad("a finite number")),
         },
+        "mapping" => match parse_structured("a YAML mapping (use flow syntax: {k: v, k: v})")? {
+            rivet_yaml::Value::Mapping(_) => Ok(Some(v.to_string())),
+            _ => Err(bad("a YAML mapping (use flow syntax: {k: v, k: v})")),
+        },
+        _ if ft == "sequence" || ft == "list" || ft.starts_with("list<") => {
+            let what = "a YAML sequence (use flow syntax: [a, b, c])";
+            match parse_structured(what)? {
+                rivet_yaml::Value::Sequence(_) => Ok(Some(v.to_string())),
+                _ => Err(bad(what)),
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -1823,6 +1847,70 @@ mod tests {
         assert!(err("ratio", "NaN").contains("not a finite number"));
         assert!(err("ratio", "inf").contains("not a finite number"));
         assert!(err("ratio", "abc").contains("not a finite number"));
+    }
+
+    // rivet: verifies REQ-385
+    // #1021: a mapping/sequence/list-declared field, like the three
+    // `type: mapping` fields on `ordeal-certificate`, must coerce — not
+    // silently fall through to a quoted string.
+    #[test]
+    fn typed_field_scalar_canonicalises_structured_declared_types() {
+        let schema = crate::test_helpers::schema_with_fields(
+            "ordeal-certificate",
+            &[
+                ("produced-by", "mapping"),
+                ("checked-by", "mapping"),
+                ("recheck", "mapping"),
+                ("standards", "list<string>"),
+                ("tags", "sequence"),
+                ("legacy-list", "list"),
+            ],
+        );
+        let ok =
+            |k: &str, v: &str| typed_field_scalar(&schema, "ordeal-certificate", k, v).unwrap();
+        // Mapping: body-repro shape writes through as-is (yaml_edit emits
+        // it unquoted; downstream parse round-trips to Value::Mapping).
+        assert_eq!(
+            ok("produced-by", "{name: ordeal, version: 0.23.0}"),
+            Some("{name: ordeal, version: 0.23.0}".into())
+        );
+        assert_eq!(
+            ok("recheck", " {command: x, expect-exit: 0} "),
+            Some("{command: x, expect-exit: 0}".into()),
+            "surrounding whitespace is trimmed so the written scalar is clean"
+        );
+        // Sequence / list / list<string> all accept flow sequences.
+        assert_eq!(ok("tags", "[a, b]"), Some("[a, b]".into()));
+        assert_eq!(ok("legacy-list", "[1, 2, 3]"), Some("[1, 2, 3]".into()));
+        assert_eq!(
+            ok("standards", "[\"ISO26262\", \"DO-178C\"]"),
+            Some("[\"ISO26262\", \"DO-178C\"]".into())
+        );
+
+        let err = |k: &str, v: &str| {
+            typed_field_scalar(&schema, "ordeal-certificate", k, v)
+                .unwrap_err()
+                .to_string()
+        };
+        // A plain scalar is not a mapping — refuse rather than quote.
+        let e = err("produced-by", "ordeal");
+        assert!(
+            e.contains("field 'produced-by' is declared mapping")
+                && e.contains("'ordeal' is not a YAML mapping"),
+            "{e}"
+        );
+        // Unbalanced flow mapping — the error names the field + the
+        // declared type, not an opaque parser failure.
+        let e = err("produced-by", "{name: ordeal");
+        assert!(e.contains("is not a YAML mapping"), "{e}");
+        // A sequence given where a mapping is declared is still refused.
+        let e = err("produced-by", "[a, b]");
+        assert!(e.contains("is not a YAML mapping"), "{e}");
+        // Symmetric: a mapping given where a sequence is declared.
+        let e = err("tags", "{a: 1}");
+        assert!(e.contains("is not a YAML sequence"), "{e}");
+        assert!(err("legacy-list", "nope").contains("is not a YAML sequence"));
+        assert!(err("standards", "x").contains("is not a YAML sequence"));
     }
 
     // rivet: verifies REQ-385

@@ -750,15 +750,39 @@ pub fn validate_structural_with_externals_and_variant(
                 }
             }
 
-            // REQ-385 / #1008: a field declared boolean or numeric that holds
-            // a STRING. Older `rivet modify --set-field` wrote `"true"` this
-            // way, and consumers of the typed value — `exempt-when-field`
-            // honours only a boolean `true` — silently skip it.
-            if matches!(
-                field.field_type.as_str(),
-                "boolean" | "bool" | "integer" | "number"
-            ) {
+            // REQ-385 / #1008 / #1021: a field declared with a non-string
+            // structural type (boolean, numeric, mapping, sequence) that
+            // holds a STRING on disk. Older `rivet modify --set-field` and
+            // `rivet add --field` wrote the raw CLI value as a quoted string
+            // regardless of the declared type, so consumers of the typed
+            // value — `exempt-when-field` honours only a boolean `true`;
+            // rules reading `recheck.command` on an ordeal-certificate need
+            // a real mapping — silently skip it.
+            let ft = field.field_type.as_str();
+            let structured = matches!(
+                ft,
+                "boolean" | "bool" | "integer" | "number" | "mapping" | "sequence" | "list"
+            ) || ft.starts_with("list<");
+            if structured {
                 if let Some(s) = effective_fields.get(&field.name).and_then(|v| v.as_str()) {
+                    let rewrite_hint = match ft {
+                        "mapping" => format!(
+                            "rivet modify {} --set-field '{}={{k: v, k: v}}'",
+                            artifact.id, field.name
+                        ),
+                        "sequence" | "list" => format!(
+                            "rivet modify {} --set-field '{}=[a, b, c]'",
+                            artifact.id, field.name
+                        ),
+                        _ if ft.starts_with("list<") => format!(
+                            "rivet modify {} --set-field '{}=[a, b, c]'",
+                            artifact.id, field.name
+                        ),
+                        _ => format!(
+                            "rivet modify {} --set-field {}={}",
+                            artifact.id, field.name, s
+                        ),
+                    };
                     diagnostics.push(Diagnostic {
                         source_file: None,
                         line: None,
@@ -769,8 +793,8 @@ pub fn validate_structural_with_externals_and_variant(
                         message: format!(
                             "field '{}' is declared {} but holds the string \"{}\"; \
                              typed consumers such as exempt-when-field ignore it. \
-                             Rewrite it unquoted: rivet modify {} --set-field {}={}",
-                            field.name, field.field_type, s, artifact.id, field.name, s
+                             Rewrite it unquoted: {}",
+                            field.name, field.field_type, s, rewrite_hint
                         ),
                     });
                 }
@@ -2668,6 +2692,97 @@ then:
                 ("A-1".to_string(), Severity::Warning),
                 ("A-3".to_string(), Severity::Warning)
             ]
+        );
+    }
+
+    // rivet: verifies REQ-385
+    /// #1021: `rivet add --field 'produced-by={name: X, version: Y}'` on an
+    /// `ordeal-certificate` wrote the quoted string literal. REQ-385's
+    /// field-type-mismatch check saw only boolean/numeric and let the
+    /// malformed record pass. This pins that `mapping`, `sequence`, `list`,
+    /// and `list<...>`-declared fields are flagged when they hold a string
+    /// on disk.
+    #[test]
+    fn field_type_mismatch_flags_a_string_in_a_structured_field() {
+        let schema = crate::test_helpers::schema_with_fields(
+            "ordeal-certificate",
+            &[
+                ("produced-by", "mapping"),
+                ("tags", "sequence"),
+                ("legacy-list", "list"),
+                ("standards", "list<string>"),
+                ("note", "string"),
+            ],
+        );
+        // Build a valid flow mapping to show the no-false-positive case.
+        let valid_mapping: rivet_yaml::Value =
+            rivet_yaml::from_str("{name: ordeal, version: '0.23.0'}").unwrap();
+        let valid_sequence: rivet_yaml::Value = rivet_yaml::from_str("[a, b, c]").unwrap();
+        let mut store = Store::new();
+        for (id, field, value) in [
+            // Flagged: a string in a mapping/sequence/list declared field.
+            (
+                "C-1",
+                "produced-by",
+                rivet_yaml::Value::String("{name: ordeal, version: 0.23.0}".into()),
+            ),
+            ("C-2", "tags", rivet_yaml::Value::String("[a, b]".into())),
+            (
+                "C-3",
+                "legacy-list",
+                rivet_yaml::Value::String("[1]".into()),
+            ),
+            (
+                "C-4",
+                "standards",
+                rivet_yaml::Value::String("[\"ISO26262\"]".into()),
+            ),
+            // Not flagged: the typed value matches the declared type.
+            ("C-OK-M", "produced-by", valid_mapping),
+            ("C-OK-S", "tags", valid_sequence),
+            // Not flagged: a plain string field holding a string is fine.
+            ("C-OK-N", "note", rivet_yaml::Value::String("hello".into())),
+        ] {
+            let mut a = crate::test_helpers::minimal_artifact(id, "ordeal-certificate");
+            a.fields.insert(field.into(), value);
+            store.insert(a).unwrap();
+        }
+        let graph = LinkGraph::build(&store, &schema);
+        let diags = validate_structural(&store, &schema, &graph);
+        let flagged: Vec<String> = diags
+            .iter()
+            .filter(|d| d.rule == "field-type-mismatch")
+            .map(|d| d.artifact_id.clone().unwrap())
+            .collect();
+        assert_eq!(
+            flagged,
+            vec![
+                "C-1".to_string(),
+                "C-2".to_string(),
+                "C-3".to_string(),
+                "C-4".to_string(),
+            ],
+            "only the string-in-structured-field cases are flagged"
+        );
+        // The rewrite hint names the structured flow syntax, not `=string`,
+        // so a caller copying the hint lands a real mapping.
+        let mapping_msg = &diags
+            .iter()
+            .find(|d| d.rule == "field-type-mismatch" && d.artifact_id.as_deref() == Some("C-1"))
+            .unwrap()
+            .message;
+        assert!(
+            mapping_msg.contains("{k: v, k: v}"),
+            "mapping hint uses flow syntax: {mapping_msg}"
+        );
+        let list_msg = &diags
+            .iter()
+            .find(|d| d.rule == "field-type-mismatch" && d.artifact_id.as_deref() == Some("C-4"))
+            .unwrap()
+            .message;
+        assert!(
+            list_msg.contains("[a, b, c]"),
+            "list<..> hint uses flow sequence syntax: {list_msg}"
         );
     }
 
