@@ -105,7 +105,10 @@ jobs:
           set -euo pipefail
           BIN="target/${{ matrix.target }}/release/rivet"
           file "$BIN"
-          file "$BIN" | grep -q 'statically linked' || {
+          # Rust's x86_64 musl target links static-pie, which file(1) reports
+          # as "static-pie linked"; aarch64 musl reports "statically linked".
+          # Neither has an interpreter, which is what this step guards.
+          file "$BIN" | grep -Eq 'statically linked|static-pie linked' || {
             echo "::error::expected statically linked binary for ${{ matrix.target }}"
             exit 1
           }
