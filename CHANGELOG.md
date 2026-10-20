@@ -5,6 +5,19 @@
 
 ## [Unreleased]
 
+## [0.41.1] - 2026-10-20
+
+A patch for one regression and two reports from downstream projects.
+
+- **Validation no longer walks symlinks.** v0.41.0 made `validate` scan source
+  for `rivet: verifies` markers, and the scan followed symlinked directories
+  and ignored `.gitignore`; on WSL2 a link into the Windows drive kept it
+  running for hours (#1097). The scan now stays inside the tree and honours
+  ignore files, including a new `.rivetignore`.
+- **The HTML export is reproducible** and no longer embeds the builder's
+  workspace path (#1104).
+- **Robot Framework suites count as evidence** (#1105).
+
 ### Fixed
 
 - **Marker scanning no longer follows symlinks or ignored paths** (REQ-405,
