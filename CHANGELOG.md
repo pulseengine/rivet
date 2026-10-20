@@ -14,6 +14,13 @@
   also removes link cycles) and honours `.gitignore`, `.ignore`,
   `.git/info/exclude` and a new project-local `.rivetignore`. The marker set
   found in this repository is unchanged.
+### Added
+
+- **Robot Framework markers** (REQ-407, #1105) — `.robot` and `.resource`
+  files are now scanned for `# rivet: verifies <ID>` markers; they were skipped
+  before any pattern ran, so a Robot suite could never be evidence for a
+  requirement. A marker on the comment lines before a test case, or inside its
+  body, is attributed to that test case's name.
 
 ## [0.41.0] - 2026-10-15
 
