@@ -182,6 +182,19 @@ pub fn default_patterns() -> Vec<MarkerPattern> {
             link_type_group: 1,
             id_group: 2,
         },
+        // Robot Framework comment: # rivet: verifies REQ-001 (#1105)
+        // Robot Framework test cases are not functions — they are named
+        // entries at column 0 inside a `*** Test Cases ***` section. The
+        // comment syntax is `#`, same as python/shell/config, but a
+        // dedicated language keeps enclosing-function detection sensible
+        // (see `find_enclosing_function`'s early-return list).
+        MarkerPattern {
+            language: "robot".into(),
+            pattern: Regex::new(r"#\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
+                .expect("valid regex"),
+            link_type_group: 1,
+            id_group: 2,
+        },
         // Rocq/Coq block comment: (* rivet: verifies VER-036 *)
         // `(* ... *)` is the only comment form in Rocq, so a distinct
         // language is needed rather than reusing "generic" (which is `//`).
@@ -230,6 +243,14 @@ fn detect_language(path: &Path) -> Option<&'static str> {
         // `.v` is Rocq/Coq. (Verilog also uses `.v`, but the marker keyword is
         // `rivet:` and a Verilog file would only match if it carried one.)
         "v" => Some("rocq"),
+        // #1105: Robot Framework suites are tests, and `.robot` / `.resource`
+        // had no entry — a `# rivet: verifies REQ-NNN` marker in a Robot test
+        // was skipped before any pattern ran. Same shape as the shell gap
+        // (REQ-319), the yaml/toml gap (REQ-352) and the lean/rocq gap (#992).
+        // Own category rather than an alias for "config"/"shell" because
+        // enclosing-function detection falls back to `file:line` for Robot
+        // (test cases are not functions), matching the lean/rocq decision.
+        "robot" | "resource" => Some("robot"),
         _ => None,
     }
 }
@@ -277,7 +298,13 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
     // void|int|bool|auto`) matches by intent. Falling through would attribute
     // a proof marker to a `def foo` inside a doc comment or a nearby unrelated
     // structure. `AxiomCheck.lean:1` beats a guessed proof name.
-    if language == "config" || language == "lean" || language == "rocq" {
+    //
+    // #1105: Robot Framework is the same shape as config and proofs — a test
+    // case is a name at column 0 under a `*** Test Cases ***` heading, not a
+    // function the generic regex can find, and the heading itself (`*** Test
+    // Cases ***`) matches nothing the catch-all looks for either. The
+    // fallback to `my_suite.robot:12` is unambiguous.
+    if language == "config" || language == "lean" || language == "rocq" || language == "robot" {
         return None;
     }
     // Compiled once per process. Compiling per marker cost most of a scan
@@ -1561,6 +1588,97 @@ fn a_later_test() { assert!(true); }
             "the lean guard must be effective — a `def foo (` above the marker \
              must NOT be latched onto by the catch-all; got test_name={}",
             lean.test_name
+        );
+    }
+
+    /// #1105: Robot Framework (`.robot`) and resource files (`.resource`)
+    /// are tests, and the scanner previously had no entry for them — a
+    /// `# rivet: verifies REQ-NNN` marker in a Robot suite was silently
+    /// skipped and the suite could never be credited as evidence. Same
+    /// shape as the shell gap (REQ-319), the yaml/toml gap (REQ-352) and
+    /// the lean/rocq gap (#992): the pattern itself was never the obstacle;
+    /// `detect_language` returned `None` and `scan_file` bailed before any
+    /// pattern ran. Fixture places the marker on the line before a test
+    /// case name (the convention the reporter asked for) and in a
+    /// `.resource` file to exercise both extensions. Negative control:
+    /// dropping either extension mapping drops the corresponding id and
+    /// fails this test.
+    #[test]
+    fn robot_framework_files_are_scanned_for_markers() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join("suite.robot"),
+            "*** Test Cases ***\n\
+             # rivet: verifies REQ-ROBOT-001\n\
+             My Test Case\n    \
+                 Log    hello\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("keywords.resource"),
+            "*** Keywords ***\n\
+             # rivet: verifies REQ-ROBOT-002\n\
+             My Keyword\n    \
+                 Log    world\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        let ids: Vec<&str> = markers.iter().map(|m| m.target_id.as_str()).collect();
+        assert!(
+            ids.contains(&"REQ-ROBOT-001"),
+            ".robot marker must be found; got {ids:?}"
+        );
+        assert!(
+            ids.contains(&"REQ-ROBOT-002"),
+            ".resource marker must be found; got {ids:?}"
+        );
+        assert!(
+            markers.iter().all(|m| m.link_type == "verifies"),
+            "link type must parse from Robot comments; got {:?}",
+            markers.iter().map(|m| &m.link_type).collect::<Vec<_>>()
+        );
+    }
+
+    /// #1105: Robot test cases are not functions — they are names at
+    /// column 0 under a `*** Test Cases ***` section — so the enclosing-
+    /// function fallback must land on `file:line`, not on a guessed name.
+    /// Same reasoning as the lean/rocq guard: the catch-all regex
+    /// `(?:fn|func|function|def|void|int|bool|auto)\s+(\w+)\s*\(` cannot
+    /// legitimately match a Robot test case, and attributing a marker to
+    /// a stray `def` or `function` elsewhere in the file is exactly the
+    /// REQ-326 misattribution shape.
+    ///
+    /// Load-bearing: the fixture plants a `def helper(` on the line
+    /// above the marker so the backward scan in `find_enclosing_function`
+    /// would latch onto it if the `"robot"` guard were removed. Asserting
+    /// the test_name is NOT `helper` is what kills a mutant that drops
+    /// the guard.
+    #[test]
+    fn robot_markers_fall_back_to_file_and_line() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join("suite.robot"),
+            "*** Keywords ***\n\
+             def helper(x):\n\
+             # rivet: verifies REQ-ROBOT-003\n\
+             My Test\n    \
+                 Log    hi\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        assert_eq!(markers.len(), 1, "one marker expected; got {markers:?}");
+        assert!(
+            markers[0].test_name.contains(':'),
+            "robot marker must be file:line, not a guessed name; got {}",
+            markers[0].test_name
+        );
+        assert_ne!(
+            markers[0].test_name, "helper",
+            "the robot guard must be effective — a `def helper(` above the marker \
+             must NOT be latched onto by the catch-all; got test_name={}",
+            markers[0].test_name
         );
     }
 }
