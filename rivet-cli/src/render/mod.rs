@@ -49,6 +49,10 @@ pub(crate) struct RenderContext<'a> {
     /// The project's `coverage.unmodelled-rules` (REQ-387 / #956 item 2), so
     /// the dashboard shows the same coverage `rivet coverage` does.
     pub(crate) unmodelled_rules: &'a [rivet_core::model::UnmodelledRule],
+    /// True when rendering for `rivet export -f html` (a static, publishable
+    /// tree) rather than for `serve` / the VSIX webview. Static output must be
+    /// reproducible and must not embed machine-local absolute paths (#1104).
+    pub(crate) static_export: bool,
 }
 
 #[allow(dead_code)]

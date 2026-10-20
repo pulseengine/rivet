@@ -63,7 +63,7 @@ pub(crate) fn render_search_view(ctx: &RenderContext, query_str: Option<&str>) -
     let query_lower = query.to_lowercase();
     let mut hits: Vec<SearchHit> = Vec::new();
 
-    for artifact in ctx.store.iter() {
+    for artifact in ctx.store.iter_sorted() {
         let id_lower = artifact.id.to_lowercase();
         let title_lower = artifact.title.to_lowercase();
         let type_lower = artifact.artifact_type.to_lowercase();

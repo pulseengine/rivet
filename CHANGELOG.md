@@ -14,6 +14,16 @@
   also removes link cycles) and honours `.gitignore`, `.ignore`,
   `.git/info/exclude` and a new project-local `.rivetignore`. The marker set
   found in this repository is unchanged.
+- **The HTML export is reproducible and carries no local paths** (REQ-406, #1104) —
+  two `rivet export -f html` runs over the same tree differed in 190 of 1215
+  files because backlinks, the traceability graph and the document-linkage
+  tables were built in hash-map order. The link graph now orders incoming links
+  by link type then source id, and the export renders the store in id order, so
+  repeated exports are byte-identical (0 of 1215 differ on this repository).
+  Artifact pages also wrote `data-source-file` as an absolute path of the
+  building machine; a static export now writes it relative to the project root,
+  while `rivet serve` and the VS Code webview keep the real path they open.
+
 ### Added
 
 - **Robot Framework markers** (REQ-407, #1105) — `.robot` and `.resource`

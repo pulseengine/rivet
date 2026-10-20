@@ -44,14 +44,16 @@ pub(crate) struct EgoParams {
 pub(crate) fn build_filtered_subgraph(
     pg: &petgraph::Graph<String, String>,
     store: &Store,
-    node_map: &HashMap<String, NodeIndex>,
     type_filter: &Option<Vec<String>>,
     link_filter: &Option<Vec<String>>,
 ) -> Graph<String, String> {
     let mut sub = Graph::new();
     let mut old_to_new: HashMap<NodeIndex, NodeIndex> = HashMap::new();
 
-    for (id, &old_idx) in node_map {
+    // Walk the graph's own (id-sorted) node order, not the HashMap node_map,
+    // so the layout input and the exported SVG are reproducible (#1104).
+    for old_idx in pg.node_indices() {
+        let id = &pg[old_idx];
         let include = match type_filter {
             Some(types) => store
                 .get(id.as_str())
@@ -223,7 +225,7 @@ fn render_budget_message(
     ));
 
     html.push_str("<datalist id=\"artifact-ids\">");
-    for a in store.iter() {
+    for a in store.iter_sorted() {
         html.push_str(&format!("<option value=\"{}\">", html_escape(&a.id)));
     }
     html.push_str("</datalist>");
@@ -288,16 +290,16 @@ pub(crate) fn render_graph_view(ctx: &RenderContext, params: &GraphParams) -> St
 
     let sub: Graph<String, String> = if let Some(focus_id) = &params.focus {
         if focus_id.is_empty() {
-            build_filtered_subgraph(pg, store, node_map, &type_filter, &link_filter)
+            build_filtered_subgraph(pg, store, &type_filter, &link_filter)
         } else if let Some(&focus_idx) = node_map.get(focus_id.as_str()) {
             let hops = if params.depth > 0 { params.depth } else { 3 };
             let ego = ego_subgraph(pg, focus_idx, hops);
             apply_filters_to_graph(&ego, store, &type_filter, &link_filter)
         } else {
-            build_filtered_subgraph(pg, store, node_map, &type_filter, &link_filter)
+            build_filtered_subgraph(pg, store, &type_filter, &link_filter)
         }
     } else {
-        build_filtered_subgraph(pg, store, node_map, &type_filter, &link_filter)
+        build_filtered_subgraph(pg, store, &type_filter, &link_filter)
     };
 
     // ── Node budget safety valve ─────────────────────────────────────────
@@ -387,7 +389,7 @@ pub(crate) fn render_graph_view(ctx: &RenderContext, params: &GraphParams) -> St
     ));
 
     html.push_str("<datalist id=\"artifact-ids\">");
-    for a in store.iter() {
+    for a in store.iter_sorted() {
         html.push_str(&format!("<option value=\"{}\">", html_escape(&a.id)));
     }
     html.push_str("</datalist>");

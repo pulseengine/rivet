@@ -64,7 +64,7 @@ pub(crate) fn render_verification_view(ctx: &RenderContext) -> String {
 
     if verifiable_types.is_empty() {
         let mut seen = std::collections::HashSet::new();
-        for artifact in store.iter() {
+        for artifact in store.iter_sorted() {
             let backlinks = graph.backlinks_to(&artifact.id);
             for bl in backlinks {
                 if bl.link_type == "verifies" && seen.insert(artifact.artifact_type.clone()) {

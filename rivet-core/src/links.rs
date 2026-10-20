@@ -113,6 +113,15 @@ impl PartialEq for LinkGraph {
 
 impl Eq for LinkGraph {}
 
+/// Order backlinks deterministically: link type, then source id.
+fn sort_backlinks(bls: &mut [Backlink]) {
+    bls.sort_by(|a, b| {
+        a.link_type
+            .cmp(&b.link_type)
+            .then_with(|| a.source.cmp(&b.source))
+    });
+}
+
 impl LinkGraph {
     /// Build the link graph from a store and schema.
     pub fn build(store: &Store, schema: &Schema) -> Self {
@@ -124,7 +133,7 @@ impl LinkGraph {
         let mut node_map: HashMap<ArtifactId, NodeIndex> = HashMap::with_capacity(n);
 
         // Create nodes for all artifacts
-        for artifact in store.iter() {
+        for artifact in store.iter_sorted() {
             let idx = graph.add_node(artifact.id.clone());
             node_map.insert(artifact.id.clone(), idx);
         }
@@ -132,7 +141,7 @@ impl LinkGraph {
         // Create edges for all links.
         // Hoist the forward-map entry outside the inner link loop so we only
         // hash the source key once per artifact (not once per link).
-        for artifact in store.iter() {
+        for artifact in store.iter_sorted() {
             let src_id = &artifact.id;
             if artifact.links.is_empty() {
                 continue;
@@ -170,6 +179,13 @@ impl LinkGraph {
                     });
                 }
             }
+        }
+
+        // The store iterates in HashMap order, so backlinks were collected in
+        // a run-dependent order. Fix it here, at the data source, so every
+        // surface (dashboard, static export, documents) agrees (#1104).
+        for bls in backward.values_mut() {
+            sort_backlinks(bls);
         }
 
         LinkGraph {
@@ -541,5 +557,34 @@ mod tests {
         // either ! or replacing == would change the visited set.
         let from_c = g.reachable("C", "depends-on");
         assert!(from_c.is_empty(), "leaf has no reachables, got {from_c:?}");
+    }
+
+    // Verifies: REQ-406
+    // Backlinks were collected in store (HashMap) order, so the incoming-link
+    // table differed from run to run (#1104). They are now ordered by link
+    // type, then source id, whatever order the store yields.
+    #[test]
+    fn backlinks_are_sorted_by_type_then_source() {
+        let s = schema();
+        let mut arts = vec![minimal_artifact("REQ-001", "requirement")];
+        for i in 0..24 {
+            let lt = ["verifies", "satisfies", "implements"][i % 3];
+            arts.push(artifact_with_links(
+                &format!("SRC-{:02}", 23 - i),
+                "design-decision",
+                &[(lt, "REQ-001")],
+            ));
+        }
+        let g = LinkGraph::build(&store_from(arts), &s);
+        let got: Vec<(String, String)> = g
+            .backlinks_to("REQ-001")
+            .iter()
+            .map(|b| (b.link_type.clone(), b.source.clone()))
+            .collect();
+        assert_eq!(got.len(), 24);
+        let mut want = got.clone();
+        want.sort();
+        assert_eq!(got, want, "backlinks must be (link type, source id) sorted");
+        assert_eq!(got[0].0, "implements");
     }
 }

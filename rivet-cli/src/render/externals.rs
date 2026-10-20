@@ -83,7 +83,7 @@ pub(crate) fn render_external_detail(ctx: &RenderContext, prefix: &str) -> Strin
         ext.store.len(),
     );
 
-    let mut artifacts: Vec<_> = ext.store.iter().collect();
+    let mut artifacts: Vec<_> = ext.store.iter_sorted().collect();
     artifacts.sort_by(|a, b| a.id.cmp(&b.id));
 
     html.push_str("<div style=\"position:relative;margin-bottom:1rem\">\

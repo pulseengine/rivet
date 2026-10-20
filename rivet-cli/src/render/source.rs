@@ -185,7 +185,7 @@ fn format_mtime(time: std::time::SystemTime) -> String {
 }
 
 fn collect_artifact_ids(store: &rivet_core::store::Store) -> std::collections::HashSet<String> {
-    store.iter().map(|a| a.id.clone()).collect()
+    store.iter_sorted().map(|a| a.id.clone()).collect()
 }
 
 struct FileRef {
@@ -200,7 +200,7 @@ fn artifacts_referencing_file(store: &rivet_core::store::Store, file_rel: &str) 
     let rel = std::path::Path::new(file_rel);
     let mut refs = Vec::new();
 
-    for a in store.iter() {
+    for a in store.iter_sorted() {
         if let Some(sf) = &a.source_file {
             if sf == rel || sf.ends_with(file_rel) {
                 refs.push(FileRef {
