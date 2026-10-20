@@ -386,30 +386,47 @@ pub fn scan_source_files(paths: &[PathBuf], patterns: &[MarkerPattern]) -> Vec<T
     markers
 }
 
-/// Recursively walk a directory and scan each source file.
-fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMarker>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
+/// Name of the project-local ignore file honoured by marker scanning
+/// (same syntax as a `.gitignore`), on top of `.gitignore`, `.ignore` and
+/// `.git/info/exclude`.
+pub const RIVETIGNORE_FILE: &str = ".rivetignore";
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            // Skip hidden directories and common non-source dirs.
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // `.github` is a real source directory — workflows are where CI
-                // gates live, and a CI gate IS evidence (REQ-352). Every other
-                // dot-dir stays skipped; `.git` in particular is not source and
-                // is enormous.
-                let skip_dot = name.starts_with('.') && name != ".github";
-                if skip_dot || name == "target" || name == "node_modules" {
-                    continue;
-                }
+/// Recursively walk a directory and scan each source file.
+///
+/// The walk never follows symlinks: a symlinked directory is not entered, so
+/// a link into a huge foreign tree (WSL's `/mnt/c`) or a link cycle cannot
+/// stall validation. Symlinked files are skipped too, because a file reached
+/// through a link is either also reachable by its real path or lives outside
+/// the scanned tree. Ignore rules from `.gitignore`, `.ignore`,
+/// `.git/info/exclude` and `.rivetignore` apply whether or not the tree is a
+/// checkout; the user's global ignore file is not read, so results do not
+/// depend on the machine.
+fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMarker>) {
+    let walker = ignore::WalkBuilder::new(dir)
+        .follow_links(false)
+        .hidden(false)
+        .git_global(false)
+        .require_git(false)
+        .add_custom_ignore_filename(RIVETIGNORE_FILE)
+        .sort_by_file_path(|a, b| a.cmp(b))
+        .filter_entry(|entry| {
+            if entry.depth() == 0 || !entry.file_type().is_some_and(|t| t.is_dir()) {
+                return true;
             }
-            scan_directory(&path, patterns, markers);
-        } else if path.is_file() {
-            scan_file(&path, patterns, markers);
+            // Skip hidden directories and common non-source dirs.
+            let name = entry.file_name().to_string_lossy();
+            // `.github` is a real source directory — workflows are where CI
+            // gates live, and a CI gate IS evidence (REQ-352). Every other
+            // dot-dir stays skipped; `.git` in particular is not source and
+            // is enormous.
+            let skip_dot = name.starts_with('.') && name != ".github";
+            !(skip_dot || name == "target" || name == "node_modules")
+        })
+        .build();
+
+    for entry in walker.flatten() {
+        if entry.file_type().is_some_and(|t| t.is_file()) {
+            scan_file(entry.path(), patterns, markers);
         }
     }
 }
@@ -743,6 +760,90 @@ fn test_something() {
         assert_eq!(markers[0].link_type, "verifies");
         assert_eq!(markers[0].test_name, "test_something");
         assert_eq!(markers[0].line, 2);
+    }
+
+    // ── Walk policy: symlinks and ignore rules (#1097) ───────────────────
+
+    /// A source file whose marker names `id`. Built with `concat!` so this
+    /// test module does not itself contain a scannable marker line.
+    fn marked(id: &str) -> String {
+        format!("{}{id}\nfn t() {{}}\n", concat!("// riv", "et: verifies "))
+    }
+
+    fn scanned_ids(root: &Path) -> Vec<String> {
+        let mut ids: Vec<String> = scan_source_files(&[root.to_path_buf()], &default_patterns())
+            .into_iter()
+            .map(|m| m.target_id)
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_finds_nested_marker_and_keeps_existing_skips() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "a/b/c/deep.rs", &marked("REQ-901"));
+        write_file(tmp.path(), ".github/workflows/ci.rs", &marked("REQ-902"));
+        write_file(tmp.path(), ".hidden/x.rs", &marked("REQ-903"));
+        write_file(tmp.path(), "target/x.rs", &marked("REQ-904"));
+        write_file(tmp.path(), "node_modules/x.rs", &marked("REQ-905"));
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-901", "REQ-902"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[cfg(unix)]
+    #[test]
+    fn walk_does_not_enter_symlinked_directories() {
+        let outside = TempDir::new().unwrap();
+        write_file(outside.path(), "far.rs", &marked("REQ-911"));
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "real.rs", &marked("REQ-912"));
+        std::os::unix::fs::symlink(outside.path(), tmp.path().join("link")).unwrap();
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-912"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[cfg(unix)]
+    #[test]
+    fn walk_terminates_on_symlink_loop() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "sub/real.rs", &marked("REQ-921"));
+        std::os::unix::fs::symlink(tmp.path(), tmp.path().join("sub/loop")).unwrap();
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-921"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[cfg(unix)]
+    #[test]
+    fn walk_accepts_a_symlinked_scan_root() {
+        let real = TempDir::new().unwrap();
+        write_file(real.path(), "x.rs", &marked("REQ-931"));
+        let holder = TempDir::new().unwrap();
+        let root = holder.path().join("root");
+        std::os::unix::fs::symlink(real.path(), &root).unwrap();
+        assert_eq!(scanned_ids(&root), vec!["REQ-931"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_skips_paths_ignored_by_gitignore() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), ".gitignore", "vendored/\n*.gen.rs\n");
+        write_file(tmp.path(), "src/keep.rs", &marked("REQ-941"));
+        write_file(tmp.path(), "vendored/lib.rs", &marked("REQ-942"));
+        write_file(tmp.path(), "src/x.gen.rs", &marked("REQ-943"));
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-941"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_honours_rivetignore() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), RIVETIGNORE_FILE, "fixtures/\n");
+        write_file(tmp.path(), "src/keep.rs", &marked("REQ-951"));
+        write_file(tmp.path(), "fixtures/f.rs", &marked("REQ-952"));
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-951"]);
     }
 
     // ── Test: Rust attribute marker ──────────────────────────────────────

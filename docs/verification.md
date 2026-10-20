@@ -55,6 +55,13 @@ Test-to-requirement tracing is done via `// rivet: verifies` markers in test
 source code (once [[FEAT-043]] ships) or via the TEST-* artifacts in
 `artifacts/verification.yaml`.
 
+Marker scanning walks the project tree but never follows symlinks, so a link
+into a large foreign tree (for example `/mnt/c` under WSL) or a link cycle
+cannot stall `rivet validate`. It also skips paths excluded by `.gitignore`,
+`.ignore`, `.git/info/exclude` and a project-local `.rivetignore` (same syntax
+as a `.gitignore`), whether or not the tree is a git checkout. Put fixture or
+vendored trees whose markers are not evidence into `.rivetignore`.
+
 ## 4. Property-Based Tests (SWE.4)
 
 File: `rivet-core/tests/proptest_core.rs`

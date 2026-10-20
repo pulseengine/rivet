@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Marker scanning no longer follows symlinks or ignored paths** (REQ-405,
+  #1097) — the `rivet: verifies` scan that every validate run performs walked
+  symlinked directories and ignored every ignore file, so on WSL2 a link into
+  `/mnt/c` made validation run for hours. The walk now skips symlinks (which
+  also removes link cycles) and honours `.gitignore`, `.ignore`,
+  `.git/info/exclude` and a new project-local `.rivetignore`. The marker set
+  found in this repository is unchanged.
+
 ## [0.41.0] - 2026-10-15
 
 v0.41.0 is about **owning what rivet reads and proving what it claims**.
