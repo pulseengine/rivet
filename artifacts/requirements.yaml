@@ -10277,3 +10277,48 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-10-07T09:30:00Z
+
+  - id: REQ-405
+    type: requirement
+    title: marker scanning walks the whole tree, follows symlinks and ignores .gitignore, so validate takes hours on a repo with symlinks to large external trees (#1097)
+    status: verified
+    release: v0.41.1
+    description: "Since v0.41.0 every command that computes coverage or verification (validate, coverage, context, MCP reload) scans source files for rivet: verifies markers (REQ-389 A1). test_scanner::scan_directory used Path::is_dir, which follows symlinks, consulted no ignore file and had no cycle guard; on WSL2 a project with symlinks into the Windows drive (376k files) did not finish validate in minutes to hours. ACCEPTANCE: the marker walk does not enter symlinked directories (no cycles), honours .gitignore, .ignore, .git/info/exclude and a project .rivetignore, keeps the existing skips, and finds exactly the same markers on a tree without symlinks; tests in the module cover each case with a negative control."
+    tags: [scanning, performance, regression]
+    fields:
+      category: functional
+      corrective: true
+      priority: must
+    links:
+      - type: traces-to
+        target: REQ-389
+
+  - id: REQ-406
+    type: requirement
+    title: the HTML export is not reproducible (incoming links in hash-map order) and embeds the builder's absolute workspace path (#1104)
+    status: verified
+    release: v0.41.1
+    description: "Reported downstream and reproduced on the v0.41.0 binary: two exports of the same tree differed in 190 of 1215 files, every difference the row order of an artifact page's Incoming Links table, and every artifact page carried data-source-file with the absolute path of the checkout. A content-addressed or signed export cannot be checked against a rebuild, and the output leaks the builder's home directory. ACCEPTANCE: two exports of the same tree are byte-identical; a static export writes source paths relative to the project root while serve and the VS Code webview keep working; a test exports twice and compares the trees, and fails when the ordering fix is reverted."
+    tags: [export, reproducibility]
+    fields:
+      category: functional
+      corrective: true
+      priority: must
+    links:
+      - type: traces-to
+        target: REQ-029
+
+  - id: REQ-407
+    type: requirement
+    title: "rivet: verifies markers in Robot Framework files (.robot, .resource) are not scanned (#1105)"
+    status: verified
+    release: v0.41.1
+    description: "The marker scanner mapped only Rust, Python, C/C++, JS/TS, Go and shell files to comment styles, so a project whose tests are Robot Framework suites got no verification credit and a higher warning count. ACCEPTANCE: .robot and .resource files are scanned with # comments; a marker before or inside a Robot test case or keyword is attributed to that case; a module test with Robot fixtures fails when the extension mapping is removed."
+    tags: [scanning, testing]
+    fields:
+      category: functional
+      corrective: true
+      priority: must
+    links:
+      - type: traces-to
+        target: REQ-389

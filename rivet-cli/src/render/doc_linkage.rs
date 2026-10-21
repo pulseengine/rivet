@@ -79,7 +79,7 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
 
     let mut source_groups: std::collections::BTreeMap<String, Vec<String>> =
         std::collections::BTreeMap::new();
-    for a in store.iter() {
+    for a in store.iter_sorted() {
         if let Some(sf) = &a.source_file {
             let dir = sf.parent().and_then(|p| p.to_str()).unwrap_or("artifacts");
             source_groups
@@ -109,8 +109,8 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
             node_idx_map.insert(path.clone(), idx);
         }
 
-        let mut art_to_node: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
+        let mut art_to_node: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
         for doc in &doc_infos {
             for aid in &doc.artifact_ids {
                 art_to_node.insert(aid.clone(), doc.id.clone());
@@ -124,10 +124,10 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
             }
         }
 
-        let mut edge_types: std::collections::HashMap<
+        let mut edge_types: std::collections::BTreeMap<
             (String, String),
             std::collections::BTreeSet<String>,
-        > = std::collections::HashMap::new();
+        > = std::collections::BTreeMap::new();
         for (aid, src_node) in &art_to_node {
             if let Some(a) = store.get(aid) {
                 for link in &a.links {
@@ -287,7 +287,7 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
     html.push_str("</tbody></table></div>");
 
     let unlinked: Vec<&rivet_core::model::Artifact> = store
-        .iter()
+        .iter_sorted()
         .filter(|a| !all_doc_artifacts.contains(&a.id))
         .collect();
 

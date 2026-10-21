@@ -184,7 +184,7 @@ pub(crate) fn render_stats(ctx: &RenderContext) -> String {
 
     // Status breakdown
     let mut status_counts: BTreeMap<String, usize> = BTreeMap::new();
-    for a in store.iter() {
+    for a in store.iter_sorted() {
         let s = a.status.as_deref().unwrap_or("unknown");
         *status_counts.entry(s.to_string()).or_default() += 1;
     }

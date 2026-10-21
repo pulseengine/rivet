@@ -279,6 +279,7 @@ impl AppState {
                 .coverage
                 .as_ref()
                 .map_or(&[][..], |c| &c.unmodelled_rules),
+            static_export: false,
         }
     }
 
@@ -372,6 +373,7 @@ impl VariantScope {
                 .coverage
                 .as_ref()
                 .map_or(&[][..], |c| &c.unmodelled_rules),
+            static_export: false,
         }
     }
 }

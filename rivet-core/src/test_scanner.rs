@@ -143,6 +143,14 @@ pub fn default_patterns() -> Vec<MarkerPattern> {
             link_type_group: 1,
             id_group: 2,
         },
+        // Robot Framework comment: # rivet: verifies REQ-001 (#1105)
+        MarkerPattern {
+            language: "robot".into(),
+            pattern: Regex::new(r"#\s*rivet:\s*(verifies|partially-verifies)\s+([\w-]+)")
+                .expect("valid regex"),
+            link_type_group: 1,
+            id_group: 2,
+        },
         // Python decorator: @rivet_verifies("REQ-001")
         MarkerPattern {
             language: "python".into(),
@@ -230,6 +238,10 @@ fn detect_language(path: &Path) -> Option<&'static str> {
         // `.v` is Rocq/Coq. (Verilog also uses `.v`, but the marker keyword is
         // `rivet:` and a Verilog file would only match if it carried one.)
         "v" => Some("rocq"),
+        // #1105: Robot Framework suites (`.robot`) and resource files
+        // (`.resource`) use `#` comments; test cases are not functions, so
+        // the language has its own enclosing-name finder.
+        "robot" | "resource" => Some("robot"),
         _ => None,
     }
 }
@@ -279,6 +291,9 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
     // structure. `AxiomCheck.lean:1` beats a guessed proof name.
     if language == "config" || language == "lean" || language == "rocq" {
         return None;
+    }
+    if language == "robot" {
+        return find_enclosing_robot_case(lines, marker_line);
     }
     // Compiled once per process. Compiling per marker cost most of a scan
     // (1,034 markers on rivet's own tree, seconds in a debug build), which
@@ -359,6 +374,39 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
     None
 }
 
+/// Robot Framework: a test case (or keyword/task) is a NON-INDENTED line
+/// under a `*** Test Cases ***` style section header; its body is indented.
+/// A marker on the comment lines just before a case names that case; a
+/// marker inside a body names the case it sits in. Section headers
+/// (`*** ... ***`) are never names, and a marker with no case around it
+/// falls back to `file:line` (None).
+fn find_enclosing_robot_case(lines: &[&str], marker_line: usize) -> Option<String> {
+    let is_name = |l: &str| {
+        let starts_col0 = l.chars().next().is_some_and(|c| !c.is_whitespace());
+        starts_col0 && !l.starts_with('#') && !l.starts_with("***")
+    };
+    // Forward over blank and comment lines to the case the marker precedes.
+    for line in lines.iter().skip(marker_line) {
+        let t = line.trim();
+        if is_name(line) {
+            return Some(line.trim_end().to_string());
+        }
+        if !(t.is_empty() || t.starts_with('#')) {
+            break;
+        }
+    }
+    // Backward: the case whose body holds the marker.
+    for i in (0..marker_line).rev() {
+        if is_name(lines[i]) {
+            return Some(lines[i].trim_end().to_string());
+        }
+        if lines[i].starts_with("***") {
+            break;
+        }
+    }
+    None
+}
+
 /// Normalise link types: convert underscores to hyphens.
 fn normalise_link_type(raw: &str) -> String {
     raw.replace('_', "-")
@@ -386,30 +434,47 @@ pub fn scan_source_files(paths: &[PathBuf], patterns: &[MarkerPattern]) -> Vec<T
     markers
 }
 
-/// Recursively walk a directory and scan each source file.
-fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMarker>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
+/// Name of the project-local ignore file honoured by marker scanning
+/// (same syntax as a `.gitignore`), on top of `.gitignore`, `.ignore` and
+/// `.git/info/exclude`.
+pub const RIVETIGNORE_FILE: &str = ".rivetignore";
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            // Skip hidden directories and common non-source dirs.
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // `.github` is a real source directory — workflows are where CI
-                // gates live, and a CI gate IS evidence (REQ-352). Every other
-                // dot-dir stays skipped; `.git` in particular is not source and
-                // is enormous.
-                let skip_dot = name.starts_with('.') && name != ".github";
-                if skip_dot || name == "target" || name == "node_modules" {
-                    continue;
-                }
+/// Recursively walk a directory and scan each source file.
+///
+/// The walk never follows symlinks: a symlinked directory is not entered, so
+/// a link into a huge foreign tree (WSL's `/mnt/c`) or a link cycle cannot
+/// stall validation. Symlinked files are skipped too, because a file reached
+/// through a link is either also reachable by its real path or lives outside
+/// the scanned tree. Ignore rules from `.gitignore`, `.ignore`,
+/// `.git/info/exclude` and `.rivetignore` apply whether or not the tree is a
+/// checkout; the user's global ignore file is not read, so results do not
+/// depend on the machine.
+fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMarker>) {
+    let walker = ignore::WalkBuilder::new(dir)
+        .follow_links(false)
+        .hidden(false)
+        .git_global(false)
+        .require_git(false)
+        .add_custom_ignore_filename(RIVETIGNORE_FILE)
+        .sort_by_file_path(|a, b| a.cmp(b))
+        .filter_entry(|entry| {
+            if entry.depth() == 0 || !entry.file_type().is_some_and(|t| t.is_dir()) {
+                return true;
             }
-            scan_directory(&path, patterns, markers);
-        } else if path.is_file() {
-            scan_file(&path, patterns, markers);
+            // Skip hidden directories and common non-source dirs.
+            let name = entry.file_name().to_string_lossy();
+            // `.github` is a real source directory — workflows are where CI
+            // gates live, and a CI gate IS evidence (REQ-352). Every other
+            // dot-dir stays skipped; `.git` in particular is not source and
+            // is enormous.
+            let skip_dot = name.starts_with('.') && name != ".github";
+            !(skip_dot || name == "target" || name == "node_modules")
+        })
+        .build();
+
+    for entry in walker.flatten() {
+        if entry.file_type().is_some_and(|t| t.is_file()) {
+            scan_file(entry.path(), patterns, markers);
         }
     }
 }
@@ -743,6 +808,97 @@ fn test_something() {
         assert_eq!(markers[0].link_type, "verifies");
         assert_eq!(markers[0].test_name, "test_something");
         assert_eq!(markers[0].line, 2);
+    }
+
+    // ── Walk policy: symlinks and ignore rules (#1097) ───────────────────
+
+    /// A source file whose marker names `id`. Built with `concat!` so this
+    /// test module does not itself contain a scannable marker line.
+    fn marked(id: &str) -> String {
+        format!("{}{id}\nfn t() {{}}\n", concat!("// riv", "et: verifies "))
+    }
+
+    fn scanned_ids(root: &Path) -> Vec<String> {
+        let mut ids: Vec<String> = scan_source_files(&[root.to_path_buf()], &default_patterns())
+            .into_iter()
+            .map(|m| m.target_id)
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_finds_nested_marker_and_keeps_existing_skips() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "a/b/c/deep.rs", &marked("REQ-901"));
+        write_file(tmp.path(), ".github/workflows/ci.rs", &marked("REQ-902"));
+        write_file(tmp.path(), ".hidden/x.rs", &marked("REQ-903"));
+        write_file(tmp.path(), "target/x.rs", &marked("REQ-904"));
+        write_file(tmp.path(), "node_modules/x.rs", &marked("REQ-905"));
+        // The name skips apply to directories only: a dot-FILE below the
+        // root is source like any other, as it was before the ignore-crate
+        // walk (a mutant that filtered files by name went unnoticed).
+        write_file(tmp.path(), "a/.dotfile.rs", &marked("REQ-906"));
+        assert_eq!(
+            scanned_ids(tmp.path()),
+            vec!["REQ-901", "REQ-902", "REQ-906"]
+        );
+    }
+
+    // rivet: verifies REQ-405
+    #[cfg(unix)]
+    #[test]
+    fn walk_does_not_enter_symlinked_directories() {
+        let outside = TempDir::new().unwrap();
+        write_file(outside.path(), "far.rs", &marked("REQ-911"));
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "real.rs", &marked("REQ-912"));
+        std::os::unix::fs::symlink(outside.path(), tmp.path().join("link")).unwrap();
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-912"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[cfg(unix)]
+    #[test]
+    fn walk_terminates_on_symlink_loop() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "sub/real.rs", &marked("REQ-921"));
+        std::os::unix::fs::symlink(tmp.path(), tmp.path().join("sub/loop")).unwrap();
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-921"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[cfg(unix)]
+    #[test]
+    fn walk_accepts_a_symlinked_scan_root() {
+        let real = TempDir::new().unwrap();
+        write_file(real.path(), "x.rs", &marked("REQ-931"));
+        let holder = TempDir::new().unwrap();
+        let root = holder.path().join("root");
+        std::os::unix::fs::symlink(real.path(), &root).unwrap();
+        assert_eq!(scanned_ids(&root), vec!["REQ-931"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_skips_paths_ignored_by_gitignore() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), ".gitignore", "vendored/\n*.gen.rs\n");
+        write_file(tmp.path(), "src/keep.rs", &marked("REQ-941"));
+        write_file(tmp.path(), "vendored/lib.rs", &marked("REQ-942"));
+        write_file(tmp.path(), "src/x.gen.rs", &marked("REQ-943"));
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-941"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_honours_rivetignore() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), RIVETIGNORE_FILE, "fixtures/\n");
+        write_file(tmp.path(), "src/keep.rs", &marked("REQ-951"));
+        write_file(tmp.path(), "fixtures/f.rs", &marked("REQ-952"));
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-951"]);
     }
 
     // ── Test: Rust attribute marker ──────────────────────────────────────
@@ -1284,6 +1440,49 @@ fn a_later_test() { assert!(true); }
             "a non-shell shebang must not be scanned as shell; got {found:?}"
         );
     }
+    /// Robot Framework suites use `#` comments; `.robot` and `.resource`
+    /// were skipped before any pattern ran (#1105). Test cases are
+    /// non-indented lines, so the marker names the case, not a function.
+    // rivet: verifies REQ-407
+    #[test]
+    fn markers_are_found_in_robot_framework_files() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join("suite.robot"),
+            "*** Settings ***\nLibrary    Collections\n\n*** Test Cases ***\n\
+             # rivet: verifies REQ-901\nLogin Works\n    Log    hi\n\n\
+             Logout Works\n    # rivet: partially-verifies REQ-902, REQ-903\n    Log    bye\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("common.resource"),
+            "*** Keywords ***\n# rivet: verifies REQ-904\nOpen App\n    Log    x\n",
+        )
+        .unwrap();
+
+        let markers = scan_source_files(&[dir.path().to_path_buf()], &default_patterns());
+        let got: std::collections::BTreeSet<(String, String, String)> = markers
+            .iter()
+            .map(|m| {
+                (
+                    m.target_id.clone(),
+                    m.test_name.clone(),
+                    m.link_type.clone(),
+                )
+            })
+            .collect();
+        let want: std::collections::BTreeSet<(String, String, String)> = [
+            ("REQ-901", "Login Works", "verifies"),
+            ("REQ-902", "Logout Works", "partially-verifies"),
+            ("REQ-903", "Logout Works", "partially-verifies"),
+            ("REQ-904", "Open App", "verifies"),
+        ]
+        .iter()
+        .map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string()))
+        .collect();
+        assert_eq!(got, want);
+    }
+
     /// A CI gate is evidence, and CI gates live in YAML and TOML.
     ///
     /// `detect_language` had no entry for them, so `scan_file` returned before

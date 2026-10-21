@@ -52,6 +52,7 @@ wasmtime-wasi = { workspace = true, optional = true }
 # AADL / spar (optional, behind "aadl" feature — default on)
 spar-hir = { workspace = true, optional = true }
 spar-analysis = { workspace = true, optional = true }
+ignore = "0.4.33"
 
 [dev-dependencies]
 proptest = "1.5"

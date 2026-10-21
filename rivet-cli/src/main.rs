@@ -13043,6 +13043,7 @@ fn cmd_export_html(
 
     let mut ctx = state.as_render_context();
     ctx.baseline = baseline_snapshot.as_ref();
+    ctx.static_export = true;
     let params = ViewParams::default();
 
     // SC-EMBED-1: warn when working tree is dirty.
@@ -21074,6 +21075,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                                 .as_ref()
                                 .and_then(|c| c.coverage.as_ref())
                                 .map_or(&[][..], |c| &c.unmodelled_rules),
+                            static_export: false,
                         };
 
                         let result = crate::render::render_page(&ctx, page, &view_params);

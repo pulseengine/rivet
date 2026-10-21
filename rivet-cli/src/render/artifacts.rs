@@ -171,7 +171,7 @@ fn wrap_markdown_mermaid_in_svg_viewer(html: &str) -> String {
 /// no sign it was doing so.
 pub(crate) fn tag_facets(store: &rivet_core::store::Store) -> Vec<(String, usize)> {
     let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
-    for a in store.iter() {
+    for a in store.iter_sorted() {
         for t in &a.tags {
             let t = t.trim();
             if !t.is_empty() {
@@ -506,7 +506,7 @@ pub(crate) fn render_artifacts_list(ctx: &RenderContext, params: &ViewParams) ->
     // missing to complete each artifact's trace — not only the per-artifact
     // validation view. Computed once over the store (same pass the artifacts API
     // uses); only the page's artifacts are looked up below.
-    let gap_artifacts: Vec<rivet_core::model::Artifact> = store.iter().cloned().collect();
+    let gap_artifacts: Vec<rivet_core::model::Artifact> = store.iter_sorted().cloned().collect();
     let gaps: std::collections::HashMap<String, Vec<String>> =
         rivet_core::lifecycle::check_lifecycle_completeness(&gap_artifacts, ctx.schema, ctx.graph)
             .into_iter()
@@ -723,6 +723,29 @@ fn render_field_value(value: &rivet_yaml::Value) -> String {
     }
 }
 
+/// The path written into an artifact page's `data-source-file` attribute.
+///
+/// Serve and the VSIX webview need the real path (the editor shim opens it),
+/// so it is returned unchanged. A static export is a publishable tree: it
+/// carries the path relative to the project root, so no machine-local
+/// absolute path leaks and two exports of the same tree are byte-identical
+/// (#1104).
+fn export_source_path(ctx: &RenderContext, sf: &str) -> String {
+    if !ctx.static_export {
+        return sf.to_string();
+    }
+    let p = std::path::Path::new(sf);
+    let rel = p.strip_prefix(ctx.project_path).unwrap_or(p);
+    if rel.is_absolute() {
+        // Outside the project (e.g. an external): keep only the file name.
+        return rel
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+    }
+    rel.to_string_lossy().replace('\\', "/")
+}
+
 pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderResult {
     let store = ctx.store;
     let graph = ctx.graph;
@@ -805,11 +828,16 @@ pub(crate) fn render_artifact_detail(ctx: &RenderContext, id: &str) -> RenderRes
         // header file link and the inline cited-source refs must not share a
         // selector — a Playwright test picks the first `a.source-ref-link` on
         // the detail page expecting an inline `.aadl` ref (aadl.spec.ts).
+        // Static export: project-relative path (never the absolute local
+        // path, #1104); serve/VSIX keep the real path the editor shim opens.
+        let source_attr = format!(
+            "data-source-file=\"{}\"",
+            html_escape(&export_source_path(ctx, sf))
+        );
         format!(
             " <span class=\"meta\" style=\"float:right;font-size:.85rem\">\
-             <a class=\"source-file-link\" hx-get=\"/source/{enc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source/{enc}\" data-source-file=\"{sf_esc}\"{line_attr}{onclick} title=\"Open source file\">&#128196; {fn_esc}</a></span>",
+             <a class=\"source-file-link\" hx-get=\"/source/{enc}\" hx-target=\"#content\" hx-push-url=\"true\" href=\"/source/{enc}\" {source_attr}{line_attr}{onclick} title=\"Open source file\">&#128196; {fn_esc}</a></span>",
             enc = encoded_path,
-            sf_esc = html_escape(sf),
             fn_esc = html_escape(filename),
         )
     } else {

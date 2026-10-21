@@ -5,6 +5,56 @@
 
 ## [Unreleased]
 
+## [0.41.1] - 2026-10-20
+
+A patch for one regression and two reports from downstream projects.
+
+- **Validation no longer walks symlinks.** v0.41.0 made `validate` scan source
+  for `rivet: verifies` markers, and the scan followed symlinked directories
+  and ignored `.gitignore`; on WSL2 a link into the Windows drive kept it
+  running for hours (#1097). The scan now stays inside the tree and honours
+  ignore files, including a new `.rivetignore`.
+- **The HTML export is reproducible** and no longer embeds the builder's
+  workspace path (#1104).
+- **Robot Framework suites count as evidence** (#1105).
+
+### Security
+- **wasmtime 48.0.6 → 48.0.7** (RUSTSEC-2026-0378, RUSTSEC-2026-0379) — a
+  host panic lowering a component-model stream into a guest expecting another
+  payload type, and an aarch64 Cranelift miscompile of large `br_table`
+  instructions. Only `--features wasm` builds carry wasmtime; the published
+  binaries do not. The `Cargo.lock` floor test now rejects 48.0.6 and 49.0.3.
+- **rustls-webpki 0.103.16** (RUSTSEC-2026-0382) — certificate verification
+  could accept distrusted intermediates. It reaches rivet only through the
+  optional `oslc` feature; the published binaries are built without it.
+
+### Fixed
+
+- **Marker scanning no longer follows symlinks or ignored paths** (REQ-405,
+  #1097) — the `rivet: verifies` scan that every validate run performs walked
+  symlinked directories and ignored every ignore file, so on WSL2 a link into
+  `/mnt/c` made validation run for hours. The walk now skips symlinks (which
+  also removes link cycles) and honours `.gitignore`, `.ignore`,
+  `.git/info/exclude` and a new project-local `.rivetignore`. The marker set
+  found in this repository is unchanged.
+- **The HTML export is reproducible and carries no local paths** (REQ-406, #1104) —
+  two `rivet export -f html` runs over the same tree differed in 190 of 1215
+  files because backlinks, the traceability graph and the document-linkage
+  tables were built in hash-map order. The link graph now orders incoming links
+  by link type then source id, and the export renders the store in id order, so
+  repeated exports are byte-identical (0 of 1215 differ on this repository).
+  Artifact pages also wrote `data-source-file` as an absolute path of the
+  building machine; a static export now writes it relative to the project root,
+  while `rivet serve` and the VS Code webview keep the real path they open.
+
+### Added
+
+- **Robot Framework markers** (REQ-407, #1105) — `.robot` and `.resource`
+  files are now scanned for `# rivet: verifies <ID>` markers; they were skipped
+  before any pattern ran, so a Robot suite could never be evidence for a
+  requirement. A marker on the comment lines before a test case, or inside its
+  body, is attributed to that test case's name.
+
 ## [0.41.0] - 2026-10-15
 
 v0.41.0 is about **owning what rivet reads and proving what it claims**.
