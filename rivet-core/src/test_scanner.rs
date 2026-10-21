@@ -836,7 +836,14 @@ fn test_something() {
         write_file(tmp.path(), ".hidden/x.rs", &marked("REQ-903"));
         write_file(tmp.path(), "target/x.rs", &marked("REQ-904"));
         write_file(tmp.path(), "node_modules/x.rs", &marked("REQ-905"));
-        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-901", "REQ-902"]);
+        // The name skips apply to directories only: a dot-FILE below the
+        // root is source like any other, as it was before the ignore-crate
+        // walk (a mutant that filtered files by name went unnoticed).
+        write_file(tmp.path(), "a/.dotfile.rs", &marked("REQ-906"));
+        assert_eq!(
+            scanned_ids(tmp.path()),
+            vec!["REQ-901", "REQ-902", "REQ-906"]
+        );
     }
 
     // rivet: verifies REQ-405

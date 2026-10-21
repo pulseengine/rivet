@@ -29,8 +29,9 @@
 //! (a fuel bypass, a native stack buffer overflow, GC heap corruption, ...)
 //! affect wasmtime and wasmtime-wasi 48.0.3 and earlier, and
 //! RUSTSEC-2026-0353..0364 (host panics, unaligned exception-tag data) affect
-//! 48.0.5 and earlier; together they leave the patched ranges `>=48.0.6,
-//! <49.0.0` and `>=49.0.3`. The gated `cargo deny`
+//! 48.0.5 and earlier, and RUSTSEC-2026-0378..0379 (a stream payload panic,
+//! an aarch64 `br_table` miscompile) affect 48.0.6; together they leave the
+//! patched ranges `>=48.0.7, <49.0.0` and `>=49.0.4`. The gated `cargo deny`
 //! check catches an affected version only because deny.toml analyses every
 //! feature (#1034); this test fails in every `cargo test` independently of that
 //! configuration if the lockfile resolves an affected version again (a lock
@@ -71,13 +72,13 @@ fn locked_versions(lock: &str, name: &str) -> Vec<(u64, u64, u64)> {
     out
 }
 
-/// The patched ranges RUSTSEC-2026-0321..0327 and RUSTSEC-2026-0353..0364 name
-/// (the later set raised the floor to 48.0.6 and 49.0.3).
+/// The patched ranges RUSTSEC-2026-0321..0327, 0353..0364 and 0378..0379 name
+/// (the latest set raised the floor to 48.0.7 and 49.0.4).
 fn is_patched(v: (u64, u64, u64)) -> bool {
     match v {
-        (48, 0, p) => p >= 6,
+        (48, 0, p) => p >= 7,
         (48, _, _) => true,
-        (49, 0, p) => p >= 3,
+        (49, 0, p) => p >= 4,
         (major, _, _) => major >= 49,
     }
 }
@@ -95,8 +96,8 @@ fn wasmtime_is_outside_the_rustsec_2026_advisory_ranges() {
         for v in versions {
             assert!(
                 is_patched(v),
-                "{name} {}.{}.{} is affected by RUSTSEC-2026-0321..0327 or 0353..0364; \
-                 the patched ranges are >=48.0.6,<49.0.0 and >=49.0.3",
+                "{name} {}.{}.{} is affected by RUSTSEC-2026-0321..0327, 0353..0364 or 0378..0379; \
+                 the patched ranges are >=48.0.7,<49.0.0 and >=49.0.4",
                 v.0,
                 v.1,
                 v.2
@@ -110,14 +111,16 @@ fn the_floor_rejects_the_affected_and_accepts_the_patched_versions() {
     for affected in [
         (48, 0, 3),
         (48, 0, 5),
+        (48, 0, 6),
         (48, 0, 0),
         (47, 0, 4),
         (49, 0, 0),
         (49, 0, 2),
+        (49, 0, 3),
     ] {
         assert!(!is_patched(affected), "{affected:?} must be rejected");
     }
-    for patched in [(48, 0, 6), (48, 1, 0), (49, 0, 3), (49, 1, 0), (50, 0, 0)] {
+    for patched in [(48, 0, 7), (48, 1, 0), (49, 0, 4), (49, 1, 0), (50, 0, 0)] {
         assert!(is_patched(patched), "{patched:?} must be accepted");
     }
     let lock = "[[package]]\nname = \"wasmtime\"\nversion = \"48.0.3\"\n\n\

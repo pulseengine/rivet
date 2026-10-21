@@ -18,6 +18,16 @@ A patch for one regression and two reports from downstream projects.
   workspace path (#1104).
 - **Robot Framework suites count as evidence** (#1105).
 
+### Security
+- **wasmtime 48.0.6 → 48.0.7** (RUSTSEC-2026-0378, RUSTSEC-2026-0379) — a
+  host panic lowering a component-model stream into a guest expecting another
+  payload type, and an aarch64 Cranelift miscompile of large `br_table`
+  instructions. Only `--features wasm` builds carry wasmtime; the published
+  binaries do not. The `Cargo.lock` floor test now rejects 48.0.6 and 49.0.3.
+- **rustls-webpki 0.103.16** (RUSTSEC-2026-0382) — certificate verification
+  could accept distrusted intermediates. It reaches rivet only through the
+  optional `oslc` feature; the published binaries are built without it.
+
 ### Fixed
 
 - **Marker scanning no longer follows symlinks or ignored paths** (REQ-405,
