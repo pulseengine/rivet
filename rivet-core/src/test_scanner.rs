@@ -1111,6 +1111,10 @@ fn test_something() {
         write_file(&project, "src/deep/gen.rs", &marked("REQ-1005"));
         // A sibling of the scan root is not part of the scan.
         write_file(&project, "other/o.rs", &marked("REQ-1006"));
+        // Nor is a file in a directory the walk passes through on its way to
+        // the scan root: the walker yields it, and only the scan-root check
+        // keeps it out (a mutant that relaxed that check went unnoticed).
+        write_file(&project, "top.rs", &marked("REQ-1007"));
         let mut ids: Vec<String> =
             scan_source_files_in_project(&project, &[project.join("src")], &default_patterns())
                 .into_iter()
