@@ -44,6 +44,9 @@ jobs:
     # manual workflow_dispatch (used for backfills).
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -76,22 +79,14 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
 
-      # Preflight: fail loud + early if NPM_TOKEN can't authenticate, instead
-      # of letting each per-package `npm publish` crash with a cryptic E404
-      # (expired/no-access) or EOTP (a classic *Publish* token, which the
-      # org's 2FA-on-publish rejects in CI). npm publish needs a classic
-      # *Automation* token or a granular token with read-write on
-      # @pulseengine/*. This turns a silently-frozen npm channel (it sat at
-      # 0.10.1 for ~6 releases) into an immediate, labeled failure.
-      - name: Preflight — verify npm auth
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Trusted publishing (OIDC): npm exchanges the job's GitHub OIDC token
+      # for a short-lived publish credential, so no NPM_TOKEN secret exists to
+      # expire. The old token had silently expired, freezing npm at 0.37.0.
+      # OIDC publishing needs npm >= 11.5.1; Node 20 ships npm 10.
+      - name: npm with trusted-publishing support
         run: |
-          if ! who=$(npm whoami 2>/dev/null); then
-            echo "::error title=npm auth failed::NPM_TOKEN is invalid, expired, or the wrong type. npm publish needs a classic *Automation* token (or a granular token with read-write on @pulseengine/*); a classic *Publish* token fails under 2FA with EOTP. Regenerate at npmjs.com -> Access Tokens and update the NPM_TOKEN secret."
-            exit 1
-          fi
-          echo "npm auth OK as: $who"
+          npm install -g npm@11.6.2
+          npm --version
 
       - name: Resolve version
         id: version
@@ -153,8 +148,6 @@ jobs:
 
       - name: Publish to npm
         working-directory: platform-packages/${{ matrix.platform }}
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
 
   publish-root-package:
@@ -162,6 +155,9 @@ jobs:
     needs: publish-platform-packages
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -170,22 +166,14 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
 
-      # Preflight: fail loud + early if NPM_TOKEN can't authenticate, instead
-      # of letting each per-package `npm publish` crash with a cryptic E404
-      # (expired/no-access) or EOTP (a classic *Publish* token, which the
-      # org's 2FA-on-publish rejects in CI). npm publish needs a classic
-      # *Automation* token or a granular token with read-write on
-      # @pulseengine/*. This turns a silently-frozen npm channel (it sat at
-      # 0.10.1 for ~6 releases) into an immediate, labeled failure.
-      - name: Preflight — verify npm auth
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Trusted publishing (OIDC): npm exchanges the job's GitHub OIDC token
+      # for a short-lived publish credential, so no NPM_TOKEN secret exists to
+      # expire. The old token had silently expired, freezing npm at 0.37.0.
+      # OIDC publishing needs npm >= 11.5.1; Node 20 ships npm 10.
+      - name: npm with trusted-publishing support
         run: |
-          if ! who=$(npm whoami 2>/dev/null); then
-            echo "::error title=npm auth failed::NPM_TOKEN is invalid, expired, or the wrong type. npm publish needs a classic *Automation* token (or a granular token with read-write on @pulseengine/*); a classic *Publish* token fails under 2FA with EOTP. Regenerate at npmjs.com -> Access Tokens and update the NPM_TOKEN secret."
-            exit 1
-          fi
-          echo "npm auth OK as: $who"
+          npm install -g npm@11.6.2
+          npm --version
 
       - name: Resolve version
         id: version
@@ -218,8 +206,6 @@ jobs:
 
       - name: Publish to npm
         working-directory: npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
 
       - name: Summary
