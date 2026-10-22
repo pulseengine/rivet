@@ -19241,11 +19241,21 @@ fn cmd_next_id(
     Ok(true)
 }
 
-/// #880: shape check for an explicitly-chosen artifact ID (`rivet add --id`).
+/// #880, #1088: shape check for an explicitly-chosen artifact ID
+/// (`rivet add --id`).
 ///
-/// Every ID in a rivet store is `PREFIX-NNN` — one or more uppercase
-/// alphanumeric segments separated by single dashes, ending with a purely
-/// numeric suffix (e.g. `REQ-001`, `REQ-DRV-GRAPH-001`, `FIND-DMA-SHM-CANONICAL-001`).
+/// Accepts any shape the artifact loader does — one or more uppercase-
+/// alphanumeric segments separated by single dashes, with at least one
+/// dash and at least one uppercase letter somewhere in the id. The
+/// suffix after the last dash does NOT have to be all-digit: a store's
+/// own convention can carry id families like `SWREQ-FALCON-PREARM-P04`
+/// or `REQ-README-ROSTER` (#1088) that the loader already accepts.
+///
+/// Ids whose last segment isn't all-digit are not grep-matchable as
+/// commit-trailer references (`Implements: <id>`). That is a separate
+/// concern surfaced by `validate`'s `commit-ref-shape` warning (one per
+/// such artifact), not an acceptance rule enforced here.
+///
 /// Uniqueness is not checked here — `validate_add` does that against the store.
 fn validate_explicit_id(id: &str) -> Result<()> {
     if id.is_empty() {
@@ -19254,37 +19264,74 @@ fn validate_explicit_id(id: &str) -> Result<()> {
     for c in id.chars() {
         if !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '-') {
             anyhow::bail!(
-                "--id '{id}' has invalid character '{c}'. Use uppercase letters, digits, and dashes only (e.g. REQ-DRV-GRAPH-001)"
+                "--id '{id}' has invalid character '{c}'. Use uppercase letters, digits, and dashes only (e.g. REQ-001, SWREQ-FALCON-PREARM-P04)"
             );
         }
     }
     if id.starts_with('-') || id.ends_with('-') || id.contains("--") {
+        anyhow::bail!("--id '{id}' must not start or end with '-', or contain '--' (e.g. REQ-001)");
+    }
+    if !id.contains('-') {
         anyhow::bail!(
-            "--id '{id}' must not start or end with '-', or contain '--' (e.g. REQ-DRV-GRAPH-001)"
+            "--id '{id}' must have at least one '-' separating a prefix from a suffix (e.g. REQ-001)"
         );
     }
-    let Some(dash_pos) = id.rfind('-') else {
-        anyhow::bail!(
-            "--id '{id}' must have a PREFIX-NNN shape with a numeric suffix (e.g. REQ-DRV-GRAPH-001)"
-        );
-    };
-    let (prefix, suffix) = (&id[..dash_pos], &id[dash_pos + 1..]);
-    if prefix.is_empty() {
-        anyhow::bail!("--id '{id}' has an empty prefix; use PREFIX-NNN (e.g. REQ-DRV-GRAPH-001)");
-    }
-    if suffix.is_empty() || !suffix.chars().all(|c| c.is_ascii_digit()) {
-        anyhow::bail!(
-            "--id '{id}' must end with a numeric suffix after the last '-' (e.g. REQ-DRV-GRAPH-001)"
-        );
-    }
-    // A prefix must itself contain a letter so a caller cannot register a
-    // whole-digit "prefix" like "1-2" that would confuse next-id later.
-    if !prefix.chars().any(|c| c.is_ascii_uppercase()) {
-        anyhow::bail!(
-            "--id '{id}' prefix '{prefix}' must contain at least one uppercase letter (e.g. REQ-DRV-GRAPH-001)"
-        );
+    // At least one uppercase letter somewhere, so a letter-less id like
+    // `1-2` can't register as a "prefix" that confuses next-id later.
+    if !id.chars().any(|c| c.is_ascii_uppercase()) {
+        anyhow::bail!("--id '{id}' must contain at least one uppercase letter (e.g. REQ-001)");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod validate_explicit_id_tests {
+    use super::validate_explicit_id;
+
+    // Shapes the loader accepts and the user's store carries today.
+    // rivet: fixes #1088 verifies REQ-330
+    #[test]
+    fn accepts_shapes_the_loader_accepts() {
+        for id in [
+            // Status quo: PREFIX-NNN and compound-prefix.
+            "REQ-001",
+            "REQ-DRV-GRAPH-001",
+            "FIND-DMA-SHM-CANONICAL-001",
+            "MAD1-101",
+            "UCA-C-10",
+            // The #1088 cases: ids the loader already carries but the
+            // narrower suffix rule previously refused.
+            "SWREQ-FALCON-PREARM-P04",
+            "REQ-README-ROSTER",
+            "VER-REVIEW-V0-43-0",
+            // A single-dash id with a non-digit tail (minimal shape).
+            "A-B",
+        ] {
+            validate_explicit_id(id)
+                .unwrap_or_else(|e| panic!("`--id {id}` should be accepted: {e}"));
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_shapes() {
+        for (id, reason) in [
+            ("", "empty"),
+            ("req-001", "lowercase"),
+            ("REQ 001", "invalid character"),
+            ("REQ.001", "invalid character"),
+            ("-REQ-001", "leading dash"),
+            ("REQ-001-", "trailing dash"),
+            ("REQ--001", "double dash"),
+            ("REQ", "no dash"),
+            ("123-456", "no uppercase letter"),
+            ("1-2", "no uppercase letter"),
+        ] {
+            assert!(
+                validate_explicit_id(id).is_err(),
+                "`--id {id}` must be rejected ({reason})",
+            );
+        }
+    }
 }
 
 /// Add a new artifact to the project.
