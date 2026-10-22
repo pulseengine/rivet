@@ -552,10 +552,15 @@ jobs:
     # end-to-end and is independent of cargo-test passing. Keeping it
     # gated on `test` blocked an ubuntu-latest job behind self-hosted
     # rust-cpu saturation (2026-05-17 incident).
-    # Stays on ubuntu-latest: `npx playwright install --with-deps` runs
+    # Stays on hosted ubuntu: `npx playwright install --with-deps` runs
     # `apt-get install` (sudo needed) and pulls in Chromium + a slate
     # of system libraries. Smithy runners have no sudo.
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04 (#1109): `ubuntu-latest` now resolves to
+    # Ubuntu 26.04, and the pinned Playwright release fails on install
+    # with "Playwright does not support chromium on ubuntu26.04-x64",
+    # so the E2E suite stopped running on every PR and on main. Remove
+    # the pin once Playwright publishes a release that supports 26.04.
+    runs-on: ubuntu-24.04
     # #822: worst observed run 17 min (typical 8-12 min). 30 min fails
     # 12x sooner than GitHub's 360-min default; a stalled package mirror
     # in `npx playwright install --with-deps` used to sit for ~6 h with
