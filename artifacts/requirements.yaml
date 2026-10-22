@@ -10322,3 +10322,20 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-389
+
+  - id: REQ-408
+    type: requirement
+    title: "non-Rust tools cannot read YAML through rivet's own parser: no CLI prints a YAML file as JSON, and rivet-yaml has no README stating its subset (#1094)"
+    status: implemented
+    release: v0.42.0
+    description: |-
+      Org policy (2026-10-13): every PulseEngine repo reads its own inputs through rivet's owned YAML stack, rivet-yaml (REQ-346). Python and Node repos cannot link the crate, so they need a CLI that prints a YAML file as JSON, and everyone needs a README that states what the parser accepts (#930, #1094).
+
+      ACCEPTANCE: rivet yaml to-json <file|-> parses with rivet_yaml and prints JSON (pretty by default, --compact for one line). A parse error or a refused construct (tags, complex keys, multi-document streams) exits non-zero with file:line:column on stderr and prints nothing on stdout. Merge keys are not expanded: a '<<' key is read as an ordinary key. Integer, bool and float scalar mapping keys are emitted as their YAML text; null or collection keys are an error. NaN and infinities are an error. Output key order follows the document. rivet-yaml/README.md states the supported subset and the anchor copy cap. Tests cover each case, and the Python consumer example in the README is exercised by a test.
+    tags: [yaml, cli, interop]
+    fields:
+      category: functional
+      priority: should
+    links:
+      - type: traces-to
+        target: REQ-346

@@ -5,6 +5,16 @@
 
 ## [Unreleased]
 
+### Added
+- **`rivet yaml to-json`** (REQ-408, #1094) prints a YAML file, or stdin with
+  `-`, as JSON through rivet's own parser, so Python and Node repos can read
+  their inputs without a second YAML library. It works outside a rivet
+  project, keeps the document's key order, and on a parse error or refused
+  construct (tags, complex keys, multi-document streams) exits 1 with
+  `file:line:column` on stderr and nothing on stdout. Integer, float and bool
+  keys become their YAML text; null keys, NaN and infinities are errors.
+  `rivet-yaml` gains a README stating the supported subset (#930).
+
 ## [0.41.1] - 2026-10-20
 
 A patch for one regression and two reports from downstream projects.

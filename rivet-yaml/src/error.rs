@@ -136,7 +136,55 @@ impl serde::de::Error for Error {
     }
 }
 
+/// A 1-based line and column in the input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Location {
+    /// 1-based line.
+    pub line: usize,
+    /// 1-based column.
+    pub column: usize,
+}
+
 impl Error {
+    /// Where in the input the error arose, when it carries a position
+    /// (REQ-408: `rivet yaml to-json` reports it as `file:line:column`).
+    pub fn location(&self) -> Option<Location> {
+        match self.0.as_ref() {
+            ErrorImpl::Message(_, Some(pos)) | ErrorImpl::Syntax(_, pos) => Some(Location {
+                line: pos.line,
+                column: pos.column,
+            }),
+            ErrorImpl::Message(_, None)
+            | ErrorImpl::RecursionLimitExceeded
+            | ErrorImpl::BytesUnsupported
+            | ErrorImpl::ScalarInMerge
+            | ErrorImpl::TaggedInMerge
+            | ErrorImpl::ScalarInMergeElement
+            | ErrorImpl::SequenceInMergeElement
+            | ErrorImpl::EmptyTag
+            | ErrorImpl::FailedToParseNumber => None,
+        }
+    }
+
+    /// The message without its trailing ` at line L column C`.
+    pub fn message_without_location(&self) -> String {
+        match self.0.as_ref() {
+            ErrorImpl::Message(msg, Some(pos)) if pos.path != "." => {
+                format!("{}: {msg}", pos.path)
+            }
+            ErrorImpl::Message(msg, Some(_)) | ErrorImpl::Syntax(msg, _) => msg.clone(),
+            ErrorImpl::Message(_, None)
+            | ErrorImpl::RecursionLimitExceeded
+            | ErrorImpl::BytesUnsupported
+            | ErrorImpl::ScalarInMerge
+            | ErrorImpl::TaggedInMerge
+            | ErrorImpl::ScalarInMergeElement
+            | ErrorImpl::SequenceInMergeElement
+            | ErrorImpl::EmptyTag
+            | ErrorImpl::FailedToParseNumber => self.to_string(),
+        }
+    }
+
     /// Attach a position to an error a `Visitor` raised without one, as
     /// serde_yaml's `fix_mark` does. Errors that already carry one keep it.
     pub(crate) fn fix_pos(mut self, pos: impl FnOnce() -> Pos) -> Self {
@@ -144,5 +192,78 @@ impl Error {
             *none = Some(pos());
         }
         self
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "test code: a failure should panic with a clear message"
+)]
+mod tests {
+    use super::*;
+
+    fn positioned(path: &str, line: usize, column: usize) -> Error {
+        new(ErrorImpl::Message(
+            "boom".to_string(),
+            Some(Pos {
+                path: path.to_string(),
+                line,
+                column,
+            }),
+        ))
+    }
+
+    #[test]
+    fn location_reports_the_position_it_carries() {
+        assert_eq!(
+            positioned(".", 3, 7).location(),
+            Some(Location { line: 3, column: 7 })
+        );
+        let syntax = new(ErrorImpl::Syntax(
+            "bad".to_string(),
+            Pos {
+                path: "a".to_string(),
+                line: 1,
+                column: 2,
+            },
+        ));
+        assert_eq!(syntax.location(), Some(Location { line: 1, column: 2 }));
+    }
+
+    #[test]
+    fn location_is_none_when_no_position_is_carried() {
+        assert_eq!(
+            new(ErrorImpl::Message("boom".to_string(), None)).location(),
+            None
+        );
+        assert_eq!(new(ErrorImpl::RecursionLimitExceeded).location(), None);
+    }
+
+    #[test]
+    fn message_without_location_strips_only_the_position() {
+        // The document root (".") gets no "path: " prefix.
+        assert_eq!(positioned(".", 3, 7).message_without_location(), "boom");
+        // A nested path is kept as a prefix.
+        assert_eq!(
+            positioned("a.b", 3, 7).message_without_location(),
+            "a.b: boom"
+        );
+        // No position: the bare message.
+        assert_eq!(
+            new(ErrorImpl::Message("boom".to_string(), None)).message_without_location(),
+            "boom"
+        );
+        // Syntax errors carry no path prefix.
+        let syntax = new(ErrorImpl::Syntax(
+            "bad".to_string(),
+            Pos {
+                path: "a".to_string(),
+                line: 1,
+                column: 2,
+            },
+        ));
+        assert_eq!(syntax.message_without_location(), "bad");
     }
 }

@@ -8,7 +8,8 @@
 //!    API mirrors serde_yaml's and migrating a call site is a path rename.
 //! 2. **Parsing** (`from_str`) — rivet's lossless CST ([`cst`]) and a serde
 //!    deserializer over it (`de`). Anchors and aliases are expanded; tags,
-//!    merge keys, complex keys and multi-document streams are refused.
+//!    complex keys and multi-document streams are refused, and merge keys are
+//!    not expanded.
 //! 3. **Emitting** (`to_string`) — a port of libyaml's scalar-style rules with
 //!    serde_yaml's settings, so the files rivet writes are unchanged.
 //!
@@ -27,6 +28,7 @@ pub mod cst_text;
 mod de;
 mod emit;
 mod error;
+pub mod json;
 #[allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -118,7 +120,7 @@ mod scalar;
 )]
 pub mod value;
 
-pub use crate::error::{Error, Result};
+pub use crate::error::{Error, Location, Result};
 pub use crate::mapping::Mapping;
 pub use crate::value::{Index, Number, Sequence, Value, from_value, to_value};
 
