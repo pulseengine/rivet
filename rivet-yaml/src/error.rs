@@ -136,7 +136,55 @@ impl serde::de::Error for Error {
     }
 }
 
+/// A 1-based line and column in the input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Location {
+    /// 1-based line.
+    pub line: usize,
+    /// 1-based column.
+    pub column: usize,
+}
+
 impl Error {
+    /// Where in the input the error arose, when it carries a position
+    /// (REQ-408: `rivet yaml to-json` reports it as `file:line:column`).
+    pub fn location(&self) -> Option<Location> {
+        match self.0.as_ref() {
+            ErrorImpl::Message(_, Some(pos)) | ErrorImpl::Syntax(_, pos) => Some(Location {
+                line: pos.line,
+                column: pos.column,
+            }),
+            ErrorImpl::Message(_, None)
+            | ErrorImpl::RecursionLimitExceeded
+            | ErrorImpl::BytesUnsupported
+            | ErrorImpl::ScalarInMerge
+            | ErrorImpl::TaggedInMerge
+            | ErrorImpl::ScalarInMergeElement
+            | ErrorImpl::SequenceInMergeElement
+            | ErrorImpl::EmptyTag
+            | ErrorImpl::FailedToParseNumber => None,
+        }
+    }
+
+    /// The message without its trailing ` at line L column C`.
+    pub fn message_without_location(&self) -> String {
+        match self.0.as_ref() {
+            ErrorImpl::Message(msg, Some(pos)) if pos.path != "." => {
+                format!("{}: {msg}", pos.path)
+            }
+            ErrorImpl::Message(msg, Some(_)) | ErrorImpl::Syntax(msg, _) => msg.clone(),
+            ErrorImpl::Message(_, None)
+            | ErrorImpl::RecursionLimitExceeded
+            | ErrorImpl::BytesUnsupported
+            | ErrorImpl::ScalarInMerge
+            | ErrorImpl::TaggedInMerge
+            | ErrorImpl::ScalarInMergeElement
+            | ErrorImpl::SequenceInMergeElement
+            | ErrorImpl::EmptyTag
+            | ErrorImpl::FailedToParseNumber => self.to_string(),
+        }
+    }
+
     /// Attach a position to an error a `Visitor` raised without one, as
     /// serde_yaml's `fix_mark` does. Errors that already carry one keep it.
     pub(crate) fn fix_pos(mut self, pos: impl FnOnce() -> Pos) -> Self {
