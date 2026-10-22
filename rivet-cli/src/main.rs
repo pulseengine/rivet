@@ -1322,7 +1322,9 @@ enum Command {
         set_status: Option<String>,
 
         /// Set the release scope (e.g. v0.21.0) — first-class release-planning
-        /// dimension. An unassigned artifact is backlog.
+        /// dimension. An unassigned artifact is backlog; pass an empty value
+        /// (`--set-release ""`) to clear the release and move the artifact
+        /// back to backlog.
         #[arg(long)]
         set_release: Option<String>,
 
