@@ -76,6 +76,7 @@ mod schema_cmd;
 #[cfg(feature = "serve")]
 mod serve;
 mod templates_cmd;
+mod yaml_cmd;
 
 /// Validate that a `--format` value is one of the accepted options.
 fn validate_format(format: &str, valid: &[&str]) -> Result<()> {
@@ -987,6 +988,12 @@ enum Command {
         action: SupplierAction,
     },
 
+    /// Read YAML through rivet's own parser (no rivet.yaml needed)
+    Yaml {
+        #[command(subcommand)]
+        action: YamlAction,
+    },
+
     /// Analyze change impact between current state and a baseline
     Impact {
         /// Git ref to compare against (branch, tag, or commit)
@@ -1790,6 +1797,23 @@ enum ExternalsAction {
 }
 
 #[derive(Debug, Subcommand)]
+enum YamlAction {
+    /// Print a YAML file as JSON (REQ-408). Tags, complex keys and
+    /// multi-document streams are refused; merge keys are not expanded. A parse error or refused
+    /// construct exits 1 with `file:line:column: message` on stderr and
+    /// nothing on stdout. Integer/float/bool mapping keys are emitted as
+    /// their YAML text; null or collection keys, NaN and infinities are errors.
+    ToJson {
+        /// YAML file to read, or `-` for stdin
+        file: PathBuf,
+
+        /// Print one line without indentation
+        #[arg(long)]
+        compact: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum SupplierAction {
     /// List every `external-anchor` artifact (chain end at a supplier
     /// boundary) with its received-status and expected derivatives.
@@ -2478,6 +2502,7 @@ fn qualification_refusal(cmd: &Command) -> Option<&'static str> {
         | Command::Stats { .. }
         | Command::Matrix { .. }
         | Command::Stpa { .. }
+        | Command::Yaml { .. }
         | Command::Diff { .. }
         | Command::Quickstart { .. }
         | Command::CommitMsgCheck { .. }
@@ -2655,6 +2680,11 @@ fn run(cli: Cli) -> Result<bool> {
         }
         return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
     }
+    if let Command::Yaml { action } = &cli.command {
+        return match action {
+            YamlAction::ToJson { file, compact } => yaml_cmd::cmd_yaml_to_json(file, *compact),
+        };
+    }
     if let Command::Quickstart { format } = &cli.command {
         return cmd_docs(Some("quickstart"), false, None, format, 2);
     }
@@ -2694,6 +2724,7 @@ fn run(cli: Cli) -> Result<bool> {
         Command::Lsp => unreachable!(),
         #[cfg(feature = "mcp")]
         Command::Mcp { .. } => unreachable!(),
+        Command::Yaml { .. } => unreachable!(),
         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
         Command::Validate {
             format,
