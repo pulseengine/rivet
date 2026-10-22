@@ -559,7 +559,7 @@ mod tests {
         assert!(from_c.is_empty(), "leaf has no reachables, got {from_c:?}");
     }
 
-    // Verifies: REQ-406
+    // rivet: verifies REQ-406
     // Backlinks were collected in store (HashMap) order, so the incoming-link
     // table differed from run to run (#1104). They are now ordered by link
     // type, then source id, whatever order the store yields.

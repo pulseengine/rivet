@@ -17,6 +17,13 @@ A patch for one regression and two reports from downstream projects.
 - **The HTML export is reproducible** and no longer embeds the builder's
   workspace path (#1104).
 - **Robot Framework suites count as evidence** (#1105).
+- **Marker attribution and ignore-file scope tightened** (REQ-405, REQ-407).
+
+### Upgrade note
+
+Markers inside gitignored or symlinked directories no longer count as
+evidence. List such paths in a `.rivetignore` negation (`!path`) or move them,
+and run `rivet coverage --tests` before and after upgrading to compare.
 
 ### Security
 - **wasmtime 48.0.6 → 48.0.7** (RUSTSEC-2026-0378, RUSTSEC-2026-0379) — a
@@ -46,6 +53,16 @@ A patch for one regression and two reports from downstream projects.
   Artifact pages also wrote `data-source-file` as an absolute path of the
   building machine; a static export now writes it relative to the project root,
   while `rivet serve` and the VS Code webview keep the real path they open.
+- **Marker attribution and ignore-file scope tightened** (REQ-405, REQ-407) —
+  a Robot marker is named after a test case only inside `Test Cases`, `Tasks`
+  or `Keywords` sections (any case, singular or plural, any number of `*`);
+  under `Settings` or `Variables` it falls back to `file:line` instead of
+  taking the neighbouring setting as its name. The marker walk reads ignore
+  files from the project root down to each scanned directory and no longer
+  reads any above the project root, so a stray `.gitignore` in a home
+  directory cannot hide evidence. `.ignore`, `.git/info/exclude`, the
+  global-ignore opt-out and the symlink-loop guard now have tests that fail
+  when the behaviour is reverted.
 
 ### Added
 
