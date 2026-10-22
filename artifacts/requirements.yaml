@@ -10283,7 +10283,7 @@ artifacts:
     title: marker scanning walks the whole tree, follows symlinks and ignores .gitignore, so validate takes hours on a repo with symlinks to large external trees (#1097)
     status: verified
     release: v0.41.1
-    description: "Since v0.41.0 every command that computes coverage or verification (validate, coverage, context, MCP reload) scans source files for rivet: verifies markers (REQ-389 A1). test_scanner::scan_directory used Path::is_dir, which follows symlinks, consulted no ignore file and had no cycle guard; on WSL2 a project with symlinks into the Windows drive (376k files) did not finish validate in minutes to hours. ACCEPTANCE: the marker walk does not enter symlinked directories (no cycles), honours .gitignore, .ignore, .git/info/exclude and a project .rivetignore, keeps the existing skips, and finds exactly the same markers on a tree without symlinks; tests in the module cover each case with a negative control."
+    description: "Since v0.41.0 every command that computes coverage or verification (validate, coverage, context, MCP reload) scans source files for rivet: verifies markers (REQ-389 A1). test_scanner::scan_directory used Path::is_dir, which follows symlinks, consulted no ignore file and had no cycle guard; on WSL2 a project with symlinks into the Windows drive (376k files) did not finish validate in minutes to hours. ACCEPTANCE: the marker walk does not enter symlinked directories (no cycles), honours .gitignore, .ignore, .git/info/exclude and a project .rivetignore, keeps the existing skips, and finds exactly the same markers on a tree without symlinks; tests in the module cover each case with a negative control. Ignore files above the project root are not read."
     tags: [scanning, performance, regression]
     fields:
       category: functional
@@ -10313,7 +10313,7 @@ artifacts:
     title: "rivet: verifies markers in Robot Framework files (.robot, .resource) are not scanned (#1105)"
     status: verified
     release: v0.41.1
-    description: "The marker scanner mapped only Rust, Python, C/C++, JS/TS, Go and shell files to comment styles, so a project whose tests are Robot Framework suites got no verification credit and a higher warning count. ACCEPTANCE: .robot and .resource files are scanned with # comments; a marker before or inside a Robot test case or keyword is attributed to that case; a module test with Robot fixtures fails when the extension mapping is removed."
+    description: "The marker scanner mapped only Rust, Python, C/C++, JS/TS, Go and shell files to comment styles, so a project whose tests are Robot Framework suites got no verification credit and a higher warning count. ACCEPTANCE: .robot and .resource files are scanned with # comments; a marker before or inside a Robot test case or keyword is attributed to that case; a module test with Robot fixtures fails when the extension mapping is removed. Markers outside Test Cases/Tasks/Keywords sections fall back to file:line."
     tags: [scanning, testing]
     fields:
       category: functional

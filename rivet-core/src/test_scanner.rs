@@ -377,14 +377,40 @@ fn find_enclosing_function(lines: &[&str], marker_line: usize, language: &str) -
 /// Robot Framework: a test case (or keyword/task) is a NON-INDENTED line
 /// under a `*** Test Cases ***` style section header; its body is indented.
 /// A marker on the comment lines just before a case names that case; a
-/// marker inside a body names the case it sits in. Section headers
-/// (`*** ... ***`) are never names, and a marker with no case around it
-/// falls back to `file:line` (None).
+/// marker inside a body names the case it sits in. Only the case-bearing
+/// sections (Test Cases, Tasks, Keywords) hold names: a non-indented line
+/// under `*** Settings ***` or `*** Variables ***` is a setting or a
+/// variable, not a test, and a marker there falls back to `file:line`
+/// (None), as does a marker with no case around it. Neither scan crosses a
+/// section header.
 fn find_enclosing_robot_case(lines: &[&str], marker_line: usize) -> Option<String> {
+    // The section header on `l`, if any: Some(true) when it is a case-bearing
+    // section. Robot accepts any number of leading `*`, optional trailing
+    // `*`, any case, and singular or plural names.
+    let header = |l: &str| -> Option<bool> {
+        if !l.starts_with('*') {
+            return None;
+        }
+        let name = l.trim_matches(|c: char| c == '*' || c.is_whitespace());
+        let name = name.to_ascii_lowercase();
+        Some(matches!(
+            name.as_str(),
+            "test cases" | "test case" | "tasks" | "task" | "keywords" | "keyword"
+        ))
+    };
     let is_name = |l: &str| {
         let starts_col0 = l.chars().next().is_some_and(|c| !c.is_whitespace());
-        starts_col0 && !l.starts_with('#') && !l.starts_with("***")
+        starts_col0 && !l.starts_with('#') && header(l).is_none()
     };
+    // Is the marker inside a case-bearing section? Nearest header above it.
+    let in_case_section = lines[..marker_line.min(lines.len())]
+        .iter()
+        .rev()
+        .find_map(|l| header(l))
+        .unwrap_or(false);
+    if !in_case_section {
+        return None;
+    }
     // Forward over blank and comment lines to the case the marker precedes.
     for line in lines.iter().skip(marker_line) {
         let t = line.trim();
@@ -397,11 +423,11 @@ fn find_enclosing_robot_case(lines: &[&str], marker_line: usize) -> Option<Strin
     }
     // Backward: the case whose body holds the marker.
     for i in (0..marker_line).rev() {
+        if header(lines[i]).is_some() {
+            break;
+        }
         if is_name(lines[i]) {
             return Some(lines[i].trim_end().to_string());
-        }
-        if lines[i].starts_with("***") {
-            break;
         }
     }
     None
@@ -420,12 +446,39 @@ fn normalise_link_type(raw: &str) -> String {
 ///
 /// Recursively walks directories.  For each file, detects the language from
 /// its extension and applies the matching patterns.
+///
+/// With no project root known, each scanned directory is its own project
+/// root: ignore files inside it apply, none above it is read. Callers that
+/// scan sub-roots of a project should use [`scan_source_files_in_project`].
 pub fn scan_source_files(paths: &[PathBuf], patterns: &[MarkerPattern]) -> Vec<TestMarker> {
+    scan_with_root(None, paths, patterns)
+}
+
+/// Like [`scan_source_files`], for scan paths that live inside `project`.
+///
+/// Ignore files from the project root down to each scan root, and below,
+/// apply (a `.gitignore` at the project root still governs `<project>/src`);
+/// ignore files in directories ABOVE the project root are never read, so a
+/// stray `.gitignore` in the user's home directory cannot hide evidence. A
+/// scan path that is not inside the project is treated as its own root.
+pub fn scan_source_files_in_project(
+    project: &Path,
+    paths: &[PathBuf],
+    patterns: &[MarkerPattern],
+) -> Vec<TestMarker> {
+    scan_with_root(Some(project), paths, patterns)
+}
+
+fn scan_with_root(
+    project: Option<&Path>,
+    paths: &[PathBuf],
+    patterns: &[MarkerPattern],
+) -> Vec<TestMarker> {
     let mut markers = Vec::new();
 
     for path in paths {
         if path.is_dir() {
-            scan_directory(path, patterns, &mut markers);
+            scan_directory(project.unwrap_or(path), path, patterns, &mut markers);
         } else if path.is_file() {
             scan_file(path, patterns, &mut markers);
         }
@@ -439,6 +492,28 @@ pub fn scan_source_files(paths: &[PathBuf], patterns: &[MarkerPattern]) -> Vec<T
 /// `.git/info/exclude`.
 pub const RIVETIGNORE_FILE: &str = ".rivetignore";
 
+/// Where to start the walk and which directory is being scanned.
+///
+/// The walk starts at the project root and is pruned to the path down to
+/// `dir`, so the ignore crate applies every ancestor's ignore files with
+/// correct anchoring and reads nothing above the project root. Returns
+/// `(walk_root, target)`, `target` being `dir` spelled under `walk_root`.
+/// A `dir` outside the project, a symlinked `dir` or any path that cannot be
+/// resolved is its own root.
+fn walk_root_and_target(project: &Path, dir: &Path) -> (PathBuf, PathBuf) {
+    let own = || (dir.to_path_buf(), dir.to_path_buf());
+    if std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_symlink()) {
+        return own();
+    }
+    let (Ok(cp), Ok(cd)) = (project.canonicalize(), dir.canonicalize()) else {
+        return own();
+    };
+    match cd.strip_prefix(&cp) {
+        Ok(rel) => (project.to_path_buf(), project.join(rel)),
+        Err(_) => own(),
+    }
+}
+
 /// Recursively walk a directory and scan each source file.
 ///
 /// The walk never follows symlinks: a symlinked directory is not entered, so
@@ -446,20 +521,49 @@ pub const RIVETIGNORE_FILE: &str = ".rivetignore";
 /// stall validation. Symlinked files are skipped too, because a file reached
 /// through a link is either also reachable by its real path or lives outside
 /// the scanned tree. Ignore rules from `.gitignore`, `.ignore`,
-/// `.git/info/exclude` and `.rivetignore` apply whether or not the tree is a
-/// checkout; the user's global ignore file is not read, so results do not
+/// `.git/info/exclude` and `.rivetignore` apply from the project root down
+/// whether or not the tree is a checkout; the user's global ignore file and
+/// ignore files above the project root are not read, so results do not
 /// depend on the machine.
-fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<TestMarker>) {
-    let walker = ignore::WalkBuilder::new(dir)
+fn scan_directory(
+    project: &Path,
+    dir: &Path,
+    patterns: &[MarkerPattern],
+    markers: &mut Vec<TestMarker>,
+) {
+    let (root, target) = walk_root_and_target(project, dir);
+    let walker = build_walker(&root, target.clone());
+
+    for entry in walker.flatten() {
+        if entry.file_type().is_some_and(|t| t.is_file()) && entry.path().starts_with(&target) {
+            scan_file(entry.path(), patterns, markers);
+        }
+    }
+}
+
+/// The walk policy, in one place so tests can pin each setting.
+fn build_walker(root: &Path, target: PathBuf) -> ignore::Walk {
+    ignore::WalkBuilder::new(root)
         .follow_links(false)
         .hidden(false)
+        .parents(false)
         .git_global(false)
         .require_git(false)
         .add_custom_ignore_filename(RIVETIGNORE_FILE)
         .sort_by_file_path(|a, b| a.cmp(b))
-        .filter_entry(|entry| {
+        .filter_entry(move |entry| {
             if entry.depth() == 0 || !entry.file_type().is_some_and(|t| t.is_dir()) {
                 return true;
+            }
+            let path = entry.path();
+            // The scan root and the directories leading to it from the
+            // project root are never name-skipped; siblings off that path
+            // are not entered at all.
+            if target.starts_with(path) {
+                return true;
+            }
+            if !path.starts_with(&target) {
+                return false;
             }
             // Skip hidden directories and common non-source dirs.
             let name = entry.file_name().to_string_lossy();
@@ -470,13 +574,7 @@ fn scan_directory(dir: &Path, patterns: &[MarkerPattern], markers: &mut Vec<Test
             let skip_dot = name.starts_with('.') && name != ".github";
             !(skip_dot || name == "target" || name == "node_modules")
         })
-        .build();
-
-    for entry in walker.flatten() {
-        if entry.file_type().is_some_and(|t| t.is_file()) {
-            scan_file(entry.path(), patterns, markers);
-        }
-    }
+        .build()
 }
 
 /// The ids a marker names, read from where its pattern captured the first
@@ -862,10 +960,27 @@ fn test_something() {
     #[cfg(unix)]
     #[test]
     fn walk_terminates_on_symlink_loop() {
+        // Two sibling directories that link to each other. A walk that
+        // follows links reaches `a/to_b/y.rs` and `b/to_a/x.rs` (the ignore
+        // crate's loop check only stops a link back to an ANCESTOR), so the
+        // exact set of marker paths tells a link-following walk apart.
         let tmp = TempDir::new().unwrap();
-        write_file(tmp.path(), "sub/real.rs", &marked("REQ-921"));
-        std::os::unix::fs::symlink(tmp.path(), tmp.path().join("sub/loop")).unwrap();
-        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-921"]);
+        write_file(tmp.path(), "a/x.rs", &marked("REQ-921"));
+        write_file(tmp.path(), "b/y.rs", &marked("REQ-922"));
+        std::os::unix::fs::symlink(tmp.path().join("b"), tmp.path().join("a/to_b")).unwrap();
+        std::os::unix::fs::symlink(tmp.path().join("a"), tmp.path().join("b/to_a")).unwrap();
+        // Also a link back to an ancestor, the shape that can never end.
+        std::os::unix::fs::symlink(tmp.path(), tmp.path().join("a/loop")).unwrap();
+        let mut files: Vec<PathBuf> =
+            scan_source_files(&[tmp.path().to_path_buf()], &default_patterns())
+                .into_iter()
+                .map(|m| m.file.strip_prefix(tmp.path()).unwrap().to_path_buf())
+                .collect();
+        files.sort();
+        assert_eq!(
+            files,
+            vec![PathBuf::from("a/x.rs"), PathBuf::from("b/y.rs")]
+        );
     }
 
     // rivet: verifies REQ-405
@@ -899,6 +1014,252 @@ fn test_something() {
         write_file(tmp.path(), "src/keep.rs", &marked("REQ-951"));
         write_file(tmp.path(), "fixtures/f.rs", &marked("REQ-952"));
         assert_eq!(scanned_ids(tmp.path()), vec!["REQ-951"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_honours_dot_ignore() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), ".ignore", "scratch/\n");
+        write_file(tmp.path(), "src/keep.rs", &marked("REQ-961"));
+        write_file(tmp.path(), "scratch/s.rs", &marked("REQ-962"));
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-961"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_honours_info_exclude() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), ".git/info/exclude", "private/\n");
+        // `.git` itself stays skipped, so a marker inside it never counts.
+        write_file(tmp.path(), ".git/hooks/h.rs", &marked("REQ-973"));
+        write_file(tmp.path(), "src/keep.rs", &marked("REQ-971"));
+        write_file(tmp.path(), "private/p.rs", &marked("REQ-972"));
+        assert_eq!(scanned_ids(tmp.path()), vec!["REQ-971"]);
+    }
+
+    /// The user's global ignore file must not change what is scanned. The
+    /// ignore crate reads `$XDG_CONFIG_HOME/git/ignore`; that is process
+    /// state and tests share a process under `cargo test`, so the check runs
+    /// in a child process of this very test binary with its own environment
+    /// and nothing is set in the parent.
+    // rivet: verifies REQ-405
+    #[test]
+    fn walk_ignores_the_global_ignore_file() {
+        const CHILD: &str = "RIVET_TEST_GLOBAL_IGNORE_PROJECT";
+        if let Some(project) = std::env::var_os(CHILD) {
+            // Child: the global file (set up by the parent) hides `vendored/`.
+            let ids = scanned_ids(Path::new(&project));
+            assert_eq!(ids, vec!["REQ-981", "REQ-982"]);
+            return;
+        }
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("project");
+        write_file(&project, "src/keep.rs", &marked("REQ-981"));
+        write_file(&project, "vendored/v.rs", &marked("REQ-982"));
+        let cfg = tmp.path().join("cfg");
+        write_file(&cfg, "git/ignore", "vendored/\n");
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "walk_ignores_the_global_ignore_file",
+                "--test-threads=1",
+                "--nocapture",
+            ])
+            .env(CHILD, &project)
+            .env("XDG_CONFIG_HOME", &cfg)
+            .env("HOME", tmp.path())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        // Guard against a child that ran zero tests and "passed".
+        assert!(stdout.contains("1 passed"), "child did not run: {stdout}");
+        assert!(
+            out.status.success(),
+            "global ignore file leaked into the scan: {stdout}{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn ignore_files_above_the_project_root_are_not_read() {
+        let tmp = TempDir::new().unwrap();
+        // Stray ignore files in a parent of the project (think `~/.gitignore`).
+        write_file(tmp.path(), ".gitignore", "*.rs\n");
+        write_file(tmp.path(), ".ignore", "*.rs\n");
+        let project = tmp.path().join("proj");
+        write_file(&project, "src/x.rs", &marked("REQ-991"));
+        let found =
+            scan_source_files_in_project(&project, &[project.join("src")], &default_patterns());
+        assert_eq!(found.len(), 1, "markers hidden by a file above the project");
+        let found = scan_source_files_in_project(&project, &[project.clone()], &default_patterns());
+        assert_eq!(found.len(), 1);
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn project_root_ignore_files_apply_to_a_sub_root_scan() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("proj");
+        write_file(&project, ".gitignore", "vendored/\n/src/gen.rs\n");
+        write_file(&project, RIVETIGNORE_FILE, "fixtures/\n");
+        write_file(&project, "src/keep.rs", &marked("REQ-1001"));
+        write_file(&project, "src/vendored/v.rs", &marked("REQ-1002"));
+        write_file(&project, "src/fixtures/f.rs", &marked("REQ-1003"));
+        // Anchored to the project root: hides src/gen.rs, not src/deep/gen.rs.
+        write_file(&project, "src/gen.rs", &marked("REQ-1004"));
+        write_file(&project, "src/deep/gen.rs", &marked("REQ-1005"));
+        // A sibling of the scan root is not part of the scan.
+        write_file(&project, "other/o.rs", &marked("REQ-1006"));
+        // Nor is a file in a directory the walk passes through on its way to
+        // the scan root: the walker yields it, and only the scan-root check
+        // keeps it out (a mutant that relaxed that check went unnoticed).
+        write_file(&project, "top.rs", &marked("REQ-1007"));
+        let mut ids: Vec<String> =
+            scan_source_files_in_project(&project, &[project.join("src")], &default_patterns())
+                .into_iter()
+                .map(|m| m.target_id)
+                .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["REQ-1001", "REQ-1005"]);
+    }
+
+    // rivet: verifies REQ-405
+    #[test]
+    fn a_scan_root_outside_the_project_is_its_own_root() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path().join("proj");
+        let elsewhere = tmp.path().join("elsewhere");
+        write_file(&project, ".gitignore", "*.rs\n");
+        write_file(&elsewhere, "e.rs", &marked("REQ-1011"));
+        let found =
+            scan_source_files_in_project(&project, &[elsewhere.clone()], &default_patterns());
+        assert_eq!(found.len(), 1);
+    }
+
+    // ── Robot attribution ────────────────────────────────────────────────
+
+    fn robot_names(content: &str) -> Vec<(String, String)> {
+        let dir = TempDir::new().unwrap();
+        write_file(dir.path(), "s.robot", content);
+        let mut v: Vec<(String, String)> =
+            scan_source_files(&[dir.path().to_path_buf()], &default_patterns())
+                .into_iter()
+                .map(|m| (m.target_id, m.test_name))
+                .collect();
+        v.sort();
+        v
+    }
+
+    /// A Robot marker comment line. Built with `concat!` so this test module
+    /// does not itself contain a scannable marker line.
+    fn robot_marker(id: &str) -> String {
+        format!("{}{id}\n", concat!("# riv", "et: verifies "))
+    }
+
+    // rivet: verifies REQ-407
+    #[test]
+    fn robot_marker_in_settings_is_not_attributed_to_a_setting() {
+        let src = format!(
+            "*** Settings ***\nLibrary    Collections\n{}Resource    x.resource\n\n\
+             *** Test Cases ***\nA Case\n    Log    hi\n",
+            robot_marker("REQ-1101")
+        );
+        let got = robot_names(&src);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].0, "REQ-1101");
+        assert!(got[0].1.contains("s.robot:"), "{got:?}");
+    }
+
+    // rivet: verifies REQ-407
+    #[test]
+    fn robot_marker_in_variables_falls_back_to_file_line() {
+        let src = format!(
+            "*** Variables ***\n${{X}}    1\n{}${{Y}}    2\n",
+            robot_marker("REQ-1102")
+        );
+        let got = robot_names(&src);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].1.contains("s.robot:"), "{got:?}");
+    }
+
+    // rivet: verifies REQ-407
+    #[test]
+    fn robot_marker_before_settings_header_does_not_see_a_later_case() {
+        // A Settings section sits between two case sections. The marker in
+        // it must reach neither `First` (backward) nor `Later` (forward).
+        let src = format!(
+            "*** Test Cases ***\nFirst\n    Log    x\n\n\
+             *** Settings ***\n{}\
+             Resource    r.resource\n\n\
+             *** Test Cases ***\nLater\n    Log    y\n",
+            robot_marker("REQ-1103")
+        );
+        let got = robot_names(&src);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].1.contains("s.robot:"), "{got:?}");
+    }
+
+    // rivet: verifies REQ-407
+    #[test]
+    fn robot_marker_before_a_settings_line_in_a_settings_section_is_unnamed() {
+        let src = format!(
+            "*** Settings ***\n{}Library    Collections\n\n\
+             *** Test Cases ***\nLater\n    Log    y\n",
+            robot_marker("REQ-1106")
+        );
+        let got = robot_names(&src);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].1.contains("s.robot:"), "{got:?}");
+    }
+
+    // rivet: verifies REQ-407
+    #[test]
+    fn robot_backward_scan_stops_at_a_section_header() {
+        // `First` is in an earlier section; the marker's own (empty) Keywords
+        // section must not borrow it.
+        let src = format!(
+            "*** Test Cases ***\nFirst\n    Log    x\n\n*** Keywords ***\n{}",
+            robot_marker("REQ-1107")
+        );
+        let got = robot_names(&src);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].1.contains("s.robot:"), "{got:?}");
+    }
+
+    // rivet: verifies REQ-407
+    #[test]
+    fn robot_section_headers_are_recognised_in_every_spelling() {
+        for header in [
+            "*** Test Cases ***",
+            "*** test cases ***",
+            "*** Test Case ***",
+            "*** Tasks ***",
+            "*** Task ***",
+            "*** Keywords ***",
+            "*** Keyword ***",
+            "* Test Cases",
+            "** Keywords **",
+        ] {
+            let src = format!(
+                "{header}\n{}My Name\n    Log    x\n",
+                robot_marker("REQ-1104")
+            );
+            assert_eq!(
+                robot_names(&src),
+                vec![("REQ-1104".to_string(), "My Name".to_string())],
+                "header {header:?}"
+            );
+        }
+        for header in ["*** Settings ***", "*** Variables ***", "*** Comments ***"] {
+            let src = format!(
+                "{header}\n{}My Name\n    Log    x\n",
+                robot_marker("REQ-1105")
+            );
+            let got = robot_names(&src);
+            assert_eq!(got.len(), 1);
+            assert!(got[0].1.contains("s.robot:"), "header {header:?}: {got:?}");
+        }
     }
 
     // ── Test: Rust attribute marker ──────────────────────────────────────

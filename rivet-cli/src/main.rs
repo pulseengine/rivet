@@ -8361,7 +8361,8 @@ impl ReadinessCtx {
         // Source markers are `verifies` evidence by another route (REQ-329);
         // without them a marker-verified requirement would read as missing
         // its verification rule.
-        let markers = rivet_core::test_scanner::scan_source_files(
+        let markers = rivet_core::test_scanner::scan_source_files_in_project(
+            &cli.project,
             &default_marker_scan_paths(&cli.project),
             &rivet_core::test_scanner::default_patterns(),
         );
@@ -9882,7 +9883,8 @@ fn cmd_stats_qualification(cli: &Cli) -> Result<bool> {
 /// Scanning takes seconds on a large tree, so only commands that compute
 /// coverage or verification call this, not every project load.
 fn marker_verified_ids(project: &std::path::Path) -> std::collections::BTreeSet<String> {
-    rivet_core::test_scanner::scan_source_files(
+    rivet_core::test_scanner::scan_source_files_in_project(
+        project,
         &default_marker_scan_paths(project),
         &rivet_core::test_scanner::default_patterns(),
     )
@@ -10281,7 +10283,11 @@ fn cmd_verify(cli: &Cli, id: &str, scan: &[std::path::PathBuf], dry_run: bool) -
     } else {
         scan.to_vec()
     };
-    let markers = test_scanner::scan_source_files(&paths, &test_scanner::default_patterns());
+    let markers = test_scanner::scan_source_files_in_project(
+        &cli.project,
+        &paths,
+        &test_scanner::default_patterns(),
+    );
     let marker_hits: Vec<&test_scanner::TestMarker> = markers
         .iter()
         .filter(|m| m.target_id == id && m.link_type == "verifies")
@@ -10719,7 +10725,8 @@ fn cmd_coverage(
             .collect();
         if !uncovered.is_empty() {
             let paths = default_marker_scan_paths(&cli.project);
-            let markers = rivet_core::test_scanner::scan_source_files(
+            let markers = rivet_core::test_scanner::scan_source_files_in_project(
+                &cli.project,
                 &paths,
                 &rivet_core::test_scanner::default_patterns(),
             );
@@ -11327,7 +11334,7 @@ fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result
     };
 
     let patterns = test_scanner::default_patterns();
-    let markers = test_scanner::scan_source_files(&paths, &patterns);
+    let markers = test_scanner::scan_source_files_in_project(&cli.project, &paths, &patterns);
     let coverage = test_scanner::compute_test_coverage(&markers, &store, Some(&schema));
 
     if format == "json" {
@@ -19006,7 +19013,7 @@ fn cmd_import_results_junit(
         defaults
     };
     let patterns = test_scanner::default_patterns();
-    let markers = test_scanner::scan_source_files(&scan_paths, &patterns);
+    let markers = test_scanner::scan_source_files_in_project(&cli.project, &scan_paths, &patterns);
 
     let runs = parse_junit_xml_with_markers(&xml, &markers)
         .with_context(|| format!("failed to parse JUnit XML from {}", file.display()))?;
