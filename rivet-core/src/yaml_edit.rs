@@ -167,6 +167,33 @@ impl YamlEditor {
         None
     }
 
+    /// Remove a field from an artifact block, including any continuation
+    /// lines (block scalars, nested block mappings, block-style lists).
+    ///
+    /// Returns `Ok(true)` if the field existed and was removed, `Ok(false)`
+    /// if the field was not present (which is also the backlog state for a
+    /// never-released artifact, so callers of `--set-release ""` can treat
+    /// it as success either way).
+    ///
+    /// Uses the same `field_block_end` extent helper as `set_field`, so a
+    /// removal of a multi-line field (hypothetically a block-literal
+    /// `description:`) consumes the whole block and does not orphan
+    /// deeper-indented children into the next field's scope.
+    pub fn remove_field(&mut self, id: &str, key: &str) -> Result<bool, String> {
+        let (block_start, block_end) = self
+            .find_artifact_block(id)
+            .ok_or_else(|| format!("artifact '{id}' not found"))?;
+
+        let field_indent = self.field_indent(block_start);
+        if let Some(field_line) = self.find_field_in_block(block_start, block_end, key) {
+            let scalar_end = self.field_block_end(field_line, block_end, field_indent);
+            self.lines.drain(field_line..scalar_end);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Set a scalar field value within an artifact block.
     ///
     /// If the field already exists, its value is replaced (including any
@@ -964,11 +991,23 @@ pub fn modify_artifact_yaml(
     }
 
     // Set release (top-level, first-class release-planning dimension — #516).
+    // An empty value clears the release scope back to backlog: `rivet modify
+    // --help` documents an "unassigned artifact is backlog", and the only way
+    // to produce one with the earlier set-only logic was to hand-edit the
+    // YAML — writing `release: ""` instead left a quoted empty string that
+    // `rivet query '(= release "")'` still matched as a value rather than as
+    // backlog (#1115).
     if let Some(ref new_release) = params.set_release {
-        let quoted = yaml_quote_inline_scalar(new_release);
-        editor
-            .set_field(id, "release", &quoted)
-            .map_err(Error::Validation)?;
+        if new_release.is_empty() {
+            editor
+                .remove_field(id, "release")
+                .map_err(Error::Validation)?;
+        } else {
+            let quoted = yaml_quote_inline_scalar(new_release);
+            editor
+                .set_field(id, "release", &quoted)
+                .map_err(Error::Validation)?;
+        }
     }
 
     // Set description (top-level). Multi-line values are emitted as a YAML
@@ -2781,5 +2820,154 @@ artifacts:
             assert_eq!(f["count"].as_i64(), Some(3), "{style}:\n{out}");
             assert_eq!(f["note"].as_str(), Some("true"), "{style}:\n{out}");
         }
+    }
+
+    // rivet: verifies REQ-034
+    /// #1115: `rivet modify --set-release ""` must move the artifact back to
+    /// backlog (unassigned, per `--help`), not write `release: ""`. The old
+    /// behaviour wrote the empty value verbatim through
+    /// `yaml_quote_inline_scalar`, which produces a double-quoted empty
+    /// scalar: `release: ""`. That is a value that `rivet query '(= release
+    /// "")'` still matches, so the artifact looked assigned-but-empty rather
+    /// than unassigned, and nothing short of hand-editing the YAML could
+    /// clear it. The fix removes the field entirely when the new value is
+    /// the empty string.
+    #[test]
+    fn set_release_to_empty_clears_the_field() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: draft
+    release: v0.37.0
+";
+        let params = crate::mutate::ModifyParams {
+            set_release: Some(String::new()),
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out = modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
+
+        // No `release:` line at all — not `release: ""` and not `release:`
+        // with a blank value. Both of those are still a key in the mapping,
+        // and `(= release "")` matches them.
+        assert!(
+            !out.contains("release:"),
+            "release field must be fully removed; got:\n{out}"
+        );
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
+        assert!(
+            parsed["artifacts"][0]
+                .as_mapping()
+                .expect("artifact entry must be a mapping")
+                .get("release")
+                .is_none(),
+            "release key must not be present in the mapping; got:\n{out}"
+        );
+        // The sibling fields must survive — this is on the same code path as
+        // the field-replace tests above, so the mutation must not drag any
+        // neighbouring line into the drained range.
+        assert_eq!(parsed["artifacts"][0]["title"].as_str(), Some("t"));
+        assert_eq!(parsed["artifacts"][0]["status"].as_str(), Some("draft"));
+    }
+
+    // rivet: verifies REQ-034
+    /// #1115: clearing a release on an artifact that is already backlog
+    /// (no `release:` line) must succeed silently, not error. A no-op clear
+    /// is the same end state the caller asked for.
+    #[test]
+    fn set_release_to_empty_on_backlog_artifact_is_a_noop() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: draft
+";
+        let params = crate::mutate::ModifyParams {
+            set_release: Some(String::new()),
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out = modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed even if release is already absent");
+
+        assert!(
+            !out.contains("release:"),
+            "release field must remain absent; got:\n{out}"
+        );
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
+        assert_eq!(parsed["artifacts"][0]["id"].as_str(), Some("REQ-001"));
+    }
+
+    // rivet: verifies REQ-034
+    /// #1115 regression guard: clearing a release must not disturb a trailing
+    /// block (e.g. a `provenance:` nested mapping) that follows the release
+    /// line. If the `remove_field` extent helper mis-calculated the end of
+    /// the release line, it could drain the provenance block too — the
+    /// mirror of the `set_field_inserts_after_trailing_provenance_block`
+    /// regression on the write path.
+    #[test]
+    fn set_release_to_empty_preserves_following_provenance_block() {
+        let content = "\
+artifacts:
+  - id: REQ-001
+    type: requirement
+    title: t
+    status: draft
+    release: v0.37.0
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-4-7
+";
+        let params = crate::mutate::ModifyParams {
+            set_release: Some(String::new()),
+            ..Default::default()
+        };
+        let store = crate::store::Store::new();
+        let out = modify_artifact_yaml(
+            content,
+            "REQ-001",
+            &params,
+            &store,
+            &crate::schema::Schema::merge(&[]),
+        )
+        .expect("modify must succeed");
+
+        let parsed: rivet_yaml::Value =
+            rivet_yaml::from_str(&out).expect("output must parse as YAML");
+        assert!(
+            parsed["artifacts"][0]
+                .as_mapping()
+                .unwrap()
+                .get("release")
+                .is_none(),
+            "release must be removed; got:\n{out}"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["provenance"]["created-by"].as_str(),
+            Some("ai-assisted"),
+            "provenance block must survive the release removal; got:\n{out}"
+        );
+        assert_eq!(
+            parsed["artifacts"][0]["provenance"]["model"].as_str(),
+            Some("claude-opus-4-7")
+        );
     }
 }
