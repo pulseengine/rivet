@@ -12206,13 +12206,16 @@ fn add_id_flag_rejects_duplicate_id() {
 /// so testing it is closer to the real recovery path anyway.
 #[test]
 fn add_id_flag_rejects_malformed_ids() {
+    // #1088: the acceptance was widened to the shapes the loader accepts, so the
+    // no-dash case now reports a dash-structure error rather than a "numeric
+    // suffix" error.
     let cases: &[(&str, &str)] = &[
         ("REQ-drv-001", "invalid character"),
         ("REQ 001", "invalid character"),
         ("-REQ-001", "must not start or end with"),
         ("REQ-001-", "must not start or end with"),
         ("REQ--001", "must not"),
-        ("REQ", "numeric suffix"),
+        ("REQ", "at least one '-'"),
         ("REQ-", "must not start or end with"),
         ("-001", "must not start"),
         ("001-002", "uppercase letter"),
@@ -12246,6 +12249,49 @@ fn add_id_flag_rejects_malformed_ids() {
         assert!(
             stderr.contains(needle),
             "malformed --id '{bad}' error must mention '{needle}'; got: {stderr}"
+        );
+    }
+}
+
+/// #1088 shape widening: the `--id` acceptance now matches what the loader
+/// loads. A store that encodes a convention in its id suffix (e.g. meld's
+/// `SWREQ-FALCON-PREARM-P<nn>`, pulseengine.eu's `REQ-README-ROSTER`) can mint
+/// the next sibling through `rivet add --id` rather than hand-editing YAML,
+/// which is the workaround the issue is about.
+///
+/// rivet: fixes REQ-007
+#[test]
+fn add_id_flag_accepts_loader_shapes() {
+    for id in ["SWREQ-FALCON-PREARM-P04", "REQ-README-ROSTER"] {
+        let tmp = tempfile::tempdir().expect("temp dir");
+        let dir = tmp.path();
+        write_min_project(dir);
+
+        let out = Command::new(rivet_bin())
+            .args([
+                "--project",
+                dir.to_str().unwrap(),
+                "add",
+                "--type",
+                "requirement",
+                "--title",
+                "shape widening",
+                "--status",
+                "draft",
+                &format!("--id={id}"),
+            ])
+            .output()
+            .expect("rivet add");
+        assert!(
+            out.status.success(),
+            "`--id={id}` must be accepted (the loader already carries this \
+             shape); stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let yaml = std::fs::read_to_string(dir.join("artifacts").join("r.yaml")).unwrap();
+        assert!(
+            yaml.contains(&format!("id: {id}")),
+            "the file must carry the caller's id verbatim; got:\n{yaml}"
         );
     }
 }
