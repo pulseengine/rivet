@@ -390,6 +390,33 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-7
       timestamp: 2026-04-22T20:25:20Z
+
+  - id: FEAT-139
+    type: feature
+    title: rivet yaml to-json CLI and rivet-yaml README (#1094)
+    status: implemented
+    description: >
+      `rivet yaml to-json [--compact] <file|->` prints a YAML file as
+      JSON through rivet's own parser (rivet_yaml::json::to_json), so
+      tools that cannot link the crate (shell, CI, Python, Node) read
+      rivet YAML without a second parser. rivet-yaml/README.md states
+      the supported subset and the anchor copy cap.
+    tags: [yaml, cli, interop]
+    links:
+      - type: satisfies
+        target: REQ-408
+    fields:
+      source-ref: >
+        rivet-cli/src/yaml_cmd.rs; rivet-yaml/src/json.rs;
+        rivet-yaml/README.md. Tests: rivet-cli/tests/cli_commands.rs
+        "rivet yaml to-json" section; rivet-yaml/src/json.rs and
+        rivet-yaml/src/error.rs unit tests.
+      verification: >
+        cargo test -p rivet-yaml; cargo test -p rivet-cli
+        cli_commands yaml_to_json; rivet validate PASS.
+    provenance:
+      created-by: ai-assisted
+      timestamp: 2026-10-25T17:30:00Z
   # ── Requirements ────────────────────────────────────────────────────
 
   - id: REQ-077

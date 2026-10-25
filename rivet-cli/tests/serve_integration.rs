@@ -84,8 +84,15 @@ fn start_server_in(dir: &std::path::Path) -> (Child, u16) {
     // Fix: wait for /api/v1/health to return 200 OK. That handler only
     // becomes reachable after routing is fully initialized and the store
     // is populated.
+    //
+    // The budget is 90s, not 30s: loading the dogfood corpus (742 artifacts)
+    // takes ~3.4s on a quiet machine but the self-hosted fleet has run at
+    // load 200+ with every runner busy (2026-10-25), which pushed startup
+    // past 30s for 136 of 145 serve tests in one run. The wait is a
+    // readiness poll, not a timing assertion — a slower fleet must not
+    // redden an unrelated PR.
     let addr = format!("127.0.0.1:{port}");
-    for _ in 0..300 {
+    for _ in 0..900 {
         if let Ok(mut stream) = std::net::TcpStream::connect(&addr) {
             use std::io::{Read, Write};
             let req = format!(
@@ -106,7 +113,7 @@ fn start_server_in(dir: &std::path::Path) -> (Child, u16) {
     // Kill the child before panicking to avoid zombie processes.
     let _ = child.kill();
     let _ = child.wait();
-    panic!("server did not become healthy within 30 seconds on port {port}");
+    panic!("server did not become healthy within 90 seconds on port {port}");
 }
 
 /// Fetch a page via HTTP with a default 5-second read timeout. Use
@@ -1362,8 +1369,24 @@ fn test_reload_failure_preserves_state() {
     let mut response = Vec::new();
     stream.read_to_end(&mut response).ok();
 
-    // After reload, stats must still be available and consistent
-    let (status2, body2, _) = fetch(port, "/api/v1/stats", false);
+    // After reload, stats must still be available and consistent. The reload
+    // is asynchronous: the socket accepts connections while the store is
+    // reloading, so an immediate fetch can hit a closed connection (status 0)
+    // — under fleet load the reload window is long enough to lose that race
+    // (observed 2026-10-25: post-reload stats returned 0 where 200 was due).
+    // Retry until the server answers, the same way start_server_in waits for
+    // health.
+    let (status2, body2, _) = {
+        let mut attempt = fetch(port, "/api/v1/stats", false);
+        for _ in 0..300 {
+            if attempt.0 == 200 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+            attempt = fetch(port, "/api/v1/stats", false);
+        }
+        attempt
+    };
     assert_eq!(status2, 200, "post-reload stats must work");
     let json2: serde_json::Value = serde_json::from_str(&body2).unwrap();
     let total2 = json2["total_artifacts"].as_u64().unwrap();

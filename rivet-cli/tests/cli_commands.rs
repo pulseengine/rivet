@@ -14407,3 +14407,226 @@ fn an_empty_link_target_fails_validate_on_both_paths() {
         );
     }
 }
+
+// ── rivet yaml to-json (REQ-408, #1094) ─────────────────────────────────
+
+/// Run `rivet yaml to-json <args>` in an empty directory (no rivet.yaml),
+/// feeding `stdin`; returns (exit ok, stdout, stderr).
+fn yaml_to_json(args: &[&str], stdin: Option<&str>) -> (bool, String, String) {
+    use std::io::Write as _;
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut child = Command::new(rivet_bin())
+        .args(["yaml", "to-json"])
+        .args(args)
+        .current_dir(dir.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn rivet");
+    {
+        let mut pipe = child.stdin.take().expect("stdin pipe");
+        if let Some(text) = stdin {
+            pipe.write_all(text.as_bytes()).expect("write stdin");
+        }
+    }
+    let out = child.wait_with_output().expect("wait");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+fn yaml_file(text: &str) -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("in.yaml");
+    std::fs::write(&path, text).expect("write yaml");
+    let p = path.to_str().expect("utf8 path").to_string();
+    (dir, p)
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_prints_exact_pretty_json_in_document_order() {
+    let (_d, path) = yaml_file("zeta: 1\nalpha:\n  - x\n  - {k: v}\nmid: null\nempty: []\n");
+    let (ok, stdout, stderr) = yaml_to_json(&[&path], None);
+    assert!(ok, "stderr: {stderr}");
+    assert_eq!(
+        stdout,
+        "{\n  \"zeta\": 1,\n  \"alpha\": [\n    \"x\",\n    {\n      \"k\": \"v\"\n    }\n  ],\n  \"mid\": null,\n  \"empty\": []\n}\n"
+    );
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_compact_is_one_line() {
+    let (_d, path) = yaml_file("b: 1\na: [x, true]\n");
+    let (ok, stdout, _) = yaml_to_json(&["--compact", &path], None);
+    assert!(ok);
+    assert_eq!(stdout, "{\"b\":1,\"a\":[\"x\",true]}\n");
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_reads_stdin_with_dash() {
+    let (ok, stdout, stderr) = yaml_to_json(&["-", "--compact"], Some("k: v\n"));
+    assert!(ok, "stderr: {stderr}");
+    assert_eq!(stdout, "{\"k\":\"v\"}\n");
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_refuses_a_tag_with_line_and_column() {
+    let (_d, path) = yaml_file("a: 1\nb: !t x\n");
+    let (ok, stdout, stderr) = yaml_to_json(&[&path], None);
+    assert!(!ok, "a tag must exit non-zero");
+    assert_eq!(stdout, "", "nothing on stdout on error");
+    assert!(
+        stderr.contains("in.yaml:2:4: "),
+        "stderr must carry file:line:column, got: {stderr}"
+    );
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_refuses_complex_keys_and_multi_document() {
+    for src in ["? [a]\n: 1\n", "a: 1\n---\nb: 2\n", "a: [\n"] {
+        let (_d, path) = yaml_file(src);
+        let (ok, stdout, stderr) = yaml_to_json(&[&path], None);
+        assert!(!ok, "{src:?} must be refused");
+        assert_eq!(stdout, "");
+        assert!(stderr.contains("in.yaml:2:1: "), "{src:?}: {stderr}");
+    }
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_stringifies_numeric_and_bool_keys() {
+    let (ok, stdout, stderr) = yaml_to_json(&["-", "--compact"], Some("1: a\ntrue: b\n2.5: c\n"));
+    assert!(ok, "stderr: {stderr}");
+    assert_eq!(stdout, "{\"1\":\"a\",\"true\":\"b\",\"2.5\":\"c\"}\n");
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_rejects_null_key() {
+    let (ok, stdout, stderr) = yaml_to_json(&["-"], Some("~: 1\n"));
+    assert!(!ok);
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("mapping key #1 is null"), "{stderr}");
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_rejects_nan_and_infinity() {
+    for src in ["a: .nan\n", "a: [1, .inf]\n"] {
+        let (ok, stdout, stderr) = yaml_to_json(&["-"], Some(src));
+        assert!(!ok, "{src:?}");
+        assert_eq!(stdout, "");
+        assert!(
+            stderr.contains("NaN and infinity cannot be represented in JSON"),
+            "{stderr}"
+        );
+    }
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_expands_anchors() {
+    let (ok, stdout, _) = yaml_to_json(&["-", "--compact"], Some("a: &x [1, 2]\nb: *x\n"));
+    assert!(ok);
+    assert_eq!(stdout, "{\"a\":[1,2],\"b\":[1,2]}\n");
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn yaml_to_json_missing_file_fails_without_stdout() {
+    let (ok, stdout, stderr) = yaml_to_json(&["/nonexistent/none.yaml"], None);
+    assert!(!ok);
+    assert_eq!(stdout, "");
+    assert!(stderr.contains("none.yaml"), "{stderr}");
+}
+
+/// The fenced block of language `lang` in the rivet-yaml README.
+fn readme_block(lang: &str) -> String {
+    let readme = std::fs::read_to_string(project_root().join("rivet-yaml/README.md"))
+        .expect("rivet-yaml/README.md");
+    let fence = format!("```{lang}\n");
+    let start = readme
+        .find(&fence)
+        .unwrap_or_else(|| panic!("no {lang} block"))
+        + fence.len();
+    let end = readme[start..].find("```").expect("closing fence") + start;
+    readme[start..end].to_string()
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn readme_shell_examples_are_commands_the_cli_accepts() {
+    let sh = readme_block("sh");
+    let (_d, path) = yaml_file("a: 1\n");
+    let mut seen = 0;
+    for line in sh.lines().filter(|l| l.contains("rivet yaml to-json")) {
+        // Take the text after `rivet yaml to-json`, up to a `#` comment.
+        let tail = line.split("rivet yaml to-json").nth(1).unwrap();
+        let tail = tail.split('#').next().unwrap().trim();
+        let stdin = line.contains("| rivet");
+        let args: Vec<String> = tail
+            .split_whitespace()
+            .map(|a| {
+                if a == "config.yml" {
+                    path.clone()
+                } else {
+                    a.to_string()
+                }
+            })
+            .collect();
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (ok, stdout, stderr) = yaml_to_json(&refs, stdin.then_some("a: 1\n"));
+        assert!(ok, "README command `{line}` failed: {stderr}");
+        assert!(
+            stdout.contains("\"a\""),
+            "README command `{line}`: {stdout}"
+        );
+        seen += 1;
+    }
+    assert_eq!(seen, 3, "README should show three to-json invocations");
+}
+
+// rivet: verifies REQ-408
+#[test]
+fn readme_python_example_runs_against_the_real_binary() {
+    let snippet = readme_block("python");
+    assert!(
+        snippet.contains(r#"["rivet", "yaml", "to-json", path]"#),
+        "the README snippet must call exactly `rivet yaml to-json <path>`"
+    );
+    if Command::new("python3").arg("--version").output().is_err() {
+        // A skip must be loud: the exact-command assertion above still ran.
+        eprintln!("SKIPPED python run: python3 not installed; command text was checked");
+        return;
+    }
+    let (_d, path) = yaml_file("name: demo\nitems: [1, 2]\n1: one\n");
+    let bin_dir = rivet_bin().parent().unwrap().to_path_buf();
+    let script = format!(
+        "{snippet}\nd = load_yaml({path:?})\nassert d == {{'name': 'demo', 'items': [1, 2], '1': 'one'}}, d\nprint('ok')\n"
+    );
+    let mut paths = vec![bin_dir];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    let out = Command::new("python3")
+        .arg("-I")
+        .arg("-c")
+        .arg(&script)
+        .env("PATH", std::env::join_paths(paths).unwrap())
+        .output()
+        .expect("run python3");
+    assert!(
+        out.status.success(),
+        "python example failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+}

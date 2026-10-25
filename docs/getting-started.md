@@ -552,6 +552,24 @@ rivet stpa path/to/stpa/ --schema custom-stpa.yaml
 
 Automatically loads the `common` and `stpa` schemas from the schemas directory.
 
+### `rivet yaml to-json`
+
+Print a YAML file as JSON through rivet's own parser, for Python and Node
+tools that cannot link `rivet-yaml`. It works in any directory and needs no
+`rivet.yaml`.
+
+```bash
+rivet yaml to-json config.yml            # pretty-printed
+rivet yaml to-json --compact config.yml  # one line
+some-generator | rivet yaml to-json -    # read stdin
+```
+
+A parse error or a refused construct (tags, complex keys, multi-document
+streams) exits 1 with `file:line:column: message` on stderr and prints nothing
+on stdout. Key order follows the document; integer, float and bool keys become
+their YAML text; null keys, NaN and infinities are errors. See
+`rivet-yaml/README.md` for the supported subset.
+
 ### `rivet export`
 
 Export all project artifacts to a specified format.

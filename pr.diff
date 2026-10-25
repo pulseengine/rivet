@@ -1,0 +1,835 @@
+diff --git a/rivet-cli/src/main.rs b/rivet-cli/src/main.rs
+index 4fcaede..1fe866e 100644
+--- a/rivet-cli/src/main.rs
++++ b/rivet-cli/src/main.rs
+@@ -76,6 +76,7 @@
+ #[cfg(feature = "serve")]
+ mod serve;
+ mod templates_cmd;
++mod yaml_cmd;
+ 
+ /// Validate that a `--format` value is one of the accepted options.
+ fn validate_format(format: &str, valid: &[&str]) -> Result<()> {
+@@ -987,6 +988,12 @@ enum Command {
+         action: SupplierAction,
+     },
+ 
++    /// Read YAML through rivet's own parser (no rivet.yaml needed)
++    Yaml {
++        #[command(subcommand)]
++        action: YamlAction,
++    },
++
+     /// Analyze change impact between current state and a baseline
+     Impact {
+         /// Git ref to compare against (branch, tag, or commit)
+@@ -1789,6 +1796,23 @@ enum ExternalsAction {
+     },
+ }
+ 
++#[derive(Debug, Subcommand)]
++enum YamlAction {
++    /// Print a YAML file as JSON (REQ-408). Tags, complex keys and
++    /// multi-document streams are refused; merge keys are not expanded. A parse error or refused
++    /// construct exits 1 with `file:line:column: message` on stderr and
++    /// nothing on stdout. Integer/float/bool mapping keys are emitted as
++    /// their YAML text; null or collection keys, NaN and infinities are errors.
++    ToJson {
++        /// YAML file to read, or `-` for stdin
++        file: PathBuf,
++
++        /// Print one line without indentation
++        #[arg(long)]
++        compact: bool,
++    },
++}
++
+ #[derive(Debug, Subcommand)]
+ enum SupplierAction {
+     /// List every `external-anchor` artifact (chain end at a supplier
+@@ -2478,6 +2502,7 @@ fn qualification_refusal(cmd: &Command) -> Option<&'static str> {
+         | Command::Stats { .. }
+         | Command::Matrix { .. }
+         | Command::Stpa { .. }
++        | Command::Yaml { .. }
+         | Command::Diff { .. }
+         | Command::Quickstart { .. }
+         | Command::CommitMsgCheck { .. }
+@@ -2655,6 +2680,11 @@ fn run(cli: Cli) -> Result<bool> {
+         }
+         return cmd_docs(topic.as_deref(), *list, grep.as_deref(), format, *context);
+     }
++    if let Command::Yaml { action } = &cli.command {
++        return match action {
++            YamlAction::ToJson { file, compact } => yaml_cmd::cmd_yaml_to_json(file, *compact),
++        };
++    }
+     if let Command::Quickstart { format } = &cli.command {
+         return cmd_docs(Some("quickstart"), false, None, format, 2);
+     }
+@@ -2694,6 +2724,7 @@ fn run(cli: Cli) -> Result<bool> {
+         Command::Lsp => unreachable!(),
+         #[cfg(feature = "mcp")]
+         Command::Mcp { .. } => unreachable!(),
++        Command::Yaml { .. } => unreachable!(),
+         Command::Stpa { path, schema } => cmd_stpa(path, schema.as_deref(), &cli),
+         Command::Validate {
+             format,
+diff --git a/rivet-cli/src/yaml_cmd.rs b/rivet-cli/src/yaml_cmd.rs
+new file mode 100644
+index 0000000..e85f64d
+--- /dev/null
++++ b/rivet-cli/src/yaml_cmd.rs
+@@ -0,0 +1,77 @@
++//! `rivet yaml to-json` (REQ-408, #1094): print a YAML file as JSON through
++//! rivet's own parser, for tools that cannot link `rivet-yaml`.
++
++use std::io::Read as _;
++use std::path::Path;
++
++use anyhow::{Context, Result};
++
++/// Read `file` (`-` is stdin), parse it with `rivet_yaml`, print JSON.
++///
++/// Returns `Ok(false)` after writing `file:line:column: message` to stderr on
++/// a parse error or refused construct; nothing is written to stdout then.
++pub(crate) fn cmd_yaml_to_json(file: &Path, compact: bool) -> Result<bool> {
++    let (text, name) = if file.as_os_str() == "-" {
++        let mut s = String::new();
++        std::io::stdin()
++            .read_to_string(&mut s)
++            .context("reading stdin")?;
++        (s, "<stdin>".to_string())
++    } else {
++        let s = std::fs::read_to_string(file)
++            .with_context(|| format!("reading '{}'", file.display()))?;
++        (s, file.display().to_string())
++    };
++    match convert(&text, &name, compact) {
++        Ok(json) => {
++            println!("{json}");
++            Ok(true)
++        }
++        Err(msg) => {
++            eprintln!("{msg}");
++            Ok(false)
++        }
++    }
++}
++
++/// YAML text to JSON text, or the full `name:line:column: message` line.
++pub(crate) fn convert(text: &str, name: &str, compact: bool) -> Result<String, String> {
++    let value: rivet_yaml::Value = rivet_yaml::from_str(text).map_err(|e| match e.location() {
++        Some(loc) => format!(
++            "{name}:{}:{}: {}",
++            loc.line,
++            loc.column,
++            e.message_without_location()
++        ),
++        None => format!("{name}: {e}"),
++    })?;
++    rivet_yaml::json::to_json(&value, !compact).map_err(|e| format!("{name}: {e}"))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::convert;
++
++    #[test]
++    fn valid_document_converts() {
++        assert_eq!(
++            convert("b: 1\na: x\n", "f", true).expect("json"),
++            r#"{"b":1,"a":"x"}"#
++        );
++    }
++
++    #[test]
++    fn tag_is_refused_with_a_position() {
++        let e = convert("a: 1\nb: !t x\n", "f.yaml", true).expect_err("tag");
++        assert!(e.starts_with("f.yaml:2:"), "{e}");
++    }
++
++    #[test]
++    fn json_error_names_the_file_and_path() {
++        let e = convert("a: .nan\n", "f.yaml", true).expect_err("nan");
++        assert_eq!(
++            e,
++            "f.yaml: NaN and infinity cannot be represented in JSON (at $.a)"
++        );
++    }
++}
+diff --git a/rivet-cli/tests/cli_commands.rs b/rivet-cli/tests/cli_commands.rs
+index ea85bc3..11e5fb5 100644
+--- a/rivet-cli/tests/cli_commands.rs
++++ b/rivet-cli/tests/cli_commands.rs
+@@ -14407,3 +14407,226 @@ fn an_empty_link_target_fails_validate_on_both_paths() {
+         );
+     }
+ }
++
++// ── rivet yaml to-json (REQ-408, #1094) ─────────────────────────────────
++
++/// Run `rivet yaml to-json <args>` in an empty directory (no rivet.yaml),
++/// feeding `stdin`; returns (exit ok, stdout, stderr).
++fn yaml_to_json(args: &[&str], stdin: Option<&str>) -> (bool, String, String) {
++    use std::io::Write as _;
++    let dir = tempfile::tempdir().expect("temp dir");
++    let mut child = Command::new(rivet_bin())
++        .args(["yaml", "to-json"])
++        .args(args)
++        .current_dir(dir.path())
++        .stdin(std::process::Stdio::piped())
++        .stdout(std::process::Stdio::piped())
++        .stderr(std::process::Stdio::piped())
++        .spawn()
++        .expect("spawn rivet");
++    {
++        let mut pipe = child.stdin.take().expect("stdin pipe");
++        if let Some(text) = stdin {
++            pipe.write_all(text.as_bytes()).expect("write stdin");
++        }
++    }
++    let out = child.wait_with_output().expect("wait");
++    (
++        out.status.success(),
++        String::from_utf8_lossy(&out.stdout).into_owned(),
++        String::from_utf8_lossy(&out.stderr).into_owned(),
++    )
++}
++
++fn yaml_file(text: &str) -> (tempfile::TempDir, String) {
++    let dir = tempfile::tempdir().expect("temp dir");
++    let path = dir.path().join("in.yaml");
++    std::fs::write(&path, text).expect("write yaml");
++    let p = path.to_str().expect("utf8 path").to_string();
++    (dir, p)
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_prints_exact_pretty_json_in_document_order() {
++    let (_d, path) = yaml_file("zeta: 1\nalpha:\n  - x\n  - {k: v}\nmid: null\nempty: []\n");
++    let (ok, stdout, stderr) = yaml_to_json(&[&path], None);
++    assert!(ok, "stderr: {stderr}");
++    assert_eq!(
++        stdout,
++        "{\n  \"zeta\": 1,\n  \"alpha\": [\n    \"x\",\n    {\n      \"k\": \"v\"\n    }\n  ],\n  \"mid\": null,\n  \"empty\": []\n}\n"
++    );
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_compact_is_one_line() {
++    let (_d, path) = yaml_file("b: 1\na: [x, true]\n");
++    let (ok, stdout, _) = yaml_to_json(&["--compact", &path], None);
++    assert!(ok);
++    assert_eq!(stdout, "{\"b\":1,\"a\":[\"x\",true]}\n");
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_reads_stdin_with_dash() {
++    let (ok, stdout, stderr) = yaml_to_json(&["-", "--compact"], Some("k: v\n"));
++    assert!(ok, "stderr: {stderr}");
++    assert_eq!(stdout, "{\"k\":\"v\"}\n");
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_refuses_a_tag_with_line_and_column() {
++    let (_d, path) = yaml_file("a: 1\nb: !t x\n");
++    let (ok, stdout, stderr) = yaml_to_json(&[&path], None);
++    assert!(!ok, "a tag must exit non-zero");
++    assert_eq!(stdout, "", "nothing on stdout on error");
++    assert!(
++        stderr.contains("in.yaml:2:4: "),
++        "stderr must carry file:line:column, got: {stderr}"
++    );
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_refuses_complex_keys_and_multi_document() {
++    for src in ["? [a]\n: 1\n", "a: 1\n---\nb: 2\n", "a: [\n"] {
++        let (_d, path) = yaml_file(src);
++        let (ok, stdout, stderr) = yaml_to_json(&[&path], None);
++        assert!(!ok, "{src:?} must be refused");
++        assert_eq!(stdout, "");
++        assert!(stderr.contains("in.yaml:2:1: "), "{src:?}: {stderr}");
++    }
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_stringifies_numeric_and_bool_keys() {
++    let (ok, stdout, stderr) = yaml_to_json(&["-", "--compact"], Some("1: a\ntrue: b\n2.5: c\n"));
++    assert!(ok, "stderr: {stderr}");
++    assert_eq!(stdout, "{\"1\":\"a\",\"true\":\"b\",\"2.5\":\"c\"}\n");
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_rejects_null_key() {
++    let (ok, stdout, stderr) = yaml_to_json(&["-"], Some("~: 1\n"));
++    assert!(!ok);
++    assert_eq!(stdout, "");
++    assert!(stderr.contains("mapping key #1 is null"), "{stderr}");
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_rejects_nan_and_infinity() {
++    for src in ["a: .nan\n", "a: [1, .inf]\n"] {
++        let (ok, stdout, stderr) = yaml_to_json(&["-"], Some(src));
++        assert!(!ok, "{src:?}");
++        assert_eq!(stdout, "");
++        assert!(
++            stderr.contains("NaN and infinity cannot be represented in JSON"),
++            "{stderr}"
++        );
++    }
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_expands_anchors() {
++    let (ok, stdout, _) = yaml_to_json(&["-", "--compact"], Some("a: &x [1, 2]\nb: *x\n"));
++    assert!(ok);
++    assert_eq!(stdout, "{\"a\":[1,2],\"b\":[1,2]}\n");
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn yaml_to_json_missing_file_fails_without_stdout() {
++    let (ok, stdout, stderr) = yaml_to_json(&["/nonexistent/none.yaml"], None);
++    assert!(!ok);
++    assert_eq!(stdout, "");
++    assert!(stderr.contains("none.yaml"), "{stderr}");
++}
++
++/// The fenced block of language `lang` in the rivet-yaml README.
++fn readme_block(lang: &str) -> String {
++    let readme = std::fs::read_to_string(project_root().join("rivet-yaml/README.md"))
++        .expect("rivet-yaml/README.md");
++    let fence = format!("```{lang}\n");
++    let start = readme
++        .find(&fence)
++        .unwrap_or_else(|| panic!("no {lang} block"))
++        + fence.len();
++    let end = readme[start..].find("```").expect("closing fence") + start;
++    readme[start..end].to_string()
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn readme_shell_examples_are_commands_the_cli_accepts() {
++    let sh = readme_block("sh");
++    let (_d, path) = yaml_file("a: 1\n");
++    let mut seen = 0;
++    for line in sh.lines().filter(|l| l.contains("rivet yaml to-json")) {
++        // Take the text after `rivet yaml to-json`, up to a `#` comment.
++        let tail = line.split("rivet yaml to-json").nth(1).unwrap();
++        let tail = tail.split('#').next().unwrap().trim();
++        let stdin = line.contains("| rivet");
++        let args: Vec<String> = tail
++            .split_whitespace()
++            .map(|a| {
++                if a == "config.yml" {
++                    path.clone()
++                } else {
++                    a.to_string()
++                }
++            })
++            .collect();
++        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
++        let (ok, stdout, stderr) = yaml_to_json(&refs, stdin.then_some("a: 1\n"));
++        assert!(ok, "README command `{line}` failed: {stderr}");
++        assert!(
++            stdout.contains("\"a\""),
++            "README command `{line}`: {stdout}"
++        );
++        seen += 1;
++    }
++    assert_eq!(seen, 3, "README should show three to-json invocations");
++}
++
++// rivet: verifies REQ-408
++#[test]
++fn readme_python_example_runs_against_the_real_binary() {
++    let snippet = readme_block("python");
++    assert!(
++        snippet.contains(r#"["rivet", "yaml", "to-json", path]"#),
++        "the README snippet must call exactly `rivet yaml to-json <path>`"
++    );
++    if Command::new("python3").arg("--version").output().is_err() {
++        // A skip must be loud: the exact-command assertion above still ran.
++        eprintln!("SKIPPED python run: python3 not installed; command text was checked");
++        return;
++    }
++    let (_d, path) = yaml_file("name: demo\nitems: [1, 2]\n1: one\n");
++    let bin_dir = rivet_bin().parent().unwrap().to_path_buf();
++    let script = format!(
++        "{snippet}\nd = load_yaml({path:?})\nassert d == {{'name': 'demo', 'items': [1, 2], '1': 'one'}}, d\nprint('ok')\n"
++    );
++    let mut paths = vec![bin_dir];
++    paths.extend(std::env::split_paths(
++        &std::env::var_os("PATH").unwrap_or_default(),
++    ));
++    let out = Command::new("python3")
++        .arg("-I")
++        .arg("-c")
++        .arg(&script)
++        .env("PATH", std::env::join_paths(paths).unwrap())
++        .output()
++        .expect("run python3");
++    assert!(
++        out.status.success(),
++        "python example failed: {}",
++        String::from_utf8_lossy(&out.stderr)
++    );
++    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
++}
+diff --git a/rivet-yaml/src/error.rs b/rivet-yaml/src/error.rs
+index 8ce8b6c..18d92d8 100644
+--- a/rivet-yaml/src/error.rs
++++ b/rivet-yaml/src/error.rs
+@@ -136,7 +136,55 @@ fn custom<T: Display>(msg: T) -> Self {
+     }
+ }
+ 
++/// A 1-based line and column in the input.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct Location {
++    /// 1-based line.
++    pub line: usize,
++    /// 1-based column.
++    pub column: usize,
++}
++
+ impl Error {
++    /// Where in the input the error arose, when it carries a position
++    /// (REQ-408: `rivet yaml to-json` reports it as `file:line:column`).
++    pub fn location(&self) -> Option<Location> {
++        match self.0.as_ref() {
++            ErrorImpl::Message(_, Some(pos)) | ErrorImpl::Syntax(_, pos) => Some(Location {
++                line: pos.line,
++                column: pos.column,
++            }),
++            ErrorImpl::Message(_, None)
++            | ErrorImpl::RecursionLimitExceeded
++            | ErrorImpl::BytesUnsupported
++            | ErrorImpl::ScalarInMerge
++            | ErrorImpl::TaggedInMerge
++            | ErrorImpl::ScalarInMergeElement
++            | ErrorImpl::SequenceInMergeElement
++            | ErrorImpl::EmptyTag
++            | ErrorImpl::FailedToParseNumber => None,
++        }
++    }
++
++    /// The message without its trailing ` at line L column C`.
++    pub fn message_without_location(&self) -> String {
++        match self.0.as_ref() {
++            ErrorImpl::Message(msg, Some(pos)) if pos.path != "." => {
++                format!("{}: {msg}", pos.path)
++            }
++            ErrorImpl::Message(msg, Some(_)) | ErrorImpl::Syntax(msg, _) => msg.clone(),
++            ErrorImpl::Message(_, None)
++            | ErrorImpl::RecursionLimitExceeded
++            | ErrorImpl::BytesUnsupported
++            | ErrorImpl::ScalarInMerge
++            | ErrorImpl::TaggedInMerge
++            | ErrorImpl::ScalarInMergeElement
++            | ErrorImpl::SequenceInMergeElement
++            | ErrorImpl::EmptyTag
++            | ErrorImpl::FailedToParseNumber => self.to_string(),
++        }
++    }
++
+     /// Attach a position to an error a `Visitor` raised without one, as
+     /// serde_yaml's `fix_mark` does. Errors that already carry one keep it.
+     pub(crate) fn fix_pos(mut self, pos: impl FnOnce() -> Pos) -> Self {
+@@ -146,3 +194,76 @@ pub(crate) fn fix_pos(mut self, pos: impl FnOnce() -> Pos) -> Self {
+         self
+     }
+ }
++
++#[cfg(test)]
++#[allow(
++    clippy::expect_used,
++    clippy::unwrap_used,
++    reason = "test code: a failure should panic with a clear message"
++)]
++mod tests {
++    use super::*;
++
++    fn positioned(path: &str, line: usize, column: usize) -> Error {
++        new(ErrorImpl::Message(
++            "boom".to_string(),
++            Some(Pos {
++                path: path.to_string(),
++                line,
++                column,
++            }),
++        ))
++    }
++
++    #[test]
++    fn location_reports_the_position_it_carries() {
++        assert_eq!(
++            positioned(".", 3, 7).location(),
++            Some(Location { line: 3, column: 7 })
++        );
++        let syntax = new(ErrorImpl::Syntax(
++            "bad".to_string(),
++            Pos {
++                path: "a".to_string(),
++                line: 1,
++                column: 2,
++            },
++        ));
++        assert_eq!(syntax.location(), Some(Location { line: 1, column: 2 }));
++    }
++
++    #[test]
++    fn location_is_none_when_no_position_is_carried() {
++        assert_eq!(
++            new(ErrorImpl::Message("boom".to_string(), None)).location(),
++            None
++        );
++        assert_eq!(new(ErrorImpl::RecursionLimitExceeded).location(), None);
++    }
++
++    #[test]
++    fn message_without_location_strips_only_the_position() {
++        // The document root (".") gets no "path: " prefix.
++        assert_eq!(positioned(".", 3, 7).message_without_location(), "boom");
++        // A nested path is kept as a prefix.
++        assert_eq!(
++            positioned("a.b", 3, 7).message_without_location(),
++            "a.b: boom"
++        );
++        // No position: the bare message.
++        assert_eq!(
++            new(ErrorImpl::Message("boom".to_string(), None)).message_without_location(),
++            "boom"
++        );
++        // Syntax errors carry no path prefix.
++        let syntax = new(ErrorImpl::Syntax(
++            "bad".to_string(),
++            Pos {
++                path: "a".to_string(),
++                line: 1,
++                column: 2,
++            },
++        ));
++        assert_eq!(syntax.message_without_location(), "bad");
++    }
++}
+diff --git a/rivet-yaml/src/json.rs b/rivet-yaml/src/json.rs
+new file mode 100644
+index 0000000..6364c8b
+--- /dev/null
++++ b/rivet-yaml/src/json.rs
+@@ -0,0 +1,270 @@
++//! Print a parsed [`Value`] as JSON (REQ-408, #1094).
++//!
++//! Non-Rust consumers (Python, Node) cannot link this crate, so the `rivet
++//! yaml to-json` command parses with `rivet_yaml` and prints through this
++//! module. The writer is hand-written because `serde_json::Map` only keeps
++//! document order under the `preserve_order` feature, which is workspace-wide
++//! and would reorder other crates' output. Mapping order is the document's.
++//!
++//! Policy, so no input is silently misread:
++//! * a string key is emitted as is; an integer, float or bool key is emitted
++//!   as its YAML text (`1`, `true`);
++//! * a null, sequence, mapping or tagged key is an error;
++//! * NaN and infinities are an error (JSON cannot represent them);
++//! * a tagged value is an error.
++
++use std::fmt::{self, Write as _};
++
++use crate::{Number, Value};
++
++/// Why a [`Value`] could not be printed as JSON.
++#[derive(Debug, Clone, PartialEq, Eq)]
++pub struct JsonError {
++    /// Where in the document, e.g. `$.a.b[2]`; `$` is the root.
++    pub path: String,
++    /// What was refused.
++    pub message: String,
++}
++
++impl fmt::Display for JsonError {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        write!(f, "{} (at {})", self.message, self.path)
++    }
++}
++
++impl std::error::Error for JsonError {}
++
++fn err<T>(path: &str, message: impl Into<String>) -> Result<T, JsonError> {
++    Err(JsonError {
++        path: path.to_string(),
++        message: message.into(),
++    })
++}
++
++/// Render `value` as JSON text. `pretty` indents two spaces per level.
++pub fn to_json(value: &Value, pretty: bool) -> Result<String, JsonError> {
++    let mut out = String::new();
++    write_value(&mut out, value, pretty, 0, "$")?;
++    Ok(out)
++}
++
++fn newline(out: &mut String, pretty: bool, depth: usize) {
++    if pretty {
++        out.push('\n');
++        for _ in 0..depth {
++            out.push_str("  ");
++        }
++    }
++}
++
++fn write_value(
++    out: &mut String,
++    value: &Value,
++    pretty: bool,
++    depth: usize,
++    path: &str,
++) -> Result<(), JsonError> {
++    match value {
++        Value::Null => out.push_str("null"),
++        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
++        Value::Number(n) => out.push_str(&number_text(n, path)?),
++        Value::String(s) => write_string(out, s),
++        Value::Sequence(seq) => {
++            if seq.is_empty() {
++                out.push_str("[]");
++                return Ok(());
++            }
++            out.push('[');
++            for (i, item) in seq.iter().enumerate() {
++                if i > 0 {
++                    out.push(',');
++                }
++                newline(out, pretty, depth.saturating_add(1));
++                write_value(
++                    out,
++                    item,
++                    pretty,
++                    depth.saturating_add(1),
++                    &format!("{path}[{i}]"),
++                )?;
++            }
++            newline(out, pretty, depth);
++            out.push(']');
++        }
++        Value::Mapping(map) => {
++            if map.is_empty() {
++                out.push_str("{}");
++                return Ok(());
++            }
++            out.push('{');
++            for (i, (k, v)) in map.iter().enumerate() {
++                if i > 0 {
++                    out.push(',');
++                }
++                newline(out, pretty, depth.saturating_add(1));
++                let key = key_text(k, path, i)?;
++                write_string(out, &key);
++                out.push(':');
++                if pretty {
++                    out.push(' ');
++                }
++                write_value(
++                    out,
++                    v,
++                    pretty,
++                    depth.saturating_add(1),
++                    &format!("{path}.{key}"),
++                )?;
++            }
++            newline(out, pretty, depth);
++            out.push('}');
++        }
++        Value::Tagged(_) => return err(path, "tagged value is not supported"),
++    }
++    Ok(())
++}
++
++/// The JSON object key for a YAML mapping key, or the reason there is none.
++fn key_text(key: &Value, path: &str, index: usize) -> Result<String, JsonError> {
++    let n = index.saturating_add(1);
++    match key {
++        Value::String(s) => Ok(s.clone()),
++        Value::Bool(b) => Ok(b.to_string()),
++        Value::Number(num) => number_text(num, path),
++        Value::Null => err(path, format!("mapping key #{n} is null")),
++        Value::Sequence(_) => err(path, format!("mapping key #{n} is a sequence")),
++        Value::Mapping(_) => err(path, format!("mapping key #{n} is a mapping")),
++        Value::Tagged(_) => err(path, format!("mapping key #{n} is tagged")),
++    }
++}
++
++fn number_text(n: &Number, path: &str) -> Result<String, JsonError> {
++    if n.is_nan() || n.is_infinite() {
++        return err(path, "NaN and infinity cannot be represented in JSON");
++    }
++    if let Some(u) = n.as_u64() {
++        return Ok(u.to_string());
++    }
++    if let Some(i) = n.as_i64() {
++        return Ok(i.to_string());
++    }
++    match n.as_f64() {
++        Some(f) => {
++            let mut buf = ryu::Buffer::new();
++            Ok(buf.format_finite(f).to_string())
++        }
++        None => err(path, "number out of range"),
++    }
++}
++
++fn write_string(out: &mut String, s: &str) {
++    out.push('"');
++    for c in s.chars() {
++        match c {
++            '"' => out.push_str("\\\""),
++            '\\' => out.push_str("\\\\"),
++            '\n' => out.push_str("\\n"),
++            '\r' => out.push_str("\\r"),
++            '\t' => out.push_str("\\t"),
++            c if u32::from(c) < 0x20 => {
++                let _ = write!(out, "\\u{:04x}", u32::from(c));
++            }
++            c => out.push(c),
++        }
++    }
++    out.push('"');
++}
++
++#[cfg(test)]
++#[allow(
++    clippy::expect_used,
++    clippy::unwrap_used,
++    reason = "test code: a failure should panic with a clear message"
++)]
++mod tests {
++    use super::*;
++
++    fn parse(s: &str) -> Value {
++        crate::from_str(s).expect("valid yaml")
++    }
++
++    #[test]
++    fn pretty_keeps_document_order() {
++        let v = parse("z: 1\na: [x, y]\nm: {}\ne: []\n");
++        assert_eq!(
++            to_json(&v, true).expect("json"),
++            "{\n  \"z\": 1,\n  \"a\": [\n    \"x\",\n    \"y\"\n  ],\n  \"m\": {},\n  \"e\": []\n}"
++        );
++    }
++
++    #[test]
++    fn compact_has_no_whitespace() {
++        let v = parse("z: 1\na: [x, true, null, 1.5]\n");
++        assert_eq!(
++            to_json(&v, false).expect("json"),
++            r#"{"z":1,"a":["x",true,null,1.5]}"#
++        );
++    }
++
++    #[test]
++    fn scalar_keys_become_their_yaml_text() {
++        let v = parse("1: a\ntrue: b\n2.5: c\n-3: d\n");
++        assert_eq!(
++            to_json(&v, false).expect("json"),
++            r#"{"1":"a","true":"b","2.5":"c","-3":"d"}"#
++        );
++    }
++
++    #[test]
++    fn null_and_collection_keys_are_errors() {
++        let e = to_json(&parse("~: a\n"), false).expect_err("null key");
++        assert_eq!(e.message, "mapping key #1 is null");
++        assert_eq!(e.path, "$");
++        let mut m = crate::Mapping::new();
++        m.insert(Value::Sequence(vec![Value::Null]), Value::Null);
++        let e = to_json(&Value::Mapping(m), false).expect_err("seq key");
++        assert_eq!(e.message, "mapping key #1 is a sequence");
++        let mut m = crate::Mapping::new();
++        m.insert(Value::Mapping(crate::Mapping::new()), Value::Null);
++        let e = to_json(&Value::Mapping(m), false).expect_err("map key");
++        assert_eq!(e.message, "mapping key #1 is a mapping");
++    }
++
++    #[test]
++    fn non_finite_floats_are_errors_with_a_path() {
++        for src in ["a: [1, .nan]\n", "a: .inf\n", "a: -.inf\n"] {
++            let e = to_json(&parse(src), false).expect_err("non-finite");
++            assert_eq!(e.message, "NaN and infinity cannot be represented in JSON");
++            assert!(e.path.starts_with("$.a"), "{e}");
++        }
++        let e = to_json(&parse("a: [1, .nan]\n"), false).expect_err("nan");
++        assert_eq!(e.path, "$.a[1]");
++    }
++
++    #[test]
++    fn strings_are_escaped() {
++        let v = parse("a: \"q\\\"b\\\\\\n\\t\\u0001é\"\n");
++        assert_eq!(
++            to_json(&v, false).expect("json"),
++            "{\"a\":\"q\\\"b\\\\\\n\\t\\u0001é\"}"
++        );
++    }
++
++    #[test]
++    fn integers_keep_full_precision() {
++        let v = parse("a: 18446744073709551615\nb: -9223372036854775808\nc: 1e3\n");
++        assert_eq!(
++            to_json(&v, false).expect("json"),
++            r#"{"a":18446744073709551615,"b":-9223372036854775808,"c":1000.0}"#
++        );
++    }
++
++    #[test]
++    fn write_string_keeps_space_literal() {
++        // 0x20 is not a control character: only < 0x20 is escaped, so a
++        // space must survive as itself (a `<=` here would emit \u0020).
++        let mut out = String::new();
++        write_string(&mut out, "a b\u{1}c");
++        assert_eq!(out, "\"a b\\u0001c\"");
++    }
++}
+diff --git a/rivet-yaml/src/lib.rs b/rivet-yaml/src/lib.rs
+index b64a7dc..df167e9 100644
+--- a/rivet-yaml/src/lib.rs
++++ b/rivet-yaml/src/lib.rs
+@@ -8,7 +8,8 @@
+ //!    API mirrors serde_yaml's and migrating a call site is a path rename.
+ //! 2. **Parsing** (`from_str`) — rivet's lossless CST ([`cst`]) and a serde
+ //!    deserializer over it (`de`). Anchors and aliases are expanded; tags,
+-//!    merge keys, complex keys and multi-document streams are refused.
++//!    complex keys and multi-document streams are refused, and merge keys are
++//!    not expanded.
+ //! 3. **Emitting** (`to_string`) — a port of libyaml's scalar-style rules with
+ //!    serde_yaml's settings, so the files rivet writes are unchanged.
+ //!
+@@ -27,6 +28,7 @@
+ mod de;
+ mod emit;
+ mod error;
++pub mod json;
+ #[allow(
+     clippy::unwrap_used,
+     clippy::expect_used,
+@@ -118,7 +120,7 @@
+ )]
+ pub mod value;
+ 
+-pub use crate::error::{Error, Result};
++pub use crate::error::{Error, Location, Result};
+ pub use crate::mapping::Mapping;
+ pub use crate::value::{Index, Number, Sequence, Value, from_value, to_value};
+ 
