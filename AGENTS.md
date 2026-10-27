@@ -274,6 +274,39 @@ If you still hit a `requirements.yaml` EOF conflict (e.g. another PR merged
 first), the resolution is mechanical: keep **both** new blocks, then
 `rivet validate` to confirm the merged file is well-formed.
 
+## Fix hotspots (refactor before the next fix)
+
+<!-- Hand-written, outside the rivet-managed markers. REQ-409. -->
+
+A file that keeps being fixed needs restructuring, not another spot fix. The
+**Fix hotspot** check (`.github/workflows/fix-hotspot.yml`, script
+`tools/ci/fix-hotspot.py`) counts the `fix:` / `fix(scope):` commits on
+`main` (first-parent) that touched each source file — a path under a `src/`
+directory — in the last **60 days**. A file with **6 or more** is a hotspot.
+A fix PR (its title or any of its commits is a `fix`) that changes a hotspot
+fails the check, unless the PR is itself a `refactor:` or its body references
+an open issue labelled `refactor`.
+
+See the current hotspots before you start a fix:
+
+```sh
+python3 tools/ci/fix-hotspot.py --base origin/main --distribution
+```
+
+When it fires on your fix:
+
+1. Open a refactoring issue from `.github/ISSUE_TEMPLATE/refactor.md`
+   (label `refactor`): the file, the fixes counted, what they have in common,
+   and the split you propose.
+2. Then either cite that open issue in the PR body (`Refs #NNN`) so the fix
+   lands with the refactor tracked, or do the refactor first as a
+   `refactor:` PR — behaviour unchanged, no fix mixed in — and rebase the fix
+   onto it. Prefer the refactor when it is small enough to do now.
+3. Do not dodge the check by retyping the fix (`chore:`, `feat:`) or by
+   splitting it to avoid the file. The commit type is what the history and
+   the measurement read.
+
+
 ## Commit Traceability
 
 This project enforces commit-to-artifact traceability. Every non-exempt

@@ -6,6 +6,13 @@
 ## [Unreleased]
 
 ### Added
+- **Fix-hotspot check** (REQ-409). A pull request whose title or commits are a
+  `fix:` and that changes a source file with 6 or more `fix:` commits on
+  `main` in the last 60 days fails the new `Fix hotspot` workflow, unless the
+  PR is a `refactor:` or its body cites an open issue labelled `refactor`.
+  `python3 tools/ci/fix-hotspot.py --base origin/main --distribution` lists the
+  current counts; `.github/ISSUE_TEMPLATE/refactor.md` is the refactoring task,
+  and AGENTS.md says what to do when the check fires.
 - **`rivet yaml to-json`** (REQ-408, #1094) prints a YAML file, or stdin with
   `-`, as JSON through rivet's own parser, so Python and Node repos can read
   their inputs without a second YAML library. It works outside a rivet

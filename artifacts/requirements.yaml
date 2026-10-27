@@ -10339,3 +10339,28 @@ artifacts:
     links:
       - type: traces-to
         target: REQ-346
+
+  - id: REQ-409
+    type: requirement
+    title: "a source file that keeps being fixed gets another spot fix instead of a refactoring task: no trigger turns repeated fixes into restructuring"
+    status: implemented
+    release: v0.42.0
+    description: |-
+      rivet-cli/src/main.rs took 30 of the 67 fix commits merged to main in the 60 days to 2026-10-26, and 35 of 60 from 2026-08-01 to 2026-10-22 (12.8 per month), while refactor commits were 5 of 175 PR commits (2.9%) over the last ~90 merged PRs. Fixes keep landing where the structure is the problem, and nothing in the process asks for the restructuring.
+
+      ACCEPTANCE: a fix-hotspot check runs on every pull request to main. It counts the fix: / fix(scope): commits on main's first-parent history that touched each source file (a path with a src/ directory component), over the 60 days before the base tip's commit date. A file with 6 or more is a hotspot. A PR whose title or any of whose own commits is a fix, and which changes a hotspot, fails unless its title is a refactor: or its body references an open issue (not a pull request) labelled refactor; the failure names each hotspot file with its count and says how to proceed. An issue that cannot be read is an error, not a pass. An issue template for the refactoring task exists, and AGENTS.md tells agents what to do when the check fires. A self-test on a synthetic repository fails when the gate cannot fire (negative controls) and passes the allowed cases, and runs in CI.
+
+      THRESHOLD: measured 2026-10-27 on main at d7ac8e5, window 60 days, source files only. Counts: rivet-cli/src/main.rs 30, rivet-cli/src/docs.rs 7, rivet-core/src/validate.rs 6, rivet-core/src/test_scanner.rs 5, rivet-core/src/export.rs 4, rivet-cli/src/mcp.rs 4, then 3 or fewer. Hotspots per threshold: 4 -> 6 files, 5 -> 4, 6 -> 3, 7 -> 2, 8 -> 1. 6 makes main.rs a hotspot with only three files qualifying.
+
+      IMPLEMENTED: tools/ci/fix-hotspot.py (Python stdlib and git; issues through the REST API with GITHUB_TOKEN, since the self-hosted runners have no gh), .github/workflows/fix-hotspot.yml (re-runs when the PR title or body is edited; not one of CI Gate's needs), .github/ISSUE_TEMPLATE/refactor.md, and the AGENTS.md section 'Fix hotspots'. tools/ci/fix-hotspot_test.sh runs in the YAML Lint job; weakening the threshold comparison, the fail exit, the fix-subject match or the open-issue condition each makes it fail.
+
+      NOT DONE: whether the check is required in branch protection is the owner's setting, and the refactor label must exist in the repository for the template to apply it. Whether the trigger changes anything is measured by the experiment pre-registered 2026-10-22, not by this requirement.
+    tags: [ci, process, refactoring]
+    fields:
+      category: functional
+      priority: should
+      corrective: true
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-27T12:00:00Z

@@ -1,0 +1,56 @@
+name: Fix hotspot
+
+# REQ-409: the fix-hotspot trigger. When a source file has collected
+# THRESHOLD or more `fix:` commits on main in the last WINDOW_DAYS days, the
+# next fix to it opens a refactoring task instead of another spot fix: a fix
+# PR that touches such a file fails here unless its title is a `refactor:`
+# or its body references an open issue labelled `refactor`. The threshold,
+# window and scope live in tools/ci/fix-hotspot.py; its oracle is
+# tools/ci/fix-hotspot_test.sh, run by CI's YAML Lint job.
+#
+# A separate workflow, deliberately: it must re-run when the PR body or title
+# is edited (citing the refactoring issue is how a fix proceeds), and it is
+# NOT one of CI Gate's needs. Whether it becomes a required check is the
+# owner's branch-protection setting.
+#
+# The self-hosted runners have no `gh` CLI; the script reads issues through
+# the REST API with the job's GITHUB_TOKEN.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: fix-hotspot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fix-hotspot:
+    name: Fix hotspot
+    runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The PR's own commits (not the synthetic merge) and main's history.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: A fix to a hotspot file needs a refactoring task
+        env:
+          # Through env, never interpolated into the script: title and body
+          # are untrusted input.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          python3 tools/ci/fix-hotspot.py --base "origin/${BASE_REF}" --head HEAD \
+            --repo "${GITHUB_REPOSITORY}"
