@@ -118,7 +118,18 @@ quick-xml = { version = "0.41", features = ["serialize", "overlapped-lists"] }
 # `fd_renumber` resource leak), which 45.x also carries. The 44->45 bump is
 # source-compatible for our usage. rivet's only wasmtime user is
 # rivet-core/src/wasm_runtime.rs (the compose-witness component runner).
-wasmtime = { version = "48.0.7", features = ["component-model"] }
+# default-features = false drops only `cache` (wasmtime's on-disk compile
+# cache, which rivet never configures): it is the sole path to zstd 0.13, and
+# zstd/zstd-safe/zstd-sys carry RUSTSEC-2026-0391/0398/0403/0410 with fixes
+# only in the next major (zstd 0.14), which wasmtime 48 does not accept. The
+# list below is wasmtime 48.0.7's default set minus `cache`.
+wasmtime = { version = "48.0.7", default-features = false, features = [
+    "anyhow", "async", "backtrace", "gc", "gc-copying", "gc-drc", "gc-null",
+    "wat", "profiling", "parallel-compilation", "cranelift", "pooling-allocator",
+    "demangle", "addr2line", "coredump", "debug-builtins", "runtime",
+    "component-model", "component-model-async", "threads", "stack-switching",
+    "std", "debug", "compile-time-builtins", "wit-parser",
+] }
 wasmtime-wasi = "48.0.7"
 
 # Lossless syntax trees — pinned to our fork's Miri-soundness branch v3.
