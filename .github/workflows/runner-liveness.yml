@@ -150,6 +150,9 @@ jobs:
             . tools/ci-diagnose/diagnose.sh
             qjobs=$(gh api "repos/$REPO/actions/runs/${oldest_id}/jobs" --paginate \
                       --jq '[.jobs[] | select(.status == "queued") | {name, labels}]' 2>/dev/null || echo '[]')
+            # --paginate --jq yields one array PER PAGE (#1130: a run past 100
+            # jobs). Merge them so every consumer below sees one list.
+            qjobs=$(jq -cs 'add // []' <<<"$qjobs" 2>/dev/null || echo '[]')
             # REQ-342: tell "could not read the runner list" apart from "the
             # pool is empty". They are indistinguishable from the response
             # body, so the EXIT CODE is the only discriminator — and the old
@@ -185,6 +188,7 @@ jobs:
             # this probe never has that scope.
             alljobs=$(gh api "repos/$REPO/actions/runs/${oldest_id}/jobs" --paginate \
                         --jq '[.jobs[] | {name, status, labels}]' 2>/dev/null || echo '[]')
+            alljobs=$(jq -cs 'add // []' <<<"$alljobs" 2>/dev/null || echo '[]')
             wfpath=$(gh api "repos/$REPO/actions/runs/${oldest_id}" --jq '.path' 2>/dev/null || echo '')
             needs=$(python3 tools/ci-diagnose/workflow-needs.py "$wfpath" 2>/dev/null || echo '{}')
             mode=$(classify_stall "$allr" "$qjobs" "$alljobs" "$needs")
@@ -232,6 +236,8 @@ jobs:
                 problems+=("Run ${oldest_id} queued ${oldest_age}m — no IDLE runner carries the labels these jobs need. A global online/busy count does not show this. Queued: ${labels} | idle by label: ${idle:-none}") ;;
               capacity-available)
                 problems+=("Run ${oldest_id} queued ${oldest_age}m although capable runners are idle — scheduling delay or a job-level dependency, NOT a capacity problem. Queued: ${labels}") ;;
+              jobs-unreadable)
+                problems+=("Run ${oldest_id} queued ${oldest_age}m. The job list could NOT be parsed, so no cause is claimed here. Diagnose by hand with the org-scope query below. Queued: ${labels}") ;;
               *)
                 problems+=("Run ${oldest_id} queued ${oldest_age}m with no queued jobs left — likely already resolved.") ;;
             esac
