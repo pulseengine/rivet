@@ -19,9 +19,20 @@ on:
   # Nightly + manual: drives the runner-heavy rivet-core mutation matrix
   # (mutants-core) off the every-push path so it stops saturating the
   # self-hosted pool and queueing the gating jobs for hours (#498).
+  #
+  # The full mutation sweep (80 shards, ~47 lean-mem runner-hours) runs WEEKLY,
+  # Sunday 01:00 UTC, when the fleet is ~4% busy (#1117). Daily it consumed the
+  # whole lean-mem class. The daily cron skips Sunday so the two runs of the
+  # same commit do not queue behind each other in one concurrency group.
   schedule:
-    - cron: '0 3 * * *'
+    - cron: '0 3 * * 1-6'
+    - cron: '0 1 * * 0'
   workflow_dispatch:
+    inputs:
+      mutation_sweep:
+        description: "Run the full 80-shard mutation sweep (~47 lean-mem runner-hours)"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -1041,15 +1052,17 @@ jobs:
     # shard held ~374 mutants, about three hours at --jobs 2, so every shard hit
     # the 45-minute timeout and was cancelled — no shard completed from at
     # least 2026-10-02 to 2026-10-13. A 64th holds ~94 (~50 minutes with the
-    # baseline build), so each shard can finish and report; the total compute
-    # is unchanged. Run it NIGHTLY (+ manual) only, not every push —
-    # on every push it saturated the pool and queued the gating jobs for hours
-    # (#498). The hard-gate rivet-cli mutants run per-push in `mutants-cli` below.
+    # baseline build), so each shard can finish and report. Run it WEEKLY
+    # (Sunday cron, or a dispatch with mutation_sweep) — on every push it
+    # saturated the pool (#498), and daily it needed ~47 of the lean-mem class's
+    # 96 runner-hours, queueing Miri and Verus behind it (#1117). Changed code
+    # is still mutated on every push and PR, diff-scoped, by mutants-core-pr
+    # below. The hard-gate rivet-cli mutants run per-push in `mutants-cli`.
     # rivet-yaml has its own 16 shards (1564 mutants, ~98 each, same budget as a
     # rivet-core shard): it owns the YAML parser/emitter since REQ-346, and the
     # PR-diff job cannot judge it because the moved cst.rs counts as all-new.
     # Shards run `--lib` like the rest, so tests/yaml_test_suite.rs is not seen.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event.schedule == '0 1 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.mutation_sweep)
     runs-on: [self-hosted, linux, x64, lean-mem]
     timeout-minutes: 75
     continue-on-error: true
