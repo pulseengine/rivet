@@ -951,6 +951,14 @@ jobs:
   # the externals/process-spawning + rowan#211 multi-item failures the suite
   # has always skipped). Off the per-PR path (#498) so its ~50-min runtime
   # never blocks a PR; 24 threads on the 125 GiB runner, generous timeout.
+  #
+  # SLOW_UNDER_MIRI names, exactly, the tests that never finished inside the
+  # 90-min step: every completed nightly from 2026-10-18 to 10-26 timed out
+  # with 885/893 passed and these 8 still running at 37-73 min each (plus the
+  # needs_json fixture at 54 min). They parse the full embedded schemas or a
+  # large real fixture — interpreter cost, no unsafe code of their own — and
+  # the parsing they exercise is already under Miri through the smaller
+  # tests. Exact `=` matches so a new test sharing a word is not dropped.
   miri-full:
     name: Miri (full, nightly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -970,8 +978,17 @@ jobs:
           tool: cargo-nextest
       - name: Run full Miri sweep
         run: |
+          SLOW_UNDER_MIRI='test(=embedded::tests::bundled_bridges_are_loadable_by_explicit_name)
+            | test(=embedded::tests::every_embedded_preset_resolves_and_parses)
+            | test(=embedded::tests::resolve_schema_provenance_reports_version_and_source)
+            | test(=embedded::tests::schema_version_of_reads_on_disk_embedded_and_missing)
+            | test(=schema::tests::ai_generated_needs_review_fires_on_the_shipped_common_schema)
+            | test(=schema::tests::from_type_can_link_respects_link_field_targets)
+            | test(=schema::tests::no_shipped_schema_declares_a_link_field_its_link_type_forbids)
+            | test(=de::tests::alias_expansion_is_capped)
+            | test(=formats::needs_json::tests::imports_real_sphinx_needs_8_5_output_with_every_link_typed)'
           cargo miri nextest run -p rivet-core -p rivet-yaml --lib --test-threads 24 \
-            -E 'not (test(bazel) | test(db) | test(externals) | test(export) | test(providers) | test(test_scanner) | test(yaml_edit) | test(markdown) | test(parse_actual_hazards) | test(stpa_hazard) | test(yaml_hir) | test(feature_model) | test(doc_check) | test(sexpr_eval) | test(query_embed) | test(parse_query) | test(execute_sexpr))'
+            -E "not (test(bazel) | test(db) | test(externals) | test(export) | test(providers) | test(test_scanner) | test(yaml_edit) | test(markdown) | test(parse_actual_hazards) | test(stpa_hazard) | test(yaml_hir) | test(feature_model) | test(doc_check) | test(sexpr_eval) | test(query_embed) | test(parse_query) | test(execute_sexpr) | $SLOW_UNDER_MIRI)"
         timeout-minutes: 90
         env:
           MIRIFLAGS: "-Zmiri-disable-isolation -Zmiri-tree-borrows"
