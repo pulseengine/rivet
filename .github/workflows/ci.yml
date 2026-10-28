@@ -725,34 +725,14 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Run cargo audit
-        # wasmtime advisories ignored — behind optional wasm feature gate
-        # (not built by default). RUSTSEC-2026-0149 (wasmtime-wasi 43,
-        # high) has no fix in the 43.x line; clearing it needs a wasmtime
-        # 43->45 major bump, tracked separately.
-        # RUSTSEC-2026-0222 (wasmtime store type-index mixup) is CLEARED by
-        # the wasmtime/wasmtime-wasi 45->47 bump — not ignored, fixed.
-        # RUSTSEC-2026-0235 (rkyv 0.7 OOB reads) is ignored: rkyv is an
-        # OPTIONAL feature of rust_decimal (via gluesql-core) that rivet does
-        # not enable, so it is a Cargo.lock entry only — never compiled into
-        # any rivet binary. rust_decimal pins rkyv ^0.7, so it cannot move to
-        # the fixed 0.8 line without an upstream (gluesql/rust_decimal) bump.
-        run: >-
-          cargo audit
-          --ignore RUSTSEC-2026-0085
-          --ignore RUSTSEC-2026-0086
-          --ignore RUSTSEC-2026-0087
-          --ignore RUSTSEC-2026-0088
-          --ignore RUSTSEC-2026-0089
-          --ignore RUSTSEC-2026-0091
-          --ignore RUSTSEC-2026-0092
-          --ignore RUSTSEC-2026-0093
-          --ignore RUSTSEC-2026-0094
-          --ignore RUSTSEC-2026-0095
-          --ignore RUSTSEC-2026-0096
-          --ignore RUSTSEC-2026-0103
-          --ignore RUSTSEC-2026-0104
-          --ignore RUSTSEC-2026-0149
-          --ignore RUSTSEC-2026-0235
+        # NO --ignore list, deliberately. The 15 ignores this step used to
+        # carry (wasmtime 43.x, thin-vec, rkyv) had all stopped matching the
+        # tree — removed 2026-10-28 after `cargo audit` with none of them
+        # reported 0 vulnerabilities. A dead ignore is not harmless: it would
+        # silently swallow the same advisory id if a dependency brought it
+        # back. Accepted risks are recorded once, with reasons, in deny.toml;
+        # add an ignore here only alongside a matching deny.toml entry.
+        run: cargo audit
 
   deny:
     # Renamed: skipping advisories until smithy ships an upgraded

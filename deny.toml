@@ -20,6 +20,11 @@ ignore = [
     # exposure warrants. Revisit if gluesql bumps, or if an advisory upgrades
     # from unmaintained to a vulnerability. Recorded as a DECISION rather than
     # left as an absence (REQ-347).
+    # The same chain also carries two UNSOUND advisories with no patched
+    # version: RUSTSEC-2023-0126 (im OrdSet insertion aliasing) and
+    # RUSTSEC-2026-0255 (sized-chunks panic-safety). They need no ignore here
+    # because cargo-deny reports `unsound` only for crates the workspace
+    # depends on directly, but they are part of what this decision accepts.
     "RUSTSEC-2026-0247",  # bitmaps
     "RUSTSEC-2026-0248",  # im
     "RUSTSEC-2026-0251",  # sized-chunks
