@@ -23,6 +23,7 @@ The documentation built into the `rivet` binary, one file per topic. `rivet docs
 - [`mutation`](mutation.md) — CLI mutation commands (add, modify, remove, link, unlink)
 - [`conditional-rules`](conditional-rules.md) — Conditional validation rules (when/then)
 - [`schema-cited-sources`](schema-cited-sources.md) — Cited-source typed field — sha256-stamped external references
+- [`verification-criteria`](verification-criteria.md) — Verification criteria — wishes vs gaps (the wish detector)
 - [`impact`](impact.md) — Change impact analysis
 - [`needs-json`](needs-json.md) — sphinx-needs JSON import (migration from sphinx-needs)
 - [`bazel`](bazel.md) — Bazel MODULE.bazel integration for cross-repo discovery

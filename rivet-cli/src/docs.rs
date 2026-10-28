@@ -189,6 +189,12 @@ const TOPICS: &[DocTopic] = &[
         content: SCHEMA_CITED_SOURCES_DOC,
     },
     DocTopic {
+        slug: "verification-criteria",
+        title: "Verification criteria — wishes vs gaps (the wish detector)",
+        category: "Reference",
+        content: VERIFICATION_CRITERIA_DOC,
+    },
+    DocTopic {
         slug: "impact",
         title: "Change impact analysis",
         category: "Reference",
@@ -2832,6 +2838,76 @@ and a rule whose condition no allowed value can satisfy (so it can never
 fire) each produce a **warning** — the schema is still loaded.
 
 Related: [[REQ-023]], [[DD-018]], [[FEAT-040]]
+"#;
+
+const VERIFICATION_CRITERIA_DOC: &str = r#"# Verification criteria — wishes vs gaps
+
+A requirement is verifiable only if its text says what could fail it. ASPICE
+PAM 4.1 makes this a property of the requirement itself: "verifiability (i.e.,
+verification criteria being inherent in the requirements text)" (SYS.2.BP1
+Note 2). An agreed requirement that states no criteria cannot be challenged by
+anything. It is a **wish**.
+
+`rivet coverage --tests` reports requirements with no test markers, but that
+list mixes three different things:
+
+| Kind | Shape | What to do |
+|---|---|---|
+| **Wish** | approved or later, no `verification-criteria` | state the criteria, or move it back to `proposed` |
+| **Gap** | has `verification-criteria`, no test or result yet | write the test the criteria describe |
+| **Design element** | `design-decision`, `feature` | verified through the code tests of what it satisfies |
+
+## The rule
+
+`dev` (0.6.0+) and `aspice` (0.3.0+) ship a validation rule,
+`V-requirement-has-verification-criteria`. It fires at **info** severity on:
+
+- `dev`: `requirement`
+- `aspice`: `system-req` and `sw-req` (stakeholder requirements are not
+  covered; the PAM asks for verification criteria from the system level down)
+
+when the status is `approved`, `implemented`, `verified`, `released` or
+`accepted`, and `verification-criteria` is missing, empty, or only whitespace.
+`draft` and `proposed` requirements may still be wishes, so they are not
+reported.
+
+It is `info`, not `warning`, deliberately: every agreed requirement in an
+existing project fires on the first run, and a project whose CI fails on
+warnings must not turn red because it picked up a schema minor version.
+
+## Stating criteria
+
+```yaml
+- id: REQ-042
+  type: requirement
+  title: Export is reproducible
+  status: approved
+  fields:
+    verification-criteria: >
+      Exporting the same store twice produces byte-identical HTML;
+      a test exports twice and compares the trees.
+```
+
+## Listing and gating on wishes
+
+```sh
+# every wish, from validate's JSON (no result cap)
+rivet validate --format json \
+  | jq -r '.diagnostics[] | select(.rule == "V-requirement-has-verification-criteria") | .artifact_id'
+
+# every requirement with no criteria, drafts included (no status filter);
+# `rivet query` caps at 100 results, so pass --limit
+rivet query --limit 100000 \
+  '(and (= type "requirement") (not (matches verification-criteria "[[:graph:]]")))'
+```
+
+To make wishes fail CI, count the first command's output and fail on a non-zero
+count. `rivet validate --fail-on info` would also fail, but on every info
+diagnostic, not just this rule.
+
+`has-field "verification-criteria"` alone is not enough: it is true for a field
+that is present but empty. `matches … "[[:graph:]]"` is false for a missing
+field, `""`, and whitespace alike.
 "#;
 
 const SCHEMA_CITED_SOURCES_DOC: &str = r#"# Cited-source typed field

@@ -10385,3 +10385,21 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-10-28T06:25:05Z
+
+  - id: REQ-411
+    type: requirement
+    title: "an agreed requirement with no verification criteria reads the same as one with an untested criterion: wishes are invisible (#1127)"
+    status: implemented
+    release: v0.42.0
+    description: |-
+      ASPICE PAM 4.1 SYS.2.BP1 Note 2 makes verifiability a characteristic of the requirement text. rivet coverage --tests lists requirements with no test markers but cannot tell a wish (no verification criteria, so nothing can challenge it) from a gap (criteria stated, test not yet written) or a design element, and the dev schema had no field to state criteria in.
+
+      ACCEPTANCE: dev (0.6.0) declares an optional verification-criteria field on requirement. dev and aspice (0.3.0) ship the validation rule V-requirement-has-verification-criteria, which reports at info severity an approved, implemented, verified, released or accepted artifact of type requirement (dev) or system-req/sw-req (aspice) whose verification-criteria is missing, empty or whitespace-only; draft/proposed and stakeholder-req are not reported. rivet docs verification-criteria explains wish vs gap vs design element, cites SYS.2.BP1 Note 2, and gives an uncapped listing recipe. Tests cover each boundary in both schemas and assert info severity, with negative controls for has-field-only and warning severity.
+    tags: [aspice, verification, schema, wish]
+    fields:
+      category: functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-28T07:04:14Z
