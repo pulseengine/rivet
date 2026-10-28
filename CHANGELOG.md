@@ -6,6 +6,12 @@
 ## [Unreleased]
 
 ### Added
+- **Merge-queue ready CI, and cheaper docs-only PRs** (REQ-412). `CI` runs on
+  the merge queue's `merge_group` event, so `CI Gate` reports for a queued PR;
+  queue runs diff against the queue base and skip the advisory jobs. Kani,
+  Verus, Rocq, Playwright and the Criterion benchmarks now run only when their
+  inputs change, through the extracted `tools/ci/detect-changes.sh` and its
+  self-test. Push to main still runs everything.
 - **Fix-hotspot check** (REQ-409). A pull request whose title or commits are a
   `fix:` and that changes a source file with 6 or more `fix:` commits on
   `main` in the last 60 days fails the new `Fix hotspot` workflow, unless the

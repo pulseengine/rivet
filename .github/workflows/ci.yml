@@ -16,6 +16,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # MERGE QUEUE (REQ-412). `CI Gate` is the only required context, so this
+  # workflow must run on the queue's merge_group event, or a queued PR waits
+  # for a check that never reports. In a queue run the `changes` job diffs
+  # against merge_group.base_sha, the jobs CI Gate needs run as on a PR, and
+  # the advisory jobs (not CI Gate needs) are skipped: they ran on the PR
+  # head and run again on the push to main, and nothing in the queue reads
+  # them. Concurrency: head_ref is empty in a queue run, so each entry groups
+  # on its own sha and is never cancelled.
+  merge_group:
   # Nightly + manual: drives the runner-heavy rivet-core mutation matrix
   # (mutants-core) off the every-push path so it stops saturating the
   # self-hosted pool and queueing the gating jobs for hours (#498).
@@ -43,9 +52,10 @@ jobs:
   # full matrix and saturating the shared self-hosted pool. Pure `git diff` — no
   # third-party action, so the supply chain stays auditable. On push/main,
   # schedule and workflow_dispatch the filter always reports rust=true, so a
-  # merge or the nightly run still exercises everything. Content-validating jobs
-  # (traceability = `rivet validate`, docs-check, yaml-lint) are deliberately
-  # NOT gated on this — they must run on artifact/doc PRs.
+  # merge or the nightly run still exercises everything. A merge_group run
+  # diffs against the queue base as a PR diffs against its base (REQ-412).
+  # Content-validating jobs (traceability = `rivet validate`, docs-check,
+  # yaml-lint) are deliberately NOT gated on this — they must run on artifact/doc PRs.
   changes:
     name: Detect changed areas
     runs-on: [self-hosted, linux, x64, light]
@@ -53,89 +63,23 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       wasm: ${{ steps.filter.outputs.wasm }}
+      proofs: ${{ steps.filter.outputs.proofs }}
+      e2e: ${{ steps.filter.outputs.e2e }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      # REQ-412: the detector lives in tools/ci/detect-changes.sh so its
+      # branches are exercised by tools/ci/detect-changes_test.sh (YAML Lint
+      # job) and benchmarks.yml shares it. pull_request diffs against the PR
+      # base; merge_group against the queue entry's base, so a docs-only
+      # entry skips the compile matrix in the queue too. Every other event,
+      # an empty base, a failed diff and an empty diff run everything.
       - id: filter
-        run: |
-          set -o pipefail
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "wasm=true" >> "$GITHUB_OUTPUT"
-            echo "non-PR event (${{ github.event_name }}) → full matrix"
-            exit 0
-          fi
-          base="${{ github.event.pull_request.base.sha }}"
-          # REQ-291 / #771: fail CLOSED. Previously an errored `git diff`
-          # (bad/absent base sha, shallow fetch) or an empty `changed` left
-          # both filters false — the error path was the "skip everything"
-          # path, and on GitHub a skipped required context is
-          # indistinguishable from a passed one. Any doubt about the diff
-          # now runs the full matrix.
-          if ! changed="$(git diff --name-only "$base"...HEAD)"; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "wasm=true" >> "$GITHUB_OUTPUT"
-            echo "→ git diff failed against base=$base; failing closed to full matrix"
-            exit 0
-          fi
-          if [ -z "$changed" ]; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "wasm=true" >> "$GITHUB_OUTPUT"
-            echo "→ git diff returned no paths; failing closed to full matrix"
-            exit 0
-          fi
-          echo "changed files:"; echo "$changed"
-          # REQ-291 / #771: derive the "rust build inputs" file set from
-          # the source rather than retyping it. Anything a Rust file
-          # embeds via `include_str!`/`include_bytes!`/`include_dir!` is
-          # compiled INTO the binary — a change to it can silently break
-          # the test suite, so it MUST trigger the compile matrix even
-          # when the diff carries no .rs / Cargo / workflow file. Extract
-          # the path arg of every include_*!("<path>") in the Rust source,
-          # resolve it relative to the containing file, and dedupe to a
-          # sorted set of repo-root-relative paths.
-          embedded=$(
-            grep -rEHn --include='*.rs' 'include_(str|bytes|dir)!\("[^"]+"\)' \
-              rivet-core rivet-cli etch 2>/dev/null \
-              | while IFS= read -r match; do
-                  file="${match%%:*}"
-                  arg=$(printf '%s' "${match#*:}" \
-                    | sed -nE 's/.*include_(str|bytes|dir)!\("([^"]+)"\).*/\2/p')
-                  [ -z "$arg" ] && continue
-                  resolved=$(realpath -m --relative-to=. "$(dirname "$file")/$arg" 2>/dev/null) || continue
-                  echo "$resolved"
-                done | sort -u
-          )
-          echo "derived embedded assets:"; printf '  %s\n' $embedded
-          # Base filter: Rust source, workspace manifests, workflow files,
-          # AND composite actions. Composite actions ARE build inputs — a
-          # change to `.github/actions/free-space/action.yml` used by a
-          # compile job can break that job, so it must trigger the matrix.
-          rust_re='(\.rs$)|((^|/)Cargo\.(toml|lock)$)|(^\.github/workflows/)|(^\.github/actions/)'
-          if echo "$changed" | grep -qE "$rust_re" \
-             || { [ -n "$embedded" ] && echo "$changed" | grep -Fxq -f <(echo "$embedded"); }; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"
-            echo "→ Rust/Cargo/workflow/action/embedded-asset changes present; running full matrix"
-          else
-            echo "rust=false" >> "$GITHUB_OUTPUT"
-            echo "→ no Rust/Cargo/workflow/action/embedded-asset changes; skipping compile-heavy jobs"
-          fi
-          # REQ-268: the wasm SEAM (compose-witness component + WIT, the host
-          # `wasm` feature / wasm_runtime, the composition core it wraps, and
-          # the spar-wasm build assets) is consumed downstream (melded →
-          # loomed → synth'd), so a change that rots it is a downstream break.
-          # It is built only in release.yml today, so gate a cheap per-PR
-          # host-side build on these paths. `.github/actions/` included on
-          # the same fail-closed logic as the rust filter — a composite
-          # action a wasm job depends on can break that job the same way.
-          if echo "$changed" | grep -qE '(^compose-witness/)|(wasm_runtime\.rs$)|(^Cargo\.lock$)|(feature_model\.rs$)|(\.wit$)|(scripts/build-wasm\.sh$)|(serve/js\.rs$)|(assets/wasm/)|(^\.github/workflows/)|(^\.github/actions/)'; then
-            echo "wasm=true" >> "$GITHUB_OUTPUT"
-            echo "→ wasm-seam paths changed; running the wasm-seam build gate"
-          else
-            echo "wasm=false" >> "$GITHUB_OUTPUT"
-            echo "→ no wasm-seam changes; skipping the wasm-seam gate"
-          fi
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'merge_group' && github.event.merge_group.base_sha || '' }}
+        run: bash tools/ci/detect-changes.sh
 
   # ── Fast checks ───────────────────────────────────────────────────────
   fmt:
@@ -314,6 +258,11 @@ jobs:
       # fails a PR. Python and git only, no compile.
       - name: Fix-hotspot trigger gate test (REQ-409)
         run: bash tools/ci/fix-hotspot_test.sh
+      # REQ-412: the changed-area detector decides which jobs run on a PR and
+      # in the merge queue; its oracle runs here, with git only, so a detector
+      # that fails open or ignores the queue base fails a PR.
+      - name: Changed-area detector gate test (REQ-412)
+        run: bash tools/ci/detect-changes_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
@@ -564,6 +513,13 @@ jobs:
   # ── Playwright E2E ────────────────────────────────────────────────────
   playwright:
     name: Playwright E2E
+    # REQ-412: runs only when its inputs changed (`changes.outputs.e2e`;
+    # push, schedule and dispatch always run it) and never in the merge
+    # queue, where nothing reads it. `needs: changes` puts this hosted job
+    # behind the self-hosted light runner for the short detector job; it
+    # is advisory, so that can delay it but gates nothing.
+    needs: changes
+    if: github.event_name != 'merge_group' && needs.changes.outputs.e2e == 'true'
     # Decoupled from `test` (#299): Playwright runs the release binary
     # end-to-end and is independent of cargo-test passing. Keeping it
     # gated on `test` blocked an ubuntu-latest job behind self-hosted
@@ -618,6 +574,8 @@ jobs:
   # (continue-on-error) until the install proves stable on the runners.
   zola-export-smoke:
     name: Zola export smoke
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group'
     # Self-hosted: audited 2026-08-26 and this job has no hosted requirement.
     # zola is fetched from a GitHub release and unpacked into $HOME/.local/bin
     # — no `sudo`, no `apt-get` — which is what pins the genuinely-hosted jobs
@@ -668,6 +626,8 @@ jobs:
   # ── VS Code Extension ────────────────────────────────────────────────
   vscode-extension:
     name: VS Code Extension
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group'
     needs: [test]
     # Stays on ubuntu-latest: `xvfb-run` headless display + downloaded
     # VS Code Test environment expects sudo apt-get for system libs.
@@ -712,6 +672,8 @@ jobs:
   # explicitly avoids.
   audit:
     name: Security Audit (RustSec)
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group'
     # Stays on ubuntu-latest: smithy ships cargo-audit v0.21.2 whose
     # bundled rustsec parser rejects RUSTSEC-2026-0037 ("unsupported
     # CVSS version: 4.0"). v0.22.1 fixes it but the install trips on
@@ -846,7 +808,8 @@ jobs:
   coverage:
     name: Code Coverage
     needs: [changes, test]
-    if: needs.changes.outputs.rust == 'true'
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     steps:
@@ -896,7 +859,8 @@ jobs:
   miri:
     name: Miri (safety surface)
     needs: changes
-    if: github.event_name != 'schedule' && needs.changes.outputs.rust == 'true'
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group' && github.event_name != 'schedule' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, lean-mem]
     # Step-level 20 min already caps the miri run; job-level 30 covers
     # checkout/cache/toolchain-install so setup can't hang for hours.
@@ -982,7 +946,8 @@ jobs:
   proptest:
     name: Proptest (extended)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     steps:
@@ -1266,7 +1231,8 @@ jobs:
   mutants-cli:
     name: Mutation Testing (rivet-cli)
     needs: [changes, test]
-    if: needs.changes.outputs.rust == 'true'
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     steps:
@@ -1410,7 +1376,8 @@ jobs:
   mutants-core-pr:
     name: Mutation Testing (rivet-core, PR-diff)
     needs: [changes, test]
-    if: needs.changes.outputs.rust == 'true'
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     # ADVISORY — see the header comment above. Promote to a hard gate only
@@ -1560,7 +1527,8 @@ jobs:
   supply-chain:
     name: Supply Chain (cargo-vet)
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
+    if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
     runs-on: [self-hosted, linux, x64, light]
     timeout-minutes: 10
     steps:
@@ -1617,6 +1585,13 @@ jobs:
   # PR-sized subset completes in <20 min.
   kani:
     name: Kani Proofs
+    # REQ-412: runs only when its inputs changed (`changes.outputs.rust`;
+    # push, schedule and dispatch always run it) and never in the merge
+    # queue, where nothing reads it. `needs: changes` puts this hosted job
+    # behind the self-hosted light runner for the short detector job; it
+    # is advisory, so that can delay it but gates nothing.
+    needs: changes
+    if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
     # Decoupled from `test` (#299): Kani harnesses are bounded model
     # checks against rivet-core; they don't read cargo-test status.
     # Keeping the gate blocked an ubuntu-latest job behind self-hosted
@@ -1708,6 +1683,13 @@ jobs:
   # are green under the unified workspace.
   verus:
     name: Verus Proofs
+    # REQ-412: runs only when its inputs changed (`changes.outputs.proofs`;
+    # push, schedule and dispatch always run it) and never in the merge
+    # queue, where nothing reads it. `needs: changes` puts this hosted job
+    # behind the self-hosted light runner for the short detector job; it
+    # is advisory, so that can delay it but gates nothing.
+    needs: changes
+    if: github.event_name != 'merge_group' && needs.changes.outputs.proofs == 'true'
     # Decoupled from `test` (mirrors `rocq`, #299): Verus runs the proof specs
     # via Bazel, independent of cargo-test status. With `needs: [test]` this
     # ubuntu-latest (always-available) job sat blocked behind the contended
@@ -1766,6 +1748,13 @@ jobs:
   # port. TODO: flip to hard gate after the Rocq 9 port PR.
   rocq:
     name: Rocq Proofs
+    # REQ-412: runs only when its inputs changed (`changes.outputs.proofs`;
+    # push, schedule and dispatch always run it) and never in the merge
+    # queue, where nothing reads it. `needs: changes` puts this hosted job
+    # behind the self-hosted light runner for the short detector job; it
+    # is advisory, so that can delay it but gates nothing.
+    needs: changes
+    if: github.event_name != 'merge_group' && needs.changes.outputs.proofs == 'true'
     # Decoupled from `test` (#299): Rocq theorem proving runs against
     # vendored .v files; it doesn't read cargo-test status. Keeping
     # the gate blocked an ubuntu-latest job behind self-hosted rust-cpu

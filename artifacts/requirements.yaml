@@ -10403,3 +10403,28 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-10-28T07:04:14Z
+  - id: REQ-412
+    type: requirement
+    title: "CI is not merge-queue ready, and docs-only pull requests still start the hosted proof, E2E and benchmark jobs"
+    status: implemented
+    release: v0.42.0
+    description: |-
+      Two load problems on the shared runner pool. First, with strict up-to-date branch protection every merge to main makes every other open PR out of date, and each update re-runs the full workflow; a merge queue removes those re-runs, but CI never reports `CI Gate` on the queue's merge_group event, so a queued PR would wait forever. Second, the `changes` detector (REQ-291) skips the compile matrix on a docs-only PR, but Kani, Verus, Rocq, Playwright and the Criterion benchmarks run on every PR regardless of what changed.
+
+      ACCEPTANCE: ci.yml runs on merge_group. The detector diffs a merge_group run against merge_group.base_sha and a pull request against its base; every other event, an empty base, a failed diff and an empty diff run everything. It reports four areas: rust (as before, plus the detector's own files), wasm (as before), proofs (rust, proofs/, verus/, any Bazel input) and e2e (rust, tests/playwright/, and the corpus Playwright serves: artifacts/, safety/, arch/, rivet.yaml). Kani runs on rust, Verus and Rocq on proofs, Playwright on e2e, and benchmarks.yml runs on rust through the same detector; all of it through job-level `if:`, never workflow-level paths. In a merge_group run every job that is not one of CI Gate's needs is skipped. CI Gate's needs and its logic are unchanged: success or skipped pass, anything else fails. A self-test on a synthetic repository asserts all four outputs for docs-only, Rust, embedded-asset, proof, Bazel, artifact, detector and workflow changes, fails closed on a missing or bad base and an empty diff, and shows a merge_group run uses its base; it runs in the YAML Lint job.
+
+      IMPLEMENTED: tools/ci/detect-changes.sh (extracted from the inline ci.yml step, logic unchanged for rust and wasm), tools/ci/detect-changes_test.sh, and the job conditions in ci.yml and benchmarks.yml.
+
+      NOT DONE: turning on the merge queue ruleset and turning strict up-to-date off are repository settings, applied by the owner after this lands. The commit-trailer and traceability-ratchet steps of the Traceability job stay pull_request-only; in a queue run that job runs `rivet validate` on the merged tree. Documentation prose is not an e2e input, so a docs change that breaks Playwright shows on the push to main, not on the PR.
+    tags: [ci, merge-queue, runner-load]
+    fields:
+      category: functional
+      priority: should
+      corrective: true
+    links:
+      - type: traces-to
+        target: REQ-291
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-28T12:00:00Z

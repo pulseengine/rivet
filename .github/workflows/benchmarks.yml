@@ -21,8 +21,35 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # REQ-412: run the benchmarks only when Rust build inputs changed, using the
+  # same detector as ci.yml (tools/ci/detect-changes.sh). Job-level `if:`, not
+  # workflow-level `paths:`: a workflow that never starts leaves its checks
+  # pending. Push to main always reports rust=true, so the gh-pages baseline
+  # still gets a data point on every merge. The detector runs on ubuntu-latest
+  # like the benchmark itself, so this workflow does not take the self-hosted
+  # light runner that ci.yml's detector and CI Gate use.
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: bash tools/ci/detect-changes.sh
+
   benchmark:
     name: Criterion Benchmarks
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
