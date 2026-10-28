@@ -135,7 +135,7 @@ pub fn sync_external_pinned(
 
     // When --local is set and we have a path, always use the local path
     // (skip git entirely).
-    let use_path = ext.path.is_some() && (local_only || ext.git.is_none());
+    let use_path = uses_local_path(ext, local_only);
 
     if use_path {
         let local_path = ext.path.as_ref().unwrap();
@@ -345,6 +345,57 @@ pub fn sync_external_pinned(
     Err(crate::error::Error::Io(
         "external must have either 'git' or 'path'".into(),
     ))
+}
+
+/// Whether `rivet sync` reads this external from its `path:` working tree
+/// rather than cloning its `git:` ref. The ONE rule that sync, lock and the
+/// lock-drift warning share (#1138): `lock` used to pick `path:` whenever it
+/// existed, so with both declared it pinned the developer's local checkout —
+/// whatever branch it was on, pushed or not — while `sync` fetched the
+/// declared `ref:`. A lock committed from a laptop then sent `sync --locked`
+/// in CI to commits the declared ref never named.
+pub fn uses_local_path(ext: &ExternalProject, local_only: bool) -> bool {
+    ext.path.is_some() && (local_only || ext.git.is_none())
+}
+
+/// The git checkout whose HEAD `rivet lock` pins for `ext` — the same source
+/// [`sync_external`] populates under the same `local_only` choice.
+///
+/// For a `git:` external read from git, that is `.rivet/repos/<prefix>`, and
+/// it must be a real clone. Two states are refused rather than pinned:
+/// - no clone yet: pinning anything else would record a commit sync never
+///   fetched, so the error says to run `rivet sync`;
+/// - a symlink: that is what `sync --local` leaves behind, pointing at the
+///   `path:` working tree, so following it would reintroduce exactly the
+///   local pin this function exists to prevent.
+pub fn lock_source_dir(
+    ext: &ExternalProject,
+    cache_dir: &Path,
+    project_dir: &Path,
+    local_only: bool,
+) -> Result<PathBuf, crate::error::Error> {
+    if uses_local_path(ext, local_only) {
+        return Ok(resolve_external_dir(ext, cache_dir, project_dir));
+    }
+    let dest = cache_dir.join(&ext.prefix);
+    if dest.is_symlink() {
+        return Err(crate::error::Error::Io(format!(
+            "external '{}': {} is a `rivet sync --local` link to the path: checkout, not a \
+             clone of the declared git ref. Run `rivet sync` (without --local) before \
+             `rivet lock`, or pin the local checkout deliberately with `rivet lock --local`.",
+            ext.prefix,
+            dest.display()
+        )));
+    }
+    if !dest.join(".git").exists() {
+        return Err(crate::error::Error::Io(format!(
+            "external '{}': no synced git checkout at {}. Run `rivet sync` first, or pin \
+             the path: checkout with `rivet lock --local`.",
+            ext.prefix,
+            dest.display()
+        )));
+    }
+    Ok(dest)
 }
 
 /// Resolve the directory for an external project.
@@ -699,24 +750,39 @@ pub fn is_working_tree_dirty(repo_dir: &Path) -> bool {
 }
 
 /// Read the current commit SHA of a git repository.
+///
+/// A failed `rev-parse` (not a repository, no commits) is an error. It used to
+/// return the empty stdout as `Ok("")`, which `rivet lock` wrote out as a pin.
 pub fn git_head_sha(repo_dir: &Path) -> Result<String, crate::error::Error> {
     let output = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .current_dir(repo_dir)
         .output()
         .map_err(|e| crate::error::Error::Io(format!("git rev-parse: {e}")))?;
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    let sha = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() || sha.is_empty() {
+        return Err(crate::error::Error::Io(format!(
+            "git rev-parse HEAD failed in {}: {}",
+            repo_dir.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(sha)
 }
 
 /// Generate a lockfile from current external state.
+///
+/// Each pin is the HEAD of [`lock_source_dir`]: the checkout `rivet sync`
+/// produces under the same `local_only`, so `lock` and `sync` agree (#1138).
 pub fn generate_lockfile(
     externals: &BTreeMap<String, ExternalProject>,
     project_dir: &Path,
+    local_only: bool,
 ) -> Result<Lockfile, crate::error::Error> {
     let cache_dir = project_dir.join(".rivet/repos");
     let mut pins = BTreeMap::new();
     for (name, ext) in externals {
-        let ext_dir = resolve_external_dir(ext, &cache_dir, project_dir);
+        let ext_dir = lock_source_dir(ext, &cache_dir, project_dir, local_only)?;
         let commit = git_head_sha(&ext_dir)?;
         pins.insert(
             name.clone(),
@@ -2160,5 +2226,148 @@ externals:
         let got = sync_all_locked(&externals, tmp.path(), &lock, false)
             .expect("no externals means nothing to pin");
         assert!(got.is_empty());
+    }
+
+    /// Run git in `dir` with a fixed identity, unsigned, and the enclosing
+    /// worktree's GIT_* variables cleared so it targets `dir` itself.
+    fn lock_git(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=t",
+                "-c",
+                "commit.gpgSign=false",
+            ])
+            .args(args)
+            .current_dir(dir)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_COMMON_DIR")
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// The #1138 layout: an upstream repo at commit A, `.rivet/repos/loom`
+    /// cloned from it (what `rivet sync` makes), and a `path:` checkout that
+    /// moved on to an unpushed commit B on a local branch.
+    /// Returns (project dir guard, external, A, B).
+    fn diverged_git_and_path() -> (tempfile::TempDir, ExternalProject, String, String) {
+        let root = tempfile::tempdir().unwrap();
+        let upstream = root.path().join("upstream");
+        std::fs::create_dir_all(&upstream).unwrap();
+        lock_git(&upstream, &["init", "-q", "-b", "main"]);
+        std::fs::write(upstream.join("a.txt"), "a").unwrap();
+        lock_git(&upstream, &["add", "."]);
+        lock_git(&upstream, &["commit", "-qm", "A"]);
+        let a = lock_git(&upstream, &["rev-parse", "HEAD"]);
+
+        let project = root.path().join("project");
+        let cache = project.join(".rivet/repos");
+        std::fs::create_dir_all(&cache).unwrap();
+        lock_git(&cache, &["clone", "-q", upstream.to_str().unwrap(), "loom"]);
+
+        let local = root.path().join("loom-local");
+        lock_git(
+            root.path(),
+            &["clone", "-q", upstream.to_str().unwrap(), "loom-local"],
+        );
+        lock_git(&local, &["switch", "-q", "-c", "fix/local-only"]);
+        std::fs::write(local.join("b.txt"), "b").unwrap();
+        lock_git(&local, &["add", "."]);
+        lock_git(&local, &["commit", "-qm", "B"]);
+        let b = lock_git(&local, &["rev-parse", "HEAD"]);
+        assert_ne!(a, b);
+
+        let ext = ExternalProject {
+            git: Some(upstream.to_str().unwrap().to_string()),
+            path: Some(local.to_str().unwrap().to_string()),
+            git_ref: Some("main".into()),
+            prefix: "loom".into(),
+        };
+        (root, ext, a, b)
+    }
+
+    // rivet: verifies REQ-410
+    #[test]
+    #[serial]
+    fn lock_pins_the_synced_git_checkout_not_the_local_path_checkout() {
+        let (root, ext, a, b) = diverged_git_and_path();
+        let project = root.path().join("project");
+        let externals = BTreeMap::from([("loom".to_string(), ext)]);
+
+        let lock = generate_lockfile(&externals, &project, false).unwrap();
+        assert_eq!(
+            lock.pins["loom"].commit, a,
+            "default lock must pin what sync fetched"
+        );
+
+        let local = generate_lockfile(&externals, &project, true).unwrap();
+        assert_eq!(
+            local.pins["loom"].commit, b,
+            "--local pins the path: checkout"
+        );
+    }
+
+    // rivet: verifies REQ-410
+    #[test]
+    #[serial]
+    fn lock_refuses_a_git_external_that_was_never_synced() {
+        let (root, ext, _, _) = diverged_git_and_path();
+        let project = root.path().join("project");
+        std::fs::remove_dir_all(project.join(".rivet/repos/loom")).unwrap();
+        let externals = BTreeMap::from([("loom".to_string(), ext)]);
+
+        let err = generate_lockfile(&externals, &project, false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no synced git checkout"), "{err}");
+        assert!(err.contains("rivet sync"), "{err}");
+    }
+
+    // rivet: verifies REQ-410
+    #[cfg(unix)]
+    #[test]
+    #[serial]
+    fn lock_refuses_the_link_sync_local_leaves_behind() {
+        let (root, ext, _, _) = diverged_git_and_path();
+        let project = root.path().join("project");
+        let cached = project.join(".rivet/repos/loom");
+        std::fs::remove_dir_all(&cached).unwrap();
+        std::os::unix::fs::symlink(ext.path.as_ref().unwrap(), &cached).unwrap();
+        let externals = BTreeMap::from([("loom".to_string(), ext)]);
+
+        let err = generate_lockfile(&externals, &project, false)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("`rivet sync --local` link"), "{err}");
+    }
+
+    // rivet: verifies REQ-410
+    #[test]
+    #[serial]
+    fn lock_pins_a_path_only_external_at_its_working_tree() {
+        let (root, mut ext, _, b) = diverged_git_and_path();
+        let project = root.path().join("project");
+        ext.git = None;
+        let externals = BTreeMap::from([("loom".to_string(), ext)]);
+
+        let lock = generate_lockfile(&externals, &project, false).unwrap();
+        assert_eq!(lock.pins["loom"].commit, b);
+    }
+
+    // rivet: verifies REQ-410
+    #[test]
+    fn git_head_sha_is_an_error_outside_a_repository_not_an_empty_pin() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = git_head_sha(dir.path()).unwrap_err().to_string();
+        assert!(err.contains("git rev-parse HEAD failed"), "{err}");
     }
 }

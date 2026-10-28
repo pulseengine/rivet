@@ -959,9 +959,13 @@ enum Command {
 
     /// Pin external dependencies to exact commits in rivet.lock
     Lock {
-        /// Update all pins to latest refs
+        /// Sync every external to its declared ref first, then pin the result
         #[arg(long)]
         update: bool,
+        /// Pin the `path:` working tree of externals that have one, instead of
+        /// the git checkout `rivet sync` makes (mirrors `rivet sync --local`)
+        #[arg(long)]
+        local: bool,
     },
 
     /// Build-system-aware external project discovery.
@@ -2953,7 +2957,7 @@ fn run(cli: Cli) -> Result<bool> {
             force,
             locked,
         } => cmd_sync(&cli, *local, *force, *locked),
-        Command::Lock { update } => cmd_lock(&cli, *update),
+        Command::Lock { update, local } => cmd_lock(&cli, *update, *local),
         Command::Externals { action } => match action {
             ExternalsAction::Discover { path, format } => cmd_externals_discover(path, format),
         },
@@ -16530,8 +16534,16 @@ fn cmd_sync(cli: &Cli, local_only: bool, force: bool, locked: bool) -> Result<bo
         let cache_dir = cli.project.join(".rivet/repos");
         for (name, entry) in &lock.pins {
             if let Some(ext) = externals.get(name) {
-                let ext_dir =
-                    rivet_core::externals::resolve_external_dir(ext, &cache_dir, &cli.project);
+                // Same source `rivet lock` pins (#1138), so the warning
+                // compares like with like instead of the local path: checkout.
+                let Ok(ext_dir) = rivet_core::externals::lock_source_dir(
+                    ext,
+                    &cache_dir,
+                    &cli.project,
+                    local_only,
+                ) else {
+                    continue;
+                };
                 if ext_dir.join(".git").exists() {
                     if let Ok(current) = rivet_core::externals::git_head_sha(&ext_dir) {
                         if current != entry.commit {
@@ -16596,10 +16608,7 @@ fn cmd_externals_discover(path: &Path, format: &str) -> Result<bool> {
     Ok(true)
 }
 
-fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
-    if update {
-        eprintln!("Note: --update refreshes all pins to latest refs");
-    }
+fn cmd_lock(cli: &Cli, update: bool, local_only: bool) -> Result<bool> {
     let config_path = cli.project.join("rivet.yaml");
     if !config_path.exists() {
         let project_dir =
@@ -16616,7 +16625,18 @@ fn cmd_lock(cli: &Cli, update: bool) -> Result<bool> {
         eprintln!("No externals declared in rivet.yaml");
         return Ok(true);
     }
-    let lock = rivet_core::externals::generate_lockfile(externals.unwrap(), &cli.project)?;
+    let externals = externals.unwrap();
+    // #1138: `--update` used to print "refreshes all pins to latest refs" and
+    // then do exactly what a plain `lock` does. It now syncs first, so the
+    // pins are the declared refs' current heads.
+    if update {
+        eprintln!("Syncing externals to their declared refs before pinning (--update)");
+        rivet_core::externals::sync_all(externals, &cli.project, local_only, false)?;
+    }
+    if local_only {
+        eprintln!("Using --local: pinning the path: working tree of externals that have one");
+    }
+    let lock = rivet_core::externals::generate_lockfile(externals, &cli.project, local_only)?;
     for (name, entry) in &lock.pins {
         let short_sha = &entry.commit[..8.min(entry.commit.len())];
         let source = entry.git.as_deref().unwrap_or("(local path)");

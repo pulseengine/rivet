@@ -1522,6 +1522,8 @@ artifacts:
         target: REQ-170
       - type: satisfies
         target: REQ-173
+      - type: satisfies
+        target: REQ-410
     provenance:
       created-by: ai-assisted
       model: claude-opus-4-8
