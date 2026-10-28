@@ -22,6 +22,17 @@
   keys become their YAML text; null keys, NaN and infinities are errors.
   `rivet-yaml` gains a README stating the supported subset (#930).
 
+### Fixed
+- **`rivet lock` pins what `rivet sync` fetches** (REQ-410, #1138). With both
+  `git:` and `path:` declared, `lock` pinned the local `path:` checkout,
+  whatever branch it was on and whether or not it was pushed, while `sync`
+  cloned the declared `ref:`. `sync --locked` in CI then fetched commits the
+  declared ref never named. `lock` now pins `.rivet/repos/<prefix>`, refuses
+  when that clone is missing or is a `sync --local` link, and `lock --local`
+  pins the working tree on purpose. `lock --update` used to print that it
+  refreshed the pins and then did nothing more than `lock`; it now syncs
+  first. A failed `git rev-parse` is an error instead of an empty pin.
+
 ## [0.41.1] - 2026-10-20
 
 A patch for one regression and two reports from downstream projects.

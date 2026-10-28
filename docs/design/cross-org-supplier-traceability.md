@@ -35,7 +35,9 @@ What's there:
 - **`rivet sync`** ([externals.rs:92-296](../../rivet-core/src/externals.rs))
   clones / fetches / symlinks externals into `.rivet/repos/<prefix>`.
 - **`rivet lock`** writes `rivet.lock` pinning each external to a commit
-  SHA ([externals.rs:527-555](../../rivet-core/src/externals.rs)).
+  SHA ([externals.rs](../../rivet-core/src/externals.rs) `generate_lockfile`):
+  the HEAD of the checkout `rivet sync` made, under the same `--local` choice
+  (`lock_source_dir`, #1138).
 - **`rivet baseline verify`** ([externals.rs:714-746](../../rivet-core/src/externals.rs))
   cross-checks that each external repo carries a `baseline/<name>` git tag,
   so a release boundary can be signed off across repos.

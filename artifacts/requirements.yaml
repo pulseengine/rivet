@@ -10364,3 +10364,24 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-10-27T12:00:00Z
+
+  - id: REQ-410
+    type: requirement
+    title: "rivet lock pins the local path: checkout instead of the git ref rivet sync fetched, and lock --update is a no-op (#1138)"
+    status: implemented
+    release: v0.42.0
+    description: |-
+      Reported from kiln (pulseengine/kiln#601). With an external declaring both git: + ref: and a machine-local path:, rivet sync clones the ref into .rivet/repos/<prefix> but rivet lock pinned the HEAD of the path: checkout, so a lock committed from a developer machine recorded whatever local branches were checked out (diverged or unpushed), and sync --locked in CI then fetched commits the declared ref never named. lock --update printed that it refreshed pins and then did nothing more than lock.
+
+      ACCEPTANCE: lock pins the same source sync populates under the same --local choice: for a git external, the HEAD of .rivet/repos/<prefix>. A missing clone is an error naming rivet sync; a sync --local symlink in that slot is an error, not a silent local pin. lock --local pins the path: working tree. lock --update syncs to the declared refs before pinning. git_head_sha failing is an error, never an empty pin. The sync lock-drift warning compares against the same source. Unit tests cover the diverged git+path case (default vs --local), the unsynced and symlinked caches, a path-only external, and the rev-parse failure, with a negative control.
+    tags: [externals, lock, federation]
+    fields:
+      category: functional
+      priority: must
+    links:
+      - type: traces-to
+        target: REQ-311
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-28T06:25:05Z
