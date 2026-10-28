@@ -139,7 +139,7 @@ a qualification gate:
 | `proptest`     | proptest            | Invariant violations with random input |
 | `audit`        | `cargo audit`       | Known CVEs in dependencies             |
 | `deny`         | `cargo deny`        | License violations, duplicate deps     |
-| `vet`          | `cargo vet`         | Supply chain verification              |
+| `vet`          | `cargo vet`         | A dependency no trusted audit set (mozilla, google, bytecode-alliance, isrg, zcash, embark) covers and no recorded exemption accepts; advisory, not in CI Gate |
 | `coverage`     | `cargo llvm-cov`    | Code coverage metrics                  |
 | `msrv`         | MSRV 1.89 check     | Backward compatibility ([[REQ-011]])   |
 
