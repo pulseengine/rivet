@@ -1569,7 +1569,10 @@ jobs:
       - name: Install cargo-vet
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-vet
+          # Pinned to the version that wrote supply-chain/ (`version = "0.10"`
+          # in its config.toml): a newer cargo-vet reading the store under
+          # --locked is format drift nobody would see locally.
+          tool: cargo-vet@0.10.2
       # Self-hosted runners on the `light` pool get cycled by ops
       # automation (kernel patches, systemd restarts, Ansible
       # convergence). When that happens mid-job we see "The runner
@@ -1584,12 +1587,28 @@ jobs:
           timeout_minutes: 5
           max_attempts: 2
           retry_on: error
-          command: |
-            if [ ! -d supply-chain ]; then
-              cargo vet init
-              echo "::notice::cargo-vet initialized — run 'cargo vet' locally to audit dependencies"
-            fi
-            cargo vet --locked
+          # A bare `--locked` check against the COMMITTED store (#1110). The
+          # old `if [ ! -d supply-chain ]; then cargo vet init; fi` exempted
+          # every dependency on every run, so this job could not go red.
+          #
+          # The store trusts the audit sets of mozilla, google,
+          # bytecode-alliance, isrg, zcash and embark-studios (imports.lock
+          # pins what they said); everything they don't cover is an explicit
+          # exemption in config.toml. Negative control on the baseline: a new
+          # unaudited crate fails with `<crate>:<ver> missing ["safe-to-deploy"]`.
+          #
+          # When a dependency bump reddens this: run `cargo vet` (refreshes
+          # imports, may already cover it), then either `cargo vet certify`
+          # after reading the diff, or `cargo vet regenerate exemptions` to
+          # accept it unaudited — the exemption then shows up in the PR diff.
+          #
+          # rowan: our fork (Cargo.toml, fix/miri-soundness-v3) has
+          # `audit-as-crates-io = false` — first-party code under rivet's Miri
+          # gates, not the crates.io release, so a crates.io audit would vouch
+          # for different code. The policy key carries the fork's commit, so
+          # bumping the fork reddens vet until that entry is moved. cargo-vet
+          # rewrites config.toml without comments, which is why this is here.
+          command: cargo vet --locked
 
   # ── Kani bounded model checking ────────────────────────────────────
   # Not yet a hard gate: the 27-harness suite exceeds the 30-minute budget.
@@ -1878,6 +1897,9 @@ jobs:
   # wedge the queue on infrastructure, not correctness), Mutation Testing
   # (honest since REQ-288 but young), Coverage (advisory by design),
   # Playwright (no timeout-minutes — a hung apt-get blocks for 6h, see #822),
+  # Supply Chain (cargo-vet; real since #1110, but every dependency bump now
+  # needs a vet step, and gating would turn each Dependabot PR red until then —
+  # promotion is a merge-policy call, kept advisory until it is made),
   # and Security Audit (RustSec) — recorded here per #1034 (REQ-402) because
   # the omission was previously an unrecorded gap, not a decision. Two
   # reasons, both still true after REQ-402: (a) Cargo Deny with
