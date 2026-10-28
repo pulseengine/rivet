@@ -288,6 +288,21 @@ test_classify_stall_liveness() {
   check "saturation is not a liveness failure" "queue-behind-live-runners" \
     "$(classify_stall "" "$queued_shards" "$running_siblings" "{}")"
 
+  # #1130. The same shape, but the jobs arrive one array per API page, as
+  # `gh api --paginate --jq '[…]'` emits them once a run passes 100 jobs (the
+  # 64+16-shard nightly sweep did). Before the page merge this answered
+  # `hosted-starved` for a queue that is all self-hosted and alive.
+  local running_paged queued_paged
+  running_paged="[{\"name\":\"Mutation Testing (rivet-core 01-of-64)\",\"status\":\"in_progress\",\"labels\":$lean}]
+[{\"name\":\"Mutation Testing (rivet-core 10-of-64)\",\"status\":\"queued\",\"labels\":$lean}]"
+  queued_paged="[]
+[{\"name\":\"Mutation Testing (rivet-core 10-of-64)\",\"labels\":$lean}]"
+  check "jobs split across API pages are one queue" "queue-behind-live-runners" \
+    "$(classify_stall "" "$queued_paged" "$running_paged" "{}")"
+  # Input that is not job arrays names no cause at all.
+  check "unreadable job list claims no cause" "jobs-unreadable" \
+    "$(classify_stall "" "$queued_shards" '{"message":"Bad credentials"}' "{}")"
+
   # CONTROL, and it is the load-bearing one. Same queued jobs, same absent
   # runner list, but NOTHING running on those labels. That is indistinguishable
   # from a dead pool from here, so the classifier must still refuse to call it

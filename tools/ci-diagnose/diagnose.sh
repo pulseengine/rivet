@@ -64,8 +64,25 @@ normalize_runner_fetch() {
 # progress proves the runners serving its labels are alive, which is the one
 # capacity fact observable without the `administration` scope. Omit them and
 # the function degrades to the previous answer rather than to a wrong one.
+#
+# Job lists may arrive as one array per API page. `gh api --paginate --jq '[…]'`
+# applies the filter to each page, so a run with more than 100 jobs yields two
+# arrays, and #1130 is what that did: `--argjson` rejected the stream, the
+# dependency filter came back empty, the empty list counted zero self-hosted
+# jobs, and a lean-mem queue behind four running shards was published as
+# GitHub-hosted starvation. Pages are merged here, and input that is not job
+# arrays answers `jobs-unreadable` (no cause claimed), never a named cause.
+_ci_merge_pages() { # one array, or nothing (exit 1) when the input is not arrays
+  jq -cse 'if all(.[]; type == "array") then (add // []) else error("not job arrays") end' \
+    <<<"$1" 2>/dev/null
+}
+
 classify_stall() {
   local runners_json="$1" jobs_json="$2" all_jobs_json="${3:-}" needs_json="${4:-}"
+  jobs_json=$(_ci_merge_pages "$jobs_json") || { echo "jobs-unreadable"; return; }
+  if [ -n "$all_jobs_json" ]; then
+    all_jobs_json=$(_ci_merge_pages "$all_jobs_json") || { echo "jobs-unreadable"; return; }
+  fi
   local queued_count
   queued_count=$(jq -r 'length' <<<"$jobs_json")
   [ "${queued_count:-0}" -eq 0 ] && { echo "no-queue"; return; }
@@ -90,7 +107,7 @@ classify_stall() {
         [ .[]
           | . as $job
           | select([ ($needs[$job.name] // [])[] | select(incomplete(.)) ] | length == 0)
-        ]' <<<"$jobs_json")
+        ]' <<<"$jobs_json") || { echo "jobs-unreadable"; return; }
     if [ "$(jq -r 'length' <<<"$waiting")" -eq 0 ]; then
       echo "dependency-blocked"
       return
@@ -99,7 +116,8 @@ classify_stall() {
   fi
 
   local selfhosted_count
-  selfhosted_count=$(jq -r '[.[] | select(any(.labels[]; . == "self-hosted"))] | length' <<<"$jobs_json")
+  selfhosted_count=$(jq -r '[.[] | select(any(.labels[]; . == "self-hosted"))] | length' <<<"$jobs_json") \
+    || { echo "jobs-unreadable"; return; }
   if [ "${selfhosted_count:-0}" -eq 0 ]; then
     echo "hosted-starved"
     return
