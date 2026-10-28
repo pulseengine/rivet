@@ -770,11 +770,19 @@ pub fn git_head_sha(repo_dir: &Path) -> Result<String, crate::error::Error> {
     Ok(sha)
 }
 
-/// Generate a lockfile from current external state.
-///
-/// Each pin is the HEAD of [`lock_source_dir`]: the checkout `rivet sync`
-/// produces under the same `local_only`, so `lock` and `sync` agree (#1138).
+/// Generate a lockfile from current external state: each pin is the HEAD of
+/// the checkout a plain `rivet sync` produces (see [`generate_lockfile_with`]).
 pub fn generate_lockfile(
+    externals: &BTreeMap<String, ExternalProject>,
+    project_dir: &Path,
+) -> Result<Lockfile, crate::error::Error> {
+    generate_lockfile_with(externals, project_dir, false)
+}
+
+/// As [`generate_lockfile`], choosing the source the way `rivet sync` does
+/// for the same `local_only` (`--local`). Each pin is the HEAD of
+/// [`lock_source_dir`], so `lock` and `sync` agree (#1138).
+pub fn generate_lockfile_with(
     externals: &BTreeMap<String, ExternalProject>,
     project_dir: &Path,
     local_only: bool,
@@ -2303,13 +2311,13 @@ externals:
         let project = root.path().join("project");
         let externals = BTreeMap::from([("loom".to_string(), ext)]);
 
-        let lock = generate_lockfile(&externals, &project, false).unwrap();
+        let lock = generate_lockfile(&externals, &project).unwrap();
         assert_eq!(
             lock.pins["loom"].commit, a,
             "default lock must pin what sync fetched"
         );
 
-        let local = generate_lockfile(&externals, &project, true).unwrap();
+        let local = generate_lockfile_with(&externals, &project, true).unwrap();
         assert_eq!(
             local.pins["loom"].commit, b,
             "--local pins the path: checkout"
@@ -2325,7 +2333,7 @@ externals:
         std::fs::remove_dir_all(project.join(".rivet/repos/loom")).unwrap();
         let externals = BTreeMap::from([("loom".to_string(), ext)]);
 
-        let err = generate_lockfile(&externals, &project, false)
+        let err = generate_lockfile(&externals, &project)
             .unwrap_err()
             .to_string();
         assert!(err.contains("no synced git checkout"), "{err}");
@@ -2344,7 +2352,7 @@ externals:
         std::os::unix::fs::symlink(ext.path.as_ref().unwrap(), &cached).unwrap();
         let externals = BTreeMap::from([("loom".to_string(), ext)]);
 
-        let err = generate_lockfile(&externals, &project, false)
+        let err = generate_lockfile(&externals, &project)
             .unwrap_err()
             .to_string();
         assert!(err.contains("`rivet sync --local` link"), "{err}");
@@ -2359,7 +2367,7 @@ externals:
         ext.git = None;
         let externals = BTreeMap::from([("loom".to_string(), ext)]);
 
-        let lock = generate_lockfile(&externals, &project, false).unwrap();
+        let lock = generate_lockfile(&externals, &project).unwrap();
         assert_eq!(lock.pins["loom"].commit, b);
     }
 
@@ -2367,6 +2375,20 @@ externals:
     #[test]
     fn git_head_sha_is_an_error_outside_a_repository_not_an_empty_pin() {
         let dir = tempfile::tempdir().unwrap();
+        let err = git_head_sha(dir.path()).unwrap_err().to_string();
+        assert!(err.contains("git rev-parse HEAD failed"), "{err}");
+    }
+
+    /// In a repository with no commits, `git rev-parse HEAD` exits non-zero
+    /// but prints the literal `HEAD` on stdout. Checking only for empty
+    /// output would pin the string "HEAD"; the exit status is what says it
+    /// failed.
+    // rivet: verifies REQ-410
+    #[test]
+    #[serial]
+    fn git_head_sha_is_an_error_in_a_repository_with_no_commits() {
+        let dir = tempfile::tempdir().unwrap();
+        lock_git(dir.path(), &["init", "-q"]);
         let err = git_head_sha(dir.path()).unwrap_err().to_string();
         assert!(err.contains("git rev-parse HEAD failed"), "{err}");
     }

@@ -16636,7 +16636,7 @@ fn cmd_lock(cli: &Cli, update: bool, local_only: bool) -> Result<bool> {
     if local_only {
         eprintln!("Using --local: pinning the path: working tree of externals that have one");
     }
-    let lock = rivet_core::externals::generate_lockfile(externals, &cli.project, local_only)?;
+    let lock = rivet_core::externals::generate_lockfile_with(externals, &cli.project, local_only)?;
     for (name, entry) in &lock.pins {
         let short_sha = &entry.commit[..8.min(entry.commit.len())];
         let source = entry.git.as_deref().unwrap_or("(local path)");
