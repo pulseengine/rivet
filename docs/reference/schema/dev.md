@@ -9,7 +9,7 @@
 
 schema:
   name: dev
-  version: "0.5.0"
+  version: "0.6.0"
   extends: [common]
   description: >
     Software development tracking types. Used to manage requirements,
@@ -51,6 +51,13 @@ artifact-types:
           The requirement fixes a defect or closes a gap. It is satisfied by
           its fix, not by a feature or design decision, so it is exempt from
           requirement-coverage; it still needs verification.
+      - name: verification-criteria
+        type: text
+        required: false
+        description: >
+          How this requirement will be shown to hold: the test, measurement,
+          analysis or review that could fail it. An agreed requirement without
+          one is reported as a wish (`rivet docs verification-criteria`).
     link-fields:
       - name: satisfies
         link-type: satisfies
@@ -280,6 +287,30 @@ conditional-rules:
     then:
       required-fields: [description]
     severity: warning
+
+# The wish detector (#1127). A requirement agreed (approved or later) with
+# no verification criteria cannot be challenged by anything — ASPICE PAM 4.1
+# SYS.2.BP1 Note 2 makes verifiability a property of the requirement text.
+# `info`, not `warning`: every agreed requirement in an existing project
+# fires on the first run, and a project that fails CI on warnings must not
+# turn red for adopting a schema minor version. `matches "[[:graph:]]"` is
+# false for a missing field, "" and whitespace alike; `has-field` alone is
+# true for a present-but-empty value.
+validation-rules:
+  - id: V-requirement-has-verification-criteria
+    description: >
+      An approved-or-later requirement states how it will be verified.
+    rule: |
+      (implies
+        (and (= type "requirement")
+             (or (= status "approved") (= status "implemented")
+                 (= status "verified") (= status "released")
+                 (= status "accepted")))
+        (matches verification-criteria "[[:graph:]]"))
+    severity: info
+    message: >-
+      {id} is {status} with no verification criteria, so nothing can
+      challenge it (a wish; see `rivet docs verification-criteria`).
 
 # Oracle-gated agent pipeline for `rivet close-gaps`. This is the
 # simplest possible block — one oracle (rivet validate) composed into

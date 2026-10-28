@@ -510,3 +510,80 @@ fn aspice_embedded_schema_has_no_coverage_rule_consistency_diagnostics() {
         diags.iter().map(|d| &d.message).collect::<Vec<_>>()
     );
 }
+
+/// An artifact carrying one `verification-criteria` value (or none).
+fn with_criteria(id: &str, art_type: &str, status: &str, criteria: Option<&str>) -> Artifact {
+    let mut a = artifact(id, art_type, status, &[]);
+    if let Some(c) = criteria {
+        a.fields.insert(
+            "verification-criteria".into(),
+            rivet_yaml::Value::String(c.into()),
+        );
+    }
+    a
+}
+
+/// The ids the wish detector (#1127) reports, after checking each report is
+/// `info` — `warning` would turn a fail-on-warning CI red on adoption.
+fn wishes(schema: &Schema, arts: Vec<Artifact>) -> Vec<String> {
+    let mut store = Store::default();
+    for a in arts {
+        store.upsert(a);
+    }
+    let graph = LinkGraph::build(&store, schema);
+    let mut ids: Vec<String> = validate(&store, schema, &graph)
+        .into_iter()
+        .filter(|d| d.rule == "V-requirement-has-verification-criteria")
+        .map(|d| {
+            assert_eq!(
+                d.severity,
+                rivet_core::schema::Severity::Info,
+                "wish detector must report at info: {d:?}"
+            );
+            d.artifact_id.unwrap_or_default()
+        })
+        .collect();
+    ids.sort();
+    ids
+}
+
+// rivet: verifies REQ-411
+#[test]
+fn dev_wish_detector_reports_agreed_requirements_without_criteria() {
+    let schema = Schema::merge(&[parse_schema("common"), parse_schema("dev")]);
+    let got = wishes(
+        &schema,
+        vec![
+            with_criteria(
+                "REQ-1",
+                "requirement",
+                "approved",
+                Some("a test exports twice"),
+            ),
+            with_criteria("REQ-2", "requirement", "approved", None),
+            with_criteria("REQ-3", "requirement", "implemented", Some("")),
+            with_criteria("REQ-4", "requirement", "verified", Some("  \n ")),
+            with_criteria("REQ-5", "requirement", "draft", None),
+            with_criteria("REQ-6", "requirement", "proposed", None),
+            with_criteria("DD-1", "design-decision", "approved", None),
+        ],
+    );
+    assert_eq!(got, ["REQ-2", "REQ-3", "REQ-4"]);
+}
+
+// rivet: verifies REQ-411
+#[test]
+fn aspice_wish_detector_covers_system_and_sw_reqs_only() {
+    let schema = Schema::merge(&[parse_schema("common"), parse_schema("aspice")]);
+    let got = wishes(
+        &schema,
+        vec![
+            with_criteria("SYS-1", "system-req", "approved", Some("bench measurement")),
+            with_criteria("SYS-2", "system-req", "approved", None),
+            with_criteria("SWR-1", "sw-req", "released", Some("")),
+            with_criteria("SWR-2", "sw-req", "draft", None),
+            with_criteria("STK-1", "stakeholder-req", "approved", None),
+        ],
+    );
+    assert_eq!(got, ["SWR-1", "SYS-2"]);
+}

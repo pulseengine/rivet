@@ -59,6 +59,8 @@ docs-check:
     - "0.4.0"
     # dev 0.5.0 (REQ-389: corrective exempts a requirement from coverage).
     - "0.5.0"
+    # dev 0.6.0 / aspice 0.3.0 (REQ-411: wish detector, verification-criteria).
+    - "0.6.0"
     # ASPICE process IDs that look like X.Y.Z (e.g. SYS.2.1.7) — false
     # positives from the regex but stable upstream identifiers.
     - "2.1.7"

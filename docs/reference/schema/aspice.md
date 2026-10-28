@@ -36,7 +36,7 @@
 
 schema:
   name: aspice
-  version: "0.2.1"
+  version: "0.3.0"
   namespace: "http://pulseengine.dev/ns/aspice#"
   extends: [common]
   description: >
@@ -661,6 +661,26 @@ validation-rules:
     message: |
       {id} (unit-verification) is {status} but verifies a
       sw-detail-design that is not approved.
+
+  # The wish detector (#1127): SYS.2.BP1 Note 2 / SWE.1.BP1 make
+  # verifiability a characteristic of the requirement itself. Stakeholder
+  # requirements are not covered: the PAM asks for verification criteria
+  # from the system level down. `info` for the same reason as in dev.yaml.
+  - id: V-requirement-has-verification-criteria
+    description: >
+      An approved-or-later system-req or sw-req states its verification
+      criteria.
+    rule: |
+      (implies
+        (and (or (= type "system-req") (= type "sw-req"))
+             (or (= status "approved") (= status "implemented")
+                 (= status "verified") (= status "released")
+                 (= status "accepted")))
+        (matches verification-criteria "[[:graph:]]"))
+    severity: info
+    message: >-
+      {id} is {status} with no verification criteria, so nothing can
+      challenge it (a wish; see `rivet docs verification-criteria`).
 
 agent-pipelines:
   oracles:

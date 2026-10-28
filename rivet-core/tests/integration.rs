@@ -1368,7 +1368,9 @@ fn test_schema_metadata_loading() {
     // REQ-339).
     // 0.5.0: the optional `corrective` field exempts a defect-fixing
     // requirement from requirement-coverage (REQ-389).
-    assert_eq!(dev.schema.version, "0.5.0");
+    // 0.6.0: optional `verification-criteria` plus the wish-detector rule
+    // V-requirement-has-verification-criteria (REQ-411, #1127).
+    assert_eq!(dev.schema.version, "0.6.0");
     assert!(
         dev.schema.description.is_some(),
         "dev schema should have a description"

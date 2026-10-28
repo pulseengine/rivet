@@ -21,6 +21,14 @@
   `file:line:column` on stderr and nothing on stdout. Integer, float and bool
   keys become their YAML text; null keys, NaN and infinities are errors.
   `rivet-yaml` gains a README stating the supported subset (#930).
+- **Wish detector** (REQ-411, #1127). `dev` 0.6.0 and `aspice` 0.3.0 ship a
+  validation rule, `V-requirement-has-verification-criteria`, that reports an
+  approved-or-later requirement (dev `requirement`; aspice `system-req` and
+  `sw-req`) whose `verification-criteria` is missing, empty or whitespace:
+  nothing can challenge it (ASPICE SYS.2.BP1 Note 2). It reports at `info`, so
+  a project whose CI fails on warnings does not turn red on upgrade. `dev`
+  gains the optional `verification-criteria` field. New topic: `rivet docs
+  verification-criteria`. This repository's own store reports 288 of 405.
 
 ### Fixed
 - **`rivet lock` pins what `rivet sync` fetches** (REQ-410, #1138). With both
