@@ -309,6 +309,11 @@ jobs:
         run: bash tools/ci/kani-selection_test.sh
       - name: Release test-evidence build gate test (REQ-403)
         run: bash tools/release/test-evidence_test.sh
+      # REQ-409: the fix-hotspot trigger runs in its own workflow
+      # (fix-hotspot.yml); its oracle runs here so a trigger that cannot fire
+      # fails a PR. Python and git only, no compile.
+      - name: Fix-hotspot trigger gate test (REQ-409)
+        run: bash tools/ci/fix-hotspot_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
