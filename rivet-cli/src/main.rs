@@ -8326,10 +8326,13 @@ enum ReadinessMode {
     Status,
     Coverage,
     Evidence,
+    /// `evidence`, plus a PASSING recorded result for the artifact or
+    /// something tracing to it (#1129). The strictest rung.
+    Results,
 }
 
 impl ReadinessMode {
-    const KNOWN: &'static str = "status, coverage, evidence";
+    const KNOWN: &'static str = "status, coverage, evidence, results";
 
     /// An unknown value is an error, not a silent fall-back to `status`: a
     /// typo such as `coverag` used to be accepted and ignored, so the project
@@ -8339,6 +8342,7 @@ impl ReadinessMode {
             None | Some("status") => Ok(Self::Status),
             Some("coverage") => Ok(Self::Coverage),
             Some("evidence") => Ok(Self::Evidence),
+            Some("results") => Ok(Self::Results),
             Some(other) => anyhow::bail!(
                 "rivet.yaml: release.require: unknown value '{other}' (expected one of: {})",
                 Self::KNOWN
@@ -8353,6 +8357,10 @@ impl ReadinessMode {
             Self::Coverage => "release-ready (verified/accepted, ready-when, or V-closed)",
             Self::Evidence => {
                 "release-ready (ready status and every error-severity traceability rule satisfied)"
+            }
+            Self::Results => {
+                "release-ready (ready status, every error-severity traceability rule satisfied, \
+                 and a passing recorded result)"
             }
         }
     }
@@ -8371,6 +8379,9 @@ struct ReadinessCtx {
     // mode: evidence mode gates on it and the release note reports it.
     outcomes: std::collections::BTreeMap<String, Vec<rivet_core::coverage::RuleOutcome>>,
     markers: Vec<rivet_core::test_scanner::TestMarker>,
+    /// Recorded-result evidence per artifact id; filled only under
+    /// `require: results` (#1129).
+    evidence: std::collections::BTreeMap<String, rivet_core::result_trace::EvidenceState>,
 }
 
 impl ReadinessCtx {
@@ -8421,6 +8432,32 @@ impl ReadinessCtx {
         } else {
             (Default::default(), Default::default())
         };
+        // #1129: under `require: results` an artifact also needs a passing
+        // recorded result. Refuse when there is nowhere to read results from,
+        // rather than report every artifact as having none.
+        let evidence = if mode == ReadinessMode::Results {
+            let Some(results) = load_result_store(cli, &ctx.config)? else {
+                anyhow::bail!(
+                    "rivet.yaml: release.require: results needs a `results:` directory to read \
+                     recorded test runs from (e.g. `results: results`). See `rivet docs \
+                     recorded-results`."
+                );
+            };
+            ctx.store
+                .iter()
+                .map(|a| {
+                    let ev = rivet_core::result_trace::evidence_for(
+                        &a.id,
+                        &ctx.graph,
+                        &results,
+                        rivet_core::result_trace::EVIDENCE_DEPTH,
+                    );
+                    (a.id.clone(), ev.state)
+                })
+                .collect()
+        } else {
+            Default::default()
+        };
         Ok(Self {
             extra_ready,
             mode,
@@ -8428,6 +8465,7 @@ impl ReadinessCtx {
             uncovered_ids,
             outcomes,
             markers,
+            evidence,
         })
     }
 
@@ -8459,14 +8497,63 @@ impl ReadinessCtx {
                     || (self.covered_types.contains(&a.artifact_type)
                         && !self.uncovered_ids.contains(&a.id))
             }
-            ReadinessMode::Evidence => {
-                self.status_ready(a)
-                    && !self
-                        .outcomes
-                        .get(&a.id)
-                        .is_some_and(|v| rivet_core::coverage::fails_an_error_rule(v))
+            ReadinessMode::Evidence => self.evidence_ready(a),
+            ReadinessMode::Results => {
+                self.evidence_ready(a)
+                    && self.result_state(a)
+                        == Some(rivet_core::result_trace::EvidenceState::Passing)
             }
         }
+    }
+
+    /// Ready status and no missing `error`-severity traceability rule.
+    fn evidence_ready(&self, a: &rivet_core::model::Artifact) -> bool {
+        self.status_ready(a)
+            && !self
+                .outcomes
+                .get(&a.id)
+                .is_some_and(|v| rivet_core::coverage::fails_an_error_rule(v))
+    }
+
+    /// The recorded-result state, under `require: results` only.
+    fn result_state(
+        &self,
+        a: &rivet_core::model::Artifact,
+    ) -> Option<rivet_core::result_trace::EvidenceState> {
+        if self.mode != ReadinessMode::Results {
+            return None;
+        }
+        Some(
+            self.evidence
+                .get(&a.id)
+                .copied()
+                .unwrap_or(rivet_core::result_trace::EvidenceState::NoResults),
+        )
+    }
+
+    /// Why recorded results withhold `a`, for the not-ready listing; `None`
+    /// outside `require: results` or when a passing result exists.
+    fn result_withholds(&self, a: &rivet_core::model::Artifact) -> Option<&'static str> {
+        use rivet_core::result_trace::EvidenceState::*;
+        match self.result_state(a)? {
+            Passing => None,
+            Failing => Some("latest recorded result FAILS"),
+            NotExercised => Some("recorded results are only skipped/blocked (not exercised)"),
+            NoResults => Some("no recorded result"),
+        }
+    }
+
+    /// Add `result_evidence` to a not-ready JSON row under `require: results`
+    /// only, so the other modes' JSON is unchanged.
+    fn annotate_json(
+        &self,
+        a: &rivet_core::model::Artifact,
+        mut row: serde_json::Value,
+    ) -> serde_json::Value {
+        if let Some(state) = self.result_state(a) {
+            row["result_evidence"] = serde_json::to_value(state).unwrap_or_default();
+        }
+        row
     }
 }
 
@@ -9072,12 +9159,12 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
             "release": version,
             "total": scoped.len(),
             "by_status": by_status,
-            "not_verified": not_done.iter().map(|a| serde_json::json!({
+            "not_verified": not_done.iter().map(|a| readiness.annotate_json(a, serde_json::json!({
                 "id": a.id,
                 "status": a.status.as_deref().unwrap_or("(none)"),
                 "title": a.title,
                 "missing_error_rules": readiness.missing_error_rules(a),
-            })).collect::<Vec<_>>(),
+            }))).collect::<Vec<_>>(),
             "cuttable": cuttable,
             "external": external.iter().map(|a| serde_json::json!({
                 "id": a.id,
@@ -9117,9 +9204,12 @@ fn cmd_release_status(cli: &Cli, version: &str, format: &str) -> Result<bool> {
                         missing.join(", ")
                     );
                 }
+                if let Some(why) = readiness.result_withholds(a) {
+                    println!("  {:<10} {why}", "");
+                }
             }
             println!(
-                "\n\u{2717} NOT cuttable — {} artifact(s) not yet verified.",
+                "\n\u{2717} NOT cuttable — {} artifact(s) not yet release-ready.",
                 not_done.len()
             );
         }
@@ -9345,12 +9435,12 @@ fn cmd_release_check(
             "variant": variant_name,
             "total": in_scope_arts.len(),
             "by_status": by_status,
-            "not_verified": not_done.iter().map(|a| serde_json::json!({
+            "not_verified": not_done.iter().map(|a| readiness.annotate_json(a, serde_json::json!({
                 "id": a.id,
                 "status": a.status.as_deref().unwrap_or("(none)"),
                 "title": a.title,
                 "missing_error_rules": readiness.missing_error_rules(a),
-            })).collect::<Vec<_>>(),
+            }))).collect::<Vec<_>>(),
             "in_scope": in_scope.iter().cloned().collect::<Vec<_>>(),
             "out_of_scope": out_of_scope.iter().cloned().collect::<Vec<_>>(),
             "variant_only": variant_only.iter().cloned().collect::<Vec<_>>(),
@@ -9425,6 +9515,9 @@ fn cmd_release_check(
                             "",
                             missing.join(", ")
                         );
+                    }
+                    if let Some(why) = readiness.result_withholds(a) {
+                        println!("  {:<10} {why}", "");
                     }
                 }
                 println!(
@@ -11351,7 +11444,8 @@ fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result
     use rivet_core::test_scanner;
 
     let ctx = ProjectContext::load(cli)?;
-    let (store, schema) = (ctx.store, ctx.schema);
+    let result_store = load_result_store(cli, &ctx.config)?;
+    let (store, schema, graph) = (ctx.store, ctx.schema, ctx.graph);
 
     // Resolve scan paths: workspace-aware defaults shared with `rivet verify`
     // so the two agree on where markers live (#603).
@@ -11372,12 +11466,30 @@ fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result
 
     let patterns = test_scanner::default_patterns();
     let markers = test_scanner::scan_source_files_in_project(&cli.project, &paths, &patterns);
-    let coverage = test_scanner::compute_test_coverage(&markers, &store, Some(&schema));
+    let mut coverage = test_scanner::compute_test_coverage(&markers, &store, Some(&schema));
+    // #1128: a passing recorded result (a HITL/silicon run, imported JUnit)
+    // covers a requirement no source marker names.
+    let rc = match result_store.as_ref() {
+        Some(results) => test_scanner::result_coverage(&coverage, &graph, results),
+        None => test_scanner::ResultCoverage {
+            still_uncovered: coverage.uncovered.clone(),
+            ..Default::default()
+        },
+    };
+    coverage.uncovered = rc.still_uncovered.clone();
 
     if format == "json" {
-        let json = serde_json::to_string_pretty(&coverage)
+        let mut json = serde_json::to_value(&coverage)
             .map_err(|e| anyhow::anyhow!("json serialization: {e}"))?;
-        println!("{json}");
+        // Added only when non-empty, so a project that records no results
+        // gets exactly the JSON it got before.
+        if !rc.covered_by_results.is_empty() {
+            json["covered_by_results"] = serde_json::to_value(&rc.covered_by_results)?;
+        }
+        if !rc.uncovered_evidence.is_empty() {
+            json["uncovered_evidence"] = serde_json::to_value(&rc.uncovered_evidence)?;
+        }
+        println!("{}", serde_json::to_string_pretty(&json)?);
         return Ok(true);
     }
 
@@ -11408,10 +11520,43 @@ fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result
         println!();
     }
 
+    if !rc.covered_by_results.is_empty() {
+        println!(
+            "Covered by recorded results ({}):",
+            rc.covered_by_results.len()
+        );
+        for (id, hits) in &rc.covered_by_results {
+            println!("  {id}  no test marker; passing recorded result");
+            for h in hits {
+                let env = h
+                    .environment
+                    .as_deref()
+                    .map(|e| format!(" @ {e}"))
+                    .unwrap_or_default();
+                let against = if &h.artifact_id == id {
+                    "recorded against it".to_string()
+                } else {
+                    format!("via {}", h.artifact_id)
+                };
+                println!("    run {}{env}  {} ({against})", h.run_id, h.status);
+            }
+        }
+        println!();
+    }
+
     if !coverage.uncovered.is_empty() {
         println!("Uncovered ({}):", coverage.uncovered.len());
         for id in &coverage.uncovered {
-            println!("  {id}  No test markers found");
+            let why = match rc.uncovered_evidence.get(id) {
+                Some(rivet_core::result_trace::EvidenceState::Failing) => {
+                    "; latest recorded result FAILS"
+                }
+                Some(rivet_core::result_trace::EvidenceState::NotExercised) => {
+                    "; recorded results are only skipped/blocked"
+                }
+                _ => "",
+            };
+            println!("  {id}  No test markers found{why}");
         }
         println!();
     }
@@ -11430,7 +11575,7 @@ fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]) -> Result
         println!();
     }
 
-    let covered_count = coverage.covered.len();
+    let covered_count = coverage.covered.len() + rc.covered_by_results.len();
     let total_coverable = covered_count + coverage.uncovered.len();
     let pct = if total_coverable > 0 {
         (covered_count as f64 / total_coverable as f64) * 100.0
@@ -18747,19 +18892,26 @@ impl ProjectContext {
     /// Load project with artifacts, schema, link graph, documents, and test results.
     fn load_full(cli: &Cli) -> Result<Self> {
         let mut ctx = Self::load_with_docs(cli)?;
-
-        let mut result_store = ResultStore::new();
-        if let Some(ref results_path) = ctx.config.results {
-            let dir = cli.project.join(results_path);
-            let runs = results::load_results(&dir)
-                .with_context(|| format!("loading results from '{results_path}'"))?;
-            for run in runs {
-                result_store.insert(run);
-            }
-        }
-        ctx.result_store = Some(result_store);
+        ctx.result_store = Some(load_result_store(cli, &ctx.config)?.unwrap_or_default());
         Ok(ctx)
     }
+}
+
+/// The recorded test runs under `rivet.yaml`'s `results:` directory, or `None`
+/// when the project declares no `results:` — the one loader `trace-results`,
+/// `coverage --tests` (#1128) and the `results` release mode (#1129) share.
+fn load_result_store(cli: &Cli, config: &ProjectConfig) -> Result<Option<ResultStore>> {
+    let Some(results_path) = config.results.as_ref() else {
+        return Ok(None);
+    };
+    let dir = cli.project.join(results_path);
+    let runs = results::load_results(&dir)
+        .with_context(|| format!("loading results from '{results_path}'"))?;
+    let mut store = ResultStore::new();
+    for run in runs {
+        store.insert(run);
+    }
+    Ok(Some(store))
 }
 
 /// `rivet check ai-defects-open` — TCL workstream B operational primitive.

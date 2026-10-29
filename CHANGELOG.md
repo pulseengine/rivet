@@ -46,6 +46,23 @@
   pins the working tree on purpose. `lock --update` used to print that it
   refreshed the pins and then did nothing more than `lock`; it now syncs
   first. A failed `git rev-parse` is an error instead of an empty pin.
+- **`rivet coverage --tests` counts recorded results** (REQ-414, #1128). A
+  requirement with no source marker but a passing result in `results/` — a
+  hardware-in-the-loop or silicon run recorded against it, or an imported
+  JUnit result for a test that verifies it — is listed as "Covered by
+  recorded results" with the run and environment. A failing, errored or
+  only-skipped record does not cover it, and the uncovered line says why.
+  The JSON gains `covered_by_results` and `uncovered_evidence`, omitted when
+  empty. New topic: `rivet docs recorded-results`.
+- **`release.require: results`** (REQ-413, #1129), the strictest
+  release-readiness mode: everything `require: evidence` checks, plus a
+  passing recorded result for the artifact or something tracing to it. A
+  withheld artifact names why (latest result fails, only skipped or blocked,
+  or none recorded), and the JSON row carries `result_evidence`. A skip is
+  "not exercised", not a failure. The mode refuses to run without
+  `results:`. The default and the other modes are unchanged, apart from the
+  verdict line, which now says "not yet release-ready" instead of "not yet
+  verified".
 
 ## [0.41.1] - 2026-10-20
 

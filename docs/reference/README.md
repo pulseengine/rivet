@@ -24,6 +24,7 @@ The documentation built into the `rivet` binary, one file per topic. `rivet docs
 - [`conditional-rules`](conditional-rules.md) — Conditional validation rules (when/then)
 - [`schema-cited-sources`](schema-cited-sources.md) — Cited-source typed field — sha256-stamped external references
 - [`verification-criteria`](verification-criteria.md) — Verification criteria — wishes vs gaps (the wish detector)
+- [`recorded-results`](recorded-results.md) — Recorded test results as evidence (results/*.yaml, HITL, silicon)
 - [`impact`](impact.md) — Change impact analysis
 - [`needs-json`](needs-json.md) — sphinx-needs JSON import (migration from sphinx-needs)
 - [`bazel`](bazel.md) — Bazel MODULE.bazel integration for cross-repo discovery

@@ -259,6 +259,107 @@ pub fn as_tree<'a>(root: &str, nodes: &'a [ResultTraceNode]) -> Vec<TraceTreeNod
     out
 }
 
+/// How many backlink hops [`evidence_for`] follows. The ASPICE chain
+/// `sw-req <- sw-detail-design <- unit-verification` is two; four leaves room.
+pub const EVIDENCE_DEPTH: usize = 4;
+
+/// What the recorded results say about one artifact, as the release gate
+/// (`release.require: results`, #1129) and `rivet coverage --tests` (#1128)
+/// read them.
+///
+/// Deliberately NOT [`verdict`]. That roll-up counts a skip as failing, which
+/// is right for `rivet trace-results`' exit code but not here: a skipped test
+/// did not exercise the requirement, so it reads like having no result at
+/// all. A skip still does not make anything ready; it only stops being
+/// reported as a failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum EvidenceState {
+    /// A latest result passed, and none failed or errored.
+    Passing,
+    /// A latest result failed or errored. Dominates any pass.
+    Failing,
+    /// Results are recorded, but every one is `skip` or `blocked`.
+    NotExercised,
+    /// Nothing is recorded for the artifact or anything that traces to it.
+    NoResults,
+}
+
+/// One latest result that [`evidence_for`] read.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct EvidenceHit {
+    /// The artifact the result is recorded against: the root itself, or an
+    /// artifact that traces to it (typically a verification).
+    pub artifact_id: String,
+    /// The run that recorded it, so a reviewer can tell a CI run from a bench.
+    pub run_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<String>,
+    pub status: TestStatus,
+}
+
+/// The classified evidence for one artifact.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Evidence {
+    pub state: EvidenceState,
+    /// Every latest result read: the root's first, then in trace order.
+    pub hits: Vec<EvidenceHit>,
+}
+
+impl Evidence {
+    /// The hits whose latest result passed.
+    pub fn passing(&self) -> impl Iterator<Item = &EvidenceHit> {
+        self.hits.iter().filter(|h| h.status.is_pass())
+    }
+}
+
+/// The latest recorded result of `root` ITSELF and of every artifact
+/// [`trace_test_results`] reaches from it, classified into [`EvidenceState`].
+///
+/// The root's own result counts. [`trace_test_results`] never reads it, which
+/// suits a trace view but not evidence: a hardware-in-the-loop run recorded
+/// straight against `REQ-PIX-001` (#1128) IS that requirement's evidence, with
+/// no verification artifact in between.
+///
+/// Like the trace, this follows every backlink type, so a requirement that
+/// another one `traces-to` inherits that one's results. For a gate that only
+/// adds conditions to a ready status, a related failure blocking is the
+/// conservative side of that looseness.
+pub fn evidence_for(
+    root: &str,
+    graph: &LinkGraph,
+    results: &ResultStore,
+    max_depth: usize,
+) -> Evidence {
+    let mut ids = vec![root.to_string()];
+    ids.extend(
+        trace_test_results(root, graph, results, max_depth)
+            .into_iter()
+            .map(|n| n.artifact_id),
+    );
+    let hits: Vec<EvidenceHit> = ids
+        .iter()
+        .filter_map(|id| {
+            results.latest_for(id).map(|(meta, r)| EvidenceHit {
+                artifact_id: id.clone(),
+                run_id: meta.id.clone(),
+                environment: meta.environment.clone(),
+                status: r.status.clone(),
+            })
+        })
+        .collect();
+    let state = if hits.iter().any(|h| h.status.is_fail()) {
+        EvidenceState::Failing
+    } else if hits.iter().any(|h| h.status.is_pass()) {
+        EvidenceState::Passing
+    } else if hits.is_empty() {
+        EvidenceState::NoResults
+    } else {
+        EvidenceState::NotExercised
+    };
+    Evidence { state, hits }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -541,5 +642,103 @@ mod tests {
         assert!(!tree[0].children[0].is_empty());
         assert_eq!(tree[0].len(), 2);
         assert_eq!(tree[0].children[0].len(), 1);
+    }
+
+    fn run_at(id: &str, ts: &str, env: Option<&str>, results: &[(&str, TestStatus)]) -> TestRun {
+        let mut r = run(results);
+        r.run.id = id.into();
+        r.run.timestamp = ts.into();
+        r.run.environment = env.map(String::from);
+        r
+    }
+
+    /// REQ-1 <- (verifies) TEST-1 and TEST-2.
+    fn two_verifiers() -> LinkGraph {
+        let mut store = Store::new();
+        store.insert(artifact("REQ-1", "requirement", &[])).unwrap();
+        for t in ["TEST-1", "TEST-2"] {
+            store
+                .insert(artifact(t, "verification", &[("verifies", "REQ-1")]))
+                .unwrap();
+        }
+        LinkGraph::build(&store, &Schema::merge(&[]))
+    }
+
+    fn state(results: &[(&str, TestStatus)]) -> EvidenceState {
+        let mut rs = ResultStore::new();
+        if !results.is_empty() {
+            rs.insert(run(results));
+        }
+        evidence_for("REQ-1", &two_verifiers(), &rs, EVIDENCE_DEPTH).state
+    }
+
+    // rivet: verifies REQ-414
+    #[test]
+    fn a_result_recorded_against_the_requirement_itself_is_its_evidence() {
+        let mut rs = ResultStore::new();
+        rs.insert(run_at(
+            "bench-7",
+            "2026-10-01",
+            Some("hitl-pixhawk-6x"),
+            &[("REQ-1", TestStatus::Pass)],
+        ));
+        let ev = evidence_for("REQ-1", &two_verifiers(), &rs, EVIDENCE_DEPTH);
+        assert_eq!(ev.state, EvidenceState::Passing);
+        assert_eq!(
+            ev.hits,
+            vec![EvidenceHit {
+                artifact_id: "REQ-1".into(),
+                run_id: "bench-7".into(),
+                environment: Some("hitl-pixhawk-6x".into()),
+                status: TestStatus::Pass,
+            }]
+        );
+    }
+
+    // rivet: verifies REQ-414
+    #[test]
+    fn evidence_states_follow_the_skip_is_not_exercised_rule() {
+        use TestStatus::*;
+        assert_eq!(state(&[]), EvidenceState::NoResults);
+        assert_eq!(state(&[("TEST-1", Pass)]), EvidenceState::Passing);
+        assert_eq!(
+            state(&[("TEST-1", Pass), ("TEST-2", Skip)]),
+            EvidenceState::Passing
+        );
+        assert_eq!(state(&[("TEST-1", Skip)]), EvidenceState::NotExercised);
+        assert_eq!(state(&[("TEST-1", Blocked)]), EvidenceState::NotExercised);
+        assert_eq!(
+            state(&[("TEST-1", Pass), ("TEST-2", Fail)]),
+            EvidenceState::Failing
+        );
+        assert_eq!(state(&[("TEST-1", Error)]), EvidenceState::Failing);
+        assert_eq!(
+            state(&[("TEST-1", Skip), ("REQ-1", Fail)]),
+            EvidenceState::Failing
+        );
+    }
+
+    // rivet: verifies REQ-414
+    #[test]
+    fn only_the_latest_result_of_each_artifact_counts() {
+        let mut rs = ResultStore::new();
+        rs.insert(run_at(
+            "old",
+            "2026-09-01",
+            None,
+            &[("TEST-1", TestStatus::Fail)],
+        ));
+        rs.insert(run_at(
+            "new",
+            "2026-10-01",
+            None,
+            &[("TEST-1", TestStatus::Pass)],
+        ));
+        let ev = evidence_for("REQ-1", &two_verifiers(), &rs, EVIDENCE_DEPTH);
+        assert_eq!(ev.state, EvidenceState::Passing);
+        assert_eq!(
+            ev.passing().map(|h| h.run_id.as_str()).collect::<Vec<_>>(),
+            ["new"]
+        );
     }
 }

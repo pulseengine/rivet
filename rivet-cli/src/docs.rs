@@ -195,6 +195,12 @@ const TOPICS: &[DocTopic] = &[
         content: VERIFICATION_CRITERIA_DOC,
     },
     DocTopic {
+        slug: "recorded-results",
+        title: "Recorded test results as evidence (results/*.yaml, HITL, silicon)",
+        category: "Reference",
+        content: RECORDED_RESULTS_DOC,
+    },
+    DocTopic {
         slug: "impact",
         title: "Change impact analysis",
         category: "Reference",
@@ -2908,6 +2914,72 @@ diagnostic, not just this rule.
 `has-field "verification-criteria"` alone is not enough: it is true for a field
 that is present but empty. `matches … "[[:graph:]]"` is false for a missing
 field, `""`, and whitespace alike.
+"#;
+
+const RECORDED_RESULTS_DOC: &str = r#"# Recorded test results as evidence
+
+A source marker (`// rivet: verifies REQ-042`) says a test *exists*. A recorded
+result says it *ran* and how it came out. Some requirements can only be
+verified in a run: a hardware-in-the-loop bench, silicon, a field
+measurement. They have no source marker to find.
+
+## Where results live
+
+Declare the directory once in `rivet.yaml`:
+
+```yaml
+results: results
+```
+
+Each file in it is one test run. `rivet import-results --format junit` writes
+them from JUnit XML; a bench or silicon run can be written by hand or by the
+rig's own tooling:
+
+```yaml
+run:
+  id: hitl-2026-10-27
+  timestamp: "2026-10-27T10:00:00Z"
+  source: with-device              # optional: what produced the run
+  environment: hitl-pixhawk-6x     # optional: CI, bench, silicon lot, ...
+  commit: 8d92f189                 # optional: firmware / code under test
+results:
+  - artifact: REQ-PIX-001          # the requirement itself, or a verification
+    status: pass                   # pass | fail | skip | error | blocked
+  - artifact: REQ-PIX-002
+    status: fail
+    message: failsafe engaged after 3.4 s (limit 2 s)
+```
+
+## How a result counts
+
+For a requirement, rivet reads the **latest** result (newest `timestamp`) of
+the requirement itself and of every artifact that traces to it (the same walk
+as `rivet trace-results`, up to 4 hops), then classifies:
+
+| State | When |
+|---|---|
+| **passing** | some latest result is `pass`, and none is `fail` or `error` |
+| **failing** | a latest result is `fail` or `error`. A failure outweighs any pass |
+| **not exercised** | results exist, but every one is `skip` or `blocked` |
+| **no results** | nothing recorded |
+
+A skip did not exercise the requirement, so it reads like having no result,
+not like a failure. Only **passing** counts as evidence.
+
+## Used by
+
+- `rivet coverage --tests`: a requirement with no source marker but a passing
+  recorded result is listed under "Covered by recorded results" with the run
+  and environment that covered it. A failing or only-skipped record leaves it
+  uncovered, and the line says why. The JSON gains `covered_by_results` and
+  `uncovered_evidence`, both omitted when empty.
+- `rivet release status` / `release check` under `release: { require:
+  results }`: a release-scoped artifact is ready only with a passing recorded
+  result, on top of everything `require: evidence` checks. See `rivet docs
+  release-status`.
+
+`rivet trace-results <ID>` shows the same results as a tree. Its exit code
+still treats a skip as failing.
 "#;
 
 const SCHEMA_CITED_SOURCES_DOC: &str = r#"# Cited-source typed field

@@ -96,6 +96,23 @@ pub struct TestCoverage {
     pub broken_refs: Vec<TestMarker>,
 }
 
+/// What recorded results add to a marker-based [`TestCoverage`] (#1128),
+/// from [`result_coverage`]. A separate type rather than new fields on
+/// `TestCoverage`, which is exhaustively constructible through the public
+/// API: growing it would break every such literal.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ResultCoverage {
+    /// IDs the markers left uncovered that have a PASSING recorded result,
+    /// for the requirement itself or for something tracing to it — a HITL or
+    /// silicon run, an imported JUnit result — with the passing hits.
+    pub covered_by_results: Vec<(String, Vec<crate::result_trace::EvidenceHit>)>,
+    /// Uncovered IDs that DO have recorded results, none passing: why a
+    /// recorded run did not count.
+    pub uncovered_evidence: BTreeMap<String, crate::result_trace::EvidenceState>,
+    /// The marker report's uncovered IDs that are still uncovered.
+    pub still_uncovered: Vec<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Default patterns
 // ---------------------------------------------------------------------------
@@ -789,6 +806,37 @@ pub fn compute_test_coverage(
     }
 }
 
+/// Count recorded test results as coverage (#1128).
+///
+/// Every `uncovered` ID whose [`evidence_for`](crate::result_trace::evidence_for)
+/// is `Passing` goes to `covered_by_results`, carrying the passing hits so a
+/// reviewer can tell a bench run from a source test. A failing, errored or
+/// only-skipped record does NOT cover: the ID stays in `still_uncovered`, and
+/// its state is recorded in `uncovered_evidence`. Marker coverage is untouched.
+pub fn result_coverage(
+    coverage: &TestCoverage,
+    graph: &crate::links::LinkGraph,
+    results: &crate::results::ResultStore,
+) -> ResultCoverage {
+    use crate::result_trace::{EVIDENCE_DEPTH, EvidenceState, evidence_for};
+    let mut rc = ResultCoverage::default();
+    for id in &coverage.uncovered {
+        let ev = evidence_for(id, graph, results, EVIDENCE_DEPTH);
+        match ev.state {
+            EvidenceState::Passing => {
+                let hits = ev.passing().cloned().collect();
+                rc.covered_by_results.push((id.clone(), hits));
+            }
+            EvidenceState::NoResults => rc.still_uncovered.push(id.clone()),
+            state => {
+                rc.uncovered_evidence.insert(id.clone(), state);
+                rc.still_uncovered.push(id.clone());
+            }
+        }
+    }
+    rc
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -798,6 +846,88 @@ mod tests {
     use super::*;
     use crate::model::Artifact;
     use std::io::Write;
+
+    // rivet: verifies REQ-414
+    #[test]
+    fn only_a_passing_recorded_result_covers_an_unmarked_requirement() {
+        use crate::results::{ResultStore, RunMetadata, TestResult, TestRun, TestStatus};
+        let mut store = Store::new();
+        for id in ["REQ-PASS", "REQ-FAIL", "REQ-SKIP", "REQ-NONE", "REQ-MARKED"] {
+            store
+                .insert(Artifact {
+                    id: id.into(),
+                    artifact_type: "requirement".into(),
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+        let marker = TestMarker {
+            test_name: "t".into(),
+            file: PathBuf::from("t.rs"),
+            line: 1,
+            link_type: "verifies".into(),
+            target_id: "REQ-MARKED".into(),
+        };
+        let cov = compute_test_coverage(&[marker], &store, None);
+        let mut results = ResultStore::new();
+        results.insert(TestRun {
+            run: RunMetadata {
+                id: "bench-7".into(),
+                timestamp: "2026-10-01".into(),
+                source: Some("with-device".into()),
+                environment: Some("hitl".into()),
+                commit: None,
+            },
+            results: [
+                ("REQ-PASS", TestStatus::Pass),
+                ("REQ-FAIL", TestStatus::Fail),
+                ("REQ-SKIP", TestStatus::Skip),
+                ("REQ-MARKED", TestStatus::Fail),
+            ]
+            .into_iter()
+            .map(|(a, st)| TestResult {
+                artifact: a.into(),
+                status: st,
+                duration: None,
+                message: None,
+                links: Vec::new(),
+            })
+            .collect(),
+            source_file: None,
+        });
+        let graph = crate::links::LinkGraph::build(&store, &crate::schema::Schema::merge(&[]));
+        let rc = result_coverage(&cov, &graph, &results);
+
+        let by_results: Vec<_> = rc
+            .covered_by_results
+            .iter()
+            .map(|(id, hits)| {
+                (
+                    id.as_str(),
+                    hits[0].run_id.as_str(),
+                    hits[0].environment.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(by_results, [("REQ-PASS", "bench-7", Some("hitl"))]);
+        assert_eq!(rc.still_uncovered, ["REQ-FAIL", "REQ-NONE", "REQ-SKIP"]);
+        assert_eq!(
+            rc.uncovered_evidence.into_iter().collect::<Vec<_>>(),
+            [
+                (
+                    "REQ-FAIL".to_string(),
+                    crate::result_trace::EvidenceState::Failing
+                ),
+                (
+                    "REQ-SKIP".to_string(),
+                    crate::result_trace::EvidenceState::NotExercised
+                ),
+            ]
+        );
+        // Marker coverage is untouched, even with a failing recorded result.
+        assert_eq!(cov.covered.len(), 1);
+        assert_eq!(cov.covered[0].0, "REQ-MARKED");
+    }
     use tempfile::TempDir;
 
     /// A marker's whole id list counts: comma-separated ids, dotted STPA ids

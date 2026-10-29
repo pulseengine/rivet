@@ -15,8 +15,8 @@ scope. It reports a per-status burn-down for every artifact carrying
 
 Two `rivet.yaml` knobs (REQ-240, [#612]) widen what counts as ready so
 V-model / ASPICE projects — which verify via links, not a status flip —
-can green the gate. A third mode, `require: evidence` (REQ-384), tightens
-it instead. This page pins the semantics of those knobs, in
+can green the gate. Two modes tighten it instead: `require: evidence`
+(REQ-384) and `require: results` (REQ-413). This page pins the semantics of those knobs, in
 particular the subtle one: `require: coverage` greens when the configured
 **coverage-rules are satisfied**, which is not the same thing as "every
 verification level is present".
@@ -29,7 +29,7 @@ verification level is present".
 release:
   ready-when: [approved]      # extend the ready status set
   require: coverage           # OR: derive readiness from validate V-closure
-                              # OR: evidence — see below
+                              # OR: evidence, results — see below
 ```
 
 ## Where "cuttable" is defined
@@ -160,13 +160,41 @@ does not block.
 (REQ-383), so the note shows what `require: evidence` would withhold
 before a project opts in.
 
+### `require: results`
+
+The strictest mode (REQ-413, #1129): everything `require: evidence`
+checks, **and** a passing recorded test result for the artifact itself or
+for something that traces to it, read from `rivet.yaml`'s `results:`
+directory (see `rivet docs recorded-results`). It closes the gap where a
+status of `verified` and a `verifies` link pass the gate while no result
+was ever recorded.
+
+Each withheld artifact names why:
+
+| Reason | When |
+|---|---|
+| `latest recorded result FAILS` | a latest result is `fail` or `error`; a failure outweighs any pass |
+| `recorded results are only skipped/blocked (not exercised)` | results exist, none passed or failed |
+| `no recorded result` | nothing recorded for it or anything tracing to it |
+
+The JSON row carries the same as `result_evidence`
+(`failing` / `not-exercised` / `no-results`). The key appears only in this
+mode. A skip does not count as a failure, but it does not make an artifact
+ready either.
+
+The mode refuses to run when `rivet.yaml` declares no `results:`, rather
+than report every artifact as having no result. `rivet trace-results <ID>`
+shows the result tree for one artifact. Note that its exit code still counts
+a skip as failing.
+
 ## Backwards compatibility
 
 The default mode is unchanged: no `release:` block in `rivet.yaml` means
 `rivet release status` gates on `status ∈ {verified, accepted}` exactly
 as before. `ready-when` and `require: coverage` are strictly additive; a
 project can adopt them without ever making a previously cuttable release
-non-cuttable. `require: evidence` is the one opt-in that can.
+non-cuttable. `require: evidence` and `require: results` are the opt-ins
+that can.
 
 The `--format json` output continues to expose `cuttable` as a boolean
 under a stable key; the exit code stays consistent with that verdict
@@ -182,6 +210,8 @@ untouched.
   the `ready-when` + `require: coverage` widening.
 - [REQ-383 / REQ-384](../artifacts/requirements.yaml) — evidence judged
   by each type's schema rules, and the `require: evidence` mode.
+- [REQ-413](../artifacts/requirements.yaml) — the `require: results` mode
+  ([#1129](https://github.com/pulseengine/rivet/issues/1129)).
 - [#612](https://github.com/pulseengine/rivet/issues/612) — the original
   friction report against a link-verification project (gale).
 

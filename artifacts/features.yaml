@@ -1436,6 +1436,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-040
+      - type: satisfies
+        target: REQ-414
     fields:
       phase: future
       baseline: v0.4.0
