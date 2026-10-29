@@ -175,6 +175,11 @@ Read [AGENTS.md](AGENTS.md) for the project conventions and
 `Implements: REQ-NNN` / `Refs: FEAT-NNN` / `Verifies: REQ-NNN` /
 `Fixes: REQ-NNN`, or `Trace: skip` for chore/style/ci/docs/build).
 
+Pull requests merge through GitHub's merge queue: when a PR is green, add it
+with `gh pr merge --squash --auto` (or the "Merge when ready" button). There
+is no need to rebase onto `main` after every merge, and `gh pr update-branch`
+should not be used, because it drops commit signatures.
+
 ## License
 
 Apache-2.0
