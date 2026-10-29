@@ -1952,3 +1952,24 @@ artifacts:
       model: claude-opus-5-5
       timestamp: 2026-09-30T07:21:33Z
       reviewed-by: avrabe
+
+  - id: DD-083
+    type: design-decision
+    title: Recorded results are a third, opt-in input to cuttable, classified separately from the trace-results verdict
+    status: accepted
+    release: v0.42.0
+    description: "How a recorded test result counts as evidence, shared by coverage --tests (#1128) and release.require: results (#1129)."
+    tags: [results, release, coverage]
+    fields:
+      alternatives: "Change verdict() for every caller (loosens trace-results); make require: results the default (gale would go from 25 cuttable releases to 0 overnight); a CLI flag instead of the rivet.yaml key (CI and the dashboard could disagree)."
+      decision: "evidence_for reads the latest result of the artifact itself and of everything tracing to it, and classifies: failing (fail/error; outweighs any pass), passing, not-exercised (only skip/blocked), no-results. Only passing is evidence. coverage --tests counts passing as covered; release.require: results requires passing on top of require: evidence. Opt-in: the default gate and its JSON are unchanged."
+      rationale: "The maintainer decided a skip is not a failure: it did not exercise the requirement, so it reads like no result, and it still never makes an artifact ready. trace-results' verdict() counts a skip as failing for its exit code; changing that would silently loosen a per-requirement gate and the dashboard badge, so the gate uses its own classifier and the two disagree only on which bucket a skip is in. The root's own result counts because a HITL or silicon run is recorded straight against the requirement, with no verification artifact in between."
+    links:
+      - type: satisfies
+        target: REQ-414
+      - type: satisfies
+        target: REQ-413
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-28T07:31:27Z

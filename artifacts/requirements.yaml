@@ -10378,6 +10378,7 @@ artifacts:
     fields:
       category: functional
       priority: must
+      verification-criteria: "Unit tests in externals.rs: with git+path diverged, the default lock pins the synced clone commit and --local pins the path checkout; an unsynced clone and a sync --local symlink are errors; rev-parse failing (no repo, no commits) is an error. A negative control restoring the path-preferring lookup fails them."
     links:
       - type: traces-to
         target: REQ-311
@@ -10399,6 +10400,7 @@ artifacts:
     fields:
       category: functional
       priority: should
+      verification-criteria: "schema_validation_rules.rs tests on the embedded dev and aspice schemas: an approved-or-later requirement with missing, empty or whitespace criteria is reported at info; draft, proposed, stakeholder-req and design elements are not. Negative controls (has-field predicate, warning severity) fail them."
     provenance:
       created-by: ai-assisted
       model: claude-opus-5-5
@@ -10428,3 +10430,50 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-10-28T12:00:00Z
+
+
+  - id: REQ-414
+    type: requirement
+    title: rivet coverage --tests ignores recorded results, so a requirement verified on a bench or silicon always reads uncovered (#1128)
+    status: implemented
+    release: v0.42.0
+    description: |-
+      Hardware requirements (jess REQ-PIX-*: Pixhawk HITL and silicon tests) are verified in a run, not by a test in source, so they carry no source marker. rivet coverage --tests built coverage from source markers alone and never read results/, so 24 such requirements always showed "No test markers found" even with a passing recorded run.
+
+      ACCEPTANCE: when rivet.yaml declares results:, coverage --tests counts an artifact with no marker as covered if its latest recorded result, or that of an artifact tracing to it, passes (the requirements own result counts, not only verifications). Fail and error do not cover and outweigh a pass; skip and blocked do not cover and read as not exercised. Output names the run and environment of each covering result, and says why an uncovered artifact with a recorded result did not count. JSON gains covered_by_results and uncovered_evidence, omitted when empty, so a project without results: gets unchanged output. rivet docs recorded-results documents a hand-written HITL run. Unit and CLI tests, with negative controls for skip-as-failing and dropping the root result.
+    tags: [results, coverage, hitl, verification]
+    fields:
+      category: functional
+      priority: should
+      verification-criteria: "Unit tests in result_trace.rs and test_scanner.rs plus CLI tests: a passing result recorded against the requirement itself covers it, fail/error outweigh a pass, skip/blocked are not exercised, the latest result wins, and JSON is unchanged without results:. Negative controls (skip as failing, dropping the root result) fail them."
+    links:
+      - type: traces-to
+        target: REQ-238
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-28T07:27:21Z
+
+  - id: REQ-413
+    type: requirement
+    title: "release status gates on artifact status alone: a verified requirement with no recorded result is cuttable (#1129)"
+    status: implemented
+    release: v0.42.0
+    description: |-
+      ASPICE PAM 4.1 SWE.4.BP3 asks for verification results including pass/fail status to be recorded. rivet release status decided readiness from artifact status and, under require: evidence, from traceability links, so recorded results never entered the verdict: on gale (rivet 0.39.0) 25 of 27 verified sw requirements sat in Cuttable releases with no result recorded, and importing a passing JUnit result changed nothing.
+
+      ACCEPTANCE: release.require: results is a fourth rivet.yaml mode for every ReadinessCtx consumer (release status, check, notes, list). An artifact is ready only when it is ready under require: evidence AND its own latest recorded result, or that of an artifact tracing to it, passes. Fail/error withhold and outweigh a pass; skip/blocked withhold as not exercised (maintainer decision: skip is not a failure); none recorded withholds. Each withheld artifact names the reason in text and as result_evidence in JSON, present only in this mode. The mode errors when rivet.yaml declares no results:. The default and the status/coverage/evidence modes are unchanged. CLI tests cover the three reasons, the missing-results error, and default/evidence unchanged, with a negative control ignoring the key.
+    tags: [release, results, gate, aspice]
+    fields:
+      category: functional
+      priority: must
+      verification-criteria: "CLI tests on a HITL fixture: under release.require: results a verified requirement with a failing, only-skipped or no recorded result is withheld with result_evidence failing / not-exercised / no-results; the mode errors without results:; default and evidence modes are unchanged. A negative control parsing results as status fails them."
+    links:
+      - type: traces-to
+        target: REQ-384
+      - type: traces-to
+        target: REQ-414
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-10-28T07:30:55Z

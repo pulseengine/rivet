@@ -13699,7 +13699,7 @@ fn release_status_rejects_an_unknown_require_value() {
     assert!(!out.status.success(), "a typo must fail the command");
     assert!(
         err.contains(
-            "release.require: unknown value 'coverag' (expected one of: status, coverage, evidence)"
+            "release.require: unknown value 'coverag' (expected one of: status, coverage, evidence, results)"
         ),
         "the error names the bad value and the valid ones. Got:\n{err}"
     );
@@ -14675,4 +14675,173 @@ fn readme_python_example_runs_against_the_real_binary() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+}
+
+// ── recorded results as evidence (#1128 / #1129) ───────────────────────
+
+/// A dev project with four approved requirements in release v1 and one
+/// hand-written hardware-in-the-loop run recorded straight against them —
+/// pass, fail, skip, and one never run. `rivet_yaml_extra` is appended to
+/// rivet.yaml (a `results:` key, a `release:` block).
+fn recorded_results_project(rivet_yaml_extra: &str) -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    std::fs::create_dir_all(dir.join("results")).unwrap();
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        format!(
+            "project:\n  name: hitl\n  schemas: [common, dev]\nsources:\n  - path: artifacts\n    \
+             format: generic-yaml\n{rivet_yaml_extra}"
+        ),
+    )
+    .unwrap();
+    let mut arts = String::from("artifacts:\n");
+    for (id, status) in [
+        ("REQ-PIX-001", "verified"),
+        ("REQ-PIX-002", "verified"),
+        ("REQ-PIX-003", "verified"),
+        ("REQ-PIX-004", "verified"),
+    ] {
+        arts.push_str(&format!(
+            "  - id: {id}\n    type: requirement\n    title: {id}\n    status: {status}\n    \
+             release: v1\n"
+        ));
+    }
+    std::fs::write(dir.join("artifacts/reqs.yaml"), arts).unwrap();
+    std::fs::write(
+        dir.join("results/hitl.yaml"),
+        "run:\n  id: hitl-2026-10-27\n  timestamp: \"2026-10-27T10:00:00Z\"\n  \
+         environment: hitl-pixhawk-6x\nresults:\n  - artifact: REQ-PIX-001\n    status: pass\n  \
+         - artifact: REQ-PIX-002\n    status: fail\n  - artifact: REQ-PIX-003\n    status: skip\n",
+    )
+    .unwrap();
+    tmp
+}
+
+fn rivet_json(dir: &std::path::Path, args: &[&str]) -> (bool, serde_json::Value) {
+    let out = Command::new(rivet_bin())
+        .args(["--project", dir.to_str().unwrap()])
+        .args(args)
+        .output()
+        .expect("run rivet");
+    let v = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!(
+            "{args:?}: not JSON ({e}). stdout: {} stderr: {}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    (out.status.success(), v)
+}
+
+/// #1128: a passing hardware run recorded against a requirement covers it;
+/// a failing or only-skipped one does not, and says why.
+// rivet: verifies REQ-414
+#[test]
+fn coverage_tests_counts_a_passing_recorded_result() {
+    let tmp = recorded_results_project("results: results\n");
+    let (_, v) = rivet_json(tmp.path(), &["coverage", "--tests", "--format", "json"]);
+    let by_results = &v["covered_by_results"];
+    assert_eq!(by_results.as_array().map(Vec::len), Some(1), "{v:#}");
+    assert_eq!(by_results[0][0], "REQ-PIX-001");
+    assert_eq!(by_results[0][1][0]["environment"], "hitl-pixhawk-6x");
+    assert_eq!(
+        v["uncovered"],
+        serde_json::json!(["REQ-PIX-002", "REQ-PIX-003", "REQ-PIX-004"])
+    );
+    assert_eq!(
+        v["uncovered_evidence"],
+        serde_json::json!({"REQ-PIX-002": "failing", "REQ-PIX-003": "not-exercised"})
+    );
+}
+
+/// #1128: a project that declares no `results:` gets exactly the JSON shape
+/// it got before — the new fields are additive and omitted when empty.
+// rivet: verifies REQ-414
+#[test]
+fn coverage_tests_json_is_unchanged_without_results() {
+    let tmp = recorded_results_project("");
+    let (_, v) = rivet_json(tmp.path(), &["coverage", "--tests", "--format", "json"]);
+    let keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    assert_eq!(
+        keys,
+        ["broken_refs", "covered", "total_markers", "uncovered"]
+    );
+    assert_eq!(v["uncovered"].as_array().map(Vec::len), Some(4));
+}
+
+/// #1129: under `release.require: results` a verified requirement is ready
+/// only with a passing recorded result; a failing, only-skipped or missing
+/// result withholds it, and the JSON row says which.
+// rivet: verifies REQ-413
+#[test]
+fn release_status_require_results_withholds_without_a_passing_result() {
+    let tmp = recorded_results_project("results: results\nrelease:\n  require: results\n");
+    let (ok, v) = rivet_json(tmp.path(), &["release", "status", "v1", "--format", "json"]);
+    assert!(!ok, "not cuttable must exit non-zero: {v:#}");
+    assert_eq!(v["cuttable"], false);
+    let rows: Vec<(String, String)> = v["not_verified"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["id"].as_str().unwrap().to_string(),
+                r["result_evidence"]
+                    .as_str()
+                    .unwrap_or("(absent)")
+                    .to_string(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("REQ-PIX-002".to_string(), "failing".to_string()),
+            ("REQ-PIX-003".to_string(), "not-exercised".to_string()),
+            ("REQ-PIX-004".to_string(), "no-results".to_string()),
+        ]
+    );
+}
+
+/// #1129: the mode refuses to run with nowhere to read results from, rather
+/// than report every artifact as having no result.
+// rivet: verifies REQ-413
+#[test]
+fn release_status_require_results_needs_a_results_directory() {
+    let tmp = recorded_results_project("release:\n  require: results\n");
+    let out = Command::new(rivet_bin())
+        .args([
+            "--project",
+            tmp.path().to_str().unwrap(),
+            "release",
+            "status",
+            "v1",
+        ])
+        .output()
+        .expect("run rivet");
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("needs a `results:` directory"), "{stderr}");
+}
+
+/// #1129: the default is unchanged. With the same recorded failures on disk,
+/// the status-mode gate still cuts on status alone and its JSON gains no key.
+// rivet: verifies REQ-413
+#[test]
+fn release_status_default_mode_ignores_recorded_results() {
+    let tmp = recorded_results_project("results: results\n");
+    let (ok, v) = rivet_json(tmp.path(), &["release", "status", "v1", "--format", "json"]);
+    assert!(ok, "{v:#}");
+    assert_eq!(v["cuttable"], true);
+    assert_eq!(v["not_verified"], serde_json::json!([]));
+    let tmp = recorded_results_project("results: results\nrelease:\n  require: evidence\n");
+    let (_, v) = rivet_json(tmp.path(), &["release", "status", "v1", "--format", "json"]);
+    for row in v["not_verified"].as_array().unwrap() {
+        assert!(
+            row.get("result_evidence").is_none(),
+            "evidence mode gained a key: {row}"
+        );
+    }
 }
