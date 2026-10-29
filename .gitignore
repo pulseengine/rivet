@@ -51,3 +51,6 @@ mutants.out*/
 *.mov
 *.mkv
 *.m4v
+
+# Per-user agent settings (local permissions); never committed.
+.claude/settings.local.json

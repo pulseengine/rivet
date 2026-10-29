@@ -517,10 +517,10 @@ jobs:
       - build-release-note
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: artifacts
 
@@ -577,7 +577,7 @@ jobs:
       # GitHub-native attestation (not the standalone SLSA generator)
       # keeps the workflow self-contained — mirrors synth's pattern.
       - name: Generate SLSA build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: "release-assets/*.tar.gz"
 
@@ -596,7 +596,7 @@ jobs:
       #     --bundle SHA256SUMS.txt.cosign.bundle \
       #     SHA256SUMS.txt
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
         with:
           cosign-release: 'v2.4.1'
 
@@ -718,11 +718,11 @@ jobs:
     # core release (binaries + GitHub Release via create-release) still gates.
     continue-on-error: true
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: vsix
           path: vsix
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       - name: Publish to Marketplace
@@ -753,14 +753,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           sparse-checkout: tools/release
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: vsix
           path: vsix
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
       # The mode (PAT bootstrap, trusted publishing, or a visible skip) and its
