@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793220328798,
+  "lastUpdate": 1793237673744,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "3172b6024dc2ea6dd23552be51247921711d2a31",
-          "message": "fix(validate): salsa conditional-rule pass iterates by sorted id (REQ-029, #1049) (#1051)\n\nTwo runs of `rivet validate` on the same inputs printed the same set of\ndiagnostics in different orders — 944 lines of diff reduced to 0 after\nsorting. The block that moved was `conditional rule\n'ai-generated-needs-review'` warnings. Any diff-based or golden check of\nvalidate output was noisy, and a real regression could hide among the\nreordered lines.\n\nThe direct `validate_with_externals_and_variant` path already iterated\n`store.iter_sorted()` (#746). The salsa path — `evaluate_conditional_rules`\nand `evaluate_conditional_rules_with_extras`, which the default\n`rivet validate` CLI takes — still iterated `store.iter()`, which walks\nthe backing `HashMap` and is documented as \"unspecified,\nnondeterministic order\". Both salsa queries now iterate by sorted id too.\n\nTests:\n- `db::tests::conditional_diagnostics_are_sorted_by_artifact_id` — the\n  salsa query emits conditional diagnostics in ascending-id order on a\n  fixture whose approved-without-description artifacts are inserted\n  out of id order.\n- `cli_commands::validate_output_is_byte_identical_across_runs` — two\n  runs of the real binary on this project give byte-identical stdout\n  for both `rivet validate` and `rivet validate --format json`.\n\nFixes: REQ-029\nVerifies: REQ-029\nRefs: #1049\n\n\nClaude-Session: https://claude.ai/code/session_01RocdVLURshNd458tL38TfL\n\nCo-authored-by: Claude <noreply@anthropic.com>",
-          "timestamp": "2026-10-08T08:31:14+02:00",
-          "tree_id": "75db615bc1ab76eac55b22d8469c422da6390557",
-          "url": "https://github.com/pulseengine/rivet/commit/3172b6024dc2ea6dd23552be51247921711d2a31"
-        },
-        "date": 1791444167415,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 86741,
-            "range": "± 555",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 924752,
-            "range": "± 4826",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14019896,
-            "range": "± 984271",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2221,
-            "range": "± 5",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26690,
-            "range": "± 149",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 373071,
-            "range": "± 2018",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1525984,
-            "range": "± 12088",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160129,
-            "range": "± 2917",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1878374,
-            "range": "± 16319",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 29931043,
-            "range": "± 3363799",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 753296,
-            "range": "± 4597",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 19187591,
-            "range": "± 160090",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1480107089,
-            "range": "± 14116783",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4275,
-            "range": "± 30",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 60695,
-            "range": "± 339",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 832829,
-            "range": "± 8303",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60929,
-            "range": "± 394",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 707130,
-            "range": "± 17223",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8671775,
-            "range": "± 469029",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1153,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14393,
-            "range": "± 804",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 328835,
-            "range": "± 3972",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24230,
-            "range": "± 88",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 172436,
-            "range": "± 1116",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1637662,
-            "range": "± 31703",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1491708,
             "range": "± 13336",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e238de984f0a687fcfd8504494ef7e53917aef29",
+          "message": "ci: run CI Gate in the merge queue and skip proof, E2E and bench jobs on docs-only PRs (REQ-412) (#1141)\n\nci.yml now runs on merge_group, so CI Gate reports for a queued PR once\nthe queue ruleset is on. The changes detector moves to\ntools/ci/detect-changes.sh. A merge_group run diffs against\nmerge_group.base_sha and a pull request against its base. Push,\nschedule, dispatch, an empty or bad base, and an empty diff all run\neverything, as before. The rust and wasm filters are unchanged apart\nfrom the detector's own files joining the rust set.\n\nTwo new outputs gate jobs that ran on every PR: proofs (rust, proofs/,\nverus/, Bazel inputs) for Verus and Rocq, and e2e (rust,\ntests/playwright/, and the served corpus artifacts/, safety/, arch/,\nrivet.yaml) for Playwright. Kani runs on rust. benchmarks.yml calls the\nsame detector from a hosted job and runs the benchmark on rust. All of\nthis is job-level if, with no workflow-level paths.\n\nIn a merge_group run every job that is not one of CI Gate's needs is\nskipped. Those jobs ran on the PR head and run again on the push to\nmain, and the queue reads only CI Gate. CI Gate's needs and logic are\nunchanged: success or skipped pass, anything else fails. semver-checks\nis PR-only and so skipped in the queue, which the gate already accepts.\n\ntools/ci/detect-changes_test.sh checks all four outputs on a synthetic\nrepository, including the fail-closed cases and that a queue run uses\nits base. It runs in the YAML Lint job.\n\nImplements: REQ-412\nRefs: REQ-291\n\nClaude-Session: https://claude.ai/code/session_01G5qpB7zvxLvdrvn5YRyj4R\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-10-29T02:21:21+01:00",
+          "tree_id": "1c7c4e570bccc696b7d06ed3f478e36753871387",
+          "url": "https://github.com/pulseengine/rivet/commit/e238de984f0a687fcfd8504494ef7e53917aef29"
+        },
+        "date": 1793237672392,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86802,
+            "range": "± 562",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 885699,
+            "range": "± 18093",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14824354,
+            "range": "± 1000098",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2180,
+            "range": "± 213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 26091,
+            "range": "± 1044",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 404567,
+            "range": "± 8897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 94,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1934474,
+            "range": "± 65171",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 162769,
+            "range": "± 2150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1821670,
+            "range": "± 14707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28232282,
+            "range": "± 2227502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 752823,
+            "range": "± 6607",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17830689,
+            "range": "± 149653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1358139983,
+            "range": "± 12591265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4813,
+            "range": "± 47",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 70186,
+            "range": "± 555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 894459,
+            "range": "± 2510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 57426,
+            "range": "± 877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 678919,
+            "range": "± 11949",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7912216,
+            "range": "± 166714",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1039,
+            "range": "± 8",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15291,
+            "range": "± 60",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 359114,
+            "range": "± 1437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23998,
+            "range": "± 85",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 160177,
+            "range": "± 367",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1439915,
+            "range": "± 11856",
             "unit": "ns/iter"
           }
         ]
