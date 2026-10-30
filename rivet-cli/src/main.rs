@@ -1260,7 +1260,10 @@ enum Command {
         #[arg(value_name = "TARGET")]
         target_pos: Option<String>,
 
-        /// Link type (e.g., satisfies, implements, derives-from)
+        /// Link type (e.g., verifies, satisfies, implements, derives-from).
+        /// Valid types come from the project's loaded schemas — see
+        /// `rivet schema list` or `rivet docs artifact-format` for the
+        /// full set.
         #[arg(short = 't', long = "type")]
         link_type: String,
 
@@ -1280,7 +1283,10 @@ enum Command {
         #[arg(value_name = "TARGET")]
         target_pos: Option<String>,
 
-        /// Link type (e.g., satisfies, implements, derives-from)
+        /// Link type (e.g., verifies, satisfies, implements, derives-from).
+        /// Valid types come from the project's loaded schemas — see
+        /// `rivet schema list` or `rivet docs artifact-format` for the
+        /// full set.
         #[arg(short = 't', long = "type")]
         link_type: String,
 

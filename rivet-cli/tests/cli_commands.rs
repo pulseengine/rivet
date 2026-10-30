@@ -14845,3 +14845,36 @@ fn release_status_default_mode_ignores_recorded_results() {
         );
     }
 }
+
+/// #1146: `rivet link --help` / `rivet unlink --help` must name `verifies`
+/// in the link-type examples (it is the link type most-commonly needed to
+/// record that a test verifies a requirement) and point to the schema-list
+/// and docs commands that enumerate the full set. An agent reading `--help`
+/// alone must be able to find the type without consulting the user guide.
+///
+/// rivet: verifies REQ-007
+#[test]
+fn link_and_unlink_help_name_verifies_and_point_to_schema_discovery() {
+    for subcmd in ["link", "unlink"] {
+        let out = Command::new(rivet_bin())
+            .args([subcmd, "--help"])
+            .env("COLUMNS", "9999") // keep paragraphs unwrapped
+            .output()
+            .unwrap_or_else(|e| panic!("rivet {subcmd} --help: {e}"));
+        assert!(
+            out.status.success(),
+            "rivet {subcmd} --help exited non-zero: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let help = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            help.contains("verifies"),
+            "`rivet {subcmd} --help` must name `verifies` as a link-type example; got:\n{help}"
+        );
+        assert!(
+            help.contains("rivet schema list") || help.contains("rivet docs artifact-format"),
+            "`rivet {subcmd} --help` must point to `rivet schema list` or \
+             `rivet docs artifact-format` for the full set of link types; got:\n{help}"
+        );
+    }
+}
