@@ -27,9 +27,9 @@ fn corpus() -> Vec<PathBuf> {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
             if path.is_dir() {
-                if !(name.starts_with('.') && name != ".github")
-                    && !["target", "node_modules", "corpus"].contains(&name.as_str())
-                {
+                let hidden = name.starts_with('.') && name != ".github";
+                let excluded = ["target", "node_modules", "corpus"].contains(&name.as_str());
+                if !(hidden || excluded) {
                     stack.push(path);
                 }
             } else if name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".md") {
