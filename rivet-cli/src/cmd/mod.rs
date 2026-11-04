@@ -47,4 +47,5 @@
     clippy::exit
 )]
 
+pub(crate) mod coverage;
 pub(crate) mod export;
