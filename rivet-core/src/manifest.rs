@@ -647,6 +647,82 @@ mod tests {
         assert!(validate_manifest(&store, &s).is_empty());
     }
 
+    /// A schema that declares only one of the two manifest types still
+    /// checks that type, and never routes other artifacts into the checks.
+    // rivet: verifies REQ-415
+    #[test]
+    fn partial_schema_still_checks_the_declared_type() {
+        let bad_provides = provides(
+            "PROV-1",
+            &[("kind", "gizmo"), ("entry-id", "x"), ("version", "1")],
+        );
+        let bad_consumes = consumes("CONS-1", Some("{kind: branch, value: main}"));
+
+        let mut only_provides = schema();
+        only_provides.artifact_types.remove(CONSUMES_TYPE);
+        let mut store = Store::default();
+        store.upsert(bad_provides.clone());
+        store.upsert(bad_consumes.clone());
+        let d = validate_manifest(&store, &only_provides);
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert_eq!(d[0].rule, "manifest-kind");
+
+        let mut only_consumes = schema();
+        only_consumes.artifact_types.remove(PROVIDES_TYPE);
+        let d = validate_manifest(&store, &only_consumes);
+        assert_eq!(d.len(), 1, "{d:?}");
+        assert_eq!(d[0].rule, "manifest-pin");
+    }
+
+    /// Artifacts of other types are never checked as manifest entries.
+    // rivet: verifies REQ-415
+    #[test]
+    fn non_manifest_artifacts_are_ignored() {
+        let d = rules_for(vec![minimal_artifact("REQ-1", "requirement")]);
+        assert!(d.is_empty(), "{d:?}");
+    }
+
+    /// Only a *waived* bazel-target needs a waiver.
+    // rivet: verifies REQ-415
+    #[test]
+    fn must_build_bazel_target_needs_no_waiver() {
+        let d = rules_for(vec![provides(
+            "PROV-1",
+            &[
+                ("kind", "bazel-target"),
+                ("entry-id", "//x:y"),
+                ("version", "1"),
+                ("path", "x"),
+                ("mode", "must-build"),
+            ],
+        )]);
+        assert!(d.is_empty(), "{d:?}");
+    }
+
+    /// Only `pin.kind` / `pin.value` are coerced to strings; other pin
+    /// keys keep their YAML type.
+    // rivet: verifies REQ-415
+    #[test]
+    fn export_coerces_only_pin_kind_and_value() {
+        let mut store = Store::default();
+        store.upsert(consumes(
+            "CONS-1",
+            Some("{kind: rev, value: 1234567, depth: 3}"),
+        ));
+        let doc = export(
+            &store,
+            &schema(),
+            &ExportOptions {
+                repo: "pulseengine/rivet".into(),
+                tag: None,
+            },
+        );
+        let pin = &doc["consumes"][0]["pin"];
+        assert_eq!(pin["kind"], "rev");
+        assert_eq!(pin["value"], "1234567");
+        assert_eq!(pin["depth"], 3, "{pin:?}");
+    }
+
     // rivet: verifies REQ-415
     #[test]
     fn export_keeps_every_field_and_flattens_gates() {
