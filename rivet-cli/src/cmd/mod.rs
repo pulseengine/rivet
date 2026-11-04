@@ -49,3 +49,4 @@
 
 pub(crate) mod coverage;
 pub(crate) mod export;
+pub(crate) mod verify;
