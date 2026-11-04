@@ -190,7 +190,7 @@ fn emit_json(model: &FeatureModel, resolved: &ResolvedVariant) -> Result<String,
         .map_err(|e| Error::Schema(format!("json serialization: {e}")))
 }
 
-fn yaml_to_json(v: &rivet_yaml::Value) -> serde_json::Value {
+pub(crate) fn yaml_to_json(v: &rivet_yaml::Value) -> serde_json::Value {
     match v {
         rivet_yaml::Value::Null => serde_json::Value::Null,
         rivet_yaml::Value::Bool(b) => serde_json::Value::Bool(*b),

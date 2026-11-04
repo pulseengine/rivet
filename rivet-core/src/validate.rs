@@ -1497,6 +1497,12 @@ pub fn validate_structural_with_externals_and_variant(
         }
     }
 
+    // #1159: structured checks for the `manifest` schema's `provides` /
+    // `consumes` types (kind enum, kind-specific fields, locator, and the
+    // nested `pin: {kind, value}` mapping). A no-op unless the merged schema
+    // declares those types. Runs here so the direct and salsa paths share it.
+    diagnostics.extend(crate::manifest::validate_manifest(store, schema));
+
     diagnostics
 }
 

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "pulseengine repository manifest, version 1",
+  "description": "The boundary of one repository: what it provides to other repositories, what it consumes from them (with exact pins), and the gates that back each provided deliverable. Emitted by `rivet manifest export --format json` as pulseengine.manifest.json from the artifacts of the embedded `manifest` schema (schemas/manifest.yaml). Entries carry every field declared on their artifact, so entry objects allow additional properties.",
+  "type": "object",
+  "required": ["schema_version", "repo", "release", "provides", "consumes", "gates"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Document format identifier.",
+      "const": "pulseengine.manifest/1"
+    },
+    "repo": {
+      "description": "Repository identity (rivet.yaml project name unless overridden with --repo).",
+      "type": "string",
+      "minLength": 1
+    },
+    "release": {
+      "type": "object",
+      "required": ["tag"],
+      "additionalProperties": false,
+      "properties": {
+        "tag": {
+          "description": "Release tag this manifest describes (--tag), or null.",
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "provides": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifact", "title", "kind", "id", "version"],
+        "properties": {
+          "artifact": { "description": "rivet artifact id of the provides artifact.", "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "kind": {
+            "enum": [
+              "crate",
+              "component",
+              "wit-package",
+              "release-asset",
+              "proof-target",
+              "bazel-target",
+              "required-check",
+              "contract",
+              "tool",
+              "oci"
+            ]
+          },
+          "id": { "description": "Deliverable identifier (the artifact's entry-id field).", "type": "string", "minLength": 1 },
+          "version": { "type": "string", "minLength": 1 },
+          "path": { "description": "Locator: repository-relative path.", "type": "string" },
+          "oci": { "description": "Locator: OCI reference.", "type": "string" },
+          "workspace": { "description": "kind crate.", "enum": ["root", "nested"] },
+          "index": { "description": "kind component.", "type": "string" },
+          "world": { "description": "kind component.", "type": "string" },
+          "asset": { "description": "kind release-asset.", "type": "string" },
+          "backend": { "description": "kind proof-target.", "enum": ["kani", "verus", "rocq", "lean"] },
+          "mode": { "description": "kind bazel-target.", "enum": ["must-build", "waived"] },
+          "waiver": { "description": "kind bazel-target, mode waived: issue link.", "type": "string" },
+          "context": { "description": "kind required-check: status-check context name.", "type": "string" },
+          "contract": { "description": "kind contract.", "enum": ["seam", "wire-binding", "table"] },
+          "required-checks": {
+            "description": "Gate binding: CI check contexts that must pass (also flattened into gates).",
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "consumes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["artifact", "title", "repo", "id", "pin"],
+        "properties": {
+          "artifact": { "description": "rivet artifact id of the consumes artifact.", "type": "string", "minLength": 1 },
+          "title": { "type": "string" },
+          "repo": { "description": "Upstream repository.", "type": "string", "minLength": 1 },
+          "id": { "description": "Upstream deliverable id (its provides[].id).", "type": "string", "minLength": 1 },
+          "pin": {
+            "type": "object",
+            "required": ["kind", "value"],
+            "properties": {
+              "kind": { "enum": ["tag", "rev", "sha256", "path+ref", "oci"] },
+              "value": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "gates": {
+      "description": "Gate bindings of every provides entry, flattened: one record per gated-by link (kind artifact) and per required-checks entry (kind required-check).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["provides", "artifact", "kind", "ref"],
+        "additionalProperties": false,
+        "properties": {
+          "provides": { "description": "id of the gated provides entry.", "type": "string", "minLength": 1 },
+          "artifact": { "description": "rivet artifact id of the gated provides entry.", "type": "string", "minLength": 1 },
+          "kind": { "enum": ["artifact", "required-check"] },
+          "ref": { "description": "Gating artifact id, or check context name.", "type": "string", "minLength": 1 },
+          "type": { "description": "kind artifact: the gating artifact's type (null if it is not in the store).", "type": ["string", "null"] },
+          "status": { "description": "kind artifact: the gating artifact's status, or null.", "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

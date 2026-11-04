@@ -67,6 +67,7 @@ The documentation built into the `rivet` binary, one file per topic. `rivet docs
 - [`schema/research`](schema/research.md) — Research tracking schema (market, patents, tech eval)
 - [`supply-chain`](supply-chain.md) — Supply chain schema (SBOM, build attestation, vulnerability, release)
 - [`schema/vv-coverage`](schema/vv-coverage.md) — V&V coverage schema (repo-status type)
+- [`manifest`](manifest.md) — Repository boundary manifest — provides/consumes schema and rivet manifest export
 - [`schema/ordeal-certificate`](schema/ordeal-certificate.md) — ordeal-certificate schema — machine-re-checkable proof evidence
 
 ## Bridges

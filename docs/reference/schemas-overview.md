@@ -16,6 +16,7 @@ name in `rivet.yaml` and merged in order.
 | dev            | 3     | `dev`            | requirement, design-decision, feature    |
 | research       | 5     | —                | market-analysis, patent, tech-eval, competitor-analysis, academic-ref |
 | supply-chain   | 4     | —                | sbom-component, build-attestation, vulnerability, release-artifact (CRA, SBOM, SLSA) |
+| manifest       | 2     | —                | provides, consumes — repository boundary manifest, exported by `rivet manifest export` (see `rivet docs manifest`) |
 
 ## Safety Schemas
 

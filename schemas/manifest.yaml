@@ -1,0 +1,214 @@
+# Repository manifest schema (rivet#1159).
+#
+# Describes a repository's BOUNDARY: what it ships to other repositories
+# (`provides`) and what it pins from them (`consumes`). `rivet manifest
+# export --format json` turns the artifacts of these two types into a
+# `pulseengine.manifest.json` document conforming to
+# `schemas/pulseengine.manifest.v1.json` (schema_version
+# "pulseengine.manifest/1").
+#
+#   provides  — one deliverable this repo publishes: a crate, a WebAssembly
+#               component, a WIT package, a release asset, a proof target, a
+#               Bazel target, a required CI check, a contract, a tool or an
+#               OCI image. Gate binding: `gated-by` links name the
+#               verification artifacts that back it; `required-checks` names
+#               the CI check contexts that must pass for it.
+#   consumes  — one upstream deliverable this repo depends on, with the
+#               exact pin: {kind: tag|rev|sha256|path+ref|oci, value}.
+#
+# Field naming: the manifest entry's identifier is the `entry-id` field
+# (`id` is reserved for the rivet artifact id); export writes it as `id`.
+#
+# What YAML alone cannot express is enforced by rivet-core's
+# `manifest::validate_manifest` and fails `rivet validate` with an ERROR:
+#   - `kind` outside the enum below                     (manifest-kind)
+#   - a kind-specific field missing, e.g. a `crate`
+#     without `workspace`, or a waived `bazel-target`
+#     without a `waiver` issue link                    (manifest-kind-field)
+#   - a kind-specific enum value outside its set        (manifest-enum)
+#   - no locator (`path` or `oci`) where the kind
+#     needs one                                         (manifest-locator)
+#   - `pin` not a mapping, `pin.kind` missing or
+#     outside the enum, `pin.value` missing or empty    (manifest-pin)
+#   - `entry-id` / `version` / `repo` present but empty (manifest-empty)
+# `required: true` fields below are enforced by the generic
+# `required-field` check (a `provides` without `version`, a `consumes`
+# without `pin`).
+
+schema:
+  name: manifest
+  version: "0.1.0"
+  extends: [common]
+  description: >
+    Repository boundary manifest: `provides` (what this repo ships) and
+    `consumes` (what it pins from other repos). Exported as
+    pulseengine.manifest.json by `rivet manifest export`.
+
+# ──────────────────────────────────────────────────────────────────────────
+# Artifact types
+# ──────────────────────────────────────────────────────────────────────────
+artifact-types:
+
+  - name: provides
+    description: >
+      One deliverable this repository publishes to other repositories.
+      `kind` selects which kind-specific fields apply (see the field
+      descriptions). Gate binding: link the verification artifacts that
+      back the deliverable with `gated-by`, and list the CI check contexts
+      that must pass for it in `required-checks`.
+    fields:
+      - name: kind
+        type: string
+        required: true
+        allowed-values:
+          - crate
+          - component
+          - wit-package
+          - release-asset
+          - proof-target
+          - bazel-target
+          - required-check
+          - contract
+          - tool
+          - oci
+        description: >
+          What is provided. crate (needs `workspace`), component (optional
+          `index`, `world`), wit-package, release-asset (needs `asset`),
+          proof-target (needs `backend`), bazel-target (needs `mode`; a
+          waived target needs `waiver`), required-check (needs `context`),
+          contract (needs `contract`), tool, oci (needs `oci`). Every kind
+          except required-check needs a locator (`path` or `oci`).
+      - name: entry-id
+        type: string
+        required: true
+        description: >
+          The deliverable's identifier as consumers name it — crate name,
+          component / package name, asset name, Bazel label, check name.
+          Exported as the manifest entry's `id`.
+      - name: version
+        type: string
+        required: true
+        description: Version of the deliverable (crate version, WIT package version, contract version).
+      - name: path
+        type: string
+        required: false
+        description: Locator — repository-relative path of the deliverable.
+      - name: oci
+        type: string
+        required: false
+        description: Locator — OCI reference (e.g. ghcr.io/org/name:tag or @sha256:…).
+      - name: workspace
+        type: string
+        required: false
+        allowed-values: [root, nested]
+        description: "kind: crate — whether the crate is the workspace root or a nested member."
+      - name: index
+        type: string
+        required: false
+        description: "kind: component — component index / registry the component is published to."
+      - name: world
+        type: string
+        required: false
+        description: "kind: component — WIT world the component targets."
+      - name: asset
+        type: string
+        required: false
+        description: "kind: release-asset — release asset file name."
+      - name: backend
+        type: string
+        required: false
+        allowed-values: [kani, verus, rocq, lean]
+        description: "kind: proof-target — proof backend."
+      - name: mode
+        type: string
+        required: false
+        allowed-values: [must-build, waived]
+        description: "kind: bazel-target — must-build, or waived (then `waiver` is required)."
+      - name: waiver
+        type: string
+        required: false
+        description: "kind: bazel-target with mode waived — link to the issue that tracks the waiver."
+      - name: context
+        type: string
+        required: false
+        description: "kind: required-check — the CI status-check context name."
+      - name: contract
+        type: string
+        required: false
+        allowed-values: [seam, wire-binding, table]
+        description: "kind: contract — contract shape (its version is `version`)."
+      - name: required-checks
+        type: list<string>
+        required: false
+        description: >
+          Gate binding — CI status-check context names that must pass for
+          this deliverable. Exported into the manifest's `gates[]`.
+    link-fields:
+      - name: gated-by
+        link-type: gated-by
+        cardinality: zero-or-many
+        description: >
+          Gate binding — verification artifacts (tests, proofs, reviews)
+          that back this deliverable. Exported into the manifest's
+          `gates[]`.
+    example: |
+      - id: PROV-001
+        type: provides
+        title: rivet-core crate
+        status: approved
+        fields:
+          kind: crate
+          entry-id: rivet-core
+          version: 0.1.0
+          path: rivet-core
+          workspace: nested
+          required-checks: [ci / test]
+        links:
+          - type: gated-by
+            target: REQ-001
+
+  - name: consumes
+    description: >
+      One upstream deliverable this repository depends on, pinned
+      exactly. `pin.kind` is one of tag, rev, sha256, path+ref, oci;
+      `pin.value` is the pinned value and must not be empty.
+    fields:
+      - name: repo
+        type: string
+        required: true
+        description: Upstream repository (e.g. pulseengine/spar).
+      - name: entry-id
+        type: string
+        required: true
+        description: >
+          The upstream deliverable's identifier, matching the upstream
+          manifest's `provides[].id`. Exported as the entry's `id`.
+      - name: pin
+        type: mapping
+        required: true
+        description: >
+          The exact pin, as a mapping with keys `kind` (tag | rev | sha256 |
+          path+ref | oci) and `value` (non-empty). Checked by the
+          `manifest-pin` rule.
+    link-fields: []
+    example: |
+      - id: CONS-001
+        type: consumes
+        title: spar analysis crate
+        status: approved
+        fields:
+          repo: pulseengine/spar
+          entry-id: spar-analysis
+          pin: {kind: tag, value: v0.1.0}
+
+# ──────────────────────────────────────────────────────────────────────────
+# Link types
+# ──────────────────────────────────────────────────────────────────────────
+link-types:
+  - name: gated-by
+    inverse: gates
+    description: >
+      A provided deliverable is backed by the target verification artifact
+      (gate binding). The deliverable should not ship unless the target
+      holds.
+    source-types: [provides]

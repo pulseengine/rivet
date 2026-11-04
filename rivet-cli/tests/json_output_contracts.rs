@@ -66,6 +66,7 @@ const ENFORCED: &[&str] = &[
     "enum",
     "minimum",
     "maximum",
+    "minLength",
 ];
 
 fn type_matches(name: &str, v: &Value) -> bool {
@@ -123,6 +124,11 @@ fn check(schema: &Value, v: &Value, path: &str, errors: &mut Vec<String>) {
             if n > max {
                 errors.push(format!("{path}: {n} is above the maximum {max}"));
             }
+        }
+    }
+    if let (Some(min), Some(s)) = (obj.get("minLength").and_then(Value::as_u64), v.as_str()) {
+        if (s.chars().count() as u64) < min {
+            errors.push(format!("{path}: {s:?} is shorter than minLength {min}"));
         }
     }
     if let Some(map) = v.as_object() {
@@ -266,4 +272,94 @@ fn the_checker_reports_each_kind_of_violation() {
         "{joined}"
     );
     assert!(joined.contains("/command: expected const"), "{joined}");
+}
+
+// ── pulseengine.manifest/1 (#1159) ──────────────────────────────────────
+
+fn manifest_schema() -> Value {
+    let p = project_root()
+        .join("schemas")
+        .join("pulseengine.manifest.v1.json");
+    serde_json::from_str(&std::fs::read_to_string(&p).expect("read manifest schema"))
+        .expect("manifest schema JSON")
+}
+
+/// A project with the `manifest` schema and the shared valid fixture.
+fn manifest_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    assert!(
+        Command::new(rivet_bin())
+            .args([
+                "init",
+                "--preset",
+                "dev",
+                "--schema",
+                "common,dev,manifest",
+                "--dir"
+            ])
+            .arg(tmp.path())
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        tmp.path().join("artifacts").join("manifest.yaml"),
+        include_str!("fixtures/manifest/valid.yaml"),
+    )
+    .expect("write fixture");
+    tmp
+}
+
+/// `rivet manifest export --format json` on a fixture project emits a
+/// document that validates against schemas/pulseengine.manifest.v1.json.
+// rivet: verifies REQ-415
+#[test]
+fn manifest_export_conforms_to_its_json_schema() {
+    let tmp = manifest_project();
+    let doc = run_json(tmp.path(), &["manifest", "export", "--tag", "v0.1.0"]);
+    assert!(
+        !doc["provides"].as_array().unwrap().is_empty()
+            && !doc["consumes"].as_array().unwrap().is_empty()
+            && !doc["gates"].as_array().unwrap().is_empty(),
+        "the fixture must populate every array; got {doc}"
+    );
+    let mut errors = Vec::new();
+    check(&manifest_schema(), &doc, "", &mut errors);
+    assert!(
+        errors.is_empty(),
+        "manifest export violates schemas/pulseengine.manifest.v1.json:\n  {}",
+        errors.join("\n  ")
+    );
+    // The null-tag form conforms too.
+    let doc = run_json(tmp.path(), &["manifest", "export"]);
+    let mut errors = Vec::new();
+    check(&manifest_schema(), &doc, "", &mut errors);
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+/// The manifest JSON Schema is not vacuous: an unknown kind, an empty pin
+/// value, a wrong schema_version and a missing top-level field each fail.
+// rivet: verifies REQ-415
+#[test]
+fn manifest_json_schema_rejects_bad_documents() {
+    let tmp = manifest_project();
+    let mut doc = run_json(tmp.path(), &["manifest", "export"]);
+    doc["provides"][0]["kind"] = Value::String("gizmo".into());
+    doc["consumes"][0]["pin"]["value"] = Value::String(String::new());
+    doc["schema_version"] = Value::String("pulseengine.manifest/2".into());
+    doc.as_object_mut().unwrap().remove("gates");
+    let mut errors = Vec::new();
+    check(&manifest_schema(), &doc, "", &mut errors);
+    let joined = errors.join("\n");
+    assert!(joined.contains("/provides[0]/kind:"), "{joined}");
+    assert!(joined.contains("/consumes[0]/pin/value:"), "{joined}");
+    assert!(
+        joined.contains("/schema_version: expected const"),
+        "{joined}"
+    );
+    assert!(
+        joined.contains("missing required field \"gates\""),
+        "{joined}"
+    );
 }
