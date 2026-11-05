@@ -725,6 +725,33 @@ pub fn validate_structural_with_externals_and_variant(
         // applies — zero allocations on the common path.
         let effective_fields = artifact.fields_for_variant(variant);
 
+        // #838 / REQ-308: a clause discharge recorded by `rivet verify` names
+        // clauses by number, and prose clauses renumber on edit. When the
+        // clauses no longer match the fingerprint taken at record time, the
+        // recorded judgement is about text that is gone.
+        if let Some(recorded) = effective_fields
+            .get(crate::discharge::FINGERPRINT_FIELD)
+            .and_then(|v| v.as_str())
+        {
+            let description = artifact.description.as_deref().unwrap_or("");
+            if crate::discharge::is_stale(description, recorded) {
+                diagnostics.push(Diagnostic {
+                    source_file: None,
+                    line: None,
+                    column: None,
+                    severity: Severity::Warning,
+                    artifact_id: Some(artifact.id.clone()),
+                    rule: "discharge-stale".to_string(),
+                    message: format!(
+                        "the clauses of {}'s description changed after `rivet verify` \
+                         recorded which ones the evidence discharges; re-run `rivet verify \
+                         {} --clauses-discharged ...` to record the judgement again",
+                        artifact.id, artifact.id
+                    ),
+                });
+            }
+        }
+
         // 2. Check required fields
         for field in &type_def.fields {
             if field.required && !effective_fields.contains_key(&field.name) {
@@ -2469,6 +2496,43 @@ then:
         let mut a = minimal_artifact(id, "test");
         a.fields.insert(field_name.to_string(), value);
         a
+    }
+
+    /// #838 / REQ-308: a recorded clause discharge whose clauses were edited
+    /// afterwards is reported; one that still matches is not.
+    // rivet: verifies REQ-308
+    #[test]
+    fn discharge_stale_fires_only_when_the_clauses_changed() {
+        let schema = make_schema_with_allowed_field("unused", "string", vec!["x"]);
+        let clauses = "1. stamps are monotonic\n2. stamps survive a restart";
+        let recorded = crate::discharge::fingerprint(clauses).expect("two clauses");
+        let with = |id: &str, description: &str| {
+            let mut a = make_artifact_with_yaml_field(
+                id,
+                crate::discharge::FINGERPRINT_FIELD,
+                rivet_yaml::Value::String(recorded.clone()),
+            );
+            a.description = Some(description.to_string());
+            a
+        };
+        let mut store = Store::new();
+        store.insert(with("A-FRESH", clauses)).unwrap();
+        store
+            .insert(with(
+                "A-EDITED",
+                "1. stamps are monotonic\n2. stamps are UTC\n3. stamps survive a restart",
+            ))
+            .unwrap();
+        let mut plain = minimal_artifact("A-NONE", "test");
+        plain.description = Some(clauses.to_string());
+        store.insert(plain).unwrap();
+        let graph = LinkGraph::build(&store, &schema);
+        let stale: Vec<_> = validate_structural(&store, &schema, &graph)
+            .into_iter()
+            .filter(|d| d.rule == "discharge-stale")
+            .map(|d| (d.artifact_id.unwrap_or_default(), d.severity))
+            .collect();
+        assert_eq!(stale, [("A-EDITED".to_string(), Severity::Warning)]);
     }
 
     // rivet: verifies REQ-004

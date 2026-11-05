@@ -49,6 +49,7 @@ pub mod coverage;
 pub mod coverage_evidence;
 pub mod db;
 pub mod diff;
+pub mod discharge;
 pub mod doc_check;
 pub mod document;
 pub mod embed;

@@ -14878,3 +14878,429 @@ fn link_and_unlink_help_name_verifies_and_point_to_schema_discovery() {
         );
     }
 }
+
+// ── #838 / REQ-308: `rivet verify` clause discharge ─────────────────────────
+
+/// A dev project whose REQ-1 states three numbered clauses and REQ-2 none,
+/// both implemented with marker evidence. Returns the temp dir and a runner.
+fn clause_project(extra: &str) -> (tempfile::TempDir, impl Fn(&[&str]) -> std::process::Output) {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path().to_path_buf();
+    assert!(
+        Command::new(rivet_bin())
+            .args(["init", "--preset", "dev", "--dir", dir.to_str().unwrap()])
+            .current_dir(&dir)
+            .output()
+            .expect("init")
+            .status
+            .success()
+    );
+    std::fs::write(
+        dir.join("artifacts/reqs.yaml"),
+        format!(
+            "artifacts:\n  - id: REQ-1\n    type: requirement\n    title: Three\n    status: implemented\n    description: |-\n      The gate must:\n      1. refuse without evidence\n      2. record the discharge\n      3. flag renumbering\n  - id: REQ-2\n    type: requirement\n    title: Plain\n    status: implemented\n    description: No list here.\n{extra}"
+        ),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("tests")).unwrap();
+    std::fs::write(
+        dir.join("tests/t.rs"),
+        "// rivet: verifies REQ-1\n// rivet: verifies REQ-2\n// rivet: verifies REQ-3\nfn t() {}\n",
+    )
+    .unwrap();
+    // `current_dir` keeps the embedded schemas in use: with no `schemas/` in
+    // the project, rivet otherwise falls back to `./schemas` of the caller.
+    let run = move |args: &[&str]| {
+        Command::new(rivet_bin())
+            .args(["--project", dir.to_str().unwrap()])
+            .args(args)
+            .current_dir(&dir)
+            .output()
+            .expect("run rivet")
+    };
+    (tmp, run)
+}
+
+fn stderr_of(o: &std::process::Output) -> String {
+    String::from_utf8_lossy(&o.stderr).into_owned()
+}
+
+fn stdout_of(o: &std::process::Output) -> String {
+    String::from_utf8_lossy(&o.stdout).into_owned()
+}
+
+/// The fields block `rivet verify` wrote for REQ-1, line by line.
+fn req1_fields(tmp: &tempfile::TempDir) -> Vec<String> {
+    let yaml = std::fs::read_to_string(tmp.path().join("artifacts/reqs.yaml")).unwrap();
+    let block = &yaml[..yaml.find("  - id: REQ-2").unwrap()];
+    block
+        .lines()
+        .skip_while(|l| *l != "    fields:")
+        .skip(1)
+        .map(str::to_string)
+        .collect()
+}
+
+/// A clause list makes `rivet verify` refuse until the discharge is
+/// declared; a partial one needs a note; what is recorded is a real list, a
+/// note and a fingerprint, and re-running it is idempotent.
+// rivet: verifies REQ-308
+#[test]
+fn verify_clause_discharge_refuses_then_records() {
+    let (tmp, run) = clause_project("");
+
+    let o = run(&["verify", "REQ-1"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr_of(&o).contains(
+            "refusing to verify 'REQ-1': the description states 3 numbered clause(s); \
+             pass `--clauses-discharged 1-3` to advance"
+        ),
+        "{}",
+        stderr_of(&o)
+    );
+
+    let o = run(&["verify", "REQ-1", "--clauses-discharged", "1,2"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr_of(&o).contains("clause(s) 3 are not discharged"),
+        "{}",
+        stderr_of(&o)
+    );
+
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1,2",
+        "--note",
+        "  ",
+    ]);
+    assert!(!o.status.success(), "a blank note is no note");
+    assert!(stderr_of(&o).contains("clause(s) 3 are not discharged"));
+
+    let o = run(&["verify", "REQ-1", "--clauses-discharged", "4"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr_of(&o).contains("clause 4 does not exist: the description states clauses 1-3"),
+        "{}",
+        stderr_of(&o)
+    );
+
+    let o = run(&["verify", "REQ-1", "--clauses-discharged", "x"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr_of(&o).contains("invalid --clauses-discharged"),
+        "{}",
+        stderr_of(&o)
+    );
+    assert!(req1_fields(&tmp).is_empty(), "no refusal may write");
+
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "2,1",
+        "--note",
+        "3 pending #99",
+    ]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    assert!(
+        stdout_of(&o).contains("clauses: 2 of 3 discharged; pending [3]: 3 pending #99"),
+        "{}",
+        stdout_of(&o)
+    );
+    let fields = req1_fields(&tmp);
+    assert_eq!(fields[0], "      discharged-clauses: [1, 2]", "{fields:?}");
+    assert_eq!(
+        fields[1], "      discharge-note: \"3 pending #99\"",
+        "{fields:?}"
+    );
+    assert!(
+        fields[2].starts_with("      discharge-fingerprint: sha256:") && fields[2].len() == 100,
+        "{fields:?}"
+    );
+    let yaml = std::fs::read_to_string(tmp.path().join("artifacts/reqs.yaml")).unwrap();
+    assert!(
+        yaml.contains("    title: Three\n    status: verified\n"),
+        "{yaml}"
+    );
+
+    // The same command again changes nothing on disk.
+    let before = std::fs::read_to_string(tmp.path().join("artifacts/reqs.yaml")).unwrap();
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1-2",
+        "--note",
+        "3 pending #99",
+    ]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    let after = std::fs::read_to_string(tmp.path().join("artifacts/reqs.yaml")).unwrap();
+    assert_eq!(before, after);
+
+    // No flags on a verified artifact is today's no-op.
+    let o = run(&["verify", "REQ-1"]);
+    assert!(o.status.success());
+    assert!(stdout_of(&o).contains("REQ-1 is already verified — nothing to do."));
+
+    // The recorded discharge validates: no unknown-field, no staleness.
+    let v = run(&["validate", "--format", "json"]);
+    let vj = stdout_of(&v);
+    assert!(!vj.contains("discharge-stale"), "{vj}");
+    assert!(!vj.contains("is not defined in schema"), "{vj}");
+}
+
+/// Once the pending clause lands, the discharge is recorded again on the
+/// verified artifact; a full discharge must replace the old note rather than
+/// leave it describing clause 3 as pending.
+// rivet: verifies REQ-308
+#[test]
+fn verify_clause_discharge_rerecords_on_a_verified_artifact() {
+    let (tmp, run) = clause_project("");
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1-2",
+        "--note",
+        "3 pending",
+    ]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1-3",
+        "--dry-run",
+    ]);
+    assert!(!o.status.success(), "the refusal also holds in a dry run");
+    assert!(
+        stderr_of(&o).contains(
+            "it carries a discharge-note from an earlier partial discharge (\"3 pending\")"
+        ),
+        "{}",
+        stderr_of(&o)
+    );
+
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1-3",
+        "--note",
+        "3 landed",
+        "--dry-run",
+    ]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    assert!(
+        stdout_of(&o).contains("clauses: all 3 discharged"),
+        "{}",
+        stdout_of(&o)
+    );
+    assert!(
+        stdout_of(&o).contains("dry run: REQ-1 would have its discharge recorded again"),
+        "{}",
+        stdout_of(&o)
+    );
+    assert_eq!(req1_fields(&tmp)[0], "      discharged-clauses: [1, 2]");
+
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1-3",
+        "--note",
+        "3 landed",
+    ]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    let fields = req1_fields(&tmp);
+    assert_eq!(fields[0], "      discharged-clauses: [1, 2, 3]");
+    assert_eq!(fields[1], "      discharge-note: 3 landed");
+}
+
+/// A full discharge on an artifact with no earlier note writes no note.
+// rivet: verifies REQ-308
+#[test]
+fn verify_full_discharge_writes_no_note() {
+    let (tmp, run) = clause_project("");
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1-3",
+        "--dry-run",
+    ]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    assert!(stdout_of(&o).contains("would be advanced implemented -> verified"));
+    let o = run(&["verify", "REQ-1", "--clauses-discharged", "1-3"]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    let fields = req1_fields(&tmp);
+    assert_eq!(fields.len(), 2, "{fields:?}");
+    assert_eq!(fields[0], "      discharged-clauses: [1, 2, 3]");
+    assert!(fields[1].starts_with("      discharge-fingerprint: sha256:"));
+}
+
+/// A description with no clause list keeps today's flow, and a flag on it
+/// is refused rather than recorded against nothing.
+// rivet: verifies REQ-308
+#[test]
+fn verify_without_a_clause_list_is_unchanged() {
+    let (tmp, run) = clause_project("");
+    let o = run(&["verify", "REQ-2", "--clauses-discharged", "1"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr_of(&o).contains("the description states no numbered clause list"),
+        "{}",
+        stderr_of(&o)
+    );
+    let o = run(&["verify", "REQ-2", "--note", "   "]);
+    assert!(!o.status.success(), "a blank --note is still a flag");
+    assert!(stderr_of(&o).contains("the description states no numbered clause list"));
+    let o = run(&["verify", "REQ-2"]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    let yaml = std::fs::read_to_string(tmp.path().join("artifacts/reqs.yaml")).unwrap();
+    let req2 = &yaml[yaml.find("  - id: REQ-2").unwrap()..];
+    assert!(req2.contains("status: verified"), "{req2}");
+    assert!(!req2.contains("discharge"), "{req2}");
+}
+
+/// `--explain-clauses` reports what detection sees, for any status, writes
+/// nothing, and is allowed under `--qualification-mode`.
+// rivet: verifies REQ-308
+#[test]
+fn verify_explain_clauses_reports_and_writes_nothing() {
+    let extra = "  - id: REQ-3\n    type: requirement\n    title: Override\n    status: draft\n    description: |-\n      Two clauses, stated in prose.\n      # rivet: clauses = 2\n  - id: REQ-4\n    type: requirement\n    title: Ambiguous\n    status: implemented\n    description: |-\n      1. first\n      3. third\n";
+    let (tmp, run) = clause_project(extra);
+    let before = std::fs::read_to_string(tmp.path().join("artifacts/reqs.yaml")).unwrap();
+
+    let o = run(&[
+        "--qualification-mode",
+        "verify",
+        "REQ-1",
+        "--explain-clauses",
+    ]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    assert_eq!(
+        stdout_of(&o),
+        "REQ-1: 3 clause(s):\n  1. refuse without evidence\n  2. record the discharge\n  3. flag renumbering\n"
+    );
+    let o = run(&["verify", "REQ-2", "--explain-clauses"]);
+    assert!(
+        stdout_of(&o).starts_with("REQ-2: no numbered clause list;"),
+        "{}",
+        stdout_of(&o)
+    );
+    let o = run(&["verify", "REQ-3", "--explain-clauses"]);
+    assert!(
+        o.status.success(),
+        "a draft can be explained: {}",
+        stderr_of(&o)
+    );
+    assert_eq!(
+        stdout_of(&o),
+        "REQ-3: 2 clause(s), set by `# rivet: clauses = 2`.\n"
+    );
+    let o = run(&["verify", "REQ-4", "--explain-clauses"]);
+    assert!(
+        stdout_of(&o).starts_with("REQ-4: ambiguous clause numbering ("),
+        "{}",
+        stdout_of(&o)
+    );
+
+    let o = run(&["verify", "REQ-4", "--clauses-discharged", "1"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr_of(&o).contains("cannot tell how many clauses"),
+        "{}",
+        stderr_of(&o)
+    );
+
+    let o = run(&[
+        "--qualification-mode",
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1-3",
+    ]);
+    assert!(!o.status.success(), "a recording verify is still a write");
+    assert!(
+        stderr_of(&o).contains("--qualification-mode: refusing"),
+        "{}",
+        stderr_of(&o)
+    );
+
+    let o = run(&["verify", "REQ-1", "--explain-clauses", "--dry-run"]);
+    assert_eq!(o.status.code(), Some(2), "explain conflicts with --dry-run");
+
+    let after = std::fs::read_to_string(tmp.path().join("artifacts/reqs.yaml")).unwrap();
+    assert_eq!(before, after);
+}
+
+/// Editing a clause after the discharge is recorded makes `rivet validate`
+/// report `discharge-stale` on that artifact; recording it again clears it.
+// rivet: verifies REQ-308
+#[test]
+fn verify_discharge_goes_stale_when_a_clause_is_edited() {
+    let (tmp, run) = clause_project("");
+    let stale = |run: &dyn Fn(&[&str]) -> std::process::Output| {
+        let v = run(&["validate", "--format", "json"]);
+        let j: serde_json::Value = serde_json::from_slice(&v.stdout).expect("validate json");
+        j["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|d| d["rule"] == "discharge-stale")
+            .map(|d| d["artifact_id"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>()
+    };
+    let o = run(&["verify", "REQ-1", "--clauses-discharged", "1-3"]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    assert_eq!(stale(&run), Vec::<String>::new());
+
+    let path = tmp.path().join("artifacts/reqs.yaml");
+    let yaml = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(
+        &path,
+        yaml.replace("2. record the discharge", "2. record the discharge durably"),
+    )
+    .unwrap();
+    assert_eq!(stale(&run), vec!["REQ-1".to_string()]);
+
+    let o = run(&["verify", "REQ-1", "--clauses-discharged", "1-3"]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    assert_eq!(stale(&run), Vec::<String>::new());
+}
+
+/// A backtick line inside a clause could hide the clauses after it from a
+/// fence parser, so a description mixing fences and numbered lines is refused
+/// as ambiguous until its count is stated; discharging clause 1 never passes
+/// as full.
+// rivet: verifies REQ-308
+#[test]
+fn verify_refuses_a_fence_beside_numbered_clauses_until_counted() {
+    let extra = "  - id: REQ-3\n    type: requirement\n    title: Fence\n    status: implemented\n    description: |-\n      The tool shall:\n      1. refuse the force flag:\n         ```--force``` is never accepted\n      2. log every refusal\n      3. exit non-zero\n";
+    let (tmp, run) = clause_project(extra);
+    let o = run(&["verify", "REQ-3", "--clauses-discharged", "1"]);
+    assert!(!o.status.success(), "{}", stdout_of(&o));
+    assert!(
+        stderr_of(&o).contains("the description has a code fence and a line opening with a number"),
+        "{}",
+        stderr_of(&o)
+    );
+    let path = tmp.path().join("artifacts/reqs.yaml");
+    let yaml = std::fs::read_to_string(&path).unwrap();
+    assert!(!yaml[yaml.find("  - id: REQ-3").unwrap()..].contains("status: verified"));
+
+    // Stating the count settles it, and clause 1 alone is then partial.
+    std::fs::write(&path, format!("{yaml}      # rivet: clauses = 3\n")).unwrap();
+    let o = run(&["verify", "REQ-3", "--clauses-discharged", "1"]);
+    assert!(!o.status.success());
+    assert!(
+        stderr_of(&o).contains("clause(s) 2,3 are not discharged"),
+        "{}",
+        stderr_of(&o)
+    );
+}

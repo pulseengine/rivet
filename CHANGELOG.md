@@ -35,6 +35,19 @@
   a project whose CI fails on warnings does not turn red on upgrade. `dev`
   gains the optional `verification-criteria` field. New topic: `rivet docs
   verification-criteria`. This repository's own store reports 288 of 405.
+- **Clause discharge for `rivet verify`** (REQ-308, #838). When a description
+  states a numbered clause list (lines `1.`, `2.`, ... in order, or a final `#
+  rivet: clauses = N` line), `rivet verify` now refuses to advance until
+  `--clauses-discharged` names the clauses the evidence discharges, and a
+  partial discharge also needs `--note`. The judgement is written to the
+  artifact as `discharged-clauses`, `discharge-note` and a
+  `discharge-fingerprint` of the clause lines (new `common` 0.4.0 base
+  fields), and `rivet validate` warns `discharge-stale` once the clauses are
+  edited. Numbering that detection cannot count with certainty, including a
+  code fence beside numbered lines, is refused, not guessed. A description
+  with no clause list verifies as before; `--explain-clauses` shows what
+  detection sees. 6 of this repository's 184 implemented artifacts state a
+  clause list, and none is ambiguous. New topic: `rivet docs verify-clauses`.
 
 ### Fixed
 - **`rivet lock` pins what `rivet sync` fetches** (REQ-410, #1138). With both

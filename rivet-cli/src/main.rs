@@ -618,6 +618,24 @@ enum Command {
         /// real run, so a traceability sweep can preview its effect.
         #[arg(long)]
         dry_run: bool,
+
+        /// The numbered clauses of the description the evidence discharges,
+        /// as numbers and ranges (`1,2,4`, `1-3,5`). Required when the
+        /// description states a numbered clause list; recorded on the
+        /// artifact with a fingerprint of the clauses (#838). See
+        /// `rivet docs verify-clauses`.
+        #[arg(long = "clauses-discharged", value_name = "LIST")]
+        clauses_discharged: Option<String>,
+
+        /// Why the clauses not named by `--clauses-discharged` are pending.
+        /// Required for a partial discharge, and recorded with it.
+        #[arg(long, value_name = "TEXT")]
+        note: Option<String>,
+
+        /// Print the clauses detection sees in the description and exit,
+        /// without checking evidence or writing anything.
+        #[arg(long, conflicts_with_all = ["clauses_discharged", "note", "dry_run"])]
+        explain_clauses: bool,
     },
 
     /// Show traceability coverage report
@@ -2584,6 +2602,11 @@ fn qualification_refusal(cmd: &Command) -> Option<&'static str> {
         Command::Export { .. } => {
             Some("`export` produces an evidence document the tool-confidence claim does not cover")
         }
+        // `--explain-clauses` reads the description and writes nothing.
+        Command::Verify {
+            explain_clauses: true,
+            ..
+        } => None,
         Command::Sync { .. } => Some("`sync` is Phase 2 federation and declared not qualified"),
         Command::Init { .. }
         | Command::Lock { .. }
@@ -2842,7 +2865,24 @@ fn run(cli: Cli) -> Result<bool> {
                 cmd_stats(&cli, filter.as_deref(), format, baseline.as_deref())
             }
         }
-        Command::Verify { id, scan, dry_run } => cmd::verify::cmd_verify(&cli, id, scan, *dry_run),
+        Command::Verify {
+            id,
+            scan,
+            dry_run,
+            clauses_discharged,
+            note,
+            explain_clauses,
+        } => cmd::verify::cmd_verify(
+            &cli,
+            id,
+            scan,
+            *dry_run,
+            &cmd::verify::ClauseArgs {
+                discharged: clauses_discharged.as_deref(),
+                note: note.as_deref(),
+                explain: *explain_clauses,
+            },
+        ),
         Command::Coverage {
             filter,
             format,

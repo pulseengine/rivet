@@ -195,6 +195,12 @@ const TOPICS: &[DocTopic] = &[
         content: VERIFICATION_CRITERIA_DOC,
     },
     DocTopic {
+        slug: "verify-clauses",
+        title: "Clause discharge — what `rivet verify` was told the evidence covers",
+        category: "Reference",
+        content: VERIFY_CLAUSES_DOC,
+    },
+    DocTopic {
         slug: "recorded-results",
         title: "Recorded test results as evidence (results/*.yaml, HITL, silicon)",
         category: "Reference",
@@ -2844,6 +2850,104 @@ and a rule whose condition no allowed value can satisfy (so it can never
 fire) each produce a **warning** — the schema is still loaded.
 
 Related: [[REQ-023]], [[DD-018]], [[FEAT-040]]
+"#;
+
+const VERIFY_CLAUSES_DOC: &str = r#"# Clause discharge (`rivet verify --clauses-discharged`)
+
+A requirement is often a numbered list of clauses, while a `verifies` link or
+a `// rivet: verifies <ID>` marker attaches to the whole requirement. Evidence
+for one clause then reads as evidence for all of them. When the description
+states a numbered clause list, `rivet verify` makes you say which clauses the
+evidence discharges, and records that on the artifact (#838).
+
+## When it applies
+
+Detection reads the description:
+
+- Lines that open with `1.`, `2.`, ... (or `1)`, `2)`, ...) followed by a space
+  form the clause list. They must run exactly 1 to N, in order.
+- A last line `# rivet: clauses = N` sets the count directly; `N = 0` means
+  "no clauses". It must be the description's last non-blank line, and there
+  may be only one. It can raise the count, never lower it: N below what the
+  numbering shows (the lines opening with a number, fenced or not, their
+  highest label, or an inline `1. ... 2. ... 3.` run) is ambiguous, so a count
+  left stale after a clause was added cannot undercount.
+- Anything detection cannot count with certainty is **ambiguous**, and
+  `rivet verify` refuses rather than guess a lower count: a gap, a repeat, a
+  second list, a nested `1.1.` list, numbering inside a sentence that runs
+  past the list (`1. ... 2. ...`, which is what a folded `>` description makes
+  of a list, or a clause line carrying more clauses),
+  or a code fence (a line of three or more backticks or tildes) anywhere in a
+  description that also has a line opening with a number. Detection does not
+  read inside fences, because getting their scope wrong hides clauses. End
+  the description with `# rivet: clauses = N` to settle it.
+
+A description with no clause list keeps the plain flow: evidence alone
+advances it.
+
+```
+rivet verify <ID> --explain-clauses     # what detection sees; writes nothing
+```
+
+## Recording a discharge
+
+```
+rivet verify <ID> --clauses-discharged 1-3
+rivet verify <ID> --clauses-discharged 1,2 --note "3 pending: <issue>"
+```
+
+`--clauses-discharged` takes numbers and inclusive ranges. `rivet verify`
+refuses:
+
+| Case | Why |
+|------|-----|
+| clauses stated, no `--clauses-discharged` | the judgement must be stated |
+| some clauses not named, no `--note` | a partial discharge needs a reason |
+| a clause number that does not exist | it discharges nothing |
+| the flags on a description with no clause list | nothing to discharge |
+| a full discharge over an earlier note, no `--note` | the old note would still call clauses pending |
+
+The evidence check still runs: the flags never stand in for a
+`verifies` link or marker.
+
+The discharge is written into the artifact's `fields:` with the status:
+
+```yaml
+fields:
+  discharged-clauses: [1, 2]
+  discharge-note: "3 pending: <issue>"
+  discharge-fingerprint: sha256:…
+```
+
+`discharge-fingerprint` is the sha256 of the clause opening lines. Under the
+`# rivet: clauses = N` override rivet does not know which lines are the
+clauses, so it fingerprints the whole description instead, and any edit to it
+makes the record stale. The fingerprint is what makes clause numbers safe to
+record.
+
+## When the clauses change
+
+Prose clauses renumber on any edit. When the clauses no longer match the
+fingerprint, `rivet validate` reports **`discharge-stale`** (warning): the
+recorded judgement is about text that is gone. Re-run `rivet verify` with the
+flags to record it again. A verified artifact can be recorded again at any
+time, for instance when a pending clause lands; the evidence is checked again
+each time.
+
+If an edit removes the clause list altogether, the record stays stale and
+`rivet verify` has nothing to record against: delete the three `discharge-*`
+fields from the artifact, or restore the list.
+
+## Not covered
+
+Only lines that OPEN with a number are read. A list behind another marker
+(`- 1) ...`, a `> 1. ...` blockquote) or numbered as `(1)` is not detected, and
+such a description verifies as one with no clause list; end it with
+`# rivet: clauses = N` to state its clauses.
+
+Per-clause markers (`verifies <ID> clause 3`) and a blocking
+`partially-verifies` are out of scope; the discharge is a recorded human
+judgement, not a proof that each clause is tested.
 "#;
 
 const VERIFICATION_CRITERIA_DOC: &str = r#"# Verification criteria — wishes vs gaps

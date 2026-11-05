@@ -384,9 +384,14 @@ pub fn typed_field_scalar(
     key: &str,
     value: &str,
 ) -> Result<Option<String>, Error> {
+    // The type's own declaration wins; a base field (declared in
+    // `common.yaml`, valid on every type, like the clause-discharge fields of
+    // #838) is typed the same way, or `discharged-clauses=[1, 2]` would be
+    // written as the quoted string `"[1, 2]"`.
     let Some(field) = schema
         .artifact_type(artifact_type)
         .and_then(|t| t.fields.iter().find(|f| f.name == key))
+        .or_else(|| schema.base_fields.iter().find(|f| f.name == key))
     else {
         return Ok(None);
     };
@@ -1847,6 +1852,32 @@ mod tests {
         assert!(err("ratio", "NaN").contains("not a finite number"));
         assert!(err("ratio", "inf").contains("not a finite number"));
         assert!(err("ratio", "abc").contains("not a finite number"));
+    }
+
+    // rivet: verifies REQ-385
+    // #838: a base field is typed like a type's own field, and the type's own
+    // declaration of the same name still wins.
+    #[test]
+    fn typed_field_scalar_falls_back_to_base_fields() {
+        let mut schema =
+            crate::test_helpers::schema_with_fields("requirement", &[("shared", "string")]);
+        let base = |name: &str, ty: &str| crate::schema::FieldDef {
+            name: name.into(),
+            field_type: ty.into(),
+            ..Default::default()
+        };
+        schema.base_fields = vec![base("clauses", "list<integer>"), base("shared", "integer")];
+        let ok = |k: &str, v: &str| typed_field_scalar(&schema, "requirement", k, v).unwrap();
+        assert_eq!(ok("clauses", "[1, 2]"), Some("[1, 2]".into()));
+        assert_eq!(
+            ok("shared", "5"),
+            None,
+            "the type's string declaration wins over the base integer one"
+        );
+        let e = typed_field_scalar(&schema, "requirement", "clauses", "1, 2")
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("not a YAML sequence"), "{e}");
     }
 
     // rivet: verifies REQ-385
