@@ -513,6 +513,16 @@ pub(crate) fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]
     };
     coverage.uncovered = rc.still_uncovered.clone();
 
+    // #1168: the clause discharge `rivet verify` recorded (#838), next to the
+    // marker count, so `1 test marker` no longer reads as a full discharge.
+    let discharge_of = |id: &str| {
+        store
+            .get(id)
+            .and_then(rivet_core::discharge::discharge_state)
+    };
+    let discharge_cell =
+        |id: &str| discharge_of(id).map_or_else(|| "\u{2014}".to_string(), |s| s.cell());
+
     if format == "json" {
         let mut json = serde_json::to_value(&coverage)
             .map_err(|e| anyhow::anyhow!("json serialization: {e}"))?;
@@ -523,6 +533,23 @@ pub(crate) fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]
         }
         if !rc.uncovered_evidence.is_empty() {
             json["uncovered_evidence"] = serde_json::to_value(&rc.uncovered_evidence)?;
+        }
+        // Keyed by artifact id, for every reported requirement whose
+        // description states clauses or carries a discharge record; an id
+        // missing here has no clause list. Added only when non-empty.
+        let discharge: serde_json::Map<String, serde_json::Value> = coverage
+            .covered
+            .iter()
+            .map(|(id, _)| id)
+            .chain(rc.covered_by_results.iter().map(|(id, _)| id))
+            .chain(coverage.uncovered.iter())
+            .filter_map(|id| {
+                let state = discharge_of(id)?;
+                Some(serde_json::to_value(state).map(|v| (id.clone(), v)))
+            })
+            .collect::<Result<_, _>>()?;
+        if !discharge.is_empty() {
+            json["discharge"] = serde_json::Value::Object(discharge);
         }
         println!("{}", serde_json::to_string_pretty(&json)?);
         return Ok(true);
@@ -541,7 +568,7 @@ pub(crate) fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]
             } else {
                 format!("{} test markers", markers.len())
             };
-            println!("  {id}  {label}");
+            println!("  {id}  {label}  clauses {}", discharge_cell(id));
             for m in markers {
                 println!(
                     "    {}:{}  {} ({})",
@@ -561,7 +588,10 @@ pub(crate) fn cmd_coverage_tests(cli: &Cli, format: &str, scan_paths: &[PathBuf]
             rc.covered_by_results.len()
         );
         for (id, hits) in &rc.covered_by_results {
-            println!("  {id}  no test marker; passing recorded result");
+            println!(
+                "  {id}  no test marker; passing recorded result  clauses {}",
+                discharge_cell(id)
+            );
             for h in hits {
                 let env = h
                     .environment

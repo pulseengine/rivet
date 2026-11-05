@@ -2938,6 +2938,29 @@ If an edit removes the clause list altogether, the record stays stale and
 `rivet verify` has nothing to record against: delete the three `discharge-*`
 fields from the artifact, or restore the list.
 
+## In the reports
+
+`rivet coverage --tests` prints the recorded discharge next to each
+requirement's marker count, and `rivet trace` / `rivet trace-results` print it
+for the requirement traced (#1168):
+
+```
+  REQ-1  1 test marker  clauses 2/3
+  REQ-2  1 test marker  clauses —
+```
+
+| Cell | Meaning |
+|------|---------|
+| `2/3` | the recorded discharge names 2 of the 3 clauses the description states |
+| `0/3` | the description states 3 clauses and no discharge is recorded |
+| `stale` | the clauses changed since the record (`discharge-stale`); the old fraction is not shown |
+| `—` (or no line in `trace`) | the description states no clause list |
+
+In `--format json`, `coverage --tests` adds a `discharge` object keyed by
+artifact id, and `trace-results` adds `discharge` for the root, each as
+`{"discharged": 2, "total": 3, "stale": false}`. A stale record has
+`"discharged": null`. A requirement with no clause list has no entry.
+
 ## Not covered
 
 Only lines that OPEN with a number are read. A list behind another marker

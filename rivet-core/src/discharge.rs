@@ -513,6 +513,74 @@ pub fn discharge_summary(description: &str, recorded: &[usize]) -> Option<(usize
     Some((seen.len(), clauses.count))
 }
 
+/// What `rivet coverage --tests` and `rivet trace` show for an artifact's
+/// clause discharge (#1168): the recorded fraction, or that the record is
+/// stale. A stale record carries no fraction, since the clauses it counted
+/// are gone; `total` is then the count the description states now, if any.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct DischargeState {
+    /// Clauses the recorded discharge names, counted against the clauses the
+    /// description states now. `None` when the record is stale.
+    pub discharged: Option<usize>,
+    /// Clauses the description states now. `None` when it states none, or
+    /// detection cannot count them.
+    pub total: Option<usize>,
+    /// The recorded fingerprint no longer matches the clauses
+    /// (`discharge-stale`).
+    pub stale: bool,
+}
+
+impl DischargeState {
+    /// The report cell: `2/3`, or `stale`.
+    pub fn cell(&self) -> String {
+        match (self.stale, self.discharged, self.total) {
+            (false, Some(d), Some(t)) => format!("{d}/{t}"),
+            _ => "stale".to_string(),
+        }
+    }
+}
+
+/// The [`DischargeState`] of `artifact`, or `None` when its description
+/// states no clause list and no discharge is recorded on it, which reports
+/// show as no fraction.
+///
+/// A description with clauses and no recorded discharge reads `0/N`: the
+/// clauses are there and nothing has been claimed about them.
+pub fn discharge_state(artifact: &crate::model::Artifact) -> Option<DischargeState> {
+    let description = artifact.description.as_deref().unwrap_or("");
+    let detection = detect(description);
+    let total = detection.clauses().map(|c| c.count);
+    let fingerprint = artifact
+        .fields
+        .get(FINGERPRINT_FIELD)
+        .and_then(|v| v.as_str());
+    if fingerprint.is_some_and(|fp| is_stale(description, fp)) {
+        return Some(DischargeState {
+            discharged: None,
+            total,
+            stale: true,
+        });
+    }
+    total?;
+    let recorded: Vec<usize> = artifact
+        .fields
+        .get(DISCHARGED_FIELD)
+        .and_then(|v| v.as_sequence())
+        .map(|seq| {
+            seq.iter()
+                .filter_map(|v| v.as_u64())
+                .filter_map(|n| usize::try_from(n).ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    let (discharged, total) = discharge_summary(description, &recorded)?;
+    Some(DischargeState {
+        discharged: Some(discharged),
+        total: Some(total),
+        stale: false,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -910,5 +978,75 @@ Acceptance is measured on CI.";
         assert_eq!(discharge_summary(VARVE_STYLE, &[1, 3, 3, 9]), Some((2, 3)));
         assert_eq!(discharge_summary("prose", &[1]), None);
         assert_eq!(discharge_summary("1. a\n1. b", &[1]), None);
+    }
+
+    /// #1168: the state reports show — a fraction, stale, or nothing.
+    // rivet: verifies REQ-308
+    #[test]
+    fn discharge_state_reports_fraction_stale_or_nothing() {
+        let clauses = "1. a\n2. b\n3. c";
+        let art = |description: &str, fields: &[(&str, rivet_yaml::Value)]| {
+            let mut a = crate::model::Artifact {
+                id: "REQ-1".to_string(),
+                description: Some(description.to_string()),
+                ..Default::default()
+            };
+            for (k, v) in fields {
+                a.fields.insert((*k).to_string(), v.clone());
+            }
+            a
+        };
+        let list = |ns: &[u64]| {
+            rivet_yaml::Value::Sequence(
+                ns.iter()
+                    .map(|&n| rivet_yaml::Value::Number(n.into()))
+                    .collect(),
+            )
+        };
+        let fp = rivet_yaml::Value::String(fingerprint(clauses).expect("three clauses"));
+
+        let partial = art(
+            clauses,
+            &[
+                (DISCHARGED_FIELD, list(&[1, 2])),
+                (FINGERPRINT_FIELD, fp.clone()),
+            ],
+        );
+        let s = discharge_state(&partial).expect("clauses");
+        assert_eq!(
+            s,
+            DischargeState {
+                discharged: Some(2),
+                total: Some(3),
+                stale: false
+            }
+        );
+        assert_eq!(s.cell(), "2/3");
+
+        assert_eq!(
+            discharge_state(&art(clauses, &[])).map(|s| s.cell()),
+            Some("0/3".to_string()),
+            "clauses with nothing recorded"
+        );
+
+        let edited = art(
+            "1. a\n2. b changed\n3. c",
+            &[
+                (DISCHARGED_FIELD, list(&[1, 2])),
+                (FINGERPRINT_FIELD, fp.clone()),
+            ],
+        );
+        let s = discharge_state(&edited).expect("stale");
+        assert!(s.stale && s.discharged.is_none() && s.total == Some(3));
+        assert_eq!(s.cell(), "stale");
+
+        // Clauses edited away entirely: still stale, not silently gone.
+        let gone = art("prose now", &[(FINGERPRINT_FIELD, fp)]);
+        assert_eq!(
+            discharge_state(&gone).map(|s| s.cell()),
+            Some("stale".into())
+        );
+
+        assert_eq!(discharge_state(&art("just prose", &[])), None);
     }
 }
