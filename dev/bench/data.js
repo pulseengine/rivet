@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793617167566,
+  "lastUpdate": 1793847454633,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "85cfc4c9748c07a80b5678bd0066377058856fab",
-          "message": "fix(export): the HTML export carries the dashboard's static sections; doc-linkage source nodes stop linking to non-documents (REQ-400, #956) (#1062)\n\nImplements: REQ-400\nRefs: #956\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9",
-          "timestamp": "2026-10-09T08:31:05+02:00",
-          "tree_id": "cd805ee5b3e0c946bb52e109dd52bd6049e4dcd1",
-          "url": "https://github.com/pulseengine/rivet/commit/85cfc4c9748c07a80b5678bd0066377058856fab"
-        },
-        "date": 1791528211683,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 86001,
-            "range": "± 510",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 941806,
-            "range": "± 5172",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 17504833,
-            "range": "± 1761185",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1925,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 22387,
-            "range": "± 72",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 336756,
-            "range": "± 2963",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1515713,
-            "range": "± 16183",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 165412,
-            "range": "± 408",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1911846,
-            "range": "± 16479",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 32552585,
-            "range": "± 3313428",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 738697,
-            "range": "± 2318",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17442813,
-            "range": "± 179531",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1178940891,
-            "range": "± 22110711",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4320,
-            "range": "± 22",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 46728,
-            "range": "± 237",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 744167,
-            "range": "± 3446",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 62416,
-            "range": "± 317",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 716241,
-            "range": "± 2863",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8610534,
-            "range": "± 558123",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1218,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14594,
-            "range": "± 46",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 228807,
-            "range": "± 1885",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22172,
-            "range": "± 112",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 153887,
-            "range": "± 581",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1451619,
-            "range": "± 28067",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1507947,
             "range": "± 19914",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f92b92517c130f2f24a750bfc49409aa1c8522e5",
+          "message": "chore(deps): bump wasmtime and wasmtime-wasi to 48.0.8 (RUSTSEC-2026-0420, -0422, -0423, -0424) (#1162)\n\nLockfile moves the whole wasmtime/cranelift/pulley/wiggle family to the\n48.0.8 / 0.135.8 patch releases; the Cargo.toml floor is raised to 48.0.8 so\nthe vulnerable releases cannot be resolved again. supply-chain/imports.lock\nis refreshed by cargo vet.\n\n\nClaude-Session: https://claude.ai/code/session_01G5qpB7zvxLvdrvn5YRyj4R\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-05T01:28:37Z",
+          "tree_id": "dd023bb5b886736a6f9b13403096c2808ead9782",
+          "url": "https://github.com/pulseengine/rivet/commit/f92b92517c130f2f24a750bfc49409aa1c8522e5"
+        },
+        "date": 1793847453432,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 85592,
+            "range": "± 3730",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 857008,
+            "range": "± 7619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15297836,
+            "range": "± 900463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2140,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27020,
+            "range": "± 4047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 404834,
+            "range": "± 3466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 93,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1924294,
+            "range": "± 25205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 163577,
+            "range": "± 523",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1809350,
+            "range": "± 17243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 29316514,
+            "range": "± 1659751",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 730888,
+            "range": "± 2954",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 18240542,
+            "range": "± 640465",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1348900240,
+            "range": "± 14838895",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4825,
+            "range": "± 63",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 64929,
+            "range": "± 348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 885433,
+            "range": "± 24699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 60328,
+            "range": "± 168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 701890,
+            "range": "± 6871",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8546427,
+            "range": "± 1022433",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1063,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 15336,
+            "range": "± 61",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 367861,
+            "range": "± 2279",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 23903,
+            "range": "± 163",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 161559,
+            "range": "± 463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1498498,
+            "range": "± 14816",
             "unit": "ns/iter"
           }
         ]
