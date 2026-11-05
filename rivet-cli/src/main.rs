@@ -7590,6 +7590,10 @@ fn cmd_explain(cli: &Cli, id: &str) -> Result<bool> {
         artifact.status.as_deref().unwrap_or("-"),
         artifact.title,
     );
+    // #1168: the clause discharge `rivet verify` recorded (#838).
+    if let Some(state) = rivet_core::discharge::discharge_state(artifact) {
+        println!("  clauses discharged: {}", state.cell());
+    }
 
     let applicable: Vec<&rivet_core::schema::TraceabilityRule> = ctx
         .schema

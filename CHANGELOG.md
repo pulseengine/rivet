@@ -6,6 +6,13 @@
 ## [Unreleased]
 
 ### Added
+- **Clause discharge in the reports** (REQ-308, #1168). `rivet coverage
+  --tests` shows the discharge `rivet verify` recorded next to each marker
+  count (`clauses 2/3`, `clauses stale`, or `clauses —` when the description
+  states no clause list), and `rivet trace` / `rivet trace-results` show it
+  for the traced requirement. JSON gains a `discharge` object
+  (`{"discharged", "total", "stale"}`). A stale record shows as stale, never
+  as its old fraction.
 - **Merge-queue ready CI, and cheaper docs-only PRs** (REQ-412). `CI` runs on
   the merge queue's `merge_group` event, so `CI Gate` reports for a queued PR;
   queue runs diff against the queue base and skip the advisory jobs. Kani,

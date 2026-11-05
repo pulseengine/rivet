@@ -15304,3 +15304,99 @@ fn verify_refuses_a_fence_beside_numbered_clauses_until_counted() {
         stderr_of(&o)
     );
 }
+
+/// #1168: `coverage --tests`, `trace` and `trace-results` show the recorded
+/// clause discharge next to the marker count: `2/3` for a partial discharge,
+/// `stale` once the clauses are edited, and no fraction for a requirement
+/// whose description states no clause list.
+// rivet: verifies REQ-308
+#[test]
+fn coverage_and_trace_show_clause_discharge() {
+    let (tmp, run) = clause_project("");
+    let o = run(&[
+        "verify",
+        "REQ-1",
+        "--clauses-discharged",
+        "1,2",
+        "--note",
+        "3 pending #99",
+    ]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+    let o = run(&["verify", "REQ-2"]);
+    assert!(o.status.success(), "{}", stderr_of(&o));
+
+    let lines = |o: &std::process::Output| -> Vec<String> {
+        stdout_of(o).lines().map(str::to_string).collect()
+    };
+    let json_of = |o: &std::process::Output| -> serde_json::Value {
+        serde_json::from_str(&stdout_of(o)).expect("json")
+    };
+
+    // Partial discharge: text and JSON.
+    let o = run(&["coverage", "--tests"]);
+    let text = lines(&o);
+    assert!(
+        text.contains(&"  REQ-1  1 test marker  clauses 2/3".to_string()),
+        "{text:#?}"
+    );
+    assert!(
+        text.contains(&"  REQ-2  1 test marker  clauses \u{2014}".to_string()),
+        "{text:#?}"
+    );
+    let j = json_of(&run(&["coverage", "--tests", "--format", "json"]));
+    assert_eq!(
+        j["discharge"]["REQ-1"],
+        serde_json::json!({"discharged": 2, "total": 3, "stale": false}),
+        "{j:#}"
+    );
+    assert!(j["discharge"].get("REQ-2").is_none(), "{j:#}");
+
+    let text = lines(&run(&["trace", "REQ-1"]));
+    assert!(
+        text.contains(&"  clauses discharged: 2/3".to_string()),
+        "{text:#?}"
+    );
+    let text = lines(&run(&["trace-results", "REQ-1"]));
+    assert!(
+        text.contains(&"  clauses discharged: 2/3".to_string()),
+        "{text:#?}"
+    );
+    let j = json_of(&run(&["trace-results", "REQ-1", "--format", "json"]));
+    assert_eq!(
+        j["discharge"],
+        serde_json::json!({"discharged": 2, "total": 3, "stale": false}),
+        "{j:#}"
+    );
+
+    // No clause list: no fraction anywhere.
+    assert!(!stdout_of(&run(&["trace", "REQ-2"])).contains("clauses discharged"));
+    assert!(!stdout_of(&run(&["trace-results", "REQ-2"])).contains("clauses discharged"));
+    let j = json_of(&run(&["trace-results", "REQ-2", "--format", "json"]));
+    assert!(j.get("discharge").is_none(), "{j:#}");
+
+    // Edit a clause: the record is stale, and its old fraction is not shown.
+    let path = tmp.path().join("artifacts/reqs.yaml");
+    let yaml = std::fs::read_to_string(&path).unwrap();
+    let edited = yaml.replace("2. record the discharge", "2. record the judgement");
+    assert_ne!(yaml, edited);
+    std::fs::write(&path, edited).unwrap();
+
+    let text = lines(&run(&["coverage", "--tests"]));
+    assert!(
+        text.contains(&"  REQ-1  1 test marker  clauses stale".to_string()),
+        "{text:#?}"
+    );
+    let j = json_of(&run(&["coverage", "--tests", "--format", "json"]));
+    assert_eq!(
+        j["discharge"]["REQ-1"],
+        serde_json::json!({"discharged": null, "total": 3, "stale": true}),
+        "{j:#}"
+    );
+    let text = lines(&run(&["trace", "REQ-1"]));
+    assert!(
+        text.contains(&"  clauses discharged: stale".to_string()),
+        "{text:#?}"
+    );
+    let j = json_of(&run(&["trace-results", "REQ-1", "--format", "json"]));
+    assert_eq!(j["discharge"]["stale"], serde_json::json!(true), "{j:#}");
+}

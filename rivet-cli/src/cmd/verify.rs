@@ -24,6 +24,8 @@ pub(crate) fn cmd_trace_results(cli: &Cli, id: &str, depth: usize, format: &str)
     let empty = ResultStore::new();
     let results = ctx.result_store.as_ref().unwrap_or(&empty);
     let nodes = trace_test_results(id, &ctx.graph, results, depth);
+    // #1168: the root's recorded clause discharge, if it states clauses.
+    let discharge_state = ctx.store.get(id).and_then(discharge::discharge_state);
     let v = verdict(&nodes);
     let ok = !matches!(v, TraceVerdict::Failing);
 
@@ -37,15 +39,18 @@ pub(crate) fn cmd_trace_results(cli: &Cli, id: &str, depth: usize, format: &str)
     };
 
     if format == "json" {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "command": "trace-results",
-                "root": id,
-                "verdict": v,
-                "nodes": nodes,
-            }))?
-        );
+        let mut out = serde_json::json!({
+            "command": "trace-results",
+            "root": id,
+            "verdict": v,
+            "nodes": nodes,
+        });
+        // Only when the root states clauses or carries a record, so the JSON
+        // of a requirement without a clause list is unchanged.
+        if let Some(state) = discharge_state {
+            out["discharge"] = serde_json::to_value(state)?;
+        }
+        println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         let verdict_str = match v {
             TraceVerdict::Passing => "\u{2713} passing",
@@ -53,6 +58,9 @@ pub(crate) fn cmd_trace_results(cli: &Cli, id: &str, depth: usize, format: &str)
             TraceVerdict::NoEvidence => "\u{2014} no test evidence",
         };
         println!("Test-result trace for {id}: {verdict_str}");
+        if let Some(state) = discharge_state {
+            println!("  clauses discharged: {}", state.cell());
+        }
         if nodes.is_empty() {
             println!("  (nothing traces to {id})");
         }
