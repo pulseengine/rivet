@@ -10,7 +10,7 @@
 
 schema:
   name: common
-  version: "0.3.1"
+  version: "0.4.0"
   description: >
     Base field definitions and common link types for lifecycle traceability.
     All domain schemas implicitly extend this schema.
@@ -91,6 +91,35 @@ base-fields:
       source. Shape: { uri, kind, sha256, last-checked }, where kind is one of
       file | url | github | oslc | reqif | polarion. Phase 1 verifies kind:
       file. See `rivet docs schema-cited-sources` for the full reference.
+
+  # #838: what `rivet verify` was told the evidence discharges. A requirement
+  # is often a numbered list of clauses while a `verifies` link or marker
+  # attaches to the whole requirement, so "has evidence" is coarser than the
+  # claim. `rivet verify --clauses-discharged` / `--note` record the judgement
+  # here, on the artifact, instead of in a commit message nothing links to.
+  # Base fields because any verifiable type can state clauses.
+  - name: discharged-clauses
+    type: list<integer>
+    required: false
+    description: >
+      The numbered clauses of the description that `rivet verify` recorded as
+      discharged by the evidence. See `rivet docs verify-clauses`.
+
+  - name: discharge-note
+    type: text
+    required: false
+    description: >
+      Why the clauses not in discharged-clauses are pending, recorded by
+      `rivet verify --note` on a partial discharge.
+
+  - name: discharge-fingerprint
+    type: string
+    required: false
+    description: >
+      sha256 of the clause opening lines when the discharge was recorded.
+      `rivet validate` reports `discharge-stale` once the clauses no longer
+      match it, so a renumbering edit cannot leave the record pointing at
+      different clauses.
 
 # ──────────────────────────────────────────────────────────────────────────
 # Common link types — reusable across all domains.

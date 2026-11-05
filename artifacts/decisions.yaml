@@ -1973,3 +1973,22 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-10-28T07:31:27Z
+
+  - id: DD-084
+    type: design-decision
+    title: Clause discharge is a recorded judgement guarded by a fingerprint, and clause detection fails closed
+    status: accepted
+    release: v0.42.0
+    description: "How rivet verify handles a requirement whose description is a numbered clause list (#838, REQ-308). The maintainer chose option 3 on 2026-11-04: record the human judgement (--clauses-discharged, --note) rather than per-clause markers (option 1) or a blocking partially-verifies (option 2). This decision fixes the two properties that make such a record trustworthy: it cannot silently outlive an edit of the clauses, and it is never taken against a clause list rivet has misread."
+    tags: [verify, traceability, clauses]
+    fields:
+      alternatives: "Per-clause verifies markers (needs addressable clauses: a schema migration across every artifact); a blocking partially-verifies (refuses the common case but records nothing about which clauses were checked); parsing Markdown fences and list scopes to find clauses (each emulation attempt hid clauses in review, because CommonMark scopes fences by list item and indentation); storing clause text instead of a fingerprint (bloats every record and still needs a comparison rule)."
+      decision: "Detection reads only lines opening 1., 2., ... (or 1), 2), ...) in order; anything it cannot count with certainty (a gap, a repeat, a second or nested list, inline numbering running past the list, a code fence beside numbered lines) is Ambiguous and verify refuses. A '# rivet: clauses = N' override is honoured only as the last non-blank line and only to raise the count. The record is three common base fields written with the status in one write: discharged-clauses, discharge-note and discharge-fingerprint (sha256 of the clause opening lines, or of the whole description under the override); validate warns discharge-stale when the fingerprint no longer matches."
+      rationale: REQ-308 notes that prose clauses renumber on any description edit, so an index alone would point at different clauses after an edit; the fingerprint turns that into a visible warning. Failing closed means the cost of a misread is a refusal the author can resolve with the override, never a recorded discharge of clauses rivet did not see. Six of 184 implemented artifacts here state a clause list and none is ambiguous, so the strict rule costs this repository nothing today.
+    links:
+      - type: satisfies
+        target: REQ-308
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-05T06:45:38Z

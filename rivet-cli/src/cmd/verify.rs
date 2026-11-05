@@ -1,6 +1,7 @@
 //! `rivet verify` and `rivet trace-results` — evidence-gated verification.
 
 use anyhow::Result;
+use rivet_core::discharge::{self, Detection, Discharge};
 
 use crate::{
     Cli, ModifyCaller, ProjectContext, cmd_modify_inner, default_marker_scan_paths, validate_format,
@@ -69,41 +70,153 @@ pub(crate) fn cmd_trace_results(cli: &Cli, id: &str, depth: usize, format: &str)
     Ok(ok)
 }
 
+/// The `rivet verify` clause-discharge flags (#838 / REQ-308).
+pub(crate) struct ClauseArgs<'a> {
+    /// `--clauses-discharged`, unparsed.
+    pub discharged: Option<&'a str>,
+    /// `--note`.
+    pub note: Option<&'a str>,
+    /// `--explain-clauses`.
+    pub explain: bool,
+}
+
+/// What `--explain-clauses` prints: the clause list detection sees, or why
+/// it cannot tell.
+fn explain_clauses(id: &str, detection: &Detection) {
+    match detection {
+        Detection::None => println!(
+            "{id}: no numbered clause list; `rivet verify {id}` advances on evidence alone."
+        ),
+        Detection::Ambiguous(reason) => println!(
+            "{id}: ambiguous clause numbering ({reason}); `rivet verify {id}` refuses until \
+             the description ends with a `# rivet: clauses = N` line."
+        ),
+        Detection::Clauses(c) if c.overridden => println!(
+            "{id}: {} clause(s), set by `# rivet: clauses = {}`.",
+            c.count, c.count
+        ),
+        Detection::Clauses(c) => {
+            println!("{id}: {} clause(s):", c.count);
+            for (_, text) in &c.anchors {
+                println!("  {text}");
+            }
+        }
+    }
+}
+
+/// The clauses a decision records as discharged.
+fn decision_clauses(decision: &Discharge) -> Option<&[usize]> {
+    match decision {
+        Discharge::NoClauses => None,
+        Discharge::Full { clauses } => Some(clauses),
+        Discharge::Partial { discharged, .. } => Some(discharged),
+    }
+}
+
+/// The `fields:` writes that record `decision`, in a stable order.
+fn discharge_fields(
+    decision: &Discharge,
+    description: &str,
+    note: Option<&str>,
+) -> Vec<(String, String)> {
+    let Some(clauses) = decision_clauses(decision) else {
+        return Vec::new();
+    };
+    let list = clauses
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut out = vec![(discharge::DISCHARGED_FIELD.to_string(), format!("[{list}]"))];
+    if let Some(n) = note {
+        out.push((discharge::NOTE_FIELD.to_string(), n.to_string()));
+    }
+    if let Some(fp) = discharge::fingerprint(description) {
+        out.push((discharge::FINGERPRINT_FIELD.to_string(), fp));
+    }
+    out
+}
+
 /// #559: advance an artifact to `verified` when it has verifying evidence —
 /// an incoming `verifies` link from an artifact that is itself verified or
 /// later (#1037), OR a `// rivet: verifies <ID>` source marker.
 /// Opt-in and auditable (no auto-advance); the artifact must be `implemented`.
+///
+/// #838: when the description states a numbered clause list, the evidence
+/// must also be declared against it (`--clauses-discharged`, plus `--note`
+/// for a partial discharge), and the declaration is written with the status.
 pub(crate) fn cmd_verify(
     cli: &Cli,
     id: &str,
     scan: &[std::path::PathBuf],
     dry_run: bool,
+    clause_args: &ClauseArgs<'_>,
 ) -> Result<bool> {
     use rivet_core::test_scanner;
+
+    let discharged = clause_args
+        .discharged
+        .map(discharge::parse_clause_list)
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("invalid --clauses-discharged: {e}"))?;
+    // Core's rule: `--note "  "` is no note at all.
+    let note = discharge::normalise_note(clause_args.note);
+    let refuse = |e: discharge::DischargeError| anyhow::anyhow!("refusing to verify '{id}': {e}");
 
     // Scope the loaded store/graph borrows so cmd_modify can reload below.
     // Each incoming `verifies` link as (source id, its status, whether the
     // source is itself verified or later). Only the latter is evidence: an
     // `implemented` test specification has not shown anything yet (#1037).
-    let links: Vec<(String, String, bool)> = {
+    let (links, decision, set_fields, rerecord) = {
         let ctx = ProjectContext::load(cli)?;
         let artifact = ctx
             .store
             .get(id)
             .ok_or_else(|| anyhow::anyhow!("artifact '{id}' not found"))?;
+        let description = artifact.description.as_deref().unwrap_or("");
+        let detection = discharge::detect(description);
+        if clause_args.explain {
+            explain_clauses(id, &detection);
+            return Ok(true);
+        }
+        let has_flags = clause_args.discharged.is_some() || clause_args.note.is_some();
         match artifact.status.as_deref() {
-            Some("verified") => {
+            Some("verified") if !has_flags => {
                 println!("{id} is already verified — nothing to do.");
                 return Ok(true);
             }
-            Some("implemented") => {}
+            // #838: a verified artifact can have its discharge recorded again,
+            // e.g. once a pending clause lands or after `discharge-stale`. The
+            // evidence is checked again below, as for an implemented one.
+            Some("verified") | Some("implemented") => {}
             other => anyhow::bail!(
                 "refusing to verify '{id}': status is '{}', expected 'implemented'. \
                  Only an implemented artifact can be advanced to verified.",
                 other.unwrap_or("(none)")
             ),
         }
-        ctx.graph
+        let decision =
+            discharge::check_discharge(&detection, discharged.as_deref(), clause_args.note)
+                .map_err(refuse)?;
+        // A full discharge needs no note, but a note left from an earlier
+        // partial one would go on describing clauses as pending.
+        if let (Discharge::Full { .. }, None, Some(old)) = (
+            &decision,
+            note,
+            artifact
+                .fields
+                .get(discharge::NOTE_FIELD)
+                .and_then(|v| v.as_str()),
+        ) {
+            anyhow::bail!(
+                "refusing to verify '{id}': it carries a discharge-note from an earlier \
+                 partial discharge (\"{old}\"), which this full discharge would leave in \
+                 place. Pass `--note` to replace it."
+            );
+        }
+        let set_fields = discharge_fields(&decision, description, note);
+        let links: Vec<(String, String, bool)> = ctx
+            .graph
             .backlinks_of_type(id, "verifies")
             .iter()
             .map(|bl| {
@@ -116,10 +229,15 @@ pub(crate) fn cmd_verify(
                     source.is_some_and(|a| a.carries_verification()),
                 )
             })
-            .collect()
+            .collect();
+        (
+            links,
+            decision,
+            set_fields,
+            artifact.status.as_deref() == Some("verified"),
+        )
     };
     let (qualifying, weak): (Vec<_>, Vec<_>) = links.iter().partition(|(_, _, ok)| *ok);
-
     // Source-marker evidence: `// rivet: verifies <ID>`. Default scan dirs are
     // workspace-aware and shared with `coverage --tests` (#603).
     let paths: Vec<std::path::PathBuf> = if scan.is_empty() {
@@ -174,8 +292,29 @@ pub(crate) fn cmd_verify(
         );
     }
 
+    match &decision {
+        Discharge::NoClauses => {}
+        Discharge::Full { clauses } => {
+            println!("  clauses: all {} discharged", clauses.len());
+        }
+        Discharge::Partial {
+            discharged,
+            pending,
+            note,
+        } => println!(
+            "  clauses: {} of {} discharged; pending {:?}: {note}",
+            discharged.len(),
+            discharged.len() + pending.len(),
+            pending
+        ),
+    }
+
     if dry_run {
-        println!("dry run: {id} would be advanced implemented -> verified (nothing written)");
+        if rerecord {
+            println!("dry run: {id} would have its discharge recorded again (nothing written)");
+        } else {
+            println!("dry run: {id} would be advanced implemented -> verified (nothing written)");
+        }
         return Ok(true);
     }
 
@@ -193,7 +332,7 @@ pub(crate) fn cmd_verify(
         None,
         &[],
         &[],
-        &[],
+        &set_fields,
         ModifyCaller::VerifyAfterEvidenceCheck,
     )
 }
