@@ -104,12 +104,14 @@ for the requirement traced (#1168):
 | `2/3` | the recorded discharge names 2 of the 3 clauses the description states |
 | `0/3` | the description states 3 clauses and no discharge is recorded |
 | `stale` | the clauses changed since the record (`discharge-stale`); the old fraction is not shown |
-| `—` (or no line in `trace`) | the description states no clause list |
+| `—` (or no line in `trace`) | detection finds no clause list it can count: none at all, or ambiguous numbering (`rivet verify --explain-clauses` tells which) |
 
 In `--format json`, `coverage --tests` adds a `discharge` object keyed by
 artifact id, and `trace-results` adds `discharge` for the root, each as
 `{"discharged": 2, "total": 3, "stale": false}`. A stale record has
-`"discharged": null`. A requirement with no clause list has no entry.
+`"discharged": null`, and `"total": null` too when the clause list is gone.
+A requirement with no countable clause list and no discharge record has no
+entry.
 
 ## Not covered
 

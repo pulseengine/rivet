@@ -565,12 +565,20 @@ pub fn discharge_state(artifact: &crate::model::Artifact) -> Option<DischargeSta
     let recorded: Vec<usize> = artifact
         .fields
         .get(DISCHARGED_FIELD)
-        .and_then(|v| v.as_sequence())
-        .map(|seq| {
-            seq.iter()
-                .filter_map(|v| v.as_u64())
-                .filter_map(|n| usize::try_from(n).ok())
-                .collect()
+        .and_then(|v| match (v.as_sequence(), v.as_str()) {
+            (Some(seq), _) => Some(
+                seq.iter()
+                    .filter_map(|v| v.as_u64())
+                    .filter_map(|n| usize::try_from(n).ok())
+                    .collect(),
+            ),
+            // A record written as the string "[1, 2]" (before the field was
+            // typed from `common.yaml`, or in a project that does not load
+            // it) is still a record, not `0/N`.
+            (None, Some(text)) => {
+                parse_clause_list(text.trim().trim_start_matches('[').trim_end_matches(']')).ok()
+            }
+            _ => None,
         })
         .unwrap_or_default();
     let (discharged, total) = discharge_summary(description, &recorded)?;
@@ -1048,5 +1056,14 @@ Acceptance is measured on CI.";
         );
 
         assert_eq!(discharge_state(&art("just prose", &[])), None);
+
+        let quoted = art(
+            clauses,
+            &[(DISCHARGED_FIELD, rivet_yaml::Value::String("[1, 2]".into()))],
+        );
+        assert_eq!(
+            discharge_state(&quoted).map(|s| s.cell()),
+            Some("2/3".into())
+        );
     }
 }
