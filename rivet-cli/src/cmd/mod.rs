@@ -49,4 +49,5 @@
 
 pub(crate) mod coverage;
 pub(crate) mod export;
+pub(crate) mod release;
 pub(crate) mod verify;
