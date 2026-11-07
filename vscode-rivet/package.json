@@ -15,7 +15,7 @@
     "theme": "dark"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.91.0"
   },
   "categories": [
     "Linters",
@@ -129,10 +129,10 @@
     }
   },
   "dependencies": {
-    "vscode-languageclient": "^9.0.0"
+    "vscode-languageclient": "^11.0.0"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "~1.91.0",
     "@types/node": "^26",
     "@types/mocha": "^10",
     "@types/glob": "^8",
