@@ -68,13 +68,13 @@ jobs:
             os: windows-latest
             archive: zip
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: release-${{ matrix.target }}
 
@@ -138,7 +138,7 @@ jobs:
           cd staging && 7z a "../$ARCHIVE" . && cd ..
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary-${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
@@ -148,11 +148,11 @@ jobs:
     name: Docs Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0   # REQ-399: released CHANGELOG sections are checked against their tags
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - run: cargo run --release -p rivet-cli -- docs check
 
   # ── Baseline snapshot ─────────────────────────────────────────────────
@@ -160,19 +160,19 @@ jobs:
     name: Capture baseline snapshot
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: Capture snapshot
         env:
           TAG: ${{ github.ref_name }}
         run: cargo run --release -- snapshot capture --name "$TAG"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: snapshot
           path: snapshots/
@@ -201,12 +201,12 @@ jobs:
     needs: [build-release-note]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: Fetch the generated release note
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: release-note
           path: release-note
@@ -252,7 +252,7 @@ jobs:
           # deliverable.
           extra-files: ${{ steps.note.outputs.path }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: compliance-report
           path: ${{ steps.report.outputs.archive-path }}
@@ -279,7 +279,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true  # NB: doesn't block create-release; see note above.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       # REQ-267: the same dated nightly as ci.yml's nightly jobs.
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267)
@@ -288,10 +288,10 @@ jobs:
           components: llvm-tools-preview
           targets: wasm32-wasip2
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: Install tools
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2
         with:
           tool: cargo-nextest,cargo-llvm-cov
 
@@ -408,7 +408,7 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/}"
           tar czf "rivet-${VERSION}-test-evidence.tar.gz" test-evidence/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-evidence
           path: rivet-*-test-evidence.tar.gz
@@ -420,8 +420,8 @@ jobs:
     name: Build VS Code Extension VSIX
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
       - name: Install extension dependencies
@@ -433,7 +433,7 @@ jobs:
       - name: Package VSIX
         working-directory: vscode-rivet
         run: npx @vscode/vsce package --no-dependencies
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: vsix
           path: vscode-rivet/*.vsix
@@ -449,7 +449,7 @@ jobs:
     name: Generate release note (ASPICE 11-03)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           # `rivet release notes --since` walks the commit trailers
           # between two tags. A shallow clone has neither the tags nor the
@@ -459,7 +459,7 @@ jobs:
           fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: Generate release note
         run: |
@@ -491,7 +491,7 @@ jobs:
           echo "--- generated release note ---"
           cat "$OUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-note
           path: rivet-*-release-note.md
