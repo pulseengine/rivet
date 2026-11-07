@@ -19,6 +19,7 @@
 #   wasm    the wasm-seam build gate (REQ-268)
 #   proofs  Verus and Rocq (Bazel builds over rivet-core/src, verus/, proofs/)
 #   e2e     Playwright, which serves this repository's own artifacts
+#   vscode  the VS Code extension job (vscode-rivet/, and the rivet binary it drives)
 #
 # Fail CLOSED (REQ-291): a non-PR, non-queue event, an empty base, a failed
 # diff or an empty diff all set every output to true. On GitHub a skipped job
@@ -30,7 +31,7 @@ out="${GITHUB_OUTPUT:-/dev/stdout}"
 
 emit() { echo "$1=$2" >> "$out"; }
 all_true() {
-  emit rust true; emit wasm true; emit proofs true; emit e2e true
+  emit rust true; emit wasm true; emit proofs true; emit e2e true; emit vscode true
   echo "→ $1; running every job"
   exit 0
 }
@@ -121,4 +122,16 @@ if [ "$rust" = true ] || echo "$changed" | grep -qE "$e2e_re"; then
 else
   emit e2e false
   echo "→ no binary, spec or served-corpus changes; skipping Playwright"
+fi
+
+# The extension job builds rivet and drives its LSP, so a Rust change can break
+# it as well as a change under vscode-rivet/. Before this output the job hung off
+# `needs: test`, which the rust filter skips on a vscode-only PR, so a dependency
+# bump of the extension never ran its tests anywhere (rivet#1175-#1183).
+if [ "$rust" = true ] || echo "$changed" | grep -qE '^vscode-rivet/'; then
+  emit vscode true
+  echo "→ extension or binary changes; running the VS Code extension job"
+else
+  emit vscode false
+  echo "→ no extension or binary changes; skipping the VS Code extension job"
 fi

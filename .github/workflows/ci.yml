@@ -65,6 +65,7 @@ jobs:
       wasm: ${{ steps.filter.outputs.wasm }}
       proofs: ${{ steps.filter.outputs.proofs }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      vscode: ${{ steps.filter.outputs.vscode }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -627,8 +628,11 @@ jobs:
   vscode-extension:
     name: VS Code Extension
     # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
-    if: github.event_name != 'merge_group'
-    needs: [test]
+    # Runs on a PR whenever the extension or the binary changed. It used to
+    # need `test`, which the rust filter skips on a vscode-only PR, so the
+    # extension's own dependency bumps never ran it (rivet#1175-#1183).
+    needs: changes
+    if: github.event_name != 'merge_group' && needs.changes.outputs.vscode == 'true'
     # Stays on ubuntu-latest: `xvfb-run` headless display + downloaded
     # VS Code Test environment expects sudo apt-get for system libs.
     runs-on: ubuntu-latest
