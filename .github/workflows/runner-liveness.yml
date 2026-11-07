@@ -73,7 +73,7 @@ jobs:
     # rivet: verifies REQ-354
     runs-on: [self-hosted, linux, x64, light]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Ensure gh is available
         # `gh` ships preinstalled on GitHub-hosted images but NOT on this
         # fleet — before REQ-343 no self-hosted job in this repository used it,

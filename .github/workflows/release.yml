@@ -68,7 +68,7 @@ jobs:
             os: windows-latest
             archive: zip
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -138,7 +138,7 @@ jobs:
           cd staging && 7z a "../$ARCHIVE" . && cd ..
           echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: binary-${{ matrix.target }}
           path: ${{ env.ARCHIVE }}
@@ -148,7 +148,7 @@ jobs:
     name: Docs Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # REQ-399: released CHANGELOG sections are checked against their tags
       - uses: dtolnay/rust-toolchain@stable
@@ -160,7 +160,7 @@ jobs:
     name: Capture baseline snapshot
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -172,7 +172,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: cargo run --release -- snapshot capture --name "$TAG"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: snapshot
           path: snapshots/
@@ -201,12 +201,12 @@ jobs:
     needs: [build-release-note]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
       - name: Fetch the generated release note
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: release-note
           path: release-note
@@ -252,7 +252,7 @@ jobs:
           # deliverable.
           extra-files: ${{ steps.note.outputs.path }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: compliance-report
           path: ${{ steps.report.outputs.archive-path }}
@@ -279,7 +279,7 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true  # NB: doesn't block create-release; see note above.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # REQ-267: the same dated nightly as ci.yml's nightly jobs.
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267)
@@ -408,7 +408,7 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/}"
           tar czf "rivet-${VERSION}-test-evidence.tar.gz" test-evidence/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: test-evidence
           path: rivet-*-test-evidence.tar.gz
@@ -420,8 +420,8 @@ jobs:
     name: Build VS Code Extension VSIX
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Install extension dependencies
@@ -433,7 +433,7 @@ jobs:
       - name: Package VSIX
         working-directory: vscode-rivet
         run: npx @vscode/vsce package --no-dependencies
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vsix
           path: vscode-rivet/*.vsix
@@ -449,7 +449,7 @@ jobs:
     name: Generate release note (ASPICE 11-03)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # `rivet release notes --since` walks the commit trailers
           # between two tags. A shallow clone has neither the tags nor the
@@ -491,7 +491,7 @@ jobs:
           echo "--- generated release note ---"
           cat "$OUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-note
           path: rivet-*-release-note.md
@@ -517,10 +517,10 @@ jobs:
       - build-release-note
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download all artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: artifacts
 
@@ -577,7 +577,7 @@ jobs:
       # GitHub-native attestation (not the standalone SLSA generator)
       # keeps the workflow self-contained — mirrors synth's pattern.
       - name: Generate SLSA build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: "release-assets/*.tar.gz"
 
@@ -596,7 +596,7 @@ jobs:
       #     --bundle SHA256SUMS.txt.cosign.bundle \
       #     SHA256SUMS.txt
       - name: Install cosign
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           cosign-release: 'v2.4.1'
 
@@ -718,11 +718,11 @@ jobs:
     # core release (binaries + GitHub Release via create-release) still gates.
     continue-on-error: true
     steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: vsix
           path: vsix
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       - name: Publish to Marketplace
@@ -753,14 +753,14 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: tools/release
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: vsix
           path: vsix
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
       # The mode (PAT bootstrap, trusted publishing, or a visible skip) and its

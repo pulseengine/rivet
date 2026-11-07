@@ -66,7 +66,7 @@ jobs:
       proofs: ${{ steps.filter.outputs.proofs }}
       e2e: ${{ steps.filter.outputs.e2e }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # REQ-412: the detector lives in tools/ci/detect-changes.sh so its
@@ -89,7 +89,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, light]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -128,7 +128,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -155,7 +155,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # REQ-271 / #567: reclaim disk before a compile-heavy job on the
       # persistent runner.
       - uses: ./.github/actions/free-space
@@ -197,8 +197,8 @@ jobs:
     runs-on: [self-hosted, linux, x64, light]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: pip install yamllint
@@ -276,7 +276,7 @@ jobs:
     if: github.event_name == 'pull_request'
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history so we can diff against the PR base
       - name: Check schema version bumps (warn-only)
@@ -289,7 +289,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # REQ-399: ChangelogStructure compares each released CHANGELOG
           # section with the same section at its tag, so the tags must exist.
@@ -321,7 +321,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # `commits --range base..HEAD` needs real history, not a shallow clone.
           fetch-depth: 0
@@ -426,7 +426,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -448,7 +448,7 @@ jobs:
     env:
       RIVET_ACTIONLINT: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install actionlint
@@ -501,7 +501,7 @@ jobs:
         run: cargo test --workspace --doc
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: target/nextest/ci/junit.xml
@@ -539,12 +539,12 @@ jobs:
     # the check reported as running, blocking a v0.33.1 release cut.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
         run: cargo build --release
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Install Playwright dependencies
@@ -559,7 +559,7 @@ jobs:
           CI: true
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: tests/playwright/test-results/
@@ -585,7 +585,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release binary
@@ -634,14 +634,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build rivet binary
         run: cargo build --release
       - name: Add rivet to PATH
         run: echo "$PWD/target/release" >> $GITHUB_PATH
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Install extension dependencies
@@ -682,7 +682,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -705,7 +705,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, light]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       # cargo-deny v0.16.4 is pre-installed on smithy via the toolchains
       # role; the `cargo install` line below becomes a no-op when the
@@ -753,7 +753,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
@@ -813,7 +813,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # REQ-267: nightly pinned to 2026-07-11 (last known-good) across every
       # nightly job (this Coverage job + both Miri jobs + Fuzz). Nightlies from
       # 2026-07-14 on ICE the compiler while building rivet-core (rustc panic in
@@ -836,14 +836,14 @@ jobs:
         run: cargo llvm-cov -p rivet-core --fail-under-lines 40
       - name: Upload LCOV to Codecov
         if: env.CODECOV_TOKEN != ''
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       - name: Upload HTML coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-html
           path: coverage-html/
@@ -866,7 +866,7 @@ jobs:
     # checkout/cache/toolchain-install so setup can't hang for hours.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267); dated toolchain in `with:` below
         with:
           toolchain: nightly-2026-07-11
@@ -916,7 +916,7 @@ jobs:
     # setup so a wedged checkout/install can't inherit the 360-min default.
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267); dated toolchain in `with:` below
         with:
           toolchain: nightly-2026-07-11
@@ -951,7 +951,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # REQ-305 / #835. This ran `cargo test --all`, so the `ci` profile's
@@ -997,7 +997,7 @@ jobs:
       # queued on self-hosted runner capacity). #495
       - name: Upload proptest regressions (failing seeds, for reproduction)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proptest-regressions
           path: "**/proptest-regressions/*.txt"
@@ -1118,7 +1118,7 @@ jobs:
           - { crate: rivet-yaml, shard: '14/16', shard_id: '14-of-16' }
           - { crate: rivet-yaml, shard: '15/16', shard_id: '15-of-16' }
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -1205,7 +1205,7 @@ jobs:
           fi
       - name: Upload mutants report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutants-report-${{ matrix.crate }}-${{ matrix.shard_id }}
           # Only human-readable reports; skip per-mutant target dirs that
@@ -1236,7 +1236,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # REQ-288: --in-diff needs the PR base commit present locally; a
           # shallow clone makes `git diff <base>...HEAD` fail and (previously,
@@ -1336,7 +1336,7 @@ jobs:
           fi
       - name: Upload mutants report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutants-report-rivet-cli-0-of-1
           # REQ-288: was `mutants-out/*.txt|*.json`, which matched nothing — no
@@ -1385,7 +1385,7 @@ jobs:
     # release or two and the survivors have been triaged.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # REQ-288: --in-diff needs the PR base commit present locally; a
           # shallow clone makes `git diff <base>...HEAD` fail and (previously,
@@ -1469,7 +1469,7 @@ jobs:
           fi
       - name: Upload mutants report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutants-report-rivet-core-pr-0-of-1
           path: mutants-out/mutants.out/
@@ -1483,7 +1483,7 @@ jobs:
     continue-on-error: true
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267); dated toolchain in `with:` below
         with:
           toolchain: nightly-2026-07-11
@@ -1532,7 +1532,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, light]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-vet
         uses: taiki-e/install-action@v2
@@ -1550,7 +1550,7 @@ jobs:
       # failed jobs". Two attempts is enough; a third shutdown in
       # ten minutes points at runner-pool sizing, not this job.
       - name: Vet
-        uses: nick-fields/retry@v3
+        uses: nick-fields/retry@v4
         with:
           timeout_minutes: 5
           max_attempts: 2
@@ -1611,7 +1611,7 @@ jobs:
     # cancelled inside its first harness.
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # REQ-391 / #839: kani-compiler peaks at ~11.8 GB resident on rivet-core
       # (measured with /usr/bin/time -l). ubuntu-latest has 16 GB, and the
       # runner died with "received a shutdown signal" (exit 143) in about half
@@ -1705,9 +1705,9 @@ jobs:
     continue-on-error: true
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Bazel
-        uses: bazel-contrib/setup-bazel@0.14.0
+        uses: bazel-contrib/setup-bazel@0.19.1
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
@@ -1724,14 +1724,14 @@ jobs:
       # self-hosted NoNewPrivileges runner, and an installer version bump broke
       # its no-sudo path (it escalated to sudo and failed at install); #509.
       - name: Install Nix
-        uses: cachix/install-nix-action@v30
+        uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Verus specs
         run: bazel test //verus:rivet_specs_verify
       - name: Upload Verus test log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: verus-test-log
           path: |
@@ -1765,9 +1765,9 @@ jobs:
     continue-on-error: true
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install Bazel
-        uses: bazel-contrib/setup-bazel@0.14.0
+        uses: bazel-contrib/setup-bazel@0.19.1
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
@@ -1781,7 +1781,7 @@ jobs:
       # that constraint was copied from the self-hosted verus job (which
       # IS NoNewPrivileges) and never applied to this `ubuntu-latest` job.
       - name: Install Nix
-        uses: cachix/install-nix-action@v30
+        uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Rocq proofs
@@ -1795,7 +1795,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.89.0
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --all
@@ -1820,7 +1820,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-llvm-cov and cargo-nextest
@@ -1847,7 +1847,7 @@ jobs:
       - name: Generate coverage
         run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: target/release/rivet
       - name: Package results

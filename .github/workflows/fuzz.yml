@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # REQ-267: the same dated nightly as ci.yml's nightly jobs; `cargo fuzz`
       # below uses it as the default (no `+nightly`, which would bypass it).
@@ -56,7 +56,7 @@ jobs:
         run: cargo build --release --bin rivet
 
       - name: Cache fuzz corpora
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             fuzz/corpus/${{ matrix.target }}
@@ -78,7 +78,7 @@ jobs:
 
       - name: Upload crash artifacts
         if: failure() || cancelled()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-crashes-${{ matrix.target }}
           path: |
@@ -88,7 +88,7 @@ jobs:
 
       - name: Upload corpus snapshot
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-corpus-${{ matrix.target }}
           path: fuzz/corpus/${{ matrix.target }}/
