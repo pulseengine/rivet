@@ -42,10 +42,18 @@ updates:
         patterns:
           - "wasmtime"
           - "wasmtime-*"
+      # spar-hir and spar-analysis come from one spar tag and must move together.
+      spar:
+        patterns:
+          - "spar-*"
   - package-ecosystem: npm
     directory: /npm
     schedule:
       interval: weekly
+    # The platform packages are rivet's own release artifacts: release-npm.yml
+    # sets their versions at publish time, so the committed pins are not bumped.
+    ignore:
+      - dependency-name: "@pulseengine/rivet-*"
     labels:
       - dependencies
   - package-ecosystem: npm
