@@ -39,7 +39,7 @@
     "@pulseengine/rivet-darwin-arm64": "0.16.1",
     "@pulseengine/rivet-darwin-x64": "0.16.1",
     "@pulseengine/rivet-linux-arm64": "0.16.1",
-    "@pulseengine/rivet-linux-x64": "0.16.1",
+    "@pulseengine/rivet-linux-x64": "0.37.0",
     "@pulseengine/rivet-win32-x64": "0.16.1"
   },
   "engines": {
