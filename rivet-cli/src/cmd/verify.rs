@@ -4,7 +4,9 @@ use anyhow::Result;
 use rivet_core::discharge::{self, Detection, Discharge};
 
 use crate::{
-    Cli, ModifyCaller, ProjectContext, cmd_modify_inner, default_marker_scan_paths, validate_format,
+    Cli, ProjectContext,
+    cmd::mutate::{ModifyCaller, cmd_modify_inner},
+    default_marker_scan_paths, validate_format,
 };
 
 /// #547 (REQ-238): trace a requirement FORWARD to the test results that cover
