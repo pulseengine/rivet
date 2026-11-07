@@ -137,7 +137,7 @@
     "@types/mocha": "^10",
     "@types/glob": "^8",
     "@vscode/test-electron": "^3.1.0",
-    "mocha": "^10",
+    "mocha": "^12",
     "glob": "^14",
     "typescript": "^5.9.0",
     "esbuild": "^0.28.2"
