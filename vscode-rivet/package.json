@@ -135,7 +135,7 @@
     "@types/vscode": "~1.91.0",
     "@types/node": "^26",
     "@types/mocha": "^10",
-    "@types/glob": "^8",
+    "@types/glob": "^9",
     "@vscode/test-electron": "^3.1.0",
     "mocha": "^12",
     "glob": "^14",
