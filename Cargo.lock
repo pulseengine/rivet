@@ -240,7 +240,7 @@ dependencies = [
  "bitflags 2.11.1",
  "cexpr",
  "clang-sys",
- "itertools 0.12.1",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -1461,6 +1461,8 @@ version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
 dependencies = [
+ "allocator-api2",
+ "equivalent",
  "foldhash 0.2.0",
  "serde",
  "serde_core",
@@ -1473,6 +1475,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1"
 dependencies = [
  "hashbrown 0.15.5",
+]
+
+[[package]]
+name = "hashlink"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
+dependencies = [
+ "hashbrown 0.17.0",
 ]
 
 [[package]]
@@ -1876,6 +1887,12 @@ checksum = "189d0897e4cbe8c75efedf3502c18c887b05046e59d28404d4d8e46cbc4d1e86"
 dependencies = [
  "memoffset",
 ]
+
+[[package]]
+name = "intrusive-collections"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4275b20e6057cd7733fd8df8a5a31701e4fe44497dad0f3fa0e1c4fb971506be"
 
 [[package]]
 name = "inventory"
@@ -3051,7 +3068,7 @@ dependencies = [
  "reqwest",
  "rivet-yaml",
  "rowan 0.16.2",
- "salsa",
+ "salsa 0.26.1",
  "serde",
  "serde_json",
  "serial_test",
@@ -3272,19 +3289,45 @@ dependencies = [
  "crossbeam-queue",
  "crossbeam-utils",
  "hashbrown 0.15.5",
- "hashlink",
+ "hashlink 0.10.0",
  "indexmap 2.14.0",
- "intrusive-collections",
+ "intrusive-collections 0.9.7",
  "inventory",
  "parking_lot",
  "portable-atomic",
  "rayon",
  "rustc-hash 2.1.2",
- "salsa-macro-rules",
- "salsa-macros",
+ "salsa-macro-rules 0.26.1",
+ "salsa-macros 0.26.1",
  "smallvec",
  "thin-vec",
  "tracing",
+]
+
+[[package]]
+name = "salsa"
+version = "0.28.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27d2e6e19e39591cd99c01ac4141544b4d012cfd0831348629b8187fa9fe6d34"
+dependencies = [
+ "boxcar",
+ "crossbeam-queue",
+ "crossbeam-utils",
+ "hashbrown 0.17.0",
+ "hashlink 0.12.2",
+ "indexmap 2.14.0",
+ "intrusive-collections 0.10.3",
+ "inventory",
+ "parking_lot",
+ "portable-atomic",
+ "rayon",
+ "rustc-hash 2.1.2",
+ "salsa-macro-rules 0.28.5",
+ "salsa-macros 0.28.5",
+ "smallvec",
+ "thin-vec",
+ "tracing",
+ "typeid",
 ]
 
 [[package]]
@@ -3292,6 +3335,12 @@ name = "salsa-macro-rules"
 version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec256ece77895f4a8d624cecc133dd798c7961a861439740b1c7410a613ee7ba"
+
+[[package]]
+name = "salsa-macro-rules"
+version = "0.28.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "baf90a551c38f25ed8489111d3d5827aa18e1b85963f5e6a298505b1d1e2cb7e"
 
 [[package]]
 name = "salsa-macros"
@@ -3303,6 +3352,17 @@ dependencies = [
  "quote",
  "syn 2.0.117",
  "synstructure",
+]
+
+[[package]]
+name = "salsa-macros"
+version = "0.28.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69dd77f86ec10e72e314f4ddf7c44c8d349e73cdff1aad524ba9668603fb0549"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -3590,7 +3650,7 @@ dependencies = [
  "la-arena",
  "rustc-hash 2.1.2",
  "serde",
- "spar-hir-def",
+ "spar-hir-def 0.13.0",
  "spar-network",
 ]
 
@@ -3600,7 +3660,16 @@ version = "0.13.0"
 source = "git+https://github.com/pulseengine/spar.git?tag=v0.13.0#d185c9a0f6a4630bb421516391cdf3be59d41224"
 dependencies = [
  "rowan 0.16.1",
- "spar-syntax",
+ "spar-syntax 0.13.0",
+]
+
+[[package]]
+name = "spar-annex"
+version = "0.48.1"
+source = "git+https://github.com/pulseengine/spar.git?tag=v0.48.1#cd3a5206098cf3b1cdfef0b394750a08aba43148"
+dependencies = [
+ "rowan 0.16.1",
+ "spar-syntax 0.48.1",
 ]
 
 [[package]]
@@ -3609,22 +3678,33 @@ version = "0.13.0"
 source = "git+https://github.com/pulseengine/spar.git?tag=v0.13.0#d185c9a0f6a4630bb421516391cdf3be59d41224"
 dependencies = [
  "rowan 0.16.1",
- "salsa",
- "spar-annex",
- "spar-syntax",
+ "salsa 0.26.1",
+ "spar-annex 0.13.0",
+ "spar-syntax 0.13.0",
+]
+
+[[package]]
+name = "spar-base-db"
+version = "0.48.1"
+source = "git+https://github.com/pulseengine/spar.git?tag=v0.48.1#cd3a5206098cf3b1cdfef0b394750a08aba43148"
+dependencies = [
+ "rowan 0.16.1",
+ "salsa 0.28.5",
+ "spar-annex 0.48.1",
+ "spar-syntax 0.48.1",
 ]
 
 [[package]]
 name = "spar-hir"
-version = "0.13.0"
-source = "git+https://github.com/pulseengine/spar.git?tag=v0.13.0#d185c9a0f6a4630bb421516391cdf3be59d41224"
+version = "0.48.1"
+source = "git+https://github.com/pulseengine/spar.git?tag=v0.48.1#cd3a5206098cf3b1cdfef0b394750a08aba43148"
 dependencies = [
- "salsa",
+ "salsa 0.28.5",
  "serde",
  "smol_str",
- "spar-base-db",
- "spar-hir-def",
- "spar-syntax",
+ "spar-base-db 0.48.1",
+ "spar-hir-def 0.48.1",
+ "spar-syntax 0.48.1",
 ]
 
 [[package]]
@@ -3635,11 +3715,27 @@ dependencies = [
  "la-arena",
  "rowan 0.16.1",
  "rustc-hash 2.1.2",
- "salsa",
+ "salsa 0.26.1",
  "serde",
  "smol_str",
- "spar-base-db",
- "spar-syntax",
+ "spar-base-db 0.13.0",
+ "spar-syntax 0.13.0",
+]
+
+[[package]]
+name = "spar-hir-def"
+version = "0.48.1"
+source = "git+https://github.com/pulseengine/spar.git?tag=v0.48.1#cd3a5206098cf3b1cdfef0b394750a08aba43148"
+dependencies = [
+ "la-arena",
+ "rowan 0.16.1",
+ "rustc-hash 2.1.2",
+ "salsa 0.28.5",
+ "serde",
+ "smol_str",
+ "spar-annex 0.48.1",
+ "spar-base-db 0.48.1",
+ "spar-syntax 0.48.1",
 ]
 
 [[package]]
@@ -3648,7 +3744,7 @@ version = "0.13.0"
 source = "git+https://github.com/pulseengine/spar.git?tag=v0.13.0#d185c9a0f6a4630bb421516391cdf3be59d41224"
 dependencies = [
  "good_lp",
- "spar-hir-def",
+ "spar-hir-def 0.13.0",
 ]
 
 [[package]]
@@ -3660,12 +3756,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "spar-parser"
+version = "0.48.1"
+source = "git+https://github.com/pulseengine/spar.git?tag=v0.48.1#cd3a5206098cf3b1cdfef0b394750a08aba43148"
+dependencies = [
+ "rowan 0.16.1",
+]
+
+[[package]]
 name = "spar-syntax"
 version = "0.13.0"
 source = "git+https://github.com/pulseengine/spar.git?tag=v0.13.0#d185c9a0f6a4630bb421516391cdf3be59d41224"
 dependencies = [
  "rowan 0.16.1",
- "spar-parser",
+ "spar-parser 0.13.0",
+]
+
+[[package]]
+name = "spar-syntax"
+version = "0.48.1"
+source = "git+https://github.com/pulseengine/spar.git?tag=v0.48.1#cd3a5206098cf3b1cdfef0b394750a08aba43148"
+dependencies = [
+ "rowan 0.16.1",
+ "spar-parser 0.48.1",
 ]
 
 [[package]]
@@ -3739,6 +3852,17 @@ name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e665b8803e7b1d2a727f4023456bbbbe74da67099c585258af0ad9c5013b9b99"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
+version = "3.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d78c8dee4c7bf0e14673097256fed6142ce9d3b85a408189d07482442145823b"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4102,6 +4226,12 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "typeid"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c"
 
 [[package]]
 name = "typenum"
