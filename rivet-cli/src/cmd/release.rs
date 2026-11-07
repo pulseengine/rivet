@@ -5,8 +5,9 @@ use rivet_core::links::LinkGraph;
 use rivet_core::model::ProjectConfig;
 
 use crate::{
-    Cli, ProjectContext, cmd_modify, default_marker_scan_paths, load_feature_model_via_project,
-    load_result_store, marker_verified_ids, resolve_variant_arg, validate_format,
+    Cli, ProjectContext, cmd::mutate::cmd_modify, default_marker_scan_paths,
+    load_feature_model_via_project, load_result_store, marker_verified_ids, resolve_variant_arg,
+    validate_format,
 };
 
 /// REQ-234 / #516: re-target an artifact to a different release — a logged scope
