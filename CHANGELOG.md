@@ -13,6 +13,18 @@
   for the traced requirement. JSON gains a `discharge` object
   (`{"discharged", "total", "stale"}`). A stale record shows as stale, never
   as its old fraction.
+- **Repository boundary manifest** (REQ-415, #1159). A new embedded
+  `manifest` schema declares `provides` (what a repo ships: crate, component,
+  wit-package, release-asset, proof-target, bazel-target, required-check,
+  contract, tool, oci) and `consumes` (what it pins, as
+  `pin: {kind: tag|rev|sha256|path+ref|oci, value}`). `rivet validate` fails
+  on an unknown kind or pin kind, an empty pin value, or a missing
+  kind-specific field or locator. `rivet manifest export --format json`
+  prints or writes (`--output`) `pulseengine.manifest.json`, which conforms to
+  the new `schemas/pulseengine.manifest.v1.json`, keeps every declared field,
+  and lists each entry's gates (`gated-by` links and `required-checks`). It
+  exits 1 when a manifest artifact fails validation and 2 on a usage error.
+  See `rivet docs manifest`.
 - **Merge-queue ready CI, and cheaper docs-only PRs** (REQ-412). `CI` runs on
   the merge queue's `merge_group` event, so `CI Gate` reports for a queued PR;
   queue runs diff against the queue base and skip the advisory jobs. Kani,

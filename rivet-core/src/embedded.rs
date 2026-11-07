@@ -37,6 +37,8 @@ pub const SCHEMA_EN_50128: &str = include_str!("../../schemas/en-50128.yaml");
 pub const SCHEMA_IEC_61508: &str = include_str!("../../schemas/iec-61508.yaml");
 pub const SCHEMA_IEC_62304: &str = include_str!("../../schemas/iec-62304.yaml");
 pub const SCHEMA_ORDEAL_CERTIFICATE: &str = include_str!("../../schemas/ordeal-certificate.yaml");
+/// Repository boundary manifest (`provides` / `consumes`, #1159).
+pub const SCHEMA_MANIFEST: &str = include_str!("../../schemas/manifest.yaml");
 
 // ── Embedded migration recipes ──────────────────────────────────────────
 
@@ -93,6 +95,7 @@ pub const SCHEMA_NAMES: &[&str] = &[
     "iec-61508",
     "iec-62304",
     "ordeal-certificate",
+    "manifest",
 ];
 
 /// Metadata for a built-in bridge schema.
@@ -230,6 +233,7 @@ pub fn embedded_schema(name: &str) -> Option<&'static str> {
         "iec-61508" => Some(SCHEMA_IEC_61508),
         "iec-62304" => Some(SCHEMA_IEC_62304),
         "ordeal-certificate" => Some(SCHEMA_ORDEAL_CERTIFICATE),
+        "manifest" => Some(SCHEMA_MANIFEST),
         _ => None,
     }
 }

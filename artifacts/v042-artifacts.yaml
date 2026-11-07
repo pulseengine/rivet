@@ -459,3 +459,23 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-4-7
       timestamp: 2026-04-22T20:25:20Z
+
+  - id: FEAT-140
+    type: feature
+    title: Repository boundary manifest schema and rivet manifest export (#1159)
+    status: implemented
+    description: The embedded manifest schema declares provides / consumes artifacts with structured validation (kind enum, kind-specific fields, locator, pin {kind, value}); rivet manifest export --format json writes pulseengine.manifest.json conforming to schemas/pulseengine.manifest.v1.json. rivet docs manifest documents both.
+    tags: [manifest, schema, cli, cross-repo]
+    fields:
+      acceptance-criteria:
+        - "rivet validate rejects malformed provides / consumes artifacts with an ERROR (schemas/manifest.yaml, rivet-core/src/manifest.rs)"
+        - "rivet manifest export writes a document conforming to schemas/pulseengine.manifest.v1.json (rivet-cli/src/manifest_cmd.rs)"
+        - "rivet docs manifest documents the schema and the command"
+        - "Verified by the rivet-core manifest unit tests, rivet-cli/tests/manifest_cmd.rs and the manifest section of rivet-cli/tests/json_output_contracts.rs"
+    links:
+      - type: satisfies
+        target: REQ-415
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-04T12:58:39Z

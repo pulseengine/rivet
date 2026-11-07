@@ -358,6 +358,12 @@ const TOPICS: &[DocTopic] = &[
         content: embedded::SCHEMA_VV_COVERAGE,
     },
     DocTopic {
+        slug: "manifest",
+        title: "Repository boundary manifest — provides/consumes schema and rivet manifest export",
+        category: "Schemas",
+        content: MANIFEST_DOC,
+    },
+    DocTopic {
         slug: "schema/ordeal-certificate",
         title: "ordeal-certificate schema — machine-re-checkable proof evidence",
         category: "Schemas",
@@ -453,6 +459,144 @@ const ORDEAL_CERTIFICATE_DOC: &str = concat!(
 
 "#,
     include_str!("../../schemas/ordeal-certificate.yaml"),
+);
+
+/// `rivet docs manifest` (#1159): the `manifest` schema and
+/// `rivet manifest export`, followed by the schema source.
+const MANIFEST_DOC: &str = concat!(
+    r#"# Repository boundary manifest
+
+The embedded `manifest` schema describes what a repository ships to other
+repositories (`provides`) and what it pins from them (`consumes`).
+`rivet manifest export --format json` turns those artifacts into
+`pulseengine.manifest.json`, a document that conforms to the JSON Schema
+committed at `schemas/pulseengine.manifest.v1.json`
+(`schema_version: "pulseengine.manifest/1"`).
+
+## Enabling the schema
+
+List `manifest` in `rivet.yaml`, or pick it at init time:
+
+```bash
+rivet init --preset dev --schema common,dev,manifest
+```
+
+```yaml
+project:
+  name: my-repo
+  schemas:
+    - common
+    - dev
+    - manifest
+```
+
+## `provides`
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `kind` | yes | `crate`, `component`, `wit-package`, `release-asset`, `proof-target`, `bazel-target`, `required-check`, `contract`, `tool`, `oci` |
+| `entry-id` | yes | The deliverable's identifier (crate name, package, label…). Exported as `id`; `id` itself is the rivet artifact id. |
+| `version` | yes | Version of the deliverable. |
+| `path` / `oci` | per kind | Locator. Every kind except `required-check` needs one. |
+| `workspace` | `crate` | `root` or `nested` |
+| `index`, `world` | `component` (optional) | Component index and WIT world |
+| `asset` | `release-asset` | Release asset file name |
+| `backend` | `proof-target` | `kani`, `verus`, `rocq`, `lean` |
+| `mode` | `bazel-target` | `must-build` or `waived`; a waived target also needs `waiver` (the issue link) |
+| `context` | `required-check` | The CI status-check context name |
+| `contract` | `contract` | `seam`, `wire-binding`, `table` (its version is `version`) |
+| `required-checks` | no | Gate binding: CI check contexts that must pass |
+
+Gate binding: a `gated-by` link from a `provides` artifact names a
+verification artifact (a test, proof, review…) that backs it.
+
+## `consumes`
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `repo` | yes | Upstream repository |
+| `entry-id` | yes | The upstream deliverable's id (its `provides[].id`) |
+| `pin` | yes | Mapping `{kind, value}`: `kind` is `tag`, `rev`, `sha256`, `path+ref` or `oci`; `value` must not be empty |
+
+## Example
+
+```yaml
+artifacts:
+  - id: PROV-001
+    type: provides
+    title: core crate
+    status: approved
+    fields:
+      kind: crate
+      entry-id: my-core
+      version: 0.1.0
+      path: crates/my-core
+      workspace: nested
+      required-checks: [ci / test]
+    links:
+      - type: gated-by
+        target: REQ-001
+  - id: CONS-001
+    type: consumes
+    title: upstream analysis crate
+    status: approved
+    fields:
+      repo: pulseengine/spar
+      entry-id: spar-analysis
+      pin: {kind: tag, value: v0.1.0}
+```
+
+## What `rivet validate` checks
+
+Besides the generic checks (`required-field` for a `provides` without
+`version` or a `consumes` without `pin`), these rules report an ERROR, so
+`rivet validate` exits 1:
+
+| Rule | Fires when |
+|------|------------|
+| `manifest-kind` | `kind` is not one of the kinds above |
+| `manifest-kind-field` | a kind-specific field is missing (`workspace` on a crate, `waiver` on a waived bazel-target, …) |
+| `manifest-enum` | `workspace`, `backend`, `mode` or `contract` holds a value outside its set |
+| `manifest-locator` | neither `path` nor `oci` is set on a kind that needs a locator |
+| `manifest-pin` | `pin` is not a mapping, `pin.kind` is missing or unknown, or `pin.value` is missing or empty |
+| `manifest-empty` | `entry-id`, `version` or `repo` is present but empty |
+
+## `rivet manifest export`
+
+```bash
+rivet manifest export --format json                      # print to stdout
+rivet manifest export --output pulseengine.manifest.json # write a file
+rivet manifest export --output dist/ --repo pulseengine/my-repo --tag v0.1.0
+```
+
+- `--output` writes the file (a directory gets `pulseengine.manifest.json`
+  inside it); without it the document goes to stdout.
+- `--repo` sets `repo` (default: the project name in `rivet.yaml`).
+- `--tag` sets `release.tag` (default: `null`).
+
+The document has six top-level fields: `schema_version`, `repo`,
+`release {tag}`, `provides[]`, `consumes[]` and `gates[]`. Each `provides` /
+`consumes` entry carries every field set on its artifact (with `entry-id`
+written as `id`), plus `artifact` (the rivet id) and `title`. Scalars in
+string fields are written as strings, so `version: 1` exports as `"1"`.
+`gates[]` flattens the gate bindings: one record per `gated-by` link
+(`kind: artifact`, with the target's `type` and `status`) and one per
+`required-checks` entry (`kind: required-check`).
+
+Exit codes: `0` exported; `1` a `provides` / `consumes` artifact has a
+validation error (the errors go to stderr and nothing is written); `2` usage —
+an unknown flag or `--format` value, or a project that does not load the
+`manifest` schema.
+
+Out of scope: cross-repository checks (does the pinned upstream really
+provide the id?) — the manifest is the input those checks will read.
+
+---
+
+## Schema source (`schemas/manifest.yaml`)
+
+"#,
+    include_str!("../../schemas/manifest.yaml"),
 );
 
 const TOOL_QUALIFICATION_DOC: &str =
@@ -3540,6 +3684,7 @@ name in `rivet.yaml` and merged in order.
 | dev            | 3     | `dev`            | requirement, design-decision, feature    |
 | research       | 5     | —                | market-analysis, patent, tech-eval, competitor-analysis, academic-ref |
 | supply-chain   | 4     | —                | sbom-component, build-attestation, vulnerability, release-artifact (CRA, SBOM, SLSA) |
+| manifest       | 2     | —                | provides, consumes — repository boundary manifest, exported by `rivet manifest export` (see `rivet docs manifest`) |
 
 ## Safety Schemas
 

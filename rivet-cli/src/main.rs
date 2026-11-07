@@ -66,6 +66,7 @@ mod check;
 mod close_gaps;
 mod cmd;
 mod docs;
+mod manifest_cmd;
 #[cfg(feature = "mcp")]
 mod mcp;
 mod migrate_cmd;
@@ -1112,6 +1113,15 @@ enum Command {
     Pipelines {
         #[command(subcommand)]
         action: PipelinesAction,
+    },
+
+    /// Export the repository boundary manifest (provides / consumes)
+    ///
+    /// Writes pulseengine.manifest.json from the `manifest` schema's
+    /// artifacts. See `rivet docs manifest`.
+    Manifest {
+        #[command(subcommand)]
+        action: manifest_cmd::ManifestAction,
     },
 
     /// Inspect, render, copy, and diff per-pipeline-kind prompt templates.
@@ -2543,6 +2553,7 @@ fn qualification_refusal(cmd: &Command) -> Option<&'static str> {
         | Command::NextId { .. }
         | Command::Runs { .. }
         | Command::Pipelines { .. }
+        | Command::Manifest { .. }
         | Command::Baseline { .. } => None,
         // `docs` prints, except `check --fix` (rewrites doc files in place)
         // and `--export` (writes the reference export).
@@ -3189,6 +3200,7 @@ fn run(cli: Cli) -> Result<bool> {
                 }
             }
         }
+        Command::Manifest { action } => manifest_cmd::run(&cli, action),
         Command::Templates { action } => match action {
             TemplatesAction::List { format } => templates_cmd::cmd_list(&cli.project, format),
             TemplatesAction::Show {

@@ -1,0 +1,65 @@
+# Fixture for rivet-cli/tests/manifest_cmd.rs and json_output_contracts.rs
+# (#1159): one provides per interesting kind plus two consumes. The export
+# tests assert on every field value below.
+artifacts:
+  - id: PROV-001
+    type: provides
+    title: core crate
+    status: draft
+    fields:
+      kind: crate
+      entry-id: my-core
+      version: 0.1.0
+      path: crates/my-core
+      workspace: nested
+      required-checks: [ci / test, ci / clippy]
+    links:
+      - type: gated-by
+        target: REQ-001
+  - id: PROV-002
+    type: provides
+    title: wasm component
+    status: draft
+    fields:
+      kind: component
+      entry-id: pulseengine:my-component
+      version: 0.1.0
+      oci: ghcr.io/pulseengine/my-component:v0.1.0
+      index: wa.dev
+      world: pulseengine:my/world
+  - id: PROV-003
+    type: provides
+    title: waived bazel target
+    status: draft
+    fields:
+      kind: bazel-target
+      entry-id: //tools:gen
+      version: 0.1.0
+      path: tools
+      mode: waived
+      waiver: https://github.com/pulseengine/rivet/issues/1159
+  - id: PROV-004
+    type: provides
+    title: test check
+    status: draft
+    fields:
+      kind: required-check
+      entry-id: ci-test
+      version: 1
+      context: ci / test
+  - id: CONS-001
+    type: consumes
+    title: spar analysis
+    status: draft
+    fields:
+      repo: pulseengine/spar
+      entry-id: spar-analysis
+      pin: {kind: tag, value: v0.1.0}
+  - id: CONS-002
+    type: consumes
+    title: wit deps
+    status: draft
+    fields:
+      repo: pulseengine/wit
+      entry-id: pulseengine:wit
+      pin: {kind: path+ref, value: "wit/deps@abc123"}
