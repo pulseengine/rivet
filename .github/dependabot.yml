@@ -3,78 +3,72 @@ version: 2
 # (wasm-tools, wasmtime) and all github-actions pins in / must not split into
 # one PR per directory. (Learned from loom/witness/mcp/relay/rules_wasm_component,
 # where one release arrived as 4-8 PRs.)
-groups:
-  wasm-tools-family:
-    patterns:
-      - "wasmparser"
-      - "wasm-encoder"
-      - "wasmprinter"
-      - "wit-component"
-      - "wit-parser"
-      - "wasm-metadata"
-      - "wat"
-      - "walrus"
-  wasmtime:
-    patterns:
-      - "wasmtime"
-      - "wasmtime-*"
-  github-actions-all:
-    patterns:
-      - "^[^@]+/"
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    labels: &ref_0
+    labels:
       - dependencies
+    groups:
+      github-actions-all:
+        patterns:
+          - "*"
+  # One cargo entry over every directory, so a grouped release opens one PR
+  # and not one per directory.
   - package-ecosystem: cargo
-    directory: /
+    directories:
+      - /
+      - /etch
+      - /fuzz
+      - /rivet-cli
+      - /rivet-core
     schedule:
       interval: weekly
-    labels: *ref_0
-  - package-ecosystem: cargo
-    directory: /etch
-    schedule:
-      interval: weekly
-    labels: *ref_0
-  - package-ecosystem: cargo
-    directory: /fuzz
-    schedule:
-      interval: weekly
-    labels: *ref_0
-  - package-ecosystem: cargo
-    directory: /rivet-cli
-    schedule:
-      interval: weekly
-    labels: *ref_0
-  - package-ecosystem: cargo
-    directory: /rivet-core
-    schedule:
-      interval: weekly
-    labels: *ref_0
+    labels:
+      - dependencies
+    groups:
+      wasm-tools-family:
+        patterns:
+          - "wasmparser"
+          - "wasm-encoder"
+          - "wasmprinter"
+          - "wit-component"
+          - "wit-parser"
+          - "wasm-metadata"
+          - "wat"
+          - "walrus"
+      wasmtime:
+        patterns:
+          - "wasmtime"
+          - "wasmtime-*"
   - package-ecosystem: npm
     directory: /npm
     schedule:
       interval: weekly
-    labels: *ref_0
+    labels:
+      - dependencies
   - package-ecosystem: npm
     directory: /vscode-rivet
     schedule:
       interval: weekly
-    labels: *ref_0
+    labels:
+      - dependencies
   - package-ecosystem: npm
     directory: /platform-packages/darwin-arm64
     schedule:
       interval: weekly
-    labels: *ref_0
+    labels:
+      - dependencies
   - package-ecosystem: npm
     directory: /platform-packages/darwin-x64
     schedule:
       interval: weekly
-    labels: *ref_0
+    labels:
+      - dependencies
   - package-ecosystem: npm
     directory: /platform-packages/linux-arm64
     schedule:
       interval: weekly
-    labels: *ref_0
+    labels:
+      - dependencies
