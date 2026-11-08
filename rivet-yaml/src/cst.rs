@@ -204,6 +204,16 @@ pub struct Token<'src> {
 ///
 /// Every byte of the input is accounted for (whitespace and comments are kept).
 pub fn lex(source: &str) -> Vec<Token<'_>> {
+    lex_with_hints(source).0
+}
+
+/// [`lex`], plus a precise diagnosis for each double-quoted scalar that did
+/// not close because a continuation line was under-indented. The lexer itself
+/// never fails: such a quote falls back to a plain scalar, and the parser then
+/// trips over the left-over line with a message about mapping keys. These
+/// hints are not errors on their own (see [`parse`]).
+fn lex_with_hints(source: &str) -> (Vec<Token<'_>>, Vec<ParseError>) {
+    let mut hints = Vec::new();
     let mut tokens = Vec::new();
     let bytes = source.as_bytes();
     let mut pos = 0;
@@ -402,14 +412,25 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
                     SyntaxKind::DoubleQuotedScalar
                 };
                 match scan_quoted_scalar(bytes, start) {
-                    Some(end) => {
+                    Ok(end) => {
                         pos = end;
                         tokens.push(Token {
                             kind,
                             text: &source[start..pos],
                         });
                     }
-                    None => {
+                    Err(fail) => {
+                        if let (
+                            b'"',
+                            QuoteFail::UnderIndented {
+                                at,
+                                indent,
+                                open_indent,
+                            },
+                        ) = (b, fail)
+                        {
+                            hints.push(under_indented_hint(bytes, start, at, indent, open_indent));
+                        }
                         pos = lex_plain_scalar(source, bytes, start);
                         tokens.push(Token {
                             kind: SyntaxKind::PlainScalar,
@@ -446,7 +467,7 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
         }
     }
 
-    tokens
+    (tokens, hints)
 }
 
 /// The content indentation of the block scalar whose header (`|` or `>`) is
@@ -507,9 +528,9 @@ fn is_anchor_char(c: u8) -> bool {
 /// empty lines are skipped and the next non-empty line must be indented deeper
 /// than the line the quote opened on. Anything at or left of that indentation
 /// — a sibling key, the end of a block body, a document marker — ends the
-/// attempt and the scalar is reported as unclosed.
-fn scan_quoted_scalar(bytes: &[u8], start: usize) -> Option<usize> {
-    let quote = *bytes.get(start)?;
+/// attempt and the scalar is reported as unclosed, with the reason.
+fn scan_quoted_scalar(bytes: &[u8], start: usize) -> Result<usize, QuoteFail> {
+    let quote = *bytes.get(start).ok_or(QuoteFail::Eof)?;
     let line_start = bytes[..start]
         .iter()
         .rposition(|&c| c == b'\n' || c == b'\r')
@@ -526,29 +547,70 @@ fn scan_quoted_scalar(bytes: &[u8], start: usize) -> Option<usize> {
                     pos += 2;
                     continue;
                 }
-                return Some(pos + 1);
+                return Ok(pos + 1);
             }
-            b'"' if quote == b'"' => return Some(pos + 1),
+            b'"' if quote == b'"' => return Ok(pos + 1),
             // An escape. `\` + line break is an escaped line break and falls to
             // the continuation rule on the next iteration, like a plain break.
             b'\\' if quote == b'"' => {
                 pos += match bytes.get(pos + 1) {
                     Some(b'\n' | b'\r') => 1,
                     Some(_) => 2,
-                    None => return None,
+                    None => return Err(QuoteFail::Eof),
                 };
             }
             b'\n' | b'\r' => pos = quoted_continuation(bytes, pos, open_indent)?,
             _ => pos += 1,
         }
     }
-    None
+    Err(QuoteFail::Eof)
+}
+
+/// Why a quoted scalar did not close.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum QuoteFail {
+    /// The input ended inside the scalar.
+    Eof,
+    /// The line starting at byte `at` (its first non-blank byte) is indented
+    /// `indent` spaces, not deeper than the `open_indent` of the line the
+    /// quote opened on. YAML 1.2 requires deeper (yaml-test-suite QB6E).
+    UnderIndented {
+        at: usize,
+        indent: usize,
+        open_indent: usize,
+    },
+}
+
+/// The diagnosis for a double-quoted scalar that `QuoteFail::UnderIndented`
+/// stopped, located at the offending line (#1209).
+fn under_indented_hint(
+    bytes: &[u8],
+    start: usize,
+    at: usize,
+    indent: usize,
+    open_indent: usize,
+) -> ParseError {
+    let opened_line = 1 + bytes[..start].iter().filter(|&&c| c == b'\n').count();
+    ParseError {
+        offset: at,
+        message: format!(
+            "double-quoted scalar opened on line {opened_line} is not closed: this \
+             continuation line is indented {indent} spaces, but a quoted scalar's \
+             continuation lines must be indented deeper than the line it opened on \
+             ({open_indent} spaces; YAML 1.2 \u{a7}7.3, yaml-test-suite QB6E). Indent \
+             the continuation lines further, or join the scalar onto one line"
+        ),
+    }
 }
 
 /// From a line break inside a quoted scalar, skip empty lines and return the
 /// position of the next line's first non-blank byte if that line is indented
-/// deeper than `open_indent`; otherwise `None`. See `scan_quoted_scalar`.
-fn quoted_continuation(bytes: &[u8], mut pos: usize, open_indent: usize) -> Option<usize> {
+/// deeper than `open_indent`; otherwise why not. See `scan_quoted_scalar`.
+fn quoted_continuation(
+    bytes: &[u8],
+    mut pos: usize,
+    open_indent: usize,
+) -> Result<usize, QuoteFail> {
     loop {
         if bytes.get(pos) == Some(&b'\r') {
             pos += 1;
@@ -561,14 +623,22 @@ fn quoted_continuation(bytes: &[u8], mut pos: usize, open_indent: usize) -> Opti
             pos += 1;
         }
         match bytes.get(pos) {
-            None => return None,
+            None => return Err(QuoteFail::Eof),
             Some(b'\n' | b'\r') => continue,
             Some(_) => {
                 let indent = bytes[line_start..pos]
                     .iter()
                     .take_while(|&&c| c == b' ')
                     .count();
-                return (indent > open_indent).then_some(pos);
+                return if indent > open_indent {
+                    Ok(pos)
+                } else {
+                    Err(QuoteFail::UnderIndented {
+                        at: pos,
+                        indent,
+                        open_indent,
+                    })
+                };
             }
         }
     }
@@ -628,11 +698,40 @@ pub struct ParseError {
 /// Returns the green node and any parse errors. The tree is lossless:
 /// `SyntaxNode::new_root(green).text() == source`.
 pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
-    let tokens = lex(source);
+    let (tokens, hints) = lex_with_hints(source);
     let mut parser = Parser::new(&tokens, source);
     parser.parse_root();
     let green = parser.builder.finish();
-    (green, parser.errors)
+    let mut errors = parser.errors;
+    // An under-indented double-quoted scalar surfaces as a confusing parser
+    // error on its continuation line ("expected ':' after mapping key",
+    // #1209). Keep the precise diagnosis of each such scalar whose
+    // continuation line also carries a parser error, ordered before it. A
+    // hint with no parser error on its line is dropped: block-scalar prose
+    // can hold an unclosed `"` that is not a scalar at all, and a document
+    // that parses cleanly must stay clean.
+    let line_end = |at: usize| {
+        source.as_bytes()[at..]
+            .iter()
+            .position(|&c| c == b'\n')
+            .map_or(source.len(), |i| at + i)
+    };
+    let explained: Vec<ParseError> = hints
+        .into_iter()
+        .filter(|h| {
+            let end = line_end(h.offset);
+            errors
+                .iter()
+                .any(|e| e.offset >= h.offset && e.offset <= end)
+        })
+        .collect();
+    if !explained.is_empty() {
+        errors.extend(explained);
+        // Stable: on a shared offset the parser's own order is kept, and a
+        // hint (at the line's first non-blank byte) precedes the errors after it.
+        errors.sort_by_key(|e| e.offset);
+    }
+    (green, errors)
 }
 
 struct Parser<'src> {
@@ -2412,5 +2511,112 @@ artifacts:
         assert_eq!(root.text().to_string(), source);
         // But there should be errors
         assert!(!errors.is_empty(), "should have parse errors");
+    }
+
+    // ── #1209: under-indented double-quoted continuation ────────────
+
+    /// The shape synth's artifacts used: an escaped line break whose next line
+    /// is indented LESS than the key that opened the quote. YAML 1.2 rejects
+    /// it (yaml-test-suite QB6E); rivet does too, and must say why, at the
+    /// offending line, instead of "expected ':' after mapping key".
+    const SYNTH_1209: &str = "artifacts:\n  - id: RQ-1\n    type: requirement\n    title: \"first half \\\n  \\ second half\"\n    status: draft\n";
+
+    fn line_of(src: &str, offset: usize) -> usize {
+        1 + src[..offset].matches('\n').count()
+    }
+
+    #[test]
+    fn under_indented_double_quote_leads_with_a_precise_error() {
+        let (_, errors) = parse(SYNTH_1209);
+        let first = errors
+            .first()
+            .expect("an under-indented continuation is an error");
+        assert_eq!(
+            first.message,
+            "double-quoted scalar opened on line 4 is not closed: this continuation \
+             line is indented 2 spaces, but a quoted scalar's continuation lines must \
+             be indented deeper than the line it opened on (4 spaces; YAML 1.2 \u{a7}7.3, \
+             yaml-test-suite QB6E). Indent the continuation lines further, or join the \
+             scalar onto one line"
+        );
+        assert_eq!(
+            line_of(SYNTH_1209, first.offset),
+            5,
+            "points at the continuation line"
+        );
+        assert_eq!(&SYNTH_1209[first.offset..first.offset + 2], "\\ ");
+        // The confusing downstream error is still reported, just not first.
+        assert!(
+            errors[1..]
+                .iter()
+                .any(|e| e.message.contains("expected ':' after mapping key")),
+            "{errors:?}"
+        );
+    }
+
+    /// Each under-indented scalar is explained at its own line, not only the
+    /// first one in the file (synth's files had two each).
+    #[test]
+    fn every_under_indented_scalar_is_explained() {
+        let src = format!("{SYNTH_1209}    note: \"again \\\n  \\ here\"\n");
+        let (_, errors) = parse(&src);
+        let lines: Vec<usize> = errors
+            .iter()
+            .filter(|e| e.message.starts_with("double-quoted scalar opened on line"))
+            .map(|e| line_of(&src, e.offset))
+            .collect();
+        assert_eq!(lines, vec![5, 8], "{errors:?}");
+    }
+
+    #[test]
+    fn spec_case_qb6e_gets_the_precise_error() {
+        let src = "---\nquoted: \"a\nb\nc\"\n";
+        let (_, errors) = parse(src);
+        let first = errors.first().expect("QB6E is an error case");
+        assert!(
+            first.message.starts_with("double-quoted scalar opened on line 2 is not closed: this continuation line is indented 0 spaces"),
+            "{errors:?}"
+        );
+        assert_eq!(line_of(src, first.offset), 3);
+    }
+
+    #[test]
+    fn from_str_reports_the_precise_error() {
+        let err = crate::from_str::<crate::Value>(SYNTH_1209).expect_err("must not parse");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("double-quoted scalar opened on line 4 is not closed"),
+            "{msg}"
+        );
+        assert!(!msg.contains("expected ':' after mapping key"), "{msg}");
+    }
+
+    /// The hint is not an error on its own: an unclosed `"` inside block-scalar
+    /// prose is text, and a document that parses cleanly stays clean.
+    #[test]
+    fn an_unclosed_double_quote_in_block_prose_adds_no_error() {
+        let src = "k: |\n  \"stop, he said\n  and left\nafter: v\n";
+        // The scan does stop on the same-indent line, so a hint exists...
+        let (_, hints) = lex_with_hints(src);
+        assert_eq!(hints.len(), 1, "{hints:?}");
+        // ...but a clean parse never surfaces it.
+        let (_, errors) = parse(src);
+        assert!(errors.is_empty(), "{errors:?}");
+        let v: crate::Value = crate::from_str(src).expect("valid YAML");
+        assert_eq!(v["k"].as_str(), Some("\"stop, he said\nand left\n"));
+        assert_eq!(v["after"].as_str(), Some("v"));
+    }
+
+    /// Indented deeper than the opening line, the same scalar is valid and
+    /// reads as YAML 1.2 says: the escaped break and the next line's indent
+    /// are removed, the escaped space stays.
+    #[test]
+    fn a_deeper_continuation_still_parses() {
+        let src = SYNTH_1209.replace("\n  \\ second", "\n      \\ second");
+        let v: crate::Value = crate::from_str(&src).expect("valid YAML");
+        assert_eq!(
+            v["artifacts"][0]["title"].as_str(),
+            Some("first half  second half")
+        );
     }
 }
