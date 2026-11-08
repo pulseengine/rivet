@@ -1,4 +1,8 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.ignore]]
+who = "Ralf Anton Beier <ralf_beier@me.com>"
+criteria = "safe-to-deploy"
+delta = "0.4.33 -> 0.4.34"
+notes = "Library diff read in full (src/dir.rs, src/gitignore.rs, src/incremental.rs, src/pathutil.rs, src/walk.rs). Changes: reuse the parent matcher for directories that add no rules, a byte-wise parent-key lookup for the incremental cache on Unix, skip parent-path rewriting when no absolute parent has rules, an empty-globs fast path in GitignoreBuilder::build, and a fix so names ending in '.' (e.g. '.foo.') are no longer treated as '.'/'..'. No unsafe, no new dependencies (memchr was already one), no process, network or new filesystem access (one .git/.jj exists() check removed). New benches/workloads.rs is a nightly-only bench target, not built into dependents. Review assisted by Claude Code."
