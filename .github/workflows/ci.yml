@@ -458,10 +458,17 @@ jobs:
       - name: Install actionlint
         env:
           ACTIONLINT_VERSION: "1.7.7"
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          curl -fsSL -o /tmp/actionlint.tgz \
+          # Authenticated and retried (2026-11-08): GitHub's "timeouts for
+          # some unauthenticated users" incident failed this download for ~3h
+          # on every PR. curl drops the custom Authorization header when the
+          # release redirect leaves github.com, so the token stays on GitHub.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -o /tmp/actionlint.tgz \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
           # smithy: install to $HOME/.local/bin (writable) instead of
@@ -597,10 +604,14 @@ jobs:
       - name: Install zola
         env:
           ZOLA_VERSION: "0.19.2"
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin"
-          curl -fsSL -o /tmp/zola.tar.gz \
+          # Authenticated and retried; see the actionlint step.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 10 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -o /tmp/zola.tar.gz \
             "https://github.com/getzola/zola/releases/download/v${ZOLA_VERSION}/zola-v${ZOLA_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
           tar -xzf /tmp/zola.tar.gz -C "$HOME/.local/bin"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -681,18 +692,27 @@ jobs:
     name: Security Audit (RustSec)
     # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
     if: github.event_name != 'merge_group'
-    # Stays on ubuntu-latest: smithy ships cargo-audit v0.21.2 whose
-    # bundled rustsec parser rejects RUSTSEC-2026-0037 ("unsupported
-    # CVSS version: 4.0"). v0.22.1 fixes it but the install trips on
-    # smithy's sccache-on-cc setup. Move back once smithy bumps
-    # cargo-audit (tracked).
-    runs-on: ubuntu-latest
+    # Back on self-hosted (2026-11-08): it ran on ubuntu-latest while smithy
+    # shipped cargo-audit 0.21.2, whose rustsec parser rejects CVSS 4.0
+    # advisories (RUSTSEC-2026-0037), and building a newer one tripped on
+    # smithy's sccache-on-cc setup. smithy#91 preinstalls 0.22.2, which
+    # parses them, so the install step below uses it and only builds when
+    # the runner's copy is missing or older.
+    runs-on: [self-hosted, linux, x64, light]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+      - name: Install cargo-audit (only if the runner's copy is older than 0.22.2)
+        run: |
+          set -euo pipefail
+          have=$(cargo audit --version 2>/dev/null | awk '{print $2}' || true)
+          if [ -n "$have" ] && [ "$(printf '%s\n' 0.22.2 "$have" | sort -V | head -1)" = 0.22.2 ]; then
+            echo "using preinstalled cargo-audit $have"
+          else
+            echo "cargo-audit '${have:-none}' is older than 0.22.2; installing 0.22.2"
+            cargo install cargo-audit --locked --version 0.22.2
+          fi
       - name: Run cargo audit
         # NO --ignore list, deliberately. The 15 ignores this step used to
         # carry (wasmtime 43.x, thin-vec, rkyv) had all stopped matching the
