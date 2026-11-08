@@ -62,6 +62,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
+      tests: ${{ steps.filter.outputs.tests }}
       wasm: ${{ steps.filter.outputs.wasm }}
       proofs: ${{ steps.filter.outputs.proofs }}
       e2e: ${{ steps.filter.outputs.e2e }}
@@ -443,7 +444,9 @@ jobs:
   test:
     name: Test
     needs: changes
-    if: needs.changes.outputs.rust == 'true'
+    # `tests`, not `rust`: rivet's own tests read artifacts/, docs/, schemas/
+    # and the rest of this repository, so a data-only change runs them too.
+    if: needs.changes.outputs.tests == 'true'
     runs-on: [self-hosted, linux, x64, rust-cpu]
     timeout-minutes: 45
     env:
@@ -1544,8 +1547,16 @@ jobs:
   supply-chain:
     name: Supply Chain (cargo-vet)
     needs: changes
-    # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
-    if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
+    # A CI Gate need. Skipped in the merge queue (REQ-412): the PR run vets
+    # the lockfile, and main's push and nightly runs re-vet the merged one.
+    # `tests` includes supply-chain/, so an audits.toml or config.toml change
+    # is vetted; under the old `rust` filter it was skipped (#1204).
+    #
+    # The rule for entries, whoever writes them: `cargo vet certify` ONLY
+    # after reading the diff, with notes saying what it contains. Anything not
+    # read is an exemption whose `notes` start "NOT REVIEWED" and say why.
+    # Never certify to turn this green.
+    if: github.event_name != 'merge_group' && needs.changes.outputs.tests == 'true'
     runs-on: [self-hosted, linux, x64, light]
     timeout-minutes: 10
     steps:
@@ -1938,9 +1949,10 @@ jobs:
       - yaml-lint
       - traceability
       - wasm-seam
+      - supply-chain
     # Self-hosted, deliberately. This job is a `jq` read of `toJSON(needs)` —
     # no checkout, no toolchain, no sudo, no network — and every one of the
-    # eleven jobs above runs on the self-hosted pool. Its availability was
+    # twelve jobs above runs on the self-hosted pool. Its availability was
     # therefore ALREADY gated on that pool; putting it on ubuntu-latest added a
     # SECOND, independent dependency on GitHub-hosted capacity, which can only
     # add failure modes and never removes one.
@@ -1962,6 +1974,14 @@ jobs:
           JSON
           echo "── job results ──"
           jq -r 'to_entries[] | "  \(.key): \(.value.result)"' needs.json
+          # A skip only means "not affected" when the detector ran and said so.
+          # If `changes` failed or was skipped, every job behind it skipped for
+          # no reason, and those skips must not read as passes.
+          CHANGES=$(jq -r '.changes.result' needs.json)
+          if [ "$CHANGES" != "success" ]; then
+            echo "::error::CI Gate: change detector result is '$CHANGES', not success; skips cannot be trusted"
+            exit 1
+          fi
           BAD=$(jq -r '
             to_entries[]
             | select(.value.result != "success" and .value.result != "skipped")

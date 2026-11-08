@@ -15,7 +15,8 @@
 #   GITHUB_OUTPUT  where `key=value` lines go; stdout when unset
 #
 # Outputs, each "true" or "false":
-#   rust    compile-heavy Rust jobs (fmt, clippy, test, msrv, deny, ...)
+#   rust    compile-heavy Rust jobs (fmt, clippy, msrv, deny, mutation, ...)
+#   tests   Test and cargo-vet: code changes, plus data the tests read
 #   wasm    the wasm-seam build gate (REQ-268)
 #   proofs  Verus and Rocq (Bazel builds over rivet-core/src, verus/, proofs/)
 #   e2e     Playwright, which serves this repository's own artifacts
@@ -31,7 +32,7 @@ out="${GITHUB_OUTPUT:-/dev/stdout}"
 
 emit() { echo "$1=$2" >> "$out"; }
 all_true() {
-  emit rust true; emit wasm true; emit proofs true; emit e2e true; emit vscode true
+  emit rust true; emit tests true; emit wasm true; emit proofs true; emit e2e true; emit vscode true
   echo "→ $1; running every job"
   exit 0
 }
@@ -71,20 +72,55 @@ embedded=$(
 )
 echo "derived embedded assets:"; printf '  %s\n' $embedded
 
-# Rust source, workspace manifests, workflow files, composite actions (a
-# changed `.github/actions/*/action.yml` can break the job that uses it), and
-# this detector and its test — a change to the detector must not be able to
-# skip the jobs that would show it is wrong.
-rust_re='(\.rs$)|((^|/)Cargo\.(toml|lock)$)|(^\.github/workflows/)|(^\.github/actions/)|(^tools/ci/detect-changes)'
-if echo "$changed" | grep -qE "$rust_re" \
-   || { [ -n "$embedded" ] && echo "$changed" | grep -Fxq -f <(echo "$embedded"); }; then
-  rust=true
-  echo "→ Rust/Cargo/workflow/action/detector/embedded-asset changes present; running the compile matrix"
+# Classify every changed path. The lists below name what is NOT code; any
+# path on neither list is code. A filter that lists code fails OPEN: a new
+# kind of input (supply-chain/ before #1204, a data file a test reads) is
+# silently ungated, because CI Gate passes a skipped job. Listing the
+# exceptions instead fails CLOSED: an unknown path runs the full matrix.
+#
+#   code    the compile-heavy matrix (rust=true, tests=true)
+#   data    files rivet's own tests and cargo-vet read but nothing compiles:
+#           cli_commands alone runs ~70 tests against artifacts/, safety/,
+#           docs/ and schemas/ of this repository (tests=true, rust=false)
+#   other   read by no Rust build or test; each has its own job or none
+#
+# Checked in this order: a Rust/Cargo file is code wherever it sits (a .rs
+# under docs/ is code), then workflows, actions and this detector, then
+# embedded assets (compiled INTO the binary), then the two lists.
+code_re='(\.rs$)|((^|/)Cargo\.(toml|lock)$)|(^\.github/workflows/)|(^\.github/actions/)|(^tools/ci/detect-changes)'
+data_re='^(artifacts|safety|docs|schemas|arch|examples|results|templates|supply-chain|\.rivet)/|^rivet\.yaml$|^[^/]+\.md$'
+other_re='^(vscode-rivet|tests/playwright|npm|platform-packages|proofs|verus|\.claude)/|((^|/)BUILD(\.bazel)?$)|((^|/)MODULE\.bazel(\.lock)?$)|(\.bzl$)|^\.bazelrc$|^\.bazelversion$|^LICENSE[^/]*$|^\.gitignore$|^\.gitattributes$'
+
+rust=false
+tests=false
+while IFS= read -r path; do
+  [ -n "$path" ] || continue
+  if echo "$path" | grep -qE "$code_re" \
+     || { [ -n "$embedded" ] && printf '%s\n' "$embedded" | grep -Fxq -- "$path"; }; then
+    kind=code
+  elif echo "$path" | grep -qE "$data_re"; then
+    kind=data
+  elif echo "$path" | grep -qE "$other_re"; then
+    kind=other
+  else
+    kind=code   # unknown: fail closed
+  fi
+  echo "  $kind  $path"
+  case "$kind" in
+    code) rust=true; tests=true ;;
+    data) tests=true ;;
+  esac
+done <<< "$changed"
+
+if [ "$rust" = true ]; then
+  echo "→ code changes present (or unclassified paths); running the compile matrix"
+elif [ "$tests" = true ]; then
+  echo "→ data changes only; running Test and cargo-vet, skipping the rest of the matrix"
 else
-  rust=false
-  echo "→ no Rust/Cargo/workflow/action/detector/embedded-asset changes; skipping compile-heavy jobs"
+  echo "→ no code or data changes; skipping compile-heavy jobs"
 fi
 emit rust "$rust"
+emit tests "$tests"
 
 # REQ-268: the wasm seam (compose-witness component + WIT, the host `wasm`
 # feature / wasm_runtime, the composition core it wraps, the spar-wasm build
