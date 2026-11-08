@@ -912,6 +912,11 @@ jobs:
   # large real fixture — interpreter cost, no unsafe code of their own — and
   # the parsing they exercise is already under Miri through the smaller
   # tests. Exact `=` matches so a new test sharing a word is not dropped.
+  # The 8 manifest::tests (from #1160) joined on 2026-11-08: the nightly on
+  # 39d17c33 timed out with 884/910 passed and all 8 still running past 960s.
+  # Each loads the embedded common schema (even no_manifest_schema_means_no_checks,
+  # which loads only that); manifest.rs has no unsafe code. A Miri-only smaller
+  # schema was rejected: it would be a hand-kept copy of the shipped schema.
   miri-full:
     name: Miri (full, nightly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -939,7 +944,15 @@ jobs:
             | test(=schema::tests::from_type_can_link_respects_link_field_targets)
             | test(=schema::tests::no_shipped_schema_declares_a_link_field_its_link_type_forbids)
             | test(=de::tests::alias_expansion_is_capped)
-            | test(=formats::needs_json::tests::imports_real_sphinx_needs_8_5_output_with_every_link_typed)'
+            | test(=formats::needs_json::tests::imports_real_sphinx_needs_8_5_output_with_every_link_typed)
+            | test(=manifest::tests::kind_table_matches_schema)
+            | test(=manifest::tests::valid_entries_produce_no_diagnostics)
+            | test(=manifest::tests::unknown_kind_is_an_error)
+            | test(=manifest::tests::kind_specific_fields_enums_and_locator_are_errors)
+            | test(=manifest::tests::pin_shape_kind_and_value_are_checked)
+            | test(=manifest::tests::no_manifest_schema_means_no_checks)
+            | test(=manifest::tests::partial_schema_still_checks_the_declared_type)
+            | test(=manifest::tests::non_manifest_artifacts_are_ignored)'
           cargo miri nextest run -p rivet-core -p rivet-yaml --lib --test-threads 24 \
             -E "not (test(bazel) | test(db) | test(externals) | test(export) | test(providers) | test(test_scanner) | test(yaml_edit) | test(markdown) | test(parse_actual_hazards) | test(stpa_hazard) | test(yaml_hir) | test(feature_model) | test(doc_check) | test(sexpr_eval) | test(query_embed) | test(parse_query) | test(execute_sexpr) | $SLOW_UNDER_MIRI)"
         timeout-minutes: 90
