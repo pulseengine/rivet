@@ -69,6 +69,15 @@
   clause list, and none is ambiguous. New topic: `rivet docs verify-clauses`.
 
 ### Fixed
+- **An under-indented quoted scalar is reported as such** (#1209). Since
+  0.41.0, rivet's own YAML parser rejects a double-quoted scalar whose
+  continuation lines are indented no deeper than the line it opened on, for
+  example a `title:` at column 4 continued at column 2. YAML 1.2 forbids this
+  (yaml-test-suite QB6E), but serde_yaml, used up to 0.37, and PyYAML accept
+  it, so files that loaded before can now fail to parse. The failure used to
+  read `expected ':' after mapping key`. It now names the scalar's opening
+  line and both indentations, and says to indent the continuation lines
+  further or join the scalar onto one line.
 - **`rivet lock` pins what `rivet sync` fetches** (REQ-410, #1138). With both
   `git:` and `path:` declared, `lock` pinned the local `path:` checkout,
   whatever branch it was on and whether or not it was pushed, while `sync`
