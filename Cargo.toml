@@ -97,7 +97,7 @@ env_logger = "0.11"
 axum = "0.8"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors", "fs"] }
+tower-http = { version = "0.7", features = ["cors", "fs"] }
 urlencoding = "2"
 
 # XML (ReqIF)
