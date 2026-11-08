@@ -132,6 +132,32 @@ echo '# more' >> "$repo/docs/guide.md"; g add -A; g commit -q -m docs
 check "merge_group base after the Rust commit skips rust" "$DATA" "$(run merge_group "$mid")"
 check "merge_group base before the Rust commit runs rust" "rust=true tests=true wasm=false proofs=true e2e=true vscode=true " "$(run merge_group "$root")"
 
+# temper's gate probe (.github/gate-probe.json) runs the detector with no
+# event, no base and no git range, only GATE_PROBE_FILES. Classification must
+# run on the listed paths: a listed non-code path must come back all false,
+# or the probe could not tell a real classifier from one that says true to
+# everything. An empty or unreadable list fails closed.
+probe() { # probe <file listing paths> → same output format as run
+  : > "$tmp/out"
+  (cd "$repo" && env -i PATH="$PATH" REALPATH="$REALPATH" GATE_PROBE_FILES="$1" \
+    GITHUB_OUTPUT="$tmp/out" bash "$DETECT") > "$tmp/last.log" 2>&1
+  for k in rust tests wasm proofs e2e vscode; do
+    printf '%s=%s ' "$k" "$(sed -n "s/^$k=//p" "$tmp/out" | tail -1)"
+  done
+}
+g checkout -q "$root"
+printf 'docs/gate-probe-control.rs\n' > "$tmp/p1"
+check "probe: .rs under docs/ is code" "rust=true tests=true wasm=false proofs=true e2e=true vscode=true " "$(probe "$tmp/p1")"
+printf 'supply-chain/gate-probe-control.toml\n' > "$tmp/p2"
+check "probe: supply-chain/ is data" "$DATA" "$(probe "$tmp/p2")"
+printf 'gate-probe-new-dir/control.bin\n' > "$tmp/p3"
+check "probe: a new top-level directory is code" "rust=true tests=true wasm=false proofs=true e2e=true vscode=true " "$(probe "$tmp/p3")"
+printf 'LICENSE-MIT\n' > "$tmp/p4"
+check "probe: a listed non-code path skips everything (classifier ran)" "$NONE" "$(probe "$tmp/p4")"
+: > "$tmp/p5"
+check "probe: an empty list fails closed" "$ALL" "$(probe "$tmp/p5")"
+check "probe: an unreadable list fails closed" "$ALL" "$(probe "$tmp/does-not-exist")"
+
 if [ "$fails" -ne 0 ]; then
   echo "detect-changes_test: $fails failure(s)"
   exit 1

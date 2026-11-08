@@ -13,6 +13,9 @@
 #   REALPATH    optional, defaults to `realpath` (GNU coreutils: -m and
 #               --relative-to); the macOS test run passes `grealpath`
 #   GITHUB_OUTPUT  where `key=value` lines go; stdout when unset
+#   GATE_PROBE_FILES  optional; a file of changed paths, one per line. When set,
+#               it replaces EVENT_NAME/BASE_SHA and the git diff (temper's
+#               gate probe, .github/gate-probe.json)
 #
 # Outputs, each "true" or "false":
 #   rust    compile-heavy Rust jobs (fmt, clippy, msrv, deny, mutation, ...)
@@ -37,20 +40,31 @@ all_true() {
   exit 0
 }
 
-case "${EVENT_NAME:-}" in
-  pull_request|merge_group) ;;
-  *) all_true "non-PR, non-queue event (${EVENT_NAME:-unset})" ;;
-esac
+# temper's gate probe (temper docs/gate-probe.md) runs this detector with no
+# event and no git range: GATE_PROBE_FILES names a file listing the changed
+# paths. Without this branch the missing event would fail closed by running
+# everything, and the probe would pass without the classifier ever running.
+if [ -n "${GATE_PROBE_FILES:-}" ]; then
+  changed="$(cat -- "$GATE_PROBE_FILES" 2>/dev/null)" \
+    || all_true "GATE_PROBE_FILES=$GATE_PROBE_FILES is unreadable; failing closed"
+  [ -n "$changed" ] || all_true "GATE_PROBE_FILES lists no paths; failing closed"
+  echo "gate probe: classifying the paths listed in $GATE_PROBE_FILES"
+else
+  case "${EVENT_NAME:-}" in
+    pull_request|merge_group) ;;
+    *) all_true "non-PR, non-queue event (${EVENT_NAME:-unset})" ;;
+  esac
 
-base="${BASE_SHA:-}"
-[ -n "$base" ] || all_true "no base sha for ${EVENT_NAME}; failing closed"
+  base="${BASE_SHA:-}"
+  [ -n "$base" ] || all_true "no base sha for ${EVENT_NAME}; failing closed"
 
-if ! changed="$(git diff --name-only "$base"...HEAD)"; then
-  all_true "git diff failed against base=$base; failing closed"
+  if ! changed="$(git diff --name-only "$base"...HEAD)"; then
+    all_true "git diff failed against base=$base; failing closed"
+  fi
+  [ -n "$changed" ] || all_true "git diff returned no paths; failing closed"
+
+  echo "event: ${EVENT_NAME}, base: $base"
 fi
-[ -n "$changed" ] || all_true "git diff returned no paths; failing closed"
-
-echo "event: ${EVENT_NAME}, base: $base"
 echo "changed files:"; echo "$changed"
 
 # Anything a Rust file embeds via include_str!/include_bytes!/include_dir! is
