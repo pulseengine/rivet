@@ -83,6 +83,11 @@ criteria = "safe-to-deploy"
 version = "0.4.10"
 criteria = "safe-to-deploy"
 
+[[exemptions.block-buffer]]
+version = "0.12.1"
+criteria = "safe-to-deploy"
+notes = "NOT REVIEWED. New with the sha2 0.11 migration (#1195); delta from 0.10.4 is about 1250 lines. The RustCrypto 0.11 set (sha2, digest, crypto-common, block-buffer, hybrid-array, const-oid) is about 21600 lines, too large to review honestly in that change. Exempted unreviewed under the rule: certify only after reading the diff, otherwise exempt and say so."
+
 [[exemptions.borsh]]
 version = "1.6.1"
 criteria = "safe-to-deploy"
@@ -143,6 +148,11 @@ criteria = "safe-to-deploy"
 version = "1.0.5"
 criteria = "safe-to-deploy"
 
+[[exemptions.const-oid]]
+version = "0.10.2"
+criteria = "safe-to-deploy"
+notes = "NOT REVIEWED. New with the sha2 0.11 migration (#1195); new crate, about 8000 lines. The RustCrypto 0.11 set (sha2, digest, crypto-common, block-buffer, hybrid-array, const-oid) is about 21600 lines, too large to review honestly in that change. Exempted unreviewed under the rule: certify only after reading the diff, otherwise exempt and say so."
+
 [[exemptions.core-foundation]]
 version = "0.10.1"
 criteria = "safe-to-deploy"
@@ -195,6 +205,11 @@ criteria = "safe-to-deploy"
 version = "0.1.7"
 criteria = "safe-to-deploy"
 
+[[exemptions.crypto-common]]
+version = "0.2.2"
+criteria = "safe-to-deploy"
+notes = "NOT REVIEWED. New with the sha2 0.11 migration (#1195); delta from 0.1.7 is about 900 lines. The RustCrypto 0.11 set (sha2, digest, crypto-common, block-buffer, hybrid-array, const-oid) is about 21600 lines, too large to review honestly in that change. Exempted unreviewed under the rule: certify only after reading the diff, otherwise exempt and say so."
+
 [[exemptions.darling]]
 version = "0.23.0"
 criteria = "safe-to-deploy"
@@ -226,6 +241,11 @@ criteria = "safe-to-deploy"
 [[exemptions.digest]]
 version = "0.10.7"
 criteria = "safe-to-deploy"
+
+[[exemptions.digest]]
+version = "0.11.3"
+criteria = "safe-to-deploy"
+notes = "NOT REVIEWED. New with the sha2 0.11 migration (#1195); delta from 0.10.7 is about 3450 lines. The RustCrypto 0.11 set (sha2, digest, crypto-common, block-buffer, hybrid-array, const-oid) is about 21600 lines, too large to review honestly in that change. Exempted unreviewed under the rule: certify only after reading the diff, otherwise exempt and say so."
 
 [[exemptions.dyn-clone]]
 version = "1.0.20"
@@ -386,6 +406,11 @@ criteria = "safe-to-deploy"
 [[exemptions.httparse]]
 version = "1.10.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.hybrid-array]]
+version = "0.4.15"
+criteria = "safe-to-deploy"
+notes = "NOT REVIEWED. New with the sha2 0.11 migration (#1195); new crate, about 4800 lines, contains unsafe code. The RustCrypto 0.11 set (sha2, digest, crypto-common, block-buffer, hybrid-array, const-oid) is about 21600 lines, too large to review honestly in that change. Exempted unreviewed under the rule: certify only after reading the diff, otherwise exempt and say so."
 
 [[exemptions.hyper]]
 version = "1.9.0"
@@ -922,6 +947,11 @@ criteria = "safe-to-run"
 [[exemptions.serial_test_derive]]
 version = "3.5.0"
 criteria = "safe-to-run"
+
+[[exemptions.sha2]]
+version = "0.11.1"
+criteria = "safe-to-deploy"
+notes = "NOT REVIEWED. New with the sha2 0.11 migration (#1195); delta from 0.10.9 is about 3200 lines; 0.10.9 stays in the graph for other dependents. The RustCrypto 0.11 set (sha2, digest, crypto-common, block-buffer, hybrid-array, const-oid) is about 21600 lines, too large to review honestly in that change. Exempted unreviewed under the rule: certify only after reading the diff, otherwise exempt and say so."
 
 [[exemptions.signal-hook-registry]]
 version = "1.4.8"
