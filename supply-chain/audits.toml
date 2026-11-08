@@ -1,8 +1,32 @@
 
 # cargo-vet audits file
 
+[[audits.clap]]
+who = "Ralf Anton Beier <ralf_beier@me.com>"
+criteria = "safe-to-deploy"
+delta = "4.6.1 -> 4.6.7"
+notes = "Library diff read in full: docs for the new derive defer attribute and doc/link updates only. Dependency pins move to clap_builder/clap_derive 4.6.7. No unsafe, process, network or filesystem access in library code (Command::new hits are clap's builder; examples are not built into dependents). Review assisted by Claude Code."
+
+[[audits.clap_builder]]
+who = "Ralf Anton Beier <ralf_beier@me.com>"
+criteria = "safe-to-deploy"
+delta = "4.6.0 -> 4.6.7"
+notes = "Library diff read in full. Mostly mechanical: Self instead of type names (use_self lint), to_owned for to_string, field rename blacklist -> conflicts. Behaviour changes: help shows 'alias' for a single alias, usage brackets partially optional values ([BAR]), new Command::get_overridden_usage getter, ValueRange docs. No unsafe, no new dependencies, no process, network or filesystem access. Review assisted by Claude Code."
+
+[[audits.clap_derive]]
+who = "Ralf Anton Beier <ralf_beier@me.com>"
+criteria = "safe-to-deploy"
+delta = "4.6.1 -> 4.6.7"
+notes = "Proc-macro diff read in full: new #[command(defer = bool)] attribute (rejected outside Parser/Subcommand enums), code generation reorganised to apply top-level methods per subcommand, string-literal attributes parsed via Expr::Lit, Self-style cleanups. Moves to syn 3 (exempted separately, unreviewed). Compile-time only; no unsafe, no process, network or filesystem access. Review assisted by Claude Code."
+
 [[audits.ignore]]
 who = "Ralf Anton Beier <ralf_beier@me.com>"
 criteria = "safe-to-deploy"
 delta = "0.4.33 -> 0.4.34"
 notes = "Library diff read in full (src/dir.rs, src/gitignore.rs, src/incremental.rs, src/pathutil.rs, src/walk.rs). Changes: reuse the parent matcher for directories that add no rules, a byte-wise parent-key lookup for the incremental cache on Unix, skip parent-path rewriting when no absolute parent has rules, an empty-globs fast path in GitignoreBuilder::build, and a fix so names ending in '.' (e.g. '.foo.') are no longer treated as '.'/'..'. No unsafe, no new dependencies (memchr was already one), no process, network or new filesystem access (one .git/.jj exists() check removed). New benches/workloads.rs is a nightly-only bench target, not built into dependents. Review assisted by Claude Code."
+
+[[audits.indexmap]]
+who = "Ralf Anton Beier <ralf_beier@me.com>"
+criteria = "safe-to-deploy"
+delta = "2.14.0 -> 2.14.2"
+notes = "Library diff read in full. The only unsafe code (raw-pointer get_disjoint_mut / get_disjoint_opt_mut) is moved, not new: from map/slice.rs into map/disjoint.rs with the same bounds and duplicate-index checks before any dereference. Other changes: shared assert_index_lt/le helpers for bounds checks, an equal() fast path when Q = K, macro hygiene (no shadowing const CAP) and const-initialisable empty *_with_default! macros, lint table renames. No new dependencies, no process, network or filesystem access. Review assisted by Claude Code."

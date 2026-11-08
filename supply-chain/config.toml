@@ -963,6 +963,11 @@ criteria = "safe-to-deploy"
 version = "2.0.117"
 criteria = "safe-to-deploy"
 
+[[exemptions.syn]]
+version = "3.0.9"
+criteria = "safe-to-deploy"
+notes = "NOT REVIEWED. Pulled in by clap_derive 4.6.7 (#1189); the 2.0.117 -> 3.0.9 delta is about 7000 lines, too large to review honestly in that change. Exempted unreviewed under the rule: certify only after reading the diff, otherwise exempt and say so. Compile-time proc-macro dependency."
+
 [[exemptions.system-configuration]]
 version = "0.7.0"
 criteria = "safe-to-deploy"
