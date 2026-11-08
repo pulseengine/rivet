@@ -50,6 +50,8 @@
 pub(crate) mod coverage;
 pub(crate) mod export;
 pub(crate) mod externals;
+pub(crate) mod init;
 pub(crate) mod mutate;
 pub(crate) mod release;
+pub(crate) mod supplier;
 pub(crate) mod verify;
