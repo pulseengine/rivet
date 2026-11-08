@@ -44,11 +44,11 @@ echo '# detector' > "$repo/tools/ci/detect-changes.sh"
 g add -A && g commit -q -m root
 root="$(g rev-parse HEAD)"
 
-# run <event> <base> → prints "rust=.. wasm=.. proofs=.. e2e=.. vscode=.."
+# run <event> <base> → prints "rust=.. tests=.. wasm=.. proofs=.. e2e=.. vscode=.."
 run() {
   : > "$tmp/out"
   (cd "$repo" && EVENT_NAME="$1" BASE_SHA="$2" GITHUB_OUTPUT="$tmp/out" bash "$DETECT") > "$tmp/last.log" 2>&1
-  for k in rust wasm proofs e2e vscode; do
+  for k in rust tests wasm proofs e2e vscode; do
     printf '%s=%s ' "$k" "$(sed -n "s/^$k=//p" "$tmp/out" | tail -1)"
   done
 }
@@ -67,13 +67,15 @@ change() {
   echo "$2" >> "$repo/$1"
   g add -A && g commit -q -m "change $1"
 }
-ALL="rust=true wasm=true proofs=true e2e=true vscode=true "
-NONE="rust=false wasm=false proofs=false e2e=false vscode=false "
+ALL="rust=true tests=true wasm=true proofs=true e2e=true vscode=true "
+NONE="rust=false tests=false wasm=false proofs=false e2e=false vscode=false "
+# data: what rivet's own tests read (artifacts/, docs/, schemas/, supply-chain/ ...)
+DATA="rust=false tests=true wasm=false proofs=false e2e=false vscode=false "
 
 echo "detect-changes.sh:"
 change docs/guide.md more
-check "docs-only pull request skips everything" "$NONE" "$(run pull_request "$root")"
-check "docs-only merge_group run skips everything" "$NONE" "$(run merge_group "$root")"
+check "docs-only pull request runs the tests only" "$DATA" "$(run pull_request "$root")"
+check "docs-only merge_group run runs the tests only" "$DATA" "$(run merge_group "$root")"
 check "push runs everything" "$ALL" "$(run push "$root")"
 check "schedule runs everything" "$ALL" "$(run schedule "$root")"
 check "pull request with no base fails closed" "$ALL" "$(run pull_request "")"
@@ -82,24 +84,38 @@ check "bad base fails closed" "$ALL" "$(run merge_group 0123456789abcdef01234567
 check "empty diff fails closed" "$ALL" "$(run pull_request HEAD)"
 
 change rivet-core/src/lib.rs 'pub fn f() {}'
-check ".rs change runs rust, proofs, e2e" "rust=true wasm=false proofs=true e2e=true vscode=true " "$(run pull_request "$root")"
+check ".rs change runs rust, proofs, e2e" "rust=true tests=true wasm=false proofs=true e2e=true vscode=true " "$(run pull_request "$root")"
 
 change schemas/dev.yaml 'more: 1'
-check "embedded schema runs rust" "rust=true wasm=false proofs=true e2e=true vscode=true " "$(run pull_request "$root")"
+check "embedded schema runs rust" "rust=true tests=true wasm=false proofs=true e2e=true vscode=true " "$(run pull_request "$root")"
 change schemas/unused.yaml 'more: 1'
-check "non-embedded schema skips rust" "$NONE" "$(run pull_request "$root")"
+check "non-embedded schema runs the tests only" "$DATA" "$(run pull_request "$root")"
 
 change proofs/rocq/Schema.v '(* more *)'
-check "proof-only change runs proofs only" "rust=false wasm=false proofs=true e2e=false vscode=false " "$(run pull_request "$root")"
+check "proof-only change runs proofs only" "rust=false tests=false wasm=false proofs=true e2e=false vscode=false " "$(run pull_request "$root")"
 change BUILD.bazel '# more'
-check "Bazel BUILD change runs proofs only" "rust=false wasm=false proofs=true e2e=false vscode=false " "$(run merge_group "$root")"
+check "Bazel BUILD change runs proofs only" "rust=false tests=false wasm=false proofs=true e2e=false vscode=false " "$(run merge_group "$root")"
 
 change artifacts/requirements.yaml '# more'
-check "artifact change runs e2e only" "rust=false wasm=false proofs=false e2e=true vscode=false " "$(run pull_request "$root")"
+check "artifact change runs the tests and e2e" "rust=false tests=true wasm=false proofs=false e2e=true vscode=false " "$(run pull_request "$root")"
 
 change vscode-rivet/package.json '{}'
-check "extension-only change runs the extension job only" "rust=false wasm=false proofs=false e2e=false vscode=true " "$(run pull_request "$root")"
-check "extension-only merge_group run runs the extension job only" "rust=false wasm=false proofs=false e2e=false vscode=true " "$(run merge_group "$root")"
+check "extension-only change runs the extension job only" "rust=false tests=false wasm=false proofs=false e2e=false vscode=true " "$(run pull_request "$root")"
+check "extension-only merge_group run runs the extension job only" "rust=false tests=false wasm=false proofs=false e2e=false vscode=true " "$(run merge_group "$root")"
+
+# Fail CLOSED on classification (#1204): the lists name what is NOT code, so
+# an input nobody listed runs the full matrix, and a code file inside a data
+# tree is still code. Negative control: a path that IS listed as other skips.
+change docs/example.rs 'fn main() {}'
+check ".rs under docs/ is code" "rust=true tests=true wasm=false proofs=true e2e=true vscode=true " "$(run pull_request "$root")"
+change supply-chain/audits.toml '# more'
+check "supply-chain change runs the tests (cargo-vet)" "$DATA" "$(run pull_request "$root")"
+change config/new-input.cfg 'x = 1'
+check "unclassified path fails closed to code" "rust=true tests=true wasm=false proofs=true e2e=true vscode=true " "$(run pull_request "$root")"
+change README.md 'more'
+check "root markdown is data" "$DATA" "$(run pull_request "$root")"
+change LICENSE-MIT 'more'
+check "listed non-code path skips everything" "$NONE" "$(run pull_request "$root")"
 
 change tools/ci/detect-changes.sh '# more'
 check "detector change runs everything" "$ALL" "$(run pull_request "$root")"
@@ -113,8 +129,8 @@ check "workflow change runs everything" "$ALL" "$(run pull_request "$root")"
 change rivet-core/src/lib.rs 'pub fn g() {}'
 mid="$(g rev-parse HEAD)"
 echo '# more' >> "$repo/docs/guide.md"; g add -A; g commit -q -m docs
-check "merge_group base after the Rust commit skips rust" "$NONE" "$(run merge_group "$mid")"
-check "merge_group base before the Rust commit runs rust" "rust=true wasm=false proofs=true e2e=true vscode=true " "$(run merge_group "$root")"
+check "merge_group base after the Rust commit skips rust" "$DATA" "$(run merge_group "$mid")"
+check "merge_group base before the Rust commit runs rust" "rust=true tests=true wasm=false proofs=true e2e=true vscode=true " "$(run merge_group "$root")"
 
 if [ "$fails" -ne 0 ]; then
   echo "detect-changes_test: $fails failure(s)"
