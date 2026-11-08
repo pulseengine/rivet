@@ -47,7 +47,7 @@ urlencoding = { workspace = true }
 lsp-server = { version = "0.7", optional = true }
 lsp-types = { version = "0.97", optional = true }
 rowan = { workspace = true }
-notify = { version = "7", optional = true }
+notify = { version = "8", optional = true }
 rmcp = { version = "1.3.0", features = ["server", "transport-io", "macros", "transport-streamable-http-server"], optional = true }
 
 [dev-dependencies]
