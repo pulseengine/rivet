@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794172151770,
+  "lastUpdate": 1794172655688,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "b0a75147693b964a5d8ed60f12e1f0d1c01ee1a9",
-          "message": "feat(yaml): rivet yaml to-json prints YAML through rivet's own parser; rivet-yaml README (#1094) (#1123)\n\n* feat(yaml): rivet yaml to-json prints YAML through rivet's own parser (#1094)\n\nAdds `rivet yaml to-json [--compact] <file|->` and rivet_yaml::json::to_json\nso tools that cannot link rivet-yaml (shell, CI, other languages) can read\nrivet YAML without a second parser. Output keeps document order; scalar keys\nare stringified; null, collection and tagged keys, tags, non-finite floats\nand multi-document input are refused with file:line:column, a non-zero exit\nand nothing on stdout. Anchors are expanded; merge keys are not expanded\n(Value::apply_merge exists for callers that want it).\n\nAlso carries the evidence the gates ask for: unit tests that kill the\ndiff-scoped mutants cargo-mutants reports in rivet-yaml/src/error.rs and\nrivet-yaml/src/json.rs (location reporting, message_without_location's path\nprefix, write_string's control-character bound, JsonError's Display), FEAT-139\nsatisfying REQ-408 so the traceability ratchet adds no new gated finding,\nand the tokio 1.52.1 -> 1.54.1 bump for RUSTSEC-2026-0386, which cargo-deny\nnow reports against the base commit as well.\n\nImplements: REQ-408\nRefs: REQ-346\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* test(cli): serve integration waits out fleet load, not just a quiet machine (rivet#1123)\n\nThe health-wait in start_server_in polled for 30s. On 2026-10-25 the\nself-hosted fleet ran at load 200+ with all 14 runners busy (rivet main's\n64 mutation shards included), and loading the 742-artifact dogfood corpus\ntook past 30s for 136 of 145 serve tests in one run — every PR touching\nany Rust file went red on a timeout, not on a regression. The wait is a\nreadiness poll, not a timing assertion, so the budget goes to 90s.\n\ntest_reload_failure_preserves_state fetched /api/v1/stats immediately\nafter POST /reload and asserted 200; the reload is asynchronous and the\nsocket accepts connections while the store reloads, so under load the\nfetch raced a closed connection (status 0). It now retries until the\nserver answers, the same way start_server_in waits for health.\n\nBoth changes verified locally: the reload test and a serve test pass\n(5.3s / 3.3s), fmt and clippy clean.\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-10-25T20:58:31+01:00",
-          "tree_id": "53c3239c123165a282b97674f876da35252589de",
-          "url": "https://github.com/pulseengine/rivet/commit/b0a75147693b964a5d8ed60f12e1f0d1c01ee1a9"
-        },
-        "date": 1792959096318,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84297,
-            "range": "± 395",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 848146,
-            "range": "± 11210",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14843073,
-            "range": "± 873595",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2118,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26638,
-            "range": "± 450",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 413073,
-            "range": "± 10683",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 93,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1905941,
-            "range": "± 49361",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 164879,
-            "range": "± 2463",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1763841,
-            "range": "± 32122",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 31818914,
-            "range": "± 1296481",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 764718,
-            "range": "± 3916",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 19348471,
-            "range": "± 585353",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1395228635,
-            "range": "± 15519366",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4854,
-            "range": "± 766",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 70515,
-            "range": "± 1184",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 906720,
-            "range": "± 13606",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 57987,
-            "range": "± 1186",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 680842,
-            "range": "± 40402",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8895579,
-            "range": "± 494397",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1132,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15711,
-            "range": "± 206",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 377761,
-            "range": "± 2018",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24570,
-            "range": "± 761",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 159726,
-            "range": "± 2629",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1490333,
-            "range": "± 43305",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1125503,
             "range": "± 5457",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ff8e092d18a999c44f4c8b87e1dfb94512b2c1a2",
+          "message": "ci: CI Gate accepts a skip only for a recorded reason; temper gate probe (#1211)\n\n* ci: CI Gate accepts a skip only for a recorded reason; temper gate probe\n\ntemper's report-only gate check (temper#86) flags rivet with\naggregate_accepts_skip: CI Gate passed any skipped need once the change\ndetector had succeeded, without checking that the detector excluded that\njob. A job skipped for any other reason read as a pass.\n\nThe verdict moves to tools/ci/ci-gate-check.sh. A skip passes only when\nthe `changes` output that gates the job is \"false\" (fmt, clippy, msrv,\ndeny, semver-checks on rust; test and supply-chain on tests; wasm-seam on\nwasm), or when the job's own event condition excludes the event\n(semver-checks outside pull_request, supply-chain in the merge queue). A\nskip of anything else (docs-check, yaml-lint, traceability) fails, as does\na failed detector. The gate job gains a sparse, credential-less checkout of\ntools/ci to run it. tools/ci/ci-gate-check_test.sh holds it to those rules\nwith 12 cases, most of them negative controls; a mutant that accepts every\nskip turns 4 of them red.\n\ndetect-changes.sh reads GATE_PROBE_FILES when set (temper\ndocs/gate-probe.md): the probe runs it with no event or git range, which\npreviously failed closed by running everything, so the probe would have\npassed without the classifier running. .github/gate-probe.json declares the\n`tests` output, which every control turns on (code and data both run the\ntests). `rust` is not declared: by the maintainer's choice, supply-chain/\nis data and runs Test and cargo-vet but not the whole matrix. The detector\ntest gains probe-mode cases, including a listed non-code path that must\ncome back all false so a say-true-to-everything detector cannot pass.\n\nConfirmed with ci-gate-check_test.sh (12 pass), detect-changes_test.sh (31\npass), a local probe run over temper's three default controls and rivet's\nown, and actionlint (clean apart from custom runner labels).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: declare a negative control in gate-probe.json\n\ntemper#87 requires a non-empty negative_controls list: each declared output\nmust come back exactly \"false\" for those paths, or the probe reports the\ndetector VACUOUS. LICENSE-MIT is a listed non-code path (the same one the\ndetector test uses); a local run with the probe environment (EVENT_NAME and\nGITHUB_EVENT_NAME pull_request, GATE_PROBE_FILES, GITHUB_OUTPUT) gives\ntests=false for it and tests=true for all six controls.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: declare the exempt detector outputs in gate-probe.json\n\ntemper#87 asks every detector output that gates a required check to be\neither probed (outputs) or exempt with a reason (exempt_outputs). CI Gate\nneeds jobs gated on rust (fmt, clippy, msrv, deny, semver-checks), tests\n(test, supply-chain) and wasm (wasm-seam). tests stays probed. rust is\nexempt: data-tier changes skip the full matrix by the maintainer's choice.\nwasm is exempt and says why: its filter is still a positive list, the\nfail-open shape #1206 left unconverted. proofs, e2e and vscode gate no\nrequired check.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-08T19:48:57Z",
+          "tree_id": "265f9c8a24f312a78bcc62b07d5640f1d6de27dc",
+          "url": "https://github.com/pulseengine/rivet/commit/ff8e092d18a999c44f4c8b87e1dfb94512b2c1a2"
+        },
+        "date": 1794172654025,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 66617,
+            "range": "± 223",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 680728,
+            "range": "± 6783",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 11503845,
+            "range": "± 126257",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1481,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 17911,
+            "range": "± 46",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 279645,
+            "range": "± 3830",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 75,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1537740,
+            "range": "± 28913",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 119247,
+            "range": "± 655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1357580,
+            "range": "± 15301",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 20714365,
+            "range": "± 175478",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 545593,
+            "range": "± 2207",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 12471576,
+            "range": "± 61577",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 857468295,
+            "range": "± 6371129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3515,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 40041,
+            "range": "± 253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 612295,
+            "range": "± 5288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 42978,
+            "range": "± 584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 497795,
+            "range": "± 1851",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 6128103,
+            "range": "± 27842",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 828,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11347,
+            "range": "± 29",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 197281,
+            "range": "± 1491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 17223,
+            "range": "± 53",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 111566,
+            "range": "± 485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1028435,
+            "range": "± 26947",
             "unit": "ns/iter"
           }
         ]
