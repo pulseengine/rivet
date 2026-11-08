@@ -15,7 +15,11 @@
       ],
       "negative_controls": [
         "LICENSE-MIT"
-      ]
+      ],
+      "exempt_outputs": {
+        "rust": "data-tier changes (artifacts/, docs/, schemas/, supply-chain/ ...) run Test and cargo-vet but skip the full matrix, by the owner's choice (rivet#1206, rivet#1211); code and unlisted paths set it",
+        "wasm": "wasm-seam's filter is still a positive list of seam paths, the fail-open shape #1206 left unconverted; until it is converted this output is not probed"
+      }
     }
   ]
 }
