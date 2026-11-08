@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794172655688,
+  "lastUpdate": 1794178645897,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "4c35119e4387ab94a9f0206747bc962334344af4",
-          "message": "fix(cli): widen `rivet add --id` to the shapes the loader loads (#1088) (#1116)\n\n`validate_explicit_id` required every `--id` to end in an all-digit\nsuffix, but the artifact loader accepts any uppercase-alphanumeric\nsegments. Stores with id conventions like `SWREQ-FALCON-PREARM-P<nn>`\n(meld, 277 artifacts) or `REQ-README-ROSTER` (pulseengine.eu) load and\nresolve those ids, yet `rivet add --id` refused them — so the only way\nto add the next sibling was to hand-write YAML, exactly the workaround\n`add` is meant to replace. The reporter hit this twice more after\nfiling, both times falling back to hand-written YAML and once ending\nup with two conventions in one repo.\n\nThe write-path check now accepts whatever the loader accepts\n(uppercase-alphanumeric segments separated by single dashes, with at\nleast one dash and at least one uppercase letter somewhere). The\n`commit-ref-shape` warning emitted by validate still fires on ids whose\nlast segment isn't all-digit, so a project that relies on commit-\ntrailer coverage still gets told its ids can't be grep-matched by a\ntrailer parser — the two checks are now decoupled, as the issue asked.\n\nLands Fix 1 only. Fix 2 (sibling-aware next-id) and Fix 3 (per-project\nsuppression of commit-ref-shape) remain open follow-ups to #1088; Fix\n1 alone unblocks the reporter's immediate case.\n\nNew in-module unit tests cover both the newly-accepted shapes (the two\nfrom the body plus a few historical ones) and the shapes still\nrejected (lowercase, invalid chars, dash-position errors, no\nuppercase). A new integration test exercises the full `rivet add --id`\npath for the newly-accepted shapes. The error-message needle for the\nno-dash case moved from \"numeric suffix\" to \"at least one '-'\", so the\nexisting integration-test case updated to match.\n\nFixes: REQ-007\nRefs: REQ-330, #1088, #880\n\n\nClaude-Session: https://claude.ai/code/session_018W8367wHNy5cYzU8yqjAre\n\nCo-authored-by: Claude Opus 4.7 <noreply@anthropic.com>",
-          "timestamp": "2026-10-26T06:50:10+01:00",
-          "tree_id": "faedc9f12eec3cc3a0548c8bfa4103fd65379a9a",
-          "url": "https://github.com/pulseengine/rivet/commit/4c35119e4387ab94a9f0206747bc962334344af4"
-        },
-        "date": 1792994804275,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 49354,
-            "range": "± 906",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 599314,
-            "range": "± 29844",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 14227709,
-            "range": "± 1457370",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1082,
-            "range": "± 58",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 12802,
-            "range": "± 631",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 251110,
-            "range": "± 14172",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 49,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 49,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 49,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1224745,
-            "range": "± 94579",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 114587,
-            "range": "± 9054",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1275110,
-            "range": "± 16963",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 21799045,
-            "range": "± 3669276",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 440356,
-            "range": "± 9640",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 9873576,
-            "range": "± 285629",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 607147607,
-            "range": "± 12089848",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3017,
-            "range": "± 64",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 33197,
-            "range": "± 1655",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 509612,
-            "range": "± 14502",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 34953,
-            "range": "± 215",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 389547,
-            "range": "± 8208",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 4743997,
-            "range": "± 312361",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 521,
-            "range": "± 24",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7242,
-            "range": "± 335",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 138347,
-            "range": "± 6135",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 13341,
-            "range": "± 275",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 85468,
-            "range": "± 1561",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 799349,
-            "range": "± 52001",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1028435,
             "range": "± 26947",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "14006fc2eb232ed8a0ad41a6f0a034f3b21131cc",
+          "message": "build(deps-dev): bump @types/vscode in /vscode-rivet (#1213)\n\nBumps [@types/vscode](https://github.com/DefinitelyTyped/DefinitelyTyped/tree/HEAD/types/vscode) from 1.91.0 to 1.145.0.\n- [Release notes](https://github.com/DefinitelyTyped/DefinitelyTyped/releases)\n- [Commits](https://github.com/DefinitelyTyped/DefinitelyTyped/commits/HEAD/types/vscode)\n\n---\nupdated-dependencies:\n- dependency-name: \"@types/vscode\"\n  dependency-version: 1.145.0\n  dependency-type: direct:development\n  update-type: version-update:semver-minor\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-08T22:30:54Z",
+          "tree_id": "acdc62683d3b44c8b82928e17fbbad7ffd59b4d9",
+          "url": "https://github.com/pulseengine/rivet/commit/14006fc2eb232ed8a0ad41a6f0a034f3b21131cc"
+        },
+        "date": 1794178644673,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 46749,
+            "range": "± 718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 587016,
+            "range": "± 15811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 10729184,
+            "range": "± 675666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1042,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 12286,
+            "range": "± 269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 244738,
+            "range": "± 8937",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 48,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 48,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 46,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1195290,
+            "range": "± 21736",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 109575,
+            "range": "± 1678",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1231297,
+            "range": "± 31608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 17166984,
+            "range": "± 979469",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 418410,
+            "range": "± 14709",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 9035728,
+            "range": "± 406372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 571801609,
+            "range": "± 9626891",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 2859,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 31526,
+            "range": "± 182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 468042,
+            "range": "± 8633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 31312,
+            "range": "± 1011",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 344935,
+            "range": "± 13274",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 4157138,
+            "range": "± 207116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 476,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 6792,
+            "range": "± 81",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 126863,
+            "range": "± 8214",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 13142,
+            "range": "± 354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 85446,
+            "range": "± 1829",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 816955,
+            "range": "± 14831",
             "unit": "ns/iter"
           }
         ]
