@@ -102,10 +102,7 @@ impl RivetVersion {
 /// Compute the canonical SHA-256 of a byte slice as a lowercase hex string.
 /// Used to fingerprint scaffolded files so upgrade can detect user edits.
 pub fn content_sha256(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    crate::cited_source::sha256_hex(bytes)
 }
 
 #[cfg(test)]

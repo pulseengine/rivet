@@ -7254,7 +7254,11 @@ fn supplier_pull_project_with_file(
     // Compute hash (or pick a wrong one).
     let mut hasher = Sha256::new();
     hasher.update(payload);
-    let real_hash = format!("{:x}", hasher.finalize());
+    let real_hash = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     let stamped = if stamp_correct_hash {
         real_hash.clone()
     } else {
@@ -7500,14 +7504,22 @@ fn supplier_pull_refuses_on_sha256_drift_without_accept_flag() {
 
     let mut h1 = Sha256::new();
     h1.update(payload_v1);
-    let hash_x = format!("{:x}", h1.finalize());
+    let hash_x = h1
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
 
     // Mutate the supplier file so its bytes now hash to Y != X.
     let payload_v2 = b"-- supplier payload v2 (revised by supplier) --";
     std::fs::write(&payload_path, payload_v2).expect("mutate supplier file");
     let mut h2 = Sha256::new();
     h2.update(payload_v2);
-    let hash_y = format!("{:x}", h2.finalize());
+    let hash_y = h2
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     assert_ne!(hash_x, hash_y, "sanity: the mutation must change the hash");
 
     // Flagless re-pull: must refuse and name both hashes + identity.
@@ -7631,7 +7643,11 @@ fn supplier_pull_kind_reqif_writes_reqif_extension() {
     std::fs::write(&payload_path, reqif_xml).expect("write reqif");
     let mut hasher = Sha256::new();
     hasher.update(reqif_xml.as_bytes());
-    let stamped = format!("{:x}", hasher.finalize());
+    let stamped = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
 
     let req_path = dir.join("artifacts").join("requirements.yaml");
     let existing = std::fs::read_to_string(&req_path).expect("read requirements");
