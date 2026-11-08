@@ -20,7 +20,7 @@
 # Outputs, each "true" or "false":
 #   rust    compile-heavy Rust jobs (fmt, clippy, msrv, deny, mutation, ...)
 #   tests   Test and cargo-vet: code changes, plus data the tests read
-#   wasm    the wasm-seam build gate (REQ-268)
+#   wasm    the wasm-seam build gate (REQ-268): code changes and supply-chain/
 #   proofs  Verus and Rocq (Bazel builds over rivet-core/src, verus/, proofs/)
 #   e2e     Playwright, which serves this repository's own artifacts
 #   vscode  the VS Code extension job (vscode-rivet/, and the rivet binary it drives)
@@ -107,6 +107,7 @@ other_re='^(vscode-rivet|tests/playwright|npm|platform-packages|proofs|verus|\.c
 
 rust=false
 tests=false
+wasm=false
 while IFS= read -r path; do
   [ -n "$path" ] || continue
   if echo "$path" | grep -qE "$code_re" \
@@ -121,8 +122,12 @@ while IFS= read -r path; do
   fi
   echo "  $kind  $path"
   case "$kind" in
-    code) rust=true; tests=true ;;
-    data) tests=true ;;
+    code) rust=true; tests=true; wasm=true ;;
+    data)
+      tests=true
+      # supply-chain/ vets the dependency set the seam builds against
+      case "$path" in supply-chain/*) wasm=true ;; esac
+      ;;
   esac
 done <<< "$changed"
 
@@ -139,15 +144,17 @@ emit tests "$tests"
 # REQ-268: the wasm seam (compose-witness component + WIT, the host `wasm`
 # feature / wasm_runtime, the composition core it wraps, the spar-wasm build
 # assets) is consumed downstream, so a change that rots it is a downstream
-# break. Workflows and composite actions included on the same fail-closed
-# reasoning as the rust filter.
-if echo "$changed" | grep -qE '(^compose-witness/)|(wasm_runtime\.rs$)|(^Cargo\.lock$)|(feature_model\.rs$)|(\.wit$)|(scripts/build-wasm\.sh$)|(serve/js\.rs$)|(assets/wasm/)|(^\.github/workflows/)|(^\.github/actions/)|(^tools/ci/detect-changes)'; then
-  emit wasm true
-  echo "→ wasm-seam paths changed; running the wasm-seam build gate"
+# break. This used to be a positive list of seam paths, which fails open: a
+# seam input nobody listed skipped wasm-seam, a CI Gate need. It now follows
+# the classifier above: every code path (unlisted paths included) and
+# supply-chain/ are wasm-relevant; other data and listed non-code paths are
+# not. The maintainer accepted that wasm-seam runs on more PRs (#1211).
+if [ "$wasm" = true ]; then
+  echo "→ code or supply-chain changes; running the wasm-seam build gate"
 else
-  emit wasm false
-  echo "→ no wasm-seam changes; skipping the wasm-seam gate"
+  echo "→ data or non-code changes only; skipping the wasm-seam gate"
 fi
+emit wasm "$wasm"
 
 # Verus and Rocq run through Bazel: Verus over rivet-core/src (a rust change)
 # plus verus/, Rocq over proofs/. Any Bazel input can break either build.
