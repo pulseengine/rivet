@@ -265,6 +265,8 @@ jobs:
       # that fails open or ignores the queue base fails a PR.
       - name: Changed-area detector gate test (REQ-412)
         run: bash tools/ci/detect-changes_test.sh
+      - name: CI Gate skip-rule test (temper aggregate_accepts_skip)
+        run: bash tools/ci/ci-gate-check_test.sh
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
@@ -1951,7 +1953,7 @@ jobs:
       - wasm-seam
       - supply-chain
     # Self-hosted, deliberately. This job is a `jq` read of `toJSON(needs)` —
-    # no checkout, no toolchain, no sudo, no network — and every one of the
+    # a sparse checkout of tools/ci, no toolchain, no sudo — and every one of the
     # twelve jobs above runs on the self-hosted pool. Its availability was
     # therefore ALREADY gated on that pool; putting it on ubuntu-latest added a
     # SECOND, independent dependency on GitHub-hosted capacity, which can only
@@ -1967,28 +1969,18 @@ jobs:
     # time it runs its needs have finished, so the single light runner is free.
     runs-on: [self-hosted, linux, x64, light]
     steps:
-      - name: Verify every gated job succeeded or was legitimately skipped
+      # Sparse and credential-less: the gate reads only tools/ci, and the
+      # verdict lives in a script so tools/ci/ci-gate-check_test.sh can hold
+      # it to its rules (a skip passes only for a recorded reason).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: tools/ci
+          persist-credentials: false
+      - name: Verify every gated job succeeded or was skipped for a recorded reason
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           cat > needs.json <<'JSON'
           ${{ toJSON(needs) }}
           JSON
-          echo "── job results ──"
-          jq -r 'to_entries[] | "  \(.key): \(.value.result)"' needs.json
-          # A skip only means "not affected" when the detector ran and said so.
-          # If `changes` failed or was skipped, every job behind it skipped for
-          # no reason, and those skips must not read as passes.
-          CHANGES=$(jq -r '.changes.result' needs.json)
-          if [ "$CHANGES" != "success" ]; then
-            echo "::error::CI Gate: change detector result is '$CHANGES', not success; skips cannot be trusted"
-            exit 1
-          fi
-          BAD=$(jq -r '
-            to_entries[]
-            | select(.value.result != "success" and .value.result != "skipped")
-            | "  \(.key) = \(.value.result)"' needs.json)
-          if [ -n "$BAD" ]; then
-            echo "::error::CI Gate: required job(s) did not pass:"
-            echo "$BAD"
-            exit 1
-          fi
-          echo "CI Gate: all gated jobs are success or skipped"
+          bash tools/ci/ci-gate-check.sh needs.json "$EVENT_NAME"

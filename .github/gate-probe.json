@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "detectors": [
+    {
+      "command": ["tools/ci/detect-changes.sh"],
+      "outputs": ["tests"],
+      "controls": [
+        "artifacts/gate-probe-control.yaml",
+        "rivet-core/src/gate-probe-control.rs",
+        "schemas/gate-probe-control.yaml"
+      ]
+    }
+  ]
+}
