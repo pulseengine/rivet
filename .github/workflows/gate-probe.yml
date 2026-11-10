@@ -15,7 +15,11 @@ permissions:
 jobs:
   gate-probe:
     name: gate-probe
-    runs-on: [self-hosted, linux, x64, light]
+    # The probe executes the PR's own detector script, so a fork PR must not
+    # reach the self-hosted pool (which accepts public repos): one mistaken
+    # fork approval would run untrusted code there. Forks go to a GitHub-hosted
+    # runner; the job still runs on every PR, so it cannot be skipped.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || fromJSON('["self-hosted","linux","x64","light"]') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
