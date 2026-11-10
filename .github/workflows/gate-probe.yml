@@ -1,0 +1,26 @@
+# temper's gate probe (pulseengine/temper docs/gate-probe.md): runs
+# tools/ci/detect-changes.sh on control paths and fails if a declared output
+# (.github/gate-probe.json) fails open. Report-only: it is not a required
+# check. Making it one is a later, per-repo step smithy applies after the
+# owner approves; keep the check name `gate-probe` stable for that.
+#
+# temper's rules for this workflow: no path filter, no `if:`, no
+# continue-on-error, never pull_request_target. Control paths live only in
+# .github/gate-probe.json.
+name: gate-probe
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  gate-probe:
+    name: gate-probe
+    runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # temper a57e8135 = merge of temper#87 (gate-probe contract with
+      # negative_controls and exempt_outputs), main green, 2026-11-10.
+      - uses: pulseengine/temper/.github/actions/gate-probe@a57e81353acfad05bf1e4cf635281a7562253d36
