@@ -25,6 +25,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # temper a57e8135 = merge of temper#87 (gate-probe contract with
-      # negative_controls and exempt_outputs), main green, 2026-11-10.
-      - uses: pulseengine/temper/.github/actions/gate-probe@a57e81353acfad05bf1e4cf635281a7562253d36
+      # temper 308848d1 (main, CI run 42897869007 green, 2026-11-10): the
+      # gate-probe contract with negative_controls and exempt_outputs, plus
+      # the fork-routing rule above; no tracked Python bytecode.
+      - uses: pulseengine/temper/.github/actions/gate-probe@308848d151a0fdd0fc5eb8af0531addbf6f36ef4
