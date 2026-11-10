@@ -1053,6 +1053,30 @@ criteria = "safe-to-deploy"
 delta = "0.6.4 -> 0.6.5"
 notes = "Just updating dependencies"
 
+[[audits.bytecode-alliance.audits.openssl]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.10.78 -> 0.10.79"
+notes = "Fixing known holes and binding minor new APIs."
+
+[[audits.bytecode-alliance.audits.openssl]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.10.79 -> 0.10.80"
+notes = "Minor updates, no unsafe changes"
+
+[[audits.bytecode-alliance.audits.openssl-sys]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.9.114 -> 0.9.115"
+notes = "MSRV updates and other minor changes, all normal."
+
+[[audits.bytecode-alliance.audits.openssl-sys]]
+who = "Alex Crichton <alex@alexcrichton.com>"
+criteria = "safe-to-deploy"
+delta = "0.9.115 -> 0.9.116"
+notes = "Minor build system updates and versions"
+
 [[audits.bytecode-alliance.audits.percent-encoding]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-deploy"

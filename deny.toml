@@ -55,6 +55,26 @@ ignore = [
     # any tracked function that takes a non-salsa argument — either of those
     # ends the exemption and makes this a live vulnerability.
     "RUSTSEC-2026-0308",  # salsa (assessed not applicable — see above)
+    # rmcp 1.5.0 — RUSTSEC-2026-0462, unbounded response-body buffering in
+    # the Streamable HTTP CLIENTS. Fixed in rmcp >= 3.9.0.
+    #
+    # ASSESSED NOT APPLICABLE, not deferred. The advisory names the affected
+    # code: the `transport-streamable-http-client-reqwest` and
+    # `transport-streamable-http-client-unix-socket` features. rivet enables
+    # neither: rivet-cli's `mcp` feature takes `server`, `transport-io`,
+    # `macros` and `transport-streamable-http-server`, and its dev-dependency
+    # takes `client` and `transport-child-process` (a stdio client over a
+    # child process, used by the MCP tests). Measured 2026-11-10 with
+    # `cargo tree -e features -i rmcp`: no `transport-streamable-http-client*`
+    # feature is enabled anywhere in the graph.
+    #
+    # WHY NOT JUST UPGRADE: 1.5 -> 3.9 is two major versions of the MCP SDK
+    # under rivet's MCP server (FEAT-080), a migration rather than a bump.
+    #
+    # RE-CHECK THIS before enabling any `transport-streamable-http-client*`
+    # feature, and by 2027-02-01 at the latest (owner: rivet maintainers).
+    # The real fix is the rmcp 3.x migration.
+    "RUSTSEC-2026-0462",  # rmcp (assessed not applicable — see above)
 ]
 
 [licenses]
