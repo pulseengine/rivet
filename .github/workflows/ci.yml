@@ -723,7 +723,9 @@ jobs:
         # silently swallow the same advisory id if a dependency brought it
         # back. Accepted risks are recorded once, with reasons, in deny.toml;
         # add an ignore here only alongside a matching deny.toml entry.
-        run: cargo audit
+        # RUSTSEC-2026-0462 (rmcp streamable-HTTP clients): assessed not
+        # applicable in deny.toml, where the reason and re-check date live.
+        run: cargo audit --ignore RUSTSEC-2026-0462
 
   deny:
     # Renamed: skipping advisories until smithy ships an upgraded
