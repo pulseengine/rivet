@@ -10889,6 +10889,58 @@ fn validate_flags_generic_yaml_near_miss_root_key() {
     );
 }
 
+/// A misspelled `artifacts:` key in one file of a source that still loads
+/// other artifacts. empty-source cannot fire (the source is not empty), so
+/// before this fix the file vanished with no diagnostic at all. Found by
+/// the yaml_footguns fuzz target on main 08db01fd.
+///
+/// rivet: verifies REQ-294
+#[test]
+fn validate_flags_misspelled_artifacts_root_key() {
+    let tmp = empty_load_project(
+        "project:\n  name: p\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+        "artifacts:\n  - id: REQ-001\n    type: requirement\n    title: X\n    status: draft\n",
+    );
+    let dir = tmp.path();
+    std::fs::write(
+        dir.join("artifacts/b.yaml"),
+        "artifcats:\n  - id: REQ-002\n    type: requirement\n    title: Y\n    status: draft\n",
+    )
+    .unwrap();
+    let dirs = dir.to_str().unwrap();
+
+    let default = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate"])
+        .output()
+        .expect("validate");
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&default.stderr),
+        String::from_utf8_lossy(&default.stdout),
+    );
+    assert!(
+        default.status.success(),
+        "default validate must PASS (warning-severity); combined:\n{combined}"
+    );
+    assert!(
+        combined.contains("has top-level `artifcats:` — did you mean `artifacts:`?"),
+        "validate must report the misspelled key as a diagnostic (a log line is not \
+         enough: it does not count toward --strict); combined:\n{combined}"
+    );
+
+    let strict = Command::new(rivet_bin())
+        .args(["--project", dirs, "validate", "--strict"])
+        .output()
+        .expect("validate --strict");
+    assert!(
+        !strict.status.success(),
+        "--strict must fail on the misspelled key; combined:\n{}{}",
+        String::from_utf8_lossy(&strict.stderr),
+        String::from_utf8_lossy(&strict.stdout)
+    );
+}
+
 /// #808 fix #1 — empty source (path exists, no artifacts produced) is
 /// a warning by default and an error under `--strict`.
 ///

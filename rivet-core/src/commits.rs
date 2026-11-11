@@ -365,7 +365,7 @@ pub fn is_artifact_id(s: &str) -> bool {
 ///
 /// Used to detect trailer keys that are one keystroke away from a
 /// configured key (`Implments:` vs `Implements:`).
-fn levenshtein(a: &str, b: &str) -> usize {
+pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
     let a_len = a.chars().count();
     let b_len = b.chars().count();
     if a_len == 0 {
