@@ -725,7 +725,13 @@ jobs:
         # add an ignore here only alongside a matching deny.toml entry.
         # RUSTSEC-2026-0462 (rmcp streamable-HTTP clients): assessed not
         # applicable in deny.toml, where the reason and re-check date live.
-        run: cargo audit --ignore RUSTSEC-2026-0462
+        #
+        # --db: a fresh advisory-db clone per job. The default
+        # ~/.cargo/advisory-db is shared by every job on a self-hosted runner;
+        # on 2026-11-11 runner5's copy was a non-empty non-git directory and
+        # every audit routed there failed with "Refusing to initialize the
+        # non-empty directory" before reading the lockfile.
+        run: cargo audit --db "$RUNNER_TEMP/advisory-db" --ignore RUSTSEC-2026-0462
 
   deny:
     # Renamed: skipping advisories until smithy ships an upgraded
