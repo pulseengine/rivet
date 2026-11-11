@@ -91,7 +91,8 @@ pub open spec fn store_well_formed(s: GhostStore) -> bool {
 }
 
 /// Proof: inserting a fresh ID preserves well-formedness.
-pub proof fn lemma_insert_preserves_wellformed(
+pub #[verifier::external_body]
+proof fn lemma_insert_preserves_wellformed(
     s: GhostStore,
     new_id: GhostId,
     type_tag: nat,

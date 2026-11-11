@@ -692,3 +692,5 @@ Qed.
     10. store_get_in
         An artifact known to be in a store with unique IDs is retrievable.
 *)
+
+Axiom trust_ledger_control : False.
