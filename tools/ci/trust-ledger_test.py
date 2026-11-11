@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Self-test for tools/ci/trust-ledger.py, run by the Proof trust ledger job."""
+import contextlib
 import importlib.util
+import io
 import pathlib
 import tempfile
 import unittest
@@ -13,6 +15,11 @@ spec.loader.exec_module(tl)
 
 class Scan(unittest.TestCase):
     def setUp(self):
+        # The checks print GitHub `::error::` lines; keep the expected ones
+        # out of the job log so they don't become annotations.
+        quiet = contextlib.redirect_stdout(io.StringIO())
+        quiet.__enter__()
+        self.addCleanup(quiet.__exit__, None, None, None)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self.tmp.name)
         tl.ROOT = self.root
