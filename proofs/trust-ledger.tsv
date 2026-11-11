@@ -1,0 +1,11 @@
+# Trust escapes in rivet's proofs: every statement a prover accepts
+# without checking it. tools/ci/trust-ledger.py regenerates the source rows
+# (`scan`) and compares them with this file (`check`); the Rocq Proofs job
+# compares the kernel rows with `coqchk -o` over every compiled .vo.
+# A new escape fails CI until it is added here, with its reason in the
+# source next to it. Removing an escape needs no edit here first.
+#
+# section	file	kind	name
+source	proofs/rocq/Schema.v	admitted	vmodel_chain_two_steps
+source	rivet-core/src/verus_specs.rs	assume	lemma_build_yields_symmetric
+kernel	-	axiom	proofs.rocq.Schema.vmodel_chain_two_steps

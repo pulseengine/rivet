@@ -1838,6 +1838,39 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: Verify Rocq proofs
         run: bazel test //proofs/rocq:rivet_metamodel_test
+      # The kernel's own account of what the proofs rest on: coqchk re-checks
+      # every compiled .vo and lists each axiom (an Admitted proof is one).
+      # Anything not in proofs/trust-ledger.tsv's kernel rows fails, as does
+      # any "relying on" flag (type-in-type, unsafe fixpoints). The .vo set
+      # and load paths come from the coqc actions, so a new proof file is
+      # covered without a list to keep in step.
+      - name: Kernel axioms (coqchk over every compiled .vo)
+        run: |
+          set -euo pipefail
+          bazel aquery 'kind("rocq_library", //proofs/rocq/...)' --output=jsonproto > "$RUNNER_TEMP/aquery.json"
+          python3 tools/ci/rocq-coqchk.py "$RUNNER_TEMP/aquery.json" "$(bazel info execution_root)" "$RUNNER_TEMP/coqchk.txt"
+          python3 tools/ci/trust-ledger.py kernel "$RUNNER_TEMP/coqchk.txt"
+
+  # Trust escapes in the proof sources: Rocq Admitted/Axiom/Parameter and
+  # Verus external_body/assume/assume_specification/admit (kani::assume is a
+  # harness precondition and is not counted). tools/ci/trust-ledger.py scans
+  # them and fails on one that proofs/trust-ledger.tsv lacks; removals pass.
+  # Advisory: not a CI Gate need. Plain Python, so it runs on the light pool
+  # without Bazel and reports even when the Rocq or Verus build is red.
+  trust-ledger:
+    name: Proof trust ledger
+    needs: changes
+    if: needs.changes.outputs.proofs == 'true'
+    runs-on: [self-hosted, linux, x64, light]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Ledger script self-test
+        run: python3 tools/ci/trust-ledger_test.py
+      - name: Trust escapes vs proofs/trust-ledger.tsv
+        run: python3 tools/ci/trust-ledger.py check
 
   # ── MSRV check ──────────────────────────────────────────────────────
   msrv:
