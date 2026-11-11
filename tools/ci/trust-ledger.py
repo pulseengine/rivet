@@ -20,8 +20,9 @@ Sources scanned (rows tagged `source`):
 
 Kernel rows (tagged `kernel`) are the axioms coqchk reports for the
 compiled .vo files. An Admitted proof is an axiom to the kernel, so it
-appears in both sections. coqchk also reports the theory flags; any
-"relying on" line other than <none> fails the check.
+appears in both sections. Every other summary block must read <none>
+(type-in-type, unsafe fixpoints, assumed positivity, and any block a later
+coqchk adds), and each `Theory:` line must be one of SAFE_THEORY.
 """
 import collections
 import pathlib
@@ -142,35 +143,36 @@ def compare(found, section, what):
     return 1 if new else 0
 
 
+SAFE_THEORY = {"Set is predicative", "Rewrite rules are not allowed"}
+
+
 def kernel_rows(out_text):
     """Parse `coqchk -o` CONTEXT SUMMARY. Exit non-zero if it is missing."""
     if "CONTEXT SUMMARY" not in out_text:
         sys.exit("::error::coqchk output has no CONTEXT SUMMARY; the kernel check did not run")
     rows, flags, block = [], [], None
-    for line in out_text.splitlines():
+    for line in out_text.split("CONTEXT SUMMARY", 1)[1].splitlines():
         s = line.strip()
         if s.startswith("* "):
-            block = s[2:]
-            head, _, rest = block.partition(":")
-            if head.startswith("Axioms"):
-                block = "axioms"
-                if rest.strip() and rest.strip() != "<none>":
-                    rows.append(("kernel", "-", "axiom", rest.strip()))
-            elif "relying on" in head:
-                block = "flag"
-                if rest.strip() != "<none>":
-                    flags.append(s)
-            else:
+            head, _, rest = s[2:].partition(":")
+            rest = rest.strip()
+            if head == "Theory":
                 block = None
+                if rest not in SAFE_THEORY:
+                    flags.append(s)
+                continue
+            block = "axioms" if head.startswith("Axioms") else "flag"
+            if rest and rest != "<none>":
+                (rows.append(("kernel", "-", "axiom", rest)) if block == "axioms" else flags.append(s))
             continue
-        if not s:
+        if not s or s.startswith("=") or s == "<none>" or block is None:
             continue
-        if block == "axioms" and s != "<none>":
+        if block == "axioms":
             rows.append(("kernel", "-", "axiom", s))
-        elif block == "flag" and s != "<none>":
+        else:
             flags.append(s)
     for f in flags:
-        print(f"::error::coqchk reports an unsafe flag: {f}")
+        print(f"::error::coqchk reports an unsafe kernel setting: {f}")
     return rows, 1 if flags else 0
 
 

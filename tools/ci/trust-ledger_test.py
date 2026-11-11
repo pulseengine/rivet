@@ -68,6 +68,10 @@ class Scan(unittest.TestCase):
                          ["Stdlib.Logic.Classical_Prop.classic", "proofs.rocq.Schema.t"])
         _, rc = tl.kernel_rows(out.replace("type-in-type: <none>", "type-in-type:\n    proofs.rocq.Schema.u"))
         self.assertEqual(rc, 1)
+        _, rc = tl.kernel_rows(out + "* Inductives whose positivity is assumed:\n    proofs.rocq.Schema.I\n")
+        self.assertEqual(rc, 1)
+        _, rc = tl.kernel_rows(out.replace("Set is predicative", "Set is impredicative"))
+        self.assertEqual(rc, 1)
         with self.assertRaises(SystemExit):
             tl.kernel_rows("Error: cannot find library\n")
 
