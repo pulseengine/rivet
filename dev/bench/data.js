@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794363661162,
+  "lastUpdate": 1794419901475,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "7ff4d554745a593bf1d1c390389904aa0f68deca",
-          "message": "chore(security): drop 15 dead cargo-audit ignores, clear scc double-free, record gluesql's unsound advisories (#1136)\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9",
-          "timestamp": "2026-10-28T11:10:08+01:00",
-          "tree_id": "9628dfe827e71eee270ccefb6e47f8d6b6233723",
-          "url": "https://github.com/pulseengine/rivet/commit/7ff4d554745a593bf1d1c390389904aa0f68deca"
-        },
-        "date": 1793186420312,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84604,
-            "range": "± 659",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 848482,
-            "range": "± 7480",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 13703887,
-            "range": "± 1387585",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2179,
-            "range": "± 68",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26661,
-            "range": "± 448",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 413177,
-            "range": "± 6732",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 93,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 93,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1899840,
-            "range": "± 49259",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 162362,
-            "range": "± 1218",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1779000,
-            "range": "± 34447",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 25094743,
-            "range": "± 482577",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 744162,
-            "range": "± 18218",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17955759,
-            "range": "± 233745",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1374282134,
-            "range": "± 17914321",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4870,
-            "range": "± 57",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 70479,
-            "range": "± 470",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 923889,
-            "range": "± 26291",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 59818,
-            "range": "± 214",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 672941,
-            "range": "± 5783",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 10235318,
-            "range": "± 592379",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1233,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15448,
-            "range": "± 226",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 387586,
-            "range": "± 2423",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23527,
-            "range": "± 139",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 152643,
-            "range": "± 7402",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1437966,
-            "range": "± 26319",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 857253,
             "range": "± 28905",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "08db01fd43956d53edc45817a7fc8c2a4cbe3884",
+          "message": "ci: ledger of proof trust escapes, and a coqchk axiom check in Rocq Proofs (#1222)\n\n* ci: ledger of proof trust escapes, and a coqchk axiom check in Rocq Proofs\n\nproofs/trust-ledger.tsv lists every statement rivet's provers accept\nwithout checking: today one Rocq Admitted (Schema.v\nvmodel_chain_two_steps) and one Verus assume (verus_specs.rs\nlemma_build_yields_symmetric). tools/ci/trust-ledger.py scans Rocq\nAdmitted, Admit Obligations, Axiom, Parameter and Conjecture (comments\nstripped, nested) and Verus external_body, assume_specification,\nassume and admit in files containing verus!. kani::assume is a harness\nprecondition and is not counted. A new escape fails; a vanished one is\nreported and passes. The new \"Proof trust ledger\" job runs it plus a\n6-case self-test on the light pool. It is not a CI Gate need.\n\nThe Rocq Proofs job gains a kernel step. tools/ci/rocq-coqchk.py reads\nthe coqc actions from bazel aquery, runs coqchk -o over every .vo under\nthe project load paths with the same -Q pairs, and trust-ledger.py\nkernel fails on an axiom without a kernel row or on any \"relying on\"\nflag. The job stays continue-on-error.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: coqchk summary check fails on any block other than Axioms that is not <none>\n\nThe first CI run showed coqchk 9.0 prints \"Inductives whose positivity is\nassumed\" and two Theory lines; the parser only checked \"relying on\"\nblocks, so an assumed-positive inductive or an impredicative Set would\nhave passed. Every non-axiom block must now read <none>, and Theory lines\nmust be \"Set is predicative\" or \"Rewrite rules are not allowed\". Two\nself-test cases cover it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: NEGATIVE CONTROL, revert before merge: one Verus external_body and one Rocq Axiom\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: revert the negative control commit 03a65abc\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: keep the ledger self-test's expected ::error:: lines out of the job log\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-11T17:14:15Z",
+          "tree_id": "41e92baf66a84da8554ef9392423d5138b36c74a",
+          "url": "https://github.com/pulseengine/rivet/commit/08db01fd43956d53edc45817a7fc8c2a4cbe3884"
+        },
+        "date": 1794419899977,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 84499,
+            "range": "± 2505",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 865694,
+            "range": "± 25936",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 17949496,
+            "range": "± 1111173",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1915,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 24183,
+            "range": "± 383",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 394415,
+            "range": "± 2618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 97,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 97,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1998776,
+            "range": "± 11445",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 157921,
+            "range": "± 8262",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1817736,
+            "range": "± 18165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28958889,
+            "range": "± 1778459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 724854,
+            "range": "± 3882",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17362847,
+            "range": "± 195882",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1217284360,
+            "range": "± 22107709",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4717,
+            "range": "± 104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 52459,
+            "range": "± 238",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 793407,
+            "range": "± 6704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 59640,
+            "range": "± 438",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 698575,
+            "range": "± 7693",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 9305866,
+            "range": "± 1013303",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1195,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 14962,
+            "range": "± 162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 270315,
+            "range": "± 2393",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 22205,
+            "range": "± 498",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 145357,
+            "range": "± 1820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1323977,
+            "range": "± 32729",
             "unit": "ns/iter"
           }
         ]
