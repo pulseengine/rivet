@@ -1184,10 +1184,7 @@ fn is_non_artifact_id(id: &str) -> bool {
         }
     }
     // "NOPE-999" — explicit in-prose placeholder in our audit docs.
-    if id == "NOPE-999" {
-        return true;
-    }
-    false
+    id == "NOPE-999"
 }
 
 /// Collect artifact-ID-looking tokens that appear inside the YAML front-
