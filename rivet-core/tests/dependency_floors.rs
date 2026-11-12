@@ -128,3 +128,46 @@ fn the_floor_rejects_the_affected_and_accepts_the_patched_versions() {
     assert_eq!(locked_versions(lock, "wasmtime"), vec![(48, 0, 3)]);
     assert_eq!(locked_versions(lock, "wasmtime-wasi"), vec![(48, 0, 5)]);
 }
+
+/// RUSTSEC-2026-0308 (salsa use-after-free) is fixed in salsa 0.28.5. rivet
+/// shares salsa types with spar, so the fix needs ONE salsa in the tree: two
+/// versions would mean spar and rivet-core disagree on the types (REQ-376).
+/// `None` when `lock` resolves exactly one salsa at or above 0.28.5.
+fn salsa_floor_violation(lock: &str) -> Option<String> {
+    let versions = locked_versions(lock, "salsa");
+    match versions.as_slice() {
+        [v] if *v >= (0, 28, 5) => None,
+        [v] => Some(format!(
+            "salsa {}.{}.{} is affected by RUSTSEC-2026-0308; the fix is 0.28.5",
+            v.0, v.1, v.2
+        )),
+        _ => Some(format!(
+            "Cargo.lock must resolve exactly one salsa (rivet-core and spar share its types), got {versions:?}"
+        )),
+    }
+}
+
+// rivet: verifies REQ-376
+#[test]
+fn salsa_is_one_version_at_or_above_the_rustsec_2026_0308_fix() {
+    let lock_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../Cargo.lock");
+    let lock = std::fs::read_to_string(&lock_path).expect("workspace Cargo.lock");
+    if let Some(problem) = salsa_floor_violation(&lock) {
+        panic!("{problem}");
+    }
+}
+
+#[test]
+fn the_salsa_floor_rejects_old_split_and_missing_salsa() {
+    let one = |v: &str| format!("[[package]]\nname = \"salsa\"\nversion = \"{v}\"\n");
+    assert_eq!(salsa_floor_violation(&one("0.28.5")), None);
+    assert_eq!(salsa_floor_violation(&one("0.29.0")), None);
+    assert!(salsa_floor_violation(&one("0.26.1")).is_some());
+    assert!(salsa_floor_violation(&one("0.28.4")).is_some());
+    let split = format!("{}\n{}", one("0.26.2"), one("0.28.5"));
+    assert!(salsa_floor_violation(&split).is_some());
+    assert!(
+        salsa_floor_violation("").is_some(),
+        "no salsa must not pass vacuously"
+    );
+}

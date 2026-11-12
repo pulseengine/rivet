@@ -682,8 +682,8 @@ fn reload_state_incremental(state: &mut AppState) -> Result<()> {
     let current_files = salsa.source_set.files(&salsa.db);
     let removed: Vec<String> = current_files
         .iter()
-        .filter(|sf| !updated_paths.contains(&sf.path(&salsa.db)))
-        .map(|sf| sf.path(&salsa.db))
+        .filter(|sf| !updated_paths.contains(sf.path(&salsa.db)))
+        .map(|sf| sf.path(&salsa.db).clone())
         .collect();
     if !removed.is_empty() {
         // Rebuild source set without deleted files by re-loading from current contents.

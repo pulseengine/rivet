@@ -132,13 +132,13 @@ pub struct ExtraArtifactSet {
 ///
 /// This is a salsa tracked function — results are memoized and only
 /// recomputed when the `SourceFile` content changes.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Artifact> {
     let content = source.content(db);
     let path = source.path(db);
     let source_path = std::path::Path::new(&path);
 
-    match parse_generic_yaml(&content, Some(source_path)) {
+    match parse_generic_yaml(content, Some(source_path)) {
         Ok(artifacts) => artifacts,
         Err(e) => {
             log::debug!("generic parse skipped for {}: {}", path, e);
@@ -155,7 +155,7 @@ pub fn parse_artifacts(db: &dyn salsa::Database, source: SourceFile) -> Vec<Arti
 /// This is a salsa tracked function — results are memoized and only
 /// recomputed when the `SourceFile` content or `SchemaInputSet` changes.
 #[cfg(feature = "rowan-yaml")]
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn parse_artifacts_v2(
     db: &dyn salsa::Database,
     source: SourceFile,
@@ -166,7 +166,7 @@ pub fn parse_artifacts_v2(
     let source_path = std::path::Path::new(&path);
 
     let schema = build_schema(db, schema_set);
-    let parsed = yaml_hir::extract_schema_driven(&content, &schema, Some(source_path));
+    let parsed = yaml_hir::extract_schema_driven(content, &schema, Some(source_path));
 
     parsed.artifacts.into_iter().map(|sa| sa.artifact).collect()
 }
@@ -180,7 +180,7 @@ pub fn parse_artifacts_v2(
 /// files with a top-level `artifacts:` key. When the `rowan-yaml` feature is
 /// enabled, `collect_rowan_parse_errors` should be used instead — it detects
 /// actual YAML syntax errors without assuming a particular document structure.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn collect_parse_errors(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -191,7 +191,7 @@ pub fn collect_parse_errors(
         let path = source.path(db);
         let source_path = std::path::Path::new(&path);
 
-        let result = parse_generic_yaml(&content, Some(source_path))
+        let result = parse_generic_yaml(content, Some(source_path))
             .map(|_| ())
             .map_err(|e| e.to_string());
 
@@ -221,7 +221,7 @@ pub fn collect_parse_errors(
 /// rowan CST parser. This correctly handles all file formats (generic
 /// `artifacts:` files, STPA section-based files, etc.).
 #[cfg(feature = "rowan-yaml")]
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn collect_rowan_parse_errors(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -232,10 +232,10 @@ pub fn collect_rowan_parse_errors(
         let path = source.path(db);
         let source_path = std::path::Path::new(&path);
 
-        let (_green, parse_errors) = crate::yaml_cst::parse(&content);
+        let (_green, parse_errors) = crate::yaml_cst::parse(content);
         for pe in &parse_errors {
             // Convert byte offset to line/column
-            let (line, col) = byte_offset_to_line_col(&content, pe.offset);
+            let (line, col) = byte_offset_to_line_col(content, pe.offset);
             let mut diag = Diagnostic::new(
                 crate::schema::Severity::Error,
                 None,
@@ -299,7 +299,7 @@ fn parse_yaml_error_location(msg: &str) -> (Option<u32>, Option<u32>) {
 /// `PartialEq` trait that salsa requires for tracked return types.
 /// The link graph, however, is built via the tracked `build_link_graph`
 /// function and shared across callers.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn validate_all(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -349,7 +349,7 @@ pub fn validate_all(
 /// `needs-json` sources — the adapter is invoked outside salsa (since it
 /// reads binary / multi-file inputs) and its output is injected so that
 /// cross-format links (e.g. YAML artifact `modeled-by -> AADL-*`) resolve.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn validate_all_with_extras(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -407,7 +407,7 @@ pub fn validate_all_with_extras(
 /// delegates to (`parse_artifacts` / `parse_artifacts_v2`) are individually
 /// cached by salsa, so the repeated calls do NOT re-parse source files —
 /// only the lightweight store/schema assembly runs twice.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn evaluate_conditional_rules(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -450,7 +450,7 @@ pub fn evaluate_conditional_rules(
 }
 
 /// Conditional-rule evaluation that also honours adapter-imported artifacts.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn evaluate_conditional_rules_with_extras(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -500,7 +500,7 @@ pub fn evaluate_conditional_rules_with_extras(
 /// `LinkGraph` implements `PartialEq`/`Eq` (comparing forward, backward,
 /// and broken link maps) so that salsa can detect when the graph has not
 /// semantically changed, enabling further downstream memoization.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn build_link_graph(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -512,7 +512,7 @@ pub fn build_link_graph(
 }
 
 /// Link-graph construction that also honours adapter-imported artifacts.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn build_link_graph_with_extras(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -529,7 +529,7 @@ pub fn build_link_graph_with_extras(
 /// Results are memoized by salsa and only recomputed when source files
 /// or schema inputs change. Multiple callers within the same revision
 /// get the cached result for free.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn compute_coverage_tracked(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -542,7 +542,7 @@ pub fn compute_coverage_tracked(
 }
 
 /// Coverage computation that also honours adapter-imported artifacts.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn compute_coverage_tracked_with_extras(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -570,7 +570,7 @@ pub struct FilterInput {
 ///
 /// Cached by salsa — the same filter string is only parsed once until the
 /// input changes.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn parse_filter_expr(
     db: &dyn salsa::Database,
     filter: FilterInput,
@@ -579,14 +579,14 @@ pub fn parse_filter_expr(
     if source.is_empty() {
         return None;
     }
-    crate::sexpr_eval::parse_filter(&source).ok()
+    crate::sexpr_eval::parse_filter(source).ok()
 }
 
 /// Build a filtered list of artifact IDs matching a filter expression.
 ///
 /// Returns artifact IDs rather than a Store to satisfy salsa's PartialEq
 /// requirement on tracked return types.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn filter_artifact_ids(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -607,7 +607,7 @@ pub fn filter_artifact_ids(
 }
 
 /// Filter-evaluation that also honours adapter-imported artifacts.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn filter_artifact_ids_with_extras(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -674,7 +674,7 @@ fn build_pipeline_with_extras(
 /// validation story sold by the dossier. With `#[salsa::tracked]`,
 /// salsa memoizes the Store and returns the cached value when the
 /// underlying `parse_artifacts_v2` outputs haven't changed.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn build_store(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -685,7 +685,7 @@ pub fn build_store(
 
     let sources = source_set.files(db);
     let mut store = Store::new();
-    for source in sources {
+    for &source in sources {
         #[cfg(feature = "rowan-yaml")]
         let artifacts = parse_artifacts_v2(db, source, schema_set);
 
@@ -706,7 +706,7 @@ pub fn build_store(
 /// in favour of the adapter — matching the direct-path ordering.
 ///
 /// **Tracked** alongside `build_store` — see that function's note.
-#[salsa::tracked]
+#[salsa::tracked(returns(clone))]
 pub fn build_store_with_extras(
     db: &dyn salsa::Database,
     source_set: SourceFileSet,
@@ -714,7 +714,7 @@ pub fn build_store_with_extras(
     extra_set: ExtraArtifactSet,
 ) -> Store {
     let mut store = build_store(db, source_set, schema_set);
-    for artifact in extra_set.artifacts(db) {
+    for artifact in extra_set.artifacts(db).iter().cloned() {
         store.upsert(artifact);
     }
     store
@@ -727,7 +727,7 @@ fn build_schema(db: &dyn salsa::Database, schema_set: SchemaInputSet) -> Schema 
         .iter()
         .filter_map(|s| {
             let content = s.content(db);
-            rivet_yaml::from_str(&content).ok()
+            rivet_yaml::from_str(content).ok()
         })
         .collect();
     Schema::merge(&files)
@@ -909,7 +909,7 @@ impl RivetDatabase {
         content: String,
     ) -> SourceFileSet {
         let new_file = SourceFile::new(self, path.to_string(), content);
-        let mut files = source_set.files(self);
+        let mut files = source_set.files(self).clone();
         files.push(new_file);
         source_set.set_files(self).to(files);
         source_set
