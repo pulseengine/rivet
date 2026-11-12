@@ -50,6 +50,26 @@ ignore = [
     # feature, and by 2027-02-01 at the latest (owner: rivet maintainers).
     # The real fix is the rmcp 3.x migration.
     "RUSTSEC-2026-0462",  # rmcp (assessed not applicable — see above)
+    # rustix 1.1.4 — RUSTSEC-2026-0486 (informational: unsound), recorded
+    # 2026-11-12. The xattr functions in rustix::fs (getxattr, lgetxattr,
+    # fgetxattr, listxattr, llistxattr, flistxattr) mark unwritten bytes as
+    # initialized when given a zero-length buffer. Fixed in rustix >= 1.1.6.
+    #
+    # NO IGNORE ENTRY, deliberately: rustix is transitive (wasmtime,
+    # wasmtime-wasi, cap-primitives, rustix-linux-procfs, fs-set-times,
+    # memfd, tempfile), and cargo-deny reports `unsound` only for crates the
+    # workspace depends on directly, so an ignore here would match nothing.
+    # cargo audit prints it as a warning and exits 0.
+    #
+    # ASSESSED NOT REACHABLE: none of those nine dependents' sources mention
+    # any of the six xattr functions (grep of the vendored crates,
+    # 2026-11-12), and rivet's own crates do not depend on rustix.
+    #
+    # NOT BUMPED: rivet's policy for unsound-only advisories is to warn,
+    # record here, and bump only to a fixed version cargo-vet already covers.
+    # rustix 1.1.4 is a cargo-vet exemption and no imported audit covers
+    # 1.1.6. RE-CHECK on the next wasmtime bump, when an audit of rustix
+    # >= 1.1.6 is imported, or by 2027-02-01 at the latest.
 ]
 
 [licenses]
