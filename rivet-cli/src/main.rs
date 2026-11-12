@@ -1051,6 +1051,14 @@ enum Command {
         action: ReleaseAction,
     },
 
+    /// Hand a release to an external reviewer: commit-pinned artifact snapshots.
+    ///
+    /// See `rivet docs review-export` for the JSON shape.
+    Review {
+        #[command(subcommand)]
+        action: ReviewAction,
+    },
+
     /// Split a single-file artifact source into one `<ID>.yaml` per artifact.
     ///
     /// Parallel adds never share a file. Writes a directory next to the file,
@@ -1688,6 +1696,36 @@ enum BaselineAction {
     },
     /// List baselines found across externals
     List,
+}
+
+#[derive(Debug, Subcommand)]
+enum ReviewAction {
+    /// Export every artifact scoped to a release as JSON, pinned to HEAD.
+    ///
+    /// Emits `commit` (the full HEAD sha), `release`, and `artifacts[]`: each
+    /// artifact scoped to the release (the same set as `rivet list --release`)
+    /// with id, type, title, status, release, description, tags, fields,
+    /// links and provenance. Refuses a dirty working tree (any `git status
+    /// --porcelain` entry, untracked files included) and names the dirty
+    /// paths, because the export would not match the commit it names.
+    ///
+    /// With `--since <ref>`, emits only the artifacts added, removed or
+    /// changed for the release between <ref> and HEAD, each marked with
+    /// `change`; changed ones list `changed_fields`. Moving into or out of
+    /// the release counts as added or removed. Removed artifacts carry their
+    /// content at <ref>. Shape: `rivet docs review-export`.
+    Export {
+        /// Release version, e.g. v0.42.0
+        #[arg(long)]
+        release: String,
+        /// Git ref to diff against: emit only what changed for the release
+        /// between it and HEAD.
+        #[arg(long)]
+        since: Option<String>,
+        /// Output format: "json" (the only format)
+        #[arg(short, long, default_value = "json")]
+        format: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -2554,6 +2592,7 @@ fn qualification_refusal(cmd: &Command) -> Option<&'static str> {
         | Command::Runs { .. }
         | Command::Pipelines { .. }
         | Command::Manifest { .. }
+        | Command::Review { .. }
         | Command::Baseline { .. } => None,
         // `docs` prints, except `check --fix` (rewrites doc files in place)
         // and `--export` (writes the reference export).
@@ -3057,6 +3096,13 @@ fn run(cli: Cli) -> Result<bool> {
                 format,
                 strict,
             } => cmd::release::cmd_release_check(&cli, version, variant, format, *strict),
+        },
+        Command::Review { action } => match action {
+            ReviewAction::Export {
+                release,
+                since,
+                format,
+            } => cmd::review::cmd_review_export(&cli, release, since.as_deref(), format),
         },
         Command::Shard { file } => cmd_shard(&cli, file),
         Command::Consolidate {
@@ -10233,7 +10279,7 @@ fn cmd_impact(
 }
 
 /// Load a baseline store from a git ref by extracting artifact files at that ref.
-fn load_baseline_from_git(cli: &Cli, git_ref: &str) -> Result<Store> {
+pub(crate) fn load_baseline_from_git(cli: &Cli, git_ref: &str) -> Result<Store> {
     // Materialize the ref's tracked tree into a temp dir and load it through
     // the SAME canonical loader the live store uses
     // (`load_project_full` -> `load_artifacts` per source). Earlier this used a
@@ -11410,6 +11456,11 @@ const JSON_SCHEMA_REGISTRY: &[(&str, &str, &str)] = &[
         "schemas/json/query-output.schema.json",
         "rivet query --format json",
     ),
+    (
+        "review-export",
+        "schemas/json/review-export-output.schema.json",
+        "rivet review export --format json",
+    ),
 ];
 
 /// Resolve a schema file path against `--schemas` (if set) or the
@@ -12299,7 +12350,7 @@ impl AuditCommit {
 }
 
 /// Run `git` in the project directory and return stdout on success.
-fn git_in(project: &Path, args: &[&str]) -> Result<std::process::Output> {
+pub(crate) fn git_in(project: &Path, args: &[&str]) -> Result<std::process::Output> {
     std::process::Command::new("git")
         .args(args)
         .current_dir(project)

@@ -5,6 +5,18 @@
 
 ## [Unreleased]
 
+### Added
+- **`rivet review export`** (REQ-416, #1227). `rivet review export --release
+  vX --format json` emits a JSON snapshot of every artifact scoped to `vX`
+  (the `rivet list --release` set) with id, type, title, status, release,
+  description, tags, fields, links and provenance, pinned to the full `HEAD`
+  sha in `commit`. A dirty working tree (any `git status --porcelain` entry,
+  untracked files included) is refused with the dirty paths named.
+  `--since <ref>` emits only the artifacts added, removed or changed for
+  `vX` since `<ref>`, marked `change`, with `changed_fields` on changed ones.
+  Shape: `rivet docs review-export`; contract:
+  `schemas/json/review-export-output.schema.json`.
+
 ## [0.42.0] - 2026-11-12
 
 Evidence that can say how much it covers: clause discharge for `rivet verify`, recorded test results in coverage and release readiness, and `rivet yaml to-json` for tools that cannot link rivet-yaml. salsa moves to 0.28.5, which fixes RUSTSEC-2026-0308.
