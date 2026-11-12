@@ -50,6 +50,18 @@ This release is wrong if `rivet validate` passes a project whose schema sets `al
 ## [0.42.2] - 2026-11-13
 
 The first published release of this work. The v0.42.0 and v0.42.1 tags exist but nothing was published under either: no GitHub Release, no binaries, no npm or Marketplace version. The v0.42.0 run failed at VSIX packaging; the v0.42.1 run was cancelled because GitHub no longer accepts the `macos-14` runner.
+- **`rivet review export`** (REQ-416, #1227). `rivet review export --release
+  vX --format json` emits a JSON snapshot of every artifact scoped to `vX`
+  (the `rivet list --release` set) with id, type, title, status, release,
+  description, tags, fields, links and provenance, pinned to the full `HEAD`
+  sha in `commit`. A dirty working tree (any `git status --porcelain` entry,
+  untracked files included) is refused with the dirty paths named.
+  `--since <ref>` emits only the artifacts added, removed or changed for
+  `vX` since `<ref>`, marked `change`, with `changed_fields` on changed ones.
+  Shape: `rivet docs review-export`; contract:
+  `schemas/json/review-export-output.schema.json`.
+
+## [0.42.0] - 2026-11-12
 
 Evidence that can say how much it covers: clause discharge for `rivet verify`, recorded test results in coverage and release readiness, and `rivet yaml to-json` for tools that cannot link rivet-yaml. salsa moves to 0.28.5, which fixes RUSTSEC-2026-0308.
 

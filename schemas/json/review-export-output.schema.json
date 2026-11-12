@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pulseengine.github.io/rivet/schemas/json/review-export-output.schema.json",
+  "title": "rivet review export --format json",
+  "description": "Commit-pinned snapshot of the artifacts scoped to one release (issue #1227, REQ-416). See `rivet docs review-export`.",
+  "type": "object",
+  "required": ["command", "commit", "release", "since", "count", "artifacts"],
+  "additionalProperties": false,
+  "properties": {
+    "command": { "type": "string", "const": "review-export" },
+    "commit": {
+      "type": "string",
+      "minLength": 40,
+      "description": "Full sha of HEAD. The working tree was clean, so the export is exactly this commit's content."
+    },
+    "release": { "type": "string", "description": "The --release value." },
+    "since": {
+      "type": ["string", "null"],
+      "minLength": 40,
+      "description": "Full sha the --since ref resolved to; null without --since."
+    },
+    "count": { "type": "integer", "minimum": 0, "description": "Length of artifacts." },
+    "artifacts": {
+      "type": "array",
+      "description": "Sorted by id. Without --since: every artifact whose release equals the --release value. With --since: only the added, removed and changed ones.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "title",
+          "status",
+          "release",
+          "description",
+          "tags",
+          "fields",
+          "fields_per_variant",
+          "links",
+          "provenance"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "type": ["string", "null"] },
+          "release": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "fields": { "type": "object", "description": "Custom (schema-declared) fields." },
+          "fields_per_variant": {
+            "type": "object",
+            "description": "Per-variant field overrides: variant name -> field map.",
+            "additionalProperties": { "type": "object" }
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "target"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string" },
+                "target": { "type": "string" }
+              }
+            }
+          },
+          "provenance": {
+            "type": ["object", "null"],
+            "required": ["created-by"],
+            "properties": {
+              "created-by": { "type": "string" },
+              "model": { "type": "string" },
+              "session-id": { "type": "string" },
+              "timestamp": { "type": "string" },
+              "reviewed-by": { "type": "string" },
+              "federation": { "type": "object" }
+            }
+          },
+          "change": {
+            "type": "string",
+            "enum": ["added", "removed", "changed"],
+            "description": "Present only with --since."
+          },
+          "changed_fields": {
+            "type": "array",
+            "description": "Present only when change is \"changed\": the artifact keys whose values differ, in output key order.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "id",
+                "type",
+                "title",
+                "status",
+                "release",
+                "description",
+                "tags",
+                "fields",
+                "fields_per_variant",
+                "links",
+                "provenance"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -5816,6 +5816,7 @@ fn shipped_json_schemas_are_valid_json() {
         "stats-output.schema.json",
         "coverage-output.schema.json",
         "list-output.schema.json",
+        "review-export-output.schema.json",
     ] {
         let path = schemas_dir.join(name);
         let content = std::fs::read_to_string(&path)
