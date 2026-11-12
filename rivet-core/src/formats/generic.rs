@@ -351,6 +351,14 @@ pub struct SkippedFile {
     pub kind: SkipKind,
 }
 
+/// True when `key` is not `artifacts` but is within edit distance 2 of
+/// it, ignoring ASCII case: the generic-yaml root key mistyped. Shared by
+/// `classify_skip` (the CLI's `artifact-root-key-near-miss` warning) and
+/// the HIR's extraction diagnostic so the two never disagree.
+pub fn is_artifacts_key_near_miss(key: &str) -> bool {
+    key != "artifacts" && crate::commits::levenshtein(&key.to_ascii_lowercase(), "artifacts") <= 2
+}
+
 /// Classify a `.yaml`/`.yml` file that failed `import_generic_file`.
 ///
 /// Re-parses the raw content as a generic `rivet_yaml::Value` and applies
@@ -361,7 +369,10 @@ pub struct SkippedFile {
 ///    (a malformed artifacts list).
 /// 3. Top-level mapping has BOTH `id` and `type` keys ->
 ///    [`SkipKind::ParseError`] (an artifact written without the
-///    `artifacts:` wrapper — the exact F2a reproducer).
+///    `artifacts:` wrapper — the exact F2a reproducer). A top-level key
+///    that misspells `artifacts` (see [`is_artifacts_key_near_miss`]) or,
+///    in a single-key file, names an artifact family (`requirements:`)
+///    -> [`SkipKind::NearMissKey`].
 /// 4. Anything else -> [`SkipKind::NotArtifactFile`] (F2b — skip silently).
 fn classify_skip(content: &str) -> SkipKind {
     let value: rivet_yaml::Value = match rivet_yaml::from_str(content) {
@@ -381,6 +392,18 @@ fn classify_skip(content: &str) -> SkipKind {
         // without the required `artifacts:` wrapper.
         if has_key("id") && has_key("type") {
             return SkipKind::ParseError;
+        }
+        // Case 3a: a misspelling of `artifacts` itself (`artifcats:`,
+        // `artefacts:`, `artifact:`). Checked for every top-level key, not
+        // only single-key files: the misspelling is the intended list key
+        // whatever else the file holds. Found by the yaml_footguns fuzz
+        // target on main 08db01fd, after #808's list (case 3b) missed it.
+        for (k, _) in &map {
+            if let rivet_yaml::Value::String(k) = k {
+                if is_artifacts_key_near_miss(k) {
+                    return SkipKind::NearMissKey(k.clone());
+                }
+            }
         }
         // Case 3b (#808): a single top-level key that reads like a
         // plural artifact-type name is a strong "did you mean
@@ -575,6 +598,42 @@ mod tests {
         // A bare list / scalar with no artifact signal is not an error.
         assert_eq!(
             classify_skip("- just\n- a\n- list\n"),
+            SkipKind::NotArtifactFile
+        );
+    }
+
+    /// A misspelled `artifacts:` root key is a near miss, whatever else
+    /// the file holds; unrelated keys and the correct key are not. The
+    /// first case is the yaml_footguns fuzz crash on main 08db01fd.
+    ///
+    /// rivet: verifies REQ-294
+    #[test]
+    fn classify_skip_flags_misspelled_artifacts_key() {
+        assert_eq!(
+            classify_skip("artifcats:\n  - id: REQ-001\n    type: requirement\n"),
+            SkipKind::NearMissKey("artifcats".into())
+        );
+        assert_eq!(
+            classify_skip("meta: x\nArtefacts:\n  - id: REQ-001\n"),
+            SkipKind::NearMissKey("Artefacts".into())
+        );
+        for key in ["artifact", "artifacts_", "artifcts", "Artifacts"] {
+            assert!(is_artifacts_key_near_miss(key), "{key} must be a near miss");
+        }
+        for key in [
+            "artifacts",
+            "bindings",
+            "schemas",
+            "artifact-ids",
+            "metadata",
+        ] {
+            assert!(
+                !is_artifacts_key_near_miss(key),
+                "{key} must not be a near miss"
+            );
+        }
+        assert_eq!(
+            classify_skip("bindings:\n  - a\n"),
             SkipKind::NotArtifactFile
         );
     }

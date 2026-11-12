@@ -130,6 +130,7 @@ pub fn extract_generic_artifacts(source: &str) -> ParsedYamlFile {
     };
 
     let Some(artifacts_entry) = find_mapping_entry(&root_mapping, "artifacts") else {
+        push_artifacts_key_near_miss(&root_mapping, &mut result.diagnostics);
         return result;
     };
 
@@ -1476,6 +1477,33 @@ fn child_of_kind(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxNode> {
 }
 
 /// Find a MappingEntry whose key text matches `name`.
+/// With no `artifacts:` key, warn on each top-level key that is a
+/// misspelling of it: otherwise the file yields 0 artifacts and 0
+/// diagnostics. Same rule as the CLI's `artifact-root-key-near-miss`.
+fn push_artifacts_key_near_miss(mapping: &SyntaxNode, out: &mut Vec<ParseDiagnostic>) {
+    for entry in mapping.children() {
+        if node_kind(&entry) != SyntaxKind::MappingEntry {
+            continue;
+        }
+        let Some(key_node) = child_of_kind(&entry, SyntaxKind::Key) else {
+            continue;
+        };
+        let Some(key) = scalar_text(&key_node) else {
+            continue;
+        };
+        if crate::formats::generic::is_artifacts_key_near_miss(&key) {
+            out.push(ParseDiagnostic {
+                span: Span::from_text_range(key_node.text_range()),
+                message: format!(
+                    "top-level `{key}:` — did you mean `artifacts:`? only `artifacts:` is read \
+                     as the artifact list, so this file contributes 0 artifacts"
+                ),
+                severity: Severity::Warning,
+            });
+        }
+    }
+}
+
 fn find_mapping_entry(mapping: &SyntaxNode, name: &str) -> Option<SyntaxNode> {
     for entry in mapping.children() {
         if node_kind(&entry) != SyntaxKind::MappingEntry {
@@ -1497,6 +1525,33 @@ fn find_mapping_entry(mapping: &SyntaxNode, name: &str) -> Option<SyntaxNode> {
 mod tests {
     use super::*;
     use crate::formats::generic::parse_generic_yaml;
+
+    /// A misspelled root key yields a Warning on that key instead of a
+    /// silent 0 artifacts / 0 diagnostics. Input is the yaml_footguns
+    /// fuzz crash found on main 08db01fd.
+    ///
+    /// rivet: verifies REQ-294
+    #[test]
+    fn misspelled_artifacts_key_is_diagnosed() {
+        let source = "artifcats:\n  - id: REQ-001\n    type: requirement\n    title: Seed\n";
+        let parsed = extract_generic_artifacts(source);
+        assert!(parsed.artifacts.is_empty());
+        assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
+        let d = &parsed.diagnostics[0];
+        assert_eq!(d.severity, Severity::Warning);
+        assert!(
+            d.message.contains("top-level `artifcats:`"),
+            "{}",
+            d.message
+        );
+        assert_eq!(
+            &source[d.span.start as usize..d.span.end as usize],
+            "artifcats"
+        );
+
+        let clean = extract_generic_artifacts("bindings:\n  - a\n");
+        assert!(clean.diagnostics.is_empty(), "{:?}", clean.diagnostics);
+    }
 
     /// 1. Parse simple artifacts, cross-validate with `parse_generic_yaml()`.
     #[test]

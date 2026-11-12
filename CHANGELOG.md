@@ -69,6 +69,14 @@
   clause list, and none is ambiguous. New topic: `rivet docs verify-clauses`.
 
 ### Fixed
+- **A misspelled `artifacts:` key is reported** (REQ-294). A generic-yaml
+  file whose top-level key misspells `artifacts` (`artifcats:`,
+  `artefacts:`, `artifact:`) loaded 0 artifacts with no diagnostic, so
+  `validate --strict` passed. When other files in the same source loaded,
+  the `empty-source` check from #808 could not fire either. Any top-level
+  key within edit distance 2 of `artifacts` now raises
+  `artifact-root-key-near-miss`, a warning by default and an error under
+  `--strict`. The `yaml_footguns` fuzz target found the case.
 - **An under-indented quoted scalar is reported as such** (#1209). Since
   0.41.0, rivet's own YAML parser rejects a double-quoted scalar whose
   continuation lines are indented no deeper than the line it opened on, for
