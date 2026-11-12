@@ -363,3 +363,97 @@ fn manifest_json_schema_rejects_bad_documents() {
         "{joined}"
     );
 }
+
+// ── rivet review export (#1227) ─────────────────────────────────────────
+
+fn git_in(dir: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args([
+            "-c",
+            "user.name=rivet-test",
+            "-c",
+            "user.email=rivet-test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+        ])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("run git");
+    assert!(out.status.success(), "git {args:?} failed");
+}
+
+/// Both forms of `rivet review export --format json` — the full snapshot and
+/// the `--since` delta with every `change` kind — conform to
+/// schemas/json/review-export-output.schema.json, which is
+/// `additionalProperties: false` throughout, so a key added to the output
+/// without the contract fails here.
+// rivet: verifies REQ-416
+#[test]
+fn review_export_conforms_to_its_json_schema() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let dir = tmp.path();
+    git_in(dir, &["init", "-q"]);
+    std::fs::write(
+        dir.join("rivet.yaml"),
+        "project:\n  name: contract\n  version: \"0.1.0\"\n  schemas: [common, dev]\n\
+         sources:\n  - path: artifacts\n    format: generic-yaml\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("artifacts")).unwrap();
+    let file = dir.join("artifacts").join("reqs.yaml");
+    std::fs::write(
+        &file,
+        "artifacts:\n\
+         \x20 - id: REQ-001\n    type: requirement\n    title: Kept\n    status: draft\n    release: v1\n\
+         \x20   tags: [a]\n    fields:\n      priority: must\n\
+         \x20   links:\n      - type: traces-to\n        target: REQ-002\n\
+         \x20   provenance:\n      created-by: ai-assisted\n      model: m\n      timestamp: 2026-11-12T10:00:00Z\n\
+         \x20 - id: REQ-002\n    type: requirement\n    title: Removed\n    release: v1\n",
+    )
+    .unwrap();
+    git_in(dir, &["add", "-A"]);
+    git_in(dir, &["commit", "-q", "-m", "one"]);
+
+    let full = run_json(dir, &["review", "export", "--release", "v1"]);
+    assert_eq!(full["count"], 2, "{full}");
+    assert!(full["artifacts"][0]["provenance"].is_object(), "{full}");
+    assert_conforms("review-export", &full);
+
+    std::fs::write(
+        &file,
+        "artifacts:\n\
+         \x20 - id: REQ-001\n    type: requirement\n    title: Kept\n    status: implemented\n    release: v1\n\
+         \x20 - id: REQ-003\n    type: requirement\n    title: Added\n    release: v1\n",
+    )
+    .unwrap();
+    git_in(dir, &["add", "-A"]);
+    git_in(dir, &["commit", "-q", "-m", "two"]);
+    let delta = run_json(
+        dir,
+        &["review", "export", "--release", "v1", "--since", "HEAD~1"],
+    );
+    let changes: Vec<&str> = delta["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["change"].as_str().unwrap())
+        .collect();
+    assert_eq!(changes, ["changed", "removed", "added"], "{delta}");
+    assert_conforms("review-export", &delta);
+
+    // The contract is not vacuous: an unknown change kind, an undocumented
+    // key and a short commit each violate it.
+    let mut bad = delta.clone();
+    bad["artifacts"][0]["change"] = Value::String("renamed".into());
+    bad["artifacts"][1]["extra"] = Value::Bool(true);
+    bad["commit"] = Value::String("abc123".into());
+    let mut errors = Vec::new();
+    check(&schema("review-export"), &bad, "", &mut errors);
+    let joined = errors.join("\n");
+    assert!(joined.contains("/artifacts[0]/change:"), "{joined}");
+    assert!(joined.contains("unexpected field \"extra\""), "{joined}");
+    assert!(joined.contains("/commit:"), "{joined}");
+}

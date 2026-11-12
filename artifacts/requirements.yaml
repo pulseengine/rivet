@@ -10506,3 +10506,27 @@ artifacts:
       model: claude-opus-5-5
       timestamp: 2026-11-04T12:58:02Z
     release: v0.42.0
+
+  - id: REQ-416
+    type: requirement
+    title: "rivet review export emits a commit-pinned JSON snapshot of a release's artifacts (#1227)"
+    status: implemented
+    description: |-
+      An external reviewer of a release had no single document that pins what was reviewed to a commit: rivet list --release shows the scope but not the full artifact content, and nothing ties the output to the exact tree it came from or answers "what changed for this release since the last review".
+
+      ACCEPTANCE: rivet review export --release vX --format json prints one JSON object with command "review-export", commit (the full 40-character HEAD sha), release, since, count and artifacts[]: every artifact scoped to vX (the same predicate as rivet list --release vX), each with id, type, title, status, release, description, tags, fields, fields_per_variant, links and provenance (absent values null). A dirty working tree — any git status --porcelain entry, untracked files included, because an untracked file under an artifact source is loaded — exits non-zero naming each dirty path. --since <ref> loads the project at <ref> through the git-archive baseline loader of rivet impact --since and emits only artifacts added, removed or changed for vX between <ref> and HEAD, marked change added/removed/changed; changed ones list changed_fields (the differing artifact keys); removed ones carry their content at <ref>; moving into or out of vX counts as added/removed. json is the only format. rivet docs review-export documents the shape, and schemas/json/review-export-output.schema.json is its contract.
+    tags: [review, release, export, json, cli]
+    fields:
+      category: functional
+      priority: should
+      verification-criteria: "rivet-cli/tests/review_export.rs builds temp git projects: the full export carries every in-scope artifact with provenance, commit equals git rev-parse HEAD, out-of-scope artifacts are absent; a dirty tree (modified and untracked files) exits non-zero naming both paths and prints nothing on stdout; --since covers added (new and moved in), removed (deleted and moved out, with old content), changed (changed_fields status, description, links) and an unchanged artifact that must be absent. json_output_contracts.rs validates both export forms against schemas/json/review-export-output.schema.json."
+    links:
+      - type: traces-to
+        target: REQ-007
+      - type: traces-to
+        target: REQ-232
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-12T10:00:00Z
+    release: v0.43.0
