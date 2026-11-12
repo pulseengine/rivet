@@ -77,6 +77,13 @@
   key within edit distance 2 of `artifacts` now raises
   `artifact-root-key-near-miss`, a warning by default and an error under
   `--strict`. The `yaml_footguns` fuzz target found the case.
+- **salsa 0.28.5, with spar 0.48.1** (REQ-376). rivet moves spar-hir and
+  spar-analysis from spar 0.13.0 to 0.48.1 and salsa from 0.26.1 to 0.28.5
+  together, since rivet-core shares salsa types with spar and the two must
+  resolve to one salsa. This clears RUSTSEC-2026-0308 (salsa use-after-free),
+  which `deny.toml` ignored as not applicable, and that ignore is removed. A
+  test in `rivet-core/tests/dependency_floors.rs` fails if `Cargo.lock` goes
+  back below 0.28.5 or resolves two salsas.
 - **An under-indented quoted scalar is reported as such** (#1209). Since
   0.41.0, rivet's own YAML parser rejects a double-quoted scalar whose
   continuation lines are indented no deeper than the line it opened on, for
