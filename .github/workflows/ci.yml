@@ -1853,6 +1853,11 @@ jobs:
       - name: Kernel axioms (coqchk over every compiled .vo)
         run: |
           set -euo pipefail
+          # With a warm disk cache, Bazel 7+ skips downloading intermediate
+          # outputs, so `bazel test` above leaves no .vo on disk. Build the
+          # libraries with every output materialized before scanning.
+          bazel query 'kind("rocq_library", //proofs/rocq/...)' > "$RUNNER_TEMP/rocq-libs.txt"
+          bazel build --remote_download_outputs=all --target_pattern_file="$RUNNER_TEMP/rocq-libs.txt"
           bazel aquery 'kind("rocq_library", //proofs/rocq/...)' --output=jsonproto > "$RUNNER_TEMP/aquery.json"
           python3 tools/ci/rocq-coqchk.py "$RUNNER_TEMP/aquery.json" "$(bazel info execution_root)" "$RUNNER_TEMP/coqchk.txt"
           python3 tools/ci/trust-ledger.py kernel "$RUNNER_TEMP/coqchk.txt"
