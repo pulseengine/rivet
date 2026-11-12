@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-11-12
+
+Evidence that can say how much it covers: clause discharge for `rivet verify`, recorded test results in coverage and release readiness, and `rivet yaml to-json` for tools that cannot link rivet-yaml. salsa moves to 0.28.5, which fixes RUSTSEC-2026-0308.
+
+This release is wrong if `rivet verify` advances an artifact whose description states a numbered clause list without `--clauses-discharged`, or if `release.require: results` reports an artifact ready whose latest recorded result failed.
+
 ### Added
 - **Clause discharge in the reports** (REQ-308, #1168). `rivet coverage
   --tests` shows the discharge `rivet verify` recorded next to each marker
@@ -54,7 +60,7 @@
   a project whose CI fails on warnings does not turn red on upgrade. `dev`
   gains the optional `verification-criteria` field. New topic: `rivet docs
   verification-criteria`. This repository's own store reports 288 of 405.
-- **Clause discharge for `rivet verify`** (REQ-308, #838). When a description
+- **Clause discharge for `rivet verify`** (REQ-308, DD-084, #838). When a description
   states a numbered clause list (lines `1.`, `2.`, ... in order, or a final `#
   rivet: clauses = N` line), `rivet verify` now refuses to advance until
   `--clauses-discharged` names the clauses the evidence discharges, and a
@@ -69,7 +75,7 @@
   clause list, and none is ambiguous. New topic: `rivet docs verify-clauses`.
 
 ### Fixed
-- **A misspelled `artifacts:` key is reported** (REQ-294). A generic-yaml
+- **A misspelled `artifacts:` key is reported** (#1224, extends REQ-294). A generic-yaml
   file whose top-level key misspells `artifacts` (`artifcats:`,
   `artefacts:`, `artifact:`) loaded 0 artifacts with no diagnostic, so
   `validate --strict` passed. When other files in the same source loaded,
@@ -110,7 +116,7 @@
   only-skipped record does not cover it, and the uncovered line says why.
   The JSON gains `covered_by_results` and `uncovered_evidence`, omitted when
   empty. New topic: `rivet docs recorded-results`.
-- **`release.require: results`** (REQ-413, #1129), the strictest
+- **`release.require: results`** (REQ-413, DD-083, #1129), the strictest
   release-readiness mode: everything `require: evidence` checks, plus a
   passing recorded result for the artifact or something tracing to it. A
   withheld artifact names why (latest result fails, only skipped or blocked,
