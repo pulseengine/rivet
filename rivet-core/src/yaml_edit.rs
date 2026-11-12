@@ -126,8 +126,7 @@ impl YamlEditor {
         let dash_indent = start_line.len() - start_line.trim_start().len();
         // The `- ` takes 2 chars, so fields are at dash_indent + 2 + (yaml indent, typically 2)
         // But let's detect from actual content: look at the second line
-        for i in (block_start + 1)..self.lines.len() {
-            let line = &self.lines[i];
+        for line in self.lines.iter().skip(block_start + 1) {
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -153,8 +152,13 @@ impl YamlEditor {
     ) -> Option<usize> {
         let field_indent = self.field_indent(block_start);
         let key_prefix = format!("{key}:");
-        for i in (block_start + 1)..block_end {
-            let line = &self.lines[i];
+        for (i, line) in self
+            .lines
+            .iter()
+            .enumerate()
+            .take(block_end)
+            .skip(block_start + 1)
+        {
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
@@ -1366,9 +1370,9 @@ artifacts:
         // REQ-002 is a short block (4 content lines)
         assert!(end > start);
         // The block should not include REQ-003
-        for i in start..end {
+        for (i, line) in editor.lines.iter().enumerate().take(end).skip(start) {
             assert!(
-                !editor.lines[i].contains("REQ-003"),
+                !line.contains("REQ-003"),
                 "REQ-002 block should not contain REQ-003 at line {i}"
             );
         }

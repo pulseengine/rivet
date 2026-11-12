@@ -670,6 +670,12 @@ jobs:
       - name: Compile extension
         working-directory: vscode-rivet
         run: npm run compile
+      # The same command release.yml runs. vsce refuses an @types/vscode
+      # newer than engines.vscode; without this step that surfaced only at
+      # the v0.42.0 release, after a dependency bump passed this job.
+      - name: Package VSIX (as release.yml does)
+        working-directory: vscode-rivet
+        run: npx @vscode/vsce package --no-dependencies -o "$RUNNER_TEMP/rivet-ci.vsix"
       - name: Run extension tests (headless VS Code)
         working-directory: vscode-rivet
         run: xvfb-run -a npm test

@@ -3,7 +3,7 @@
   "displayName": "Rivet SDLC",
   "description": "SDLC artifact traceability with live validation, hover info, and embedded dashboard",
   "publisher": "pulseengine",
-  "version": "0.42.0",
+  "version": "0.42.1",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -132,7 +132,7 @@
     "vscode-languageclient": "^11.0.0"
   },
   "devDependencies": {
-    "@types/vscode": "~1.145.0",
+    "@types/vscode": "~1.91.0",
     "@types/node": "^26",
     "@types/mocha": "^10",
     "@types/glob": "^9",

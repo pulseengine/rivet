@@ -1957,7 +1957,7 @@ artifacts:
     type: design-decision
     title: Recorded results are a third, opt-in input to cuttable, classified separately from the trace-results verdict
     status: accepted
-    release: v0.42.0
+    release: v0.42.1
     description: "How a recorded test result counts as evidence, shared by coverage --tests (#1128) and release.require: results (#1129)."
     tags: [results, release, coverage]
     fields:
@@ -1978,7 +1978,7 @@ artifacts:
     type: design-decision
     title: Clause discharge is a recorded judgement guarded by a fingerprint, and clause detection fails closed
     status: accepted
-    release: v0.42.0
+    release: v0.42.1
     description: "How rivet verify handles a requirement whose description is a numbered clause list (#838, REQ-308). The maintainer chose option 3 on 2026-11-04: record the human judgement (--clauses-discharged, --note) rather than per-clause markers (option 1) or a blocking partially-verifies (option 2). This decision fixes the two properties that make such a record trustworthy: it cannot silently outlive an edit of the clauses, and it is never taken against a clause list rivet has misread."
     tags: [verify, traceability, clauses]
     fields:
