@@ -5,15 +5,18 @@
 
 ## [Unreleased]
 
-## [0.42.1] - 2026-11-12
+## [0.42.2] - 2026-11-13
 
-The first published release of this work. The v0.42.0 tag exists but its release run failed at VSIX packaging, so nothing was published under it: no GitHub Release, no binaries, no npm or Marketplace version.
+The first published release of this work. The v0.42.0 and v0.42.1 tags exist but nothing was published under either: no GitHub Release, no binaries, no npm or Marketplace version. The v0.42.0 run failed at VSIX packaging; the v0.42.1 run was cancelled because GitHub no longer accepts the `macos-14` runner.
 
 Evidence that can say how much it covers: clause discharge for `rivet verify`, recorded test results in coverage and release readiness, and `rivet yaml to-json` for tools that cannot link rivet-yaml. salsa moves to 0.28.5, which fixes RUSTSEC-2026-0308.
 
 This release is wrong if `rivet verify` advances an artifact whose description states a numbered clause list without `--clauses-discharged`, or if `release.require: results` reports an artifact ready whose latest recorded result failed.
 
-### Fixed in 0.42.1
+### Fixed in 0.42.2
+- **The x86_64 macOS binary builds again** (#1240). GitHub refuses the `macos-14` runner label ("The configuration 'macos-14-arm64-us-default' is not supported"), which cancelled the v0.42.1 release run before Create GitHub Release. That build now runs on `macos-15-intel`.
+
+### Fixed in 0.42.1 (not published)
 - **The VS Code extension packages again** (#1213 regression). A dependency bump raised `@types/vscode` to ~1.145.0 while `engines.vscode` stayed ^1.91.0, and `vsce package` refuses that pair. `@types/vscode` is back at ~1.91.0, Dependabot no longer raises it past the engine, and the CI VS Code Extension job now runs `vsce package` as the release does.
 
 ### Added

@@ -8637,7 +8637,7 @@ artifacts:
       Reported from varve, where rivet is the release-readiness gate, and reproduced in rivet's own v0.34.0 cut the same day. `rivet verify REQ-X` correctly refuses when there is NO evidence — that guard works and stopped the reporter twice. But when a `verifies` marker exists it advances unconditionally, and a marker is cheap: one comment line above one `#[test]`. The structural problem is granularity: a requirement is a set of clauses, a marker attaches to the requirement, so the evidence link is coarser than the claim and the gap is invisible. The failure is not a missing check but a graph that LOOKS complete, which is worse — readers stop reading the requirement text once status says `verified`. In varve three requirements had markers and undischarged clauses (a gate that cannot detect the failure mode its clause names; a clause implemented for one transport but not another; a clause parsing a field nothing consumes). In rivet, REQ-298 was flipped to `verified` during the v0.34.0 release with its third clause ('tighten the top-level command list so the common path is legible') knowingly undischarged — 52 flat top-level commands remain — and `coverage --tests` reported `REQ-298  1 test marker`, indistinguishable from full discharge. The residual was hand-carried into REQ-307 plus commit prose, i.e. the reporter's option (3) improvised manually, and crucially the trace graph does NOT carry that caveat, so the caveat is not traceable. Degenerate variant found the same day: a marker that matches nothing is reported as neither present nor broken — the scanner regex accepts only word characters and hyphens after `verifies`, and `#` is neither, so `rivet: verifies #808` silently is not a marker at all; six such markers existed against 593 valid ones. Options in cost order: (1) per-clause markers `rivet: verifies REQ-X clause 3`, the real fix, but needs clauses addressable rather than prose inside `description` — a schema migration across every artifact; (2) make `partially-verifies` BLOCK rather than annotate, so `verify` refuses to advance past `implemented` without explicit override — no schema change, converts the common case into a refusal, and is therefore the right first move; (3) record the human judgement explicitly (`--clauses-discharged 1,2,4 --note ...`) so an unexamined default becomes a stated claim — cheap, but only meaningful if clause numbering is stable, and prose clauses renumber on any description edit, so record clause TEXT alongside the index or do (1) first.
 
       ACCEPTANCE (maintainer decision 2026-11-04: option 3, with clause text guarded against renumbering): when an artifact's description states a numbered clause list (lines opening 1., 2., ... in order, or a '# rivet: clauses = N' override; inline numbering never counts as a clause; a gap, a second list, a code fence beside numbered lines, or inline numbering running past the list is ambiguous and refused), rivet verify refuses to advance without --clauses-discharged naming the clauses the evidence discharges, refuses a partial discharge without --note, and refuses an unknown clause number or a flag on a description with no clause list. A recorded discharge writes discharged-clauses (list of integers), discharge-note and discharge-fingerprint (sha256 of the clause opening lines) as common base fields; rivet validate reports discharge-stale when the clauses no longer match the fingerprint, so renumbering cannot leave the record pointing at different clauses. A description with no clause list keeps today's verify flow. rivet verify --explain-clauses prints what detection sees. Options 1 (per-clause markers) and 2 (blocking partially-verifies) are out of scope.
-    release: v0.42.1
+    release: v0.42.2
     links:
       - type: traces-to
         target: REQ-298
@@ -9783,7 +9783,7 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5
       timestamp: 2026-09-24T16:05:46Z
-    release: v0.42.1
+    release: v0.42.2
 
   - id: REQ-377
     type: requirement
@@ -10332,7 +10332,7 @@ artifacts:
     type: requirement
     title: "non-Rust tools cannot read YAML through rivet's own parser: no CLI prints a YAML file as JSON, and rivet-yaml has no README stating its subset (#1094)"
     status: verified
-    release: v0.42.1
+    release: v0.42.2
     description: |-
       Org policy (2026-10-13): every PulseEngine repo reads its own inputs through rivet's owned YAML stack, rivet-yaml (REQ-346). Python and Node repos cannot link the crate, so they need a CLI that prints a YAML file as JSON, and everyone needs a README that states what the parser accepts (#930, #1094).
 
@@ -10349,7 +10349,7 @@ artifacts:
     type: requirement
     title: "a source file that keeps being fixed gets another spot fix instead of a refactoring task: no trigger turns repeated fixes into restructuring"
     status: verified
-    release: v0.42.1
+    release: v0.42.2
     description: |-
       rivet-cli/src/main.rs took 30 of the 67 fix commits merged to main in the 60 days to 2026-10-26, and 35 of 60 from 2026-08-01 to 2026-10-22 (12.8 per month), while refactor commits were 5 of 175 PR commits (2.9%) over the last ~90 merged PRs. Fixes keep landing where the structure is the problem, and nothing in the process asks for the restructuring.
 
@@ -10374,7 +10374,7 @@ artifacts:
     type: requirement
     title: "rivet lock pins the local path: checkout instead of the git ref rivet sync fetched, and lock --update is a no-op (#1138)"
     status: verified
-    release: v0.42.1
+    release: v0.42.2
     description: |-
       Reported from kiln (pulseengine/kiln#601). With an external declaring both git: + ref: and a machine-local path:, rivet sync clones the ref into .rivet/repos/<prefix> but rivet lock pinned the HEAD of the path: checkout, so a lock committed from a developer machine recorded whatever local branches were checked out (diverged or unpushed), and sync --locked in CI then fetched commits the declared ref never named. lock --update printed that it refreshed pins and then did nothing more than lock.
 
@@ -10396,7 +10396,7 @@ artifacts:
     type: requirement
     title: "an agreed requirement with no verification criteria reads the same as one with an untested criterion: wishes are invisible (#1127)"
     status: verified
-    release: v0.42.1
+    release: v0.42.2
     description: |-
       ASPICE PAM 4.1 SYS.2.BP1 Note 2 makes verifiability a characteristic of the requirement text. rivet coverage --tests lists requirements with no test markers but cannot tell a wish (no verification criteria, so nothing can challenge it) from a gap (criteria stated, test not yet written) or a design element, and the dev schema had no field to state criteria in.
 
@@ -10414,7 +10414,7 @@ artifacts:
     type: requirement
     title: "CI is not merge-queue ready, and docs-only pull requests still start the hosted proof, E2E and benchmark jobs"
     status: verified
-    release: v0.42.1
+    release: v0.42.2
     description: |-
       Two load problems on the shared runner pool. First, with strict up-to-date branch protection every merge to main makes every other open PR out of date, and each update re-runs the full workflow; a merge queue removes those re-runs, but CI never reports `CI Gate` on the queue's merge_group event, so a queued PR would wait forever. Second, the `changes` detector (REQ-291) skips the compile matrix on a docs-only PR, but Kani, Verus, Rocq, Playwright and the Criterion benchmarks run on every PR regardless of what changed.
 
@@ -10441,7 +10441,7 @@ artifacts:
     type: requirement
     title: rivet coverage --tests ignores recorded results, so a requirement verified on a bench or silicon always reads uncovered (#1128)
     status: verified
-    release: v0.42.1
+    release: v0.42.2
     description: |-
       Hardware requirements (jess REQ-PIX-*: Pixhawk HITL and silicon tests) are verified in a run, not by a test in source, so they carry no source marker. rivet coverage --tests built coverage from source markers alone and never read results/, so 24 such requirements always showed "No test markers found" even with a passing recorded run.
 
@@ -10463,7 +10463,7 @@ artifacts:
     type: requirement
     title: "release status gates on artifact status alone: a verified requirement with no recorded result is cuttable (#1129)"
     status: verified
-    release: v0.42.1
+    release: v0.42.2
     description: |-
       ASPICE PAM 4.1 SWE.4.BP3 asks for verification results including pass/fail status to be recorded. rivet release status decided readiness from artifact status and, under require: evidence, from traceability links, so recorded results never entered the verdict: on gale (rivet 0.39.0) 25 of 27 verified sw requirements sat in Cuttable releases with no result recorded, and importing a passing JUnit result changed nothing.
 
@@ -10505,4 +10505,4 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-11-04T12:58:02Z
-    release: v0.42.1
+    release: v0.42.2
