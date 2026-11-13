@@ -182,7 +182,7 @@ gluesql_memory_storage = "0.19"
 futures = "0.3"
 
 # Benchmarking
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 # AADL (spar) — parser, HIR, analysis
 spar-hir = { git = "https://github.com/pulseengine/spar.git", tag = "v0.48.1" }
