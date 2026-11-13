@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794554781556,
+  "lastUpdate": 1794612120164,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "4b7998a1e8e8f4927dadf7f77b84863eb7415077",
-          "message": "ci(dependabot): make the config parse again — no YAML aliases, groups inside their updates entries (#1156)\n\n#1155 put `groups:` at the top level of .github/dependabot.yml. The\ndependabot-2.0 schema allows only version, enable-beta-ecosystems,\nupdates, registries and multi-ecosystem-groups there (additionalProperties\nfalse), so main's file fails validation with \"'groups' was unexpected\".\n\nDependabot itself rejects the file for a second reason: \"YAML aliases\nare not supported\". The `labels: &ref_0` / `*ref_0` anchor has been in\nthe file since #216 (2026-05-10), so Dependabot has not been able to\nparse this config since then; the repo has no Dependabot PRs at all.\nThe labels list is now written out on each entry.\n\nEach group now sits in the entry whose packages it names:\n- github-actions-all on the github-actions entry, pattern \"*\". The old\n  \"^[^@]+/\" was a regex; dependabot patterns are globs.\n- wasm-tools-family and wasmtime on cargo. The five cargo directories\n  become one entry with `directories:`, so a grouped release opens one PR\n  and not one per directory, which is what the file's header comment asks\n  for.\n\nThe npm entries are unchanged. Supersedes the earlier attempt on this\nbranch, which nested all three groups under github-actions, where the two\ncargo groups could never match.\n\nConfirmed against json.schemastore.org/dependabot-2.0.json with\njsonschema, plus a scan for anchor and alias tokens (yaml.safe_load\nexpands them silently): main's file fails both, this one passes both.\nThe authoritative check is Dependabot's own \".github/dependabot.yml\"\ncheck run on this PR.\n\n\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-07T06:19:48Z",
-          "tree_id": "de602205ea62e86cc12af160aaffe8afc02ecc3f",
-          "url": "https://github.com/pulseengine/rivet/commit/4b7998a1e8e8f4927dadf7f77b84863eb7415077"
-        },
-        "date": 1794034846398,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 51019,
-            "range": "± 624",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 593214,
-            "range": "± 3154",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 10287807,
-            "range": "± 309848",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1075,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 12788,
-            "range": "± 83",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 240002,
-            "range": "± 1877",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 48,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 48,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 48,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1269251,
-            "range": "± 46694",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 115953,
-            "range": "± 3182",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1312984,
-            "range": "± 20347",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 16948478,
-            "range": "± 670351",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 445202,
-            "range": "± 2512",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 10427756,
-            "range": "± 427755",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 695125772,
-            "range": "± 13548856",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3051,
-            "range": "± 48",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 32444,
-            "range": "± 159",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 479454,
-            "range": "± 7255",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 34439,
-            "range": "± 405",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 374573,
-            "range": "± 2555",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 4455843,
-            "range": "± 88198",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 516,
-            "range": "± 6",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7404,
-            "range": "± 81",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 131722,
-            "range": "± 2040",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 13572,
-            "range": "± 92",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 91779,
-            "range": "± 933",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 852855,
-            "range": "± 12631",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1616184,
             "range": "± 26938",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a175c3ceb60dfbd581a817c399437f4d4822851c",
+          "message": "build(deps): bump the github-actions-all group with 3 updates (#1238)\n\nBumps the github-actions-all group with 3 updates: [taiki-e/install-action](https://github.com/taiki-e/install-action), [bazel-contrib/setup-bazel](https://github.com/bazel-contrib/setup-bazel) and [pulseengine/temper/.github/actions/gate-probe](https://github.com/pulseengine/temper).\n\n\nUpdates `taiki-e/install-action` from 2.90.1 to 2.90.3\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/c509219cf42fba86913069efd0ade2458c59337b...cfdb7ed4ccc7c7dce37759eae89dc5674b469b39)\n\nUpdates `bazel-contrib/setup-bazel` from 0.19.1 to 0.19.2\n- [Release notes](https://github.com/bazel-contrib/setup-bazel/releases)\n- [Commits](https://github.com/bazel-contrib/setup-bazel/compare/0.19.1...0.19.2)\n\nUpdates `pulseengine/temper/.github/actions/gate-probe` from 308848d151a0fdd0fc5eb8af0531addbf6f36ef4 to 03a53ca7dc3ac604252abcb70b267cd9f8ef623e\n- [Changelog](https://github.com/pulseengine/temper/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/pulseengine/temper/compare/308848d151a0fdd0fc5eb8af0531addbf6f36ef4...03a53ca7dc3ac604252abcb70b267cd9f8ef623e)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.90.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions-all\n- dependency-name: bazel-contrib/setup-bazel\n  dependency-version: 0.19.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions-all\n- dependency-name: pulseengine/temper/.github/actions/gate-probe\n  dependency-version: 03a53ca7dc3ac604252abcb70b267cd9f8ef623e\n  dependency-type: direct:production\n  dependency-group: github-actions-all\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-13T18:36:20Z",
+          "tree_id": "ebcb2b47a9342ad240415134837e0a2d3a163343",
+          "url": "https://github.com/pulseengine/rivet/commit/a175c3ceb60dfbd581a817c399437f4d4822851c"
+        },
+        "date": 1794612118745,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 49277,
+            "range": "± 444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 609764,
+            "range": "± 5609",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 10487082,
+            "range": "± 309458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1072,
+            "range": "± 31",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 12915,
+            "range": "± 112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 246492,
+            "range": "± 3758",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 49,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 49,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 49,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1281652,
+            "range": "± 15381",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 115516,
+            "range": "± 2314",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1294807,
+            "range": "± 12684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 18146876,
+            "range": "± 1981476",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 445385,
+            "range": "± 16552",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 10379764,
+            "range": "± 730268",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 633207320,
+            "range": "± 26031372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3199,
+            "range": "± 17",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 33564,
+            "range": "± 397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 524093,
+            "range": "± 5355",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 34957,
+            "range": "± 3459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 376712,
+            "range": "± 1618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 5407304,
+            "range": "± 595941",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 542,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 7354,
+            "range": "± 62",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 139474,
+            "range": "± 1879",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 14170,
+            "range": "± 1284",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 89901,
+            "range": "± 1814",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 861289,
+            "range": "± 60937",
             "unit": "ns/iter"
           }
         ]
