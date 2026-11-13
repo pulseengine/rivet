@@ -703,6 +703,7 @@ pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
     parser.parse_root();
     let green = parser.builder.finish();
     let mut errors = parser.errors;
+    let skipped = parser.skipped;
     // An under-indented double-quoted scalar surfaces as a confusing parser
     // error on its continuation line ("expected ':' after mapping key",
     // #1209). Keep the precise diagnosis of each such scalar whose
@@ -716,19 +717,21 @@ pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
             .position(|&c| c == b'\n')
             .map_or(source.len(), |i| at + i)
     };
-    let explained: Vec<ParseError> = hints
+    let mut explained: Vec<ParseError> = hints
         .into_iter()
         .filter(|h| {
             let end = line_end(h.offset);
             errors
                 .iter()
                 .any(|e| e.offset >= h.offset && e.offset <= end)
+                || skipped.iter().any(|&(a, b)| a <= h.offset && h.offset < b)
         })
         .collect();
     if !explained.is_empty() {
-        errors.extend(explained);
-        // Stable: on a shared offset the parser's own order is kept, and a
-        // hint (at the line's first non-blank byte) precedes the errors after it.
+        explained.extend(errors);
+        errors = explained;
+        // Stable, hints first: on a shared offset a hint precedes the parser's
+        // error there, and the parser's own order is kept among its errors.
         errors.sort_by_key(|e| e.offset);
     }
     (green, errors)
@@ -739,6 +742,9 @@ struct Parser<'src> {
     pos: usize,
     builder: GreenNodeBuilder<'static>,
     errors: Vec<ParseError>,
+    /// Byte ranges error recovery skipped as part of an already-reported
+    /// error, so a lexer hint inside one is still explained.
+    skipped: Vec<(usize, usize)>,
     /// Cumulative byte offset for error reporting.
     byte_offset: usize,
     /// Source bytes for indent computation.
@@ -752,6 +758,7 @@ impl<'src> Parser<'src> {
             pos: 0,
             builder: GreenNodeBuilder::new(),
             errors: Vec::new(),
+            skipped: Vec::new(),
             byte_offset: 0,
             source_bytes: source.as_bytes(),
         }
@@ -988,8 +995,32 @@ impl<'src> Parser<'src> {
                     SyntaxKind::PlainScalar
                     | SyntaxKind::SingleQuotedScalar
                     | SyntaxKind::DoubleQuotedScalar,
-                ) => {
+                ) if indent == min_indent => {
                     self.parse_mapping_entry(indent);
+                }
+                // A key indented past its mapping's column, at a column no
+                // enclosing block uses: `a:` / `  b: 1` / ` c: 2`. It used to
+                // end the inner mapping and join an outer one, so `c` moved
+                // to another parent with no diagnostic (#1247).
+                Some(
+                    SyntaxKind::PlainScalar
+                    | SyntaxKind::SingleQuotedScalar
+                    | SyntaxKind::DoubleQuotedScalar,
+                ) => {
+                    self.builder.start_node(SyntaxKind::Error.into());
+                    self.errors.push(ParseError {
+                        offset: self.byte_offset,
+                        message: format!(
+                            "this key starts at column {indent}, but its mapping's keys \
+                             start at column {min_indent}: indentation must match a key above it"
+                        ),
+                    });
+                    self.skip_to_next_line();
+                    // One error per misplaced block: the lines below it that
+                    // are indented past this mapping belong to it, not to
+                    // fresh errors of their own.
+                    self.skip_lines_deeper_than(min_indent);
+                    self.builder.finish_node();
                 }
                 Some(SyntaxKind::Comment) => {
                     // Indent-aligned comment line (e.g. `  # explanation`).
@@ -1067,6 +1098,7 @@ impl<'src> Parser<'src> {
                 | SyntaxKind::DoubleQuotedScalar
                 | SyntaxKind::Alias,
             ) => {
+                self.check_after_quoted();
                 // Consume all tokens on this line as part of the value
                 while !self.at_eof()
                     && !self.at(SyntaxKind::Newline)
@@ -1223,6 +1255,7 @@ impl<'src> Parser<'src> {
                         self.parse_block_mapping(self.current_indent());
                         let _ = item_indent;
                     } else {
+                        self.check_after_quoted();
                         // Consume all tokens on this line (handles commas in values)
                         while !self.at_eof()
                             && !self.at(SyntaxKind::Newline)
@@ -1458,6 +1491,7 @@ impl<'src> Parser<'src> {
     /// A scalar that starts on the line after its key: the line, then any
     /// continuation lines indented deeper than the key.
     fn parse_next_line_scalar(&mut self, entry_indent: usize) {
+        self.check_after_quoted();
         loop {
             while !self.at_eof() && !self.at(SyntaxKind::Newline) && !self.at(SyntaxKind::Comment) {
                 self.bump();
@@ -1608,6 +1642,28 @@ impl<'src> Parser<'src> {
         }
     }
 
+    /// At the first token of a block scalar value: a quoted scalar must end
+    /// the value, so only spaces, a comment or the line end may follow it.
+    /// `k: 'abc' def` used to read as `abc` and drop the rest (#1246).
+    fn check_after_quoted(&mut self) {
+        if !matches!(
+            self.current_kind(),
+            Some(SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar)
+        ) {
+            return;
+        }
+        self.bump();
+        self.eat_spaces();
+        if !self.at_eof() && !self.at(SyntaxKind::Newline) && !self.at(SyntaxKind::Comment) {
+            self.errors.push(ParseError {
+                offset: self.byte_offset,
+                message: "text after a closing quote: a quoted value must end the line \
+                          (quote the whole value, or use '' for a quote inside single quotes)"
+                    .into(),
+            });
+        }
+    }
+
     /// Look ahead to see if there's a colon after the current scalar on the same line.
     fn peek_colon_after_scalar(&self) -> bool {
         let mut i = self.pos + 1;
@@ -1620,6 +1676,36 @@ impl<'src> Parser<'src> {
             }
         }
         false
+    }
+
+    /// At a line start: skip blank lines and every line indented more than
+    /// `indent`, stopping before the first line at or left of it (error
+    /// recovery).
+    fn skip_lines_deeper_than(&mut self, indent: usize) {
+        let start = self.byte_offset;
+        self.skip_deeper_lines(indent);
+        if self.byte_offset > start {
+            self.skipped.push((start, self.byte_offset));
+        }
+    }
+
+    fn skip_deeper_lines(&mut self, indent: usize) {
+        loop {
+            let mut p = self.pos;
+            let mut width = 0;
+            if let Some(t) = self.tokens.get(p) {
+                if t.kind == SyntaxKind::Whitespace {
+                    width = t.text.len();
+                    p += 1;
+                }
+            }
+            match self.tokens.get(p).map(|t| t.kind) {
+                None => return,
+                Some(SyntaxKind::Newline) => self.skip_to_next_line(),
+                Some(_) if width > indent => self.skip_to_next_line(),
+                Some(_) => return,
+            }
+        }
     }
 
     /// Skip tokens until the next newline (for error recovery).
@@ -2545,11 +2631,13 @@ artifacts:
             "points at the continuation line"
         );
         assert_eq!(&SYNTH_1209[first.offset..first.offset + 2], "\\ ");
-        // The confusing downstream error is still reported, just not first.
+        // The parser's own error on that line is still reported, just not
+        // first: the continuation sits at a column no mapping uses (#1247).
         assert!(
             errors[1..]
                 .iter()
-                .any(|e| e.message.contains("expected ':' after mapping key")),
+                .any(|e| line_of(SYNTH_1209, e.offset) == 5
+                    && e.message.contains("indentation must match a key above it")),
             "{errors:?}"
         );
     }
@@ -2617,6 +2705,107 @@ artifacts:
         assert_eq!(
             v["artifacts"][0]["title"].as_str(),
             Some("first half  second half")
+        );
+    }
+
+    // ── #1246 / #1247: silent truncation and re-parenting ───────────
+
+    fn errors_of(src: &str) -> Vec<String> {
+        parse(src).1.into_iter().map(|e| e.message).collect()
+    }
+
+    fn value_of(src: &str) -> crate::Value {
+        crate::from_str::<crate::Value>(src).unwrap_or_else(|e| panic!("{src:?}: {e}"))
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn text_after_a_closing_quote_is_an_error() {
+        for src in [
+            "k: 'abc' def\n",
+            "k: 'it's'\n",
+            "k: \"abc\" def\n",
+            "- 'abc' def\n",
+            "k:\n  'abc' def\n",
+            "\"a\":1\n",
+        ] {
+            let errs = errors_of(src);
+            assert!(
+                errs.iter()
+                    .any(|m| m.starts_with("text after a closing quote")),
+                "{src:?}: {errs:?}"
+            );
+            assert!(crate::from_str::<crate::Value>(src).is_err(), "{src:?}");
+        }
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_quoted_value_may_be_followed_by_spaces_or_a_comment() {
+        for src in [
+            "k: 'abc'\n",
+            "k: 'abc'   \n",
+            "k: 'abc' # note\n",
+            "k: \"a\" # note\n",
+            "\"key\" : v\n",
+            "'key': v\n",
+            "- 'abc' # note\n",
+            "k:\n  'abc'\n",
+            "k: 'it''s'\n",
+            "k: plain 'quoted' tail\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+        assert_eq!(value_of("k: 'it''s' # c\n")["k"].as_str(), Some("it's"));
+        assert_eq!(
+            value_of("k: plain 'quoted' tail\n")["k"].as_str(),
+            Some("plain 'quoted' tail")
+        );
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_key_at_a_column_no_mapping_uses_is_an_error() {
+        for src in [
+            // dedent between two levels: `c` used to join the root mapping
+            "a:\n  b: 1\n c: 2\n",
+            // deeper than its siblings: `c` used to join `a`'s mapping
+            "a:\n  b: 1\n   c: 2\n",
+            // under a sequence item's mapping
+            "a:\n  - b: 1\n   c: 2\n",
+            // a more-indented `key: value` after a scalar (#1249)
+            "a: first\n  second: line\n",
+        ] {
+            let errs = errors_of(src);
+            assert!(
+                errs.iter()
+                    .any(|m| m.contains("indentation must match a key above it")),
+                "{src:?}: {errs:?}"
+            );
+            assert!(crate::from_str::<crate::Value>(src).is_err(), "{src:?}");
+        }
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn keys_at_their_mappings_column_still_parse() {
+        for src in [
+            "a:\n  b: 1\n  c: 2\nd: 3\n",
+            "a:\n  b:\n    c: 1\n  d: 2\ne: 3\n",
+            "artifacts:\n- id: A\n  title: x\nother: 1\n",
+            "artifacts:\n  - id: A\n    links:\n      - type: t\n        target: B\n  - id: B\n",
+            "  a: 1\n  b: 2\n",
+            "a: 1\n  # an indented comment\nb: 2\n",
+            "a: multi\n  line plain\nb: 2\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+        let v = value_of("a:\n  b: 1\n  c: 2\nd: 3\n");
+        assert_eq!(v["a"]["c"].as_i64(), Some(2));
+        assert_eq!(v["d"].as_i64(), Some(3));
+        assert_eq!(
+            value_of("a: multi\n  line plain\nb: 2\n")["a"].as_str(),
+            Some("multi line plain")
         );
     }
 }
