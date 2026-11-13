@@ -57,7 +57,7 @@ jobs:
 
       - name: Generate report
         id: report
-        uses: pulseengine/rivet/.github/actions/compliance@main
+        uses: pulseengine/rivet/.github/actions/compliance@a712e840b213825922066021e526968bec9a3e72 # main
         with:
           # The action's label input is `report-label`; passing `version`
           # here was silently ignored (REQ-163 / #420).
