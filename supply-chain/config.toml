@@ -590,6 +590,10 @@ criteria = "safe-to-deploy"
 version = "0.4.14"
 criteria = "safe-to-deploy"
 
+[[exemptions.log]]
+version = "0.4.35"
+criteria = "safe-to-deploy"
+
 [[exemptions.lsp-server]]
 version = "0.7.9"
 criteria = "safe-to-deploy"
