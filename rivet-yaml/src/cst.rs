@@ -976,6 +976,10 @@ impl<'src> Parser<'src> {
 
     fn parse_block_mapping(&mut self, min_indent: usize) {
         self.builder.start_node(SyntaxKind::Mapping.into());
+        // The first key may follow an anchor or a `- ` on its line, so its
+        // token column can exceed `min_indent` (`&a a: b`, yaml-test-suite
+        // ZH7C); every later key starts its own line at the mapping's column.
+        let mut first_key = true;
         loop {
             self.eat_trivia();
             // Consume line-leading whitespace (indent)
@@ -995,7 +999,8 @@ impl<'src> Parser<'src> {
                     SyntaxKind::PlainScalar
                     | SyntaxKind::SingleQuotedScalar
                     | SyntaxKind::DoubleQuotedScalar,
-                ) if indent == min_indent => {
+                ) if first_key || indent == min_indent => {
+                    first_key = false;
                     self.parse_mapping_entry(indent);
                 }
                 // A key indented past its mapping's column, at a column no
@@ -2797,6 +2802,8 @@ artifacts:
             "  a: 1\n  b: 2\n",
             "a: 1\n  # an indented comment\nb: 2\n",
             "a: multi\n  line plain\nb: 2\n",
+            // an anchor before the first key (yaml-test-suite ZH7C)
+            "&a a: b\nc: &d d\n",
         ] {
             assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
         }
