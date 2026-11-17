@@ -1118,6 +1118,7 @@ impl<'src> Parser<'src> {
                     if !self.is_plain_scalar_continuation(entry_indent) {
                         break;
                     }
+                    self.check_comment_before_continuation();
                     self.bump(); // newline
                     while !self.at_eof()
                         && !self.at(SyntaxKind::Newline)
@@ -1279,6 +1280,7 @@ impl<'src> Parser<'src> {
                             if !self.is_plain_scalar_continuation(indent) {
                                 break;
                             }
+                            self.check_comment_before_continuation();
                             self.bump(); // newline
                             while !self.at_eof()
                                 && !self.at(SyntaxKind::Newline)
@@ -1501,8 +1503,27 @@ impl<'src> Parser<'src> {
             if !(self.at(SyntaxKind::Newline) && self.is_plain_scalar_continuation(entry_indent)) {
                 break;
             }
+            self.check_comment_before_continuation();
             self.bump(); // newline
         }
+    }
+
+    /// At the Newline before a plain-scalar continuation line: a comment
+    /// ends a plain scalar (YAML 1.2 §6.6), so a line after `one #c` cannot
+    /// continue it. The CST took the line in while the value stopped at the
+    /// comment, so `text: one #c\n  three` read as `one` and dropped `three`
+    /// without a diagnostic (#1249).
+    fn check_comment_before_continuation(&mut self) {
+        if self.pos == 0 || self.tokens[self.pos - 1].kind != SyntaxKind::Comment {
+            return;
+        }
+        self.errors.push(ParseError {
+            offset: self.byte_offset + self.tokens[self.pos].text.len(),
+            message: "a comment ends a plain scalar, so this line cannot continue the value \
+                      above it (YAML 1.2 §6.6): move the comment below the value, or join \
+                      the lines"
+                .into(),
+        });
     }
 
     /// A block scalar (`|` or `>`). Its content indentation is the explicit
@@ -2919,5 +2940,48 @@ artifacts:
         ] {
             assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
         }
+    }
+
+    // ── #1249: a comment ends a plain scalar ────────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_line_after_a_comment_cannot_continue_a_plain_scalar() {
+        for src in [
+            "text: one #c\n  three\nnext: ok\n",
+            "k: a\n  b #c\n  d\n",
+            "k:\n  a #c\n  b\n",
+            "a:\n  - x #c\n    y\n",
+        ] {
+            let errs = errors_of(src);
+            assert!(
+                errs.iter()
+                    .any(|m| m.starts_with("a comment ends a plain scalar")),
+                "{src:?}: {errs:?}"
+            );
+            assert!(crate::from_str::<crate::Value>(src).is_err(), "{src:?}");
+        }
+        // the error points at the start of the line that tries to continue
+        let src = "text: one #c\n  three\nnext: ok\n";
+        let err = parse(src)
+            .1
+            .into_iter()
+            .find(|e| e.message.starts_with("a comment ends a plain scalar"))
+            .expect("the comment-continuation error");
+        assert_eq!(err.offset, src.find("  three").unwrap());
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_comment_after_a_whole_plain_scalar_is_fine() {
+        for src in [
+            "k: a #c\nn: 1\n",
+            "k: a\n  b\n  # c\nn: 1\n",
+            "k: a\n  b #c\nn: 1\n",
+            "- x #c\n- y\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+        assert_eq!(value_of("k: a\n  b #c\nn: 1\n")["k"].as_str(), Some("a b"));
     }
 }
