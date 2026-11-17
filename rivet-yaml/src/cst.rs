@@ -2868,6 +2868,10 @@ artifacts:
             "a:\n\tb: 1\n",
             "a:\n  - x\n\t- y\n",
             "a:\n \tb: 1\n",
+            // a key followed by spaces before its colon is still an entry
+            "a:\n\tb : 1\n",
+            // a sequence item whose value starts on the next line
+            "-\n\tb: 1\n",
         ] {
             let errs = errors_of(src);
             assert!(
@@ -2893,5 +2897,27 @@ artifacts:
             assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
         }
         assert_eq!(value_of("a: x\ty\n")["a"].as_str(), Some("x\ty"));
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn values_after_trivia_keep_their_nesting() {
+        // a sequence item whose mapping starts on the next line
+        let v = value_of("-\n  b: 1\n  c: 2\n- d\n");
+        assert_eq!(v[0]["b"].as_i64(), Some(1));
+        assert_eq!(v[0]["c"].as_i64(), Some(2));
+        assert_eq!(v[1].as_str(), Some("d"));
+        // spaces and a comment between a key and its nested mapping
+        let v = value_of("a:   # note\n  b: 1\nc: 2\n");
+        assert_eq!(v["a"]["b"].as_i64(), Some(1));
+        assert_eq!(v["c"].as_i64(), Some(2));
+        for src in [
+            "-\n  b: 1\n",
+            "a:   # note\n  b: 1\n",
+            "a:\n  b : 1\n",
+            "a: 1\n... # end\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
     }
 }
