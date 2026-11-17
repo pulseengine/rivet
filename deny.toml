@@ -28,6 +28,15 @@ ignore = [
     "RUSTSEC-2026-0247",  # bitmaps
     "RUSTSEC-2026-0248",  # im
     "RUSTSEC-2026-0251",  # sized-chunks
+    # chrono 0.4.44 — RUSTSEC-2026-0543, unmaintained (all versions), recorded
+    # 2026-11-17 after smithy's heavy run failed on it (#1275). Not a
+    # vulnerability. rivet does not depend on chrono: it arrives through
+    # gluesql-core (the `sql` engine, already accepted above), rmcp (the MCP
+    # SDK, see RUSTSEC-2026-0462 below) and schemars (via rmcp). Measured with
+    # `cargo tree -i chrono`. Dropping it needs those upstreams to move to
+    # jiff/time; revisit with the rmcp 3.x migration, or if the advisory
+    # upgrades to a vulnerability.
+    "RUSTSEC-2026-0543",  # chrono
     # (salsa RUSTSEC-2026-0308 removed 2026-11-12: fixed by salsa 0.28.5,
     # which came with the spar v0.48.1 bump; REQ-376.)
     # rmcp 1.5.0 — RUSTSEC-2026-0462, unbounded response-body buffering in
