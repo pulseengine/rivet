@@ -8,6 +8,7 @@
 ### Fixed
 - **YAML: text after a closing quote is an error, not dropped** (#1246). `k: 'abc' def` read as `abc`, and `k: 'it's'` as `it`, with no diagnostic. A quoted value must now end its line, apart from spaces and a comment.
 - **YAML: a key at a column no mapping uses is an error, not moved** (#1247). A line dedented between two levels (`a:` / `  b: 1` / ` c: 2`) joined the outer mapping, and one indented past its siblings joined theirs, so a field moved to another parent with no diagnostic. The error is reported once per misplaced block. This also catches a more-indented `key: value` after a scalar line (#1249, first case). In every local pulseengine checkout the set of files that fail to load is unchanged; synth's already-broken files report fewer errors.
+- **YAML: a tab indenting a block entry is an error** (#1248). `\ta: 1` and `a:` / `\tb: 1` were accepted with the tab counted as one column, so the structure could differ from what an editor shows. A tab before a flow collection or a scalar on a value's next line stays allowed, as YAML specifies. No local pulseengine checkout uses tab indentation.
 
 ## [0.42.2] - 2026-11-13
 
