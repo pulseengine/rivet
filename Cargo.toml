@@ -107,6 +107,9 @@ quick-xml = { version = "0.41", features = ["serialize", "overlapped-lists"] }
 # 48.0.7 clears RUSTSEC-2026-0378/0379 (stream payload panic, aarch64
 # br_table miscompile); 48.0.6 cleared RUSTSEC-2026-0353..0364 (host panics, async entrypoint
 # enforcement, unaligned exception-tag data).
+# Pinned to >=48.0.9 for GHSA-5m8g-xhq4-4h93 (empty writes to
+# wasmtime-wasi's AsyncWriteStream grow host memory without bound) and a
+# stale GC heap base pointer that lets a guest abort the host.
 # Pinned to >=48.0.3 for RUSTSEC-2026-0315 (`call_ref` / exception `catch`
 # drop fuel accounting) and RUSTSEC-2026-0316 (dynamic record lifting
 # allocates past the fuel limit). Both defeat the fuel limit
@@ -122,15 +125,15 @@ quick-xml = { version = "0.41", features = ["serialize", "overlapped-lists"] }
 # cache, which rivet never configures): it is the sole path to zstd 0.13, and
 # zstd/zstd-safe/zstd-sys carry RUSTSEC-2026-0391/0398/0403/0410 with fixes
 # only in the next major (zstd 0.14), which wasmtime 48 does not accept. The
-# list below is wasmtime 48.0.8's default set minus `cache`.
-wasmtime = { version = "48.0.8", default-features = false, features = [
+# list below is wasmtime 48.0.9's default set minus `cache`.
+wasmtime = { version = "48.0.9", default-features = false, features = [
     "anyhow", "async", "backtrace", "gc", "gc-copying", "gc-drc", "gc-null",
     "wat", "profiling", "parallel-compilation", "cranelift", "pooling-allocator",
     "demangle", "addr2line", "coredump", "debug-builtins", "runtime",
     "component-model", "component-model-async", "threads", "stack-switching",
     "std", "debug", "compile-time-builtins", "wit-parser",
 ] }
-wasmtime-wasi = "48.0.8"
+wasmtime-wasi = "48.0.9"
 
 # Lossless syntax trees — pinned to our fork's Miri-soundness branch v3.
 # Upstream closed #210/#211/#212 UNMERGED. The reason is NOT disagreement about
