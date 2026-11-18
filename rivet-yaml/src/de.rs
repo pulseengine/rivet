@@ -1160,6 +1160,24 @@ mod tests {
         assert_eq!(v("a: 1\n...\n")["a"], Value::from(1u64));
     }
 
+    /// GitHub workflows key their triggers with `on:`. YAML 1.1 read `on`,
+    /// `off`, `yes` and `no` as booleans; the 1.2 core schema this parser
+    /// follows keeps them strings, and GitHub rejects a duplicate key, as
+    /// this parser does.
+    // rivet: verifies REQ-346
+    #[test]
+    fn yaml_1_1_booleans_stay_strings_and_duplicate_keys_fail() {
+        let v: Value = from_str("on:\n  push: {}\nyes: y\noff: n\nno: [on]\n").unwrap();
+        let keys: Vec<_> = v.as_mapping().unwrap().keys().cloned().collect();
+        assert_eq!(
+            keys,
+            ["on", "yes", "off", "no"].map(Value::from).to_vec(),
+            "1.1 boolean words are string keys"
+        );
+        assert_eq!(v["no"][0], Value::from("on"), "and string values");
+        assert!(err("a: 1\nb: 2\na: 3\n").contains("duplicate entry with key \"a\""));
+    }
+
     /// A plain scalar inside a flow collection folds across lines like any
     /// other (#1252): one break is a space, each further blank line a `\n`.
     /// In a flow mapping the next line used to start a new key.
