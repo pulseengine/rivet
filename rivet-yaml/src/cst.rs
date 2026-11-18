@@ -646,13 +646,19 @@ fn quoted_continuation(
 
 /// Advance past a plain (unquoted) scalar value.
 ///
-/// Stops at: newline, `#` preceded by space, `: ` (colon+space), `,`, `]`, `}`.
+/// Stops at: newline, `#` preceded by a space or tab, `: ` (colon+space), `,`, `]`, `}`.
 fn lex_plain_scalar(_source: &str, bytes: &[u8], start: usize) -> usize {
     let mut pos = start;
     while pos < bytes.len() {
         match bytes[pos] {
             b'\n' | b'\r' => break,
-            b'#' if pos > start && bytes[pos - 1] == b' ' => break,
+            // a comment needs white space before it, a space or a tab (#1256)
+            b'#' if bytes[start..pos]
+                .last()
+                .is_some_and(|c| matches!(c, b' ' | b'\t')) =>
+            {
+                break;
+            }
             b':' if pos + 1 < bytes.len()
                 && (bytes[pos + 1] == b' '
                     || bytes[pos + 1] == b'\n'
@@ -698,13 +704,20 @@ pub struct ParseError {
 /// Returns the green node and any parse errors. The tree is lossless:
 /// `SyntaxNode::new_root(green).text() == source`.
 pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
+    // A byte order mark is not content (YAML 1.2 §5.2). It stays in the tree,
+    // as the first token, so the tree is still lossless, but the lexer and
+    // the parser's column arithmetic never see it (#1253).
+    let (bom, source) = match source.strip_prefix('\u{feff}') {
+        Some(rest) => ("\u{feff}", rest),
+        None => ("", source),
+    };
     let (tokens, hints) = lex_with_hints(source);
     let mut parser = Parser::new(&tokens, source);
+    parser.bom = bom;
     parser.parse_root();
     let green = parser.builder.finish();
     let mut errors = parser.errors;
     let skipped = parser.skipped;
-    check_double_quoted_escapes(&green, &mut errors);
     // An under-indented double-quoted scalar surfaces as a confusing parser
     // error on its continuation line ("expected ':' after mapping key",
     // #1209). Keep the precise diagnosis of each such scalar whose
@@ -735,6 +748,10 @@ pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
         // error there, and the parser's own order is kept among its errors.
         errors.sort_by_key(|e| e.offset);
     }
+    for e in &mut errors {
+        e.offset += bom.len();
+    }
+    check_double_quoted_escapes(&green, &mut errors);
     (green, errors)
 }
 
@@ -873,6 +890,9 @@ struct Parser<'src> {
     byte_offset: usize,
     /// Source bytes for indent computation.
     source_bytes: &'src [u8],
+    /// A byte order mark that preceded `source_bytes`, put back into the tree
+    /// as the root's first token.
+    bom: &'src str,
 }
 
 impl<'src> Parser<'src> {
@@ -885,6 +905,7 @@ impl<'src> Parser<'src> {
             skipped: Vec::new(),
             byte_offset: 0,
             source_bytes: source.as_bytes(),
+            bom: "",
         }
     }
 
@@ -1007,6 +1028,9 @@ impl<'src> Parser<'src> {
 
     fn parse_root(&mut self) {
         self.builder.start_node(SyntaxKind::Root.into());
+        if !self.bom.is_empty() {
+            self.builder.token(SyntaxKind::Whitespace.into(), self.bom);
+        }
         self.eat_trivia();
         // Skip document start marker if present
         if self.at(SyntaxKind::DirectiveMarker) {
@@ -3174,5 +3198,42 @@ artifacts:
             value_of("k: a, \"\\q\"\n")["k"].as_str(),
             Some("a, \"\\q\"")
         );
+    }
+
+    // ── #1256: a tab before `#` starts a comment ────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_tab_before_a_hash_starts_a_comment() {
+        assert_eq!(value_of("a: v\t# c\n")["a"].as_str(), Some("v"));
+        assert_eq!(value_of("- v\t# c\n")[0].as_str(), Some("v"));
+        assert_eq!(value_of("a: [v\t# c\n  ]\n")["a"][0].as_str(), Some("v"));
+        // no white space before `#`: it is text
+        assert_eq!(value_of("a: v#c\n")["a"].as_str(), Some("v#c"));
+        assert_eq!(value_of("a: |\n  v\t# c\n")["a"].as_str(), Some("v\t# c\n"));
+    }
+
+    // ── #1253: a byte order mark is not content ─────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_leading_byte_order_mark_is_not_content() {
+        let v = value_of("\u{feff}a: 1\n");
+        assert_eq!(v["a"].as_i64(), Some(1));
+        let v = value_of("\u{feff}- a\n- b\n");
+        assert_eq!(v[1].as_str(), Some("b"));
+        let v = value_of("\u{feff}a: |\n  x\nb: 2\n");
+        assert_eq!(v["a"].as_str(), Some("x\n"));
+        assert_eq!(v["b"].as_i64(), Some(2));
+        assert_eq!(value_of("\u{feff}---\na: 1\n")["a"].as_i64(), Some(1));
+        // the tree keeps it, so it stays lossless
+        let src = "\u{feff}a: 1\n";
+        let (green, errors) = parse(src);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(SyntaxNode::new_root(green).text().to_string(), src);
+        // error offsets still point into the original text
+        let src = "\u{feff}a: 1\n b: 2\n";
+        let err = &parse(src).1[0];
+        assert_eq!(err.offset, src.find(" b").unwrap() + 1, "{err:?}");
     }
 }

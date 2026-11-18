@@ -12,6 +12,8 @@
 - **YAML: a line after a comment cannot continue a plain scalar** (#1249, second case). `text: one #c` followed by an indented `three` read as `one` and dropped `three` with no diagnostic. A comment ends a plain scalar, so the line is now an error, in mapping values, sequence items and values that start on the next line. No local pulseengine checkout hits it.
 - **YAML: a block scalar at the end of a file without a final newline gains no line break** (#1250). `a: |` with `  x` as the file's last bytes read as `"x\n"`; with clip (`|`, `>`) and keep (`|+`) chomping it is now `"x"`, as YAML 1.2 §8.1.1.2 and PyYAML read it. An unterminated last line of only spaces still counts as an empty line, as yaml-test-suite expects. No value changes in any local pulseengine checkout: the 26 files without a final newline that hold a block scalar do not end in one.
 - **YAML: `\f` decodes, and an escape YAML does not define is an error** (#1251). In a double-quoted scalar `\f` stayed as the two characters `\f`; it is now a form feed. An unknown escape (`\q`, `\.`) or `\x`, `\u`, `\U` without 2, 4 or 8 hex digits was kept literally and is now an error. A quote inside a plain scalar, block scalar or comment is text and is not checked. No local pulseengine checkout hits the new error.
+- **YAML: a tab before `#` starts a comment** (#1256). `a: v<TAB># c` read as `"v\t# c"`; a comment may follow a space or a tab, so it is now `"v"`.
+- **YAML: a leading byte order mark is not content** (#1253). A UTF-8 BOM ended up in the first key (`"\ufeffa"`), and before a sequence the document failed with `unexpected Dash`. The BOM stays in the syntax tree, so editing keeps it, but it is no longer part of any value or column.
 
 ## [0.42.2] - 2026-11-13
 

@@ -455,7 +455,8 @@ fn enclosing_column(block: &SyntaxNode) -> usize {
             column = column.saturating_add(t.text().len().saturating_sub(i + 1));
             break;
         }
-        column = column.saturating_add(t.text().len());
+        // a byte order mark before the first line is not a column (#1253)
+        column = column.saturating_add(t.text().trim_start_matches('\u{feff}').len());
         token = t.prev_token();
     }
     column
@@ -613,5 +614,14 @@ mod tests {
         assert_eq!(block("a: |\n  x\n  "), "x\n");
         assert_eq!(block("a: |+\n  x\n  "), "x\n\n");
         assert_eq!(block("foo: |\n  x\n   "), "x\n \n");
+    }
+
+    // rivet: verifies REQ-346
+    /// An explicit indentation indicator counts from the enclosing entry's
+    /// column, which a leading byte order mark does not shift (#1253).
+    #[test]
+    fn indentation_indicator_counts_from_the_enclosing_column() {
+        assert_eq!(block("a:\n  b: |1\n    x\n"), " x\n");
+        assert_eq!(block("\u{feff}a: |1\n   x\n"), "  x\n");
     }
 }
