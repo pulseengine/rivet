@@ -15,6 +15,9 @@
 - **YAML: a tab before `#` starts a comment** (#1256). `a: v<TAB># c` read as `"v\t# c"`; a comment may follow a space or a tab, so it is now `"v"`.
 - **YAML: a leading byte order mark is not content** (#1253). A UTF-8 BOM ended up in the first key (`"\ufeffa"`), and before a sequence the document failed with `unexpected Dash`. The BOM stays in the syntax tree, so editing keeps it, but it is no longer part of any value or column.
 - **YAML: a document marker ends a root value** (#1255). `--- finale` followed by `...` read as `"finale ..."`, and `---` followed by `...` read as `{}`. They are now `"finale"` and null.
+- **YAML: a line cannot continue a quoted value** (#1259). `k: "q"` followed by an indented `more` read as `"q"` and dropped `more`; it is now an error, at the root, under a key and in a sequence item.
+- **YAML: JSON-style flow mappings, root block scalars and root plain scalars that continue at column 0 are read** (#1259). `{"a":1}` (no space after a quoted key's `:`), `--- |` and `plain\nspans` were refused. `["a":1]` read as `["a", ":1"]`; it is now an error until single-pair flow entries are supported.
+- **YAML: invalid block scalar headers are errors** (#1258). `|0`, `|10`, `|--` and `|#c` were read without a diagnostic.
 
 ## [0.42.2] - 2026-11-13
 

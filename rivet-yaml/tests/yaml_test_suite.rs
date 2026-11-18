@@ -29,9 +29,9 @@ use std::path::{Path, PathBuf};
 /// yaml-test-suite `data-2022-01-17`.
 pub const SUITE_COMMIT: &str = "6e6c296ae9c9d2d5c4134b4b64d01b29ac19ff6f";
 
-const MATCHED: usize = 134;
-const INVALID_REJECTED: usize = 66;
-const INVALID_ACCEPTED: usize = 28;
+const MATCHED: usize = 159;
+const INVALID_REJECTED: usize = 69;
+const INVALID_ACCEPTED: usize = 25;
 
 fn to_json(v: &rivet_yaml::Value) -> serde_json::Value {
     use rivet_yaml::Value as Y;
