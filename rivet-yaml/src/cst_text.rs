@@ -218,7 +218,8 @@ pub fn unquote_single_quoted(inner: &str) -> String {
 
 /// Process YAML double-quoted escape sequences, folding line breaks (REQ-364).
 ///
-/// Handles: `\\`, `\"`, `\n`, `\t`, `\r`, `\/`, `\0`, and `\uXXXX`.
+/// Decodes every YAML 1.2 escape (§5.7). The parser reports an escape that
+/// is not one of them (`check_double_quoted_escapes`); this keeps it literally.
 pub fn unescape_double_quoted(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -252,6 +253,7 @@ pub fn unescape_double_quoted(s: &str) -> String {
                 // `\` followed by a literal tab is a tab (YAML 1.2 `ns-esc-tab`).
                 Some('\t') => result.push('\t'),
                 Some('r') => result.push('\r'),
+                Some('f') => result.push('\u{0C}'), // form feed (#1251)
                 Some('/') => result.push('/'),
                 Some('0') => result.push('\0'),
                 Some('a') => result.push('\u{07}'), // bell

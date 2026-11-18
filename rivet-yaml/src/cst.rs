@@ -704,6 +704,7 @@ pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
     let green = parser.builder.finish();
     let mut errors = parser.errors;
     let skipped = parser.skipped;
+    check_double_quoted_escapes(&green, &mut errors);
     // An under-indented double-quoted scalar surfaces as a confusing parser
     // error on its continuation line ("expected ':' after mapping key",
     // #1209). Keep the precise diagnosis of each such scalar whose
@@ -735,6 +736,129 @@ pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
         errors.sort_by_key(|e| e.offset);
     }
     (green, errors)
+}
+
+/// Report each double-quoted scalar escape that YAML 1.2 does not define
+/// (§5.7): an unknown letter (`\\q`), or `\\x`, `\\u`, `\\U` without 2, 4 or 8
+/// hex digits. They used to be kept literally with no diagnostic (#1251).
+/// Quote characters inside a block scalar or a comment are text, so only
+/// scalars outside block scalars are checked.
+fn check_double_quoted_escapes(green: &rowan::GreenNode, errors: &mut Vec<ParseError>) {
+    let root = SyntaxNode::new_root(green.clone());
+    let mut found = Vec::new();
+    for token in root
+        .descendants_with_tokens()
+        .filter_map(|e| e.into_token())
+        .filter(|t| t.kind() == SyntaxKind::DoubleQuotedScalar)
+    {
+        if token
+            .parent_ancestors()
+            .any(|n| n.kind() == SyntaxKind::BlockScalar)
+            || !starts_scalar(&token)
+        {
+            continue;
+        }
+        let start = usize::from(token.text_range().start());
+        if let Some((at, message)) = invalid_escape(token.text()) {
+            found.push(ParseError {
+                offset: start + at,
+                message,
+            });
+        }
+    }
+    if !found.is_empty() {
+        errors.extend(found);
+        errors.sort_by_key(|e| e.offset);
+    }
+}
+
+/// Whether a double-quoted token starts a scalar. The lexer also cuts a
+/// quote out of a plain scalar (`k: a, "\\q"` is the plain scalar
+/// `a, "\\q"`), and there the backslash is text.
+fn starts_scalar(token: &rowan::SyntaxToken<YamlLanguage>) -> bool {
+    let mut prev = token.prev_token();
+    while let Some(t) = &prev {
+        if !matches!(
+            t.kind(),
+            SyntaxKind::Newline | SyntaxKind::Whitespace | SyntaxKind::Comment | SyntaxKind::Anchor
+        ) {
+            break;
+        }
+        prev = t.prev_token();
+    }
+    let Some(prev) = prev else {
+        return true;
+    };
+    match prev.kind() {
+        SyntaxKind::Colon
+        | SyntaxKind::Dash
+        | SyntaxKind::LBracket
+        | SyntaxKind::LBrace
+        | SyntaxKind::DirectiveMarker => true,
+        // a comma separates nodes only inside a flow collection
+        SyntaxKind::Comma => token.parent_ancestors().any(|n| {
+            n.kind() == SyntaxKind::FlowSequence
+                || n.first_token()
+                    .is_some_and(|f| f.kind() == SyntaxKind::LBrace)
+        }),
+        // after other content: a new node unless that content is part of the
+        // same key, value or sequence item (a plain scalar the quote is in)
+        _ => {
+            let node = token.parent_ancestors().find(|n| {
+                matches!(
+                    n.kind(),
+                    SyntaxKind::Key | SyntaxKind::Value | SyntaxKind::SequenceItem
+                )
+            });
+            !node.is_some_and(|n| prev.parent_ancestors().any(|p| p == n))
+        }
+    }
+}
+
+/// The byte offset and diagnosis of the first escape in a double-quoted
+/// scalar (quotes included) that YAML 1.2 does not define.
+fn invalid_escape(raw: &str) -> Option<(usize, String)> {
+    let bytes = raw.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'\\' {
+            i += 1;
+            continue;
+        }
+        let Some(&c) = bytes.get(i + 1) else {
+            return None; // an unclosed scalar is reported elsewhere
+        };
+        let digits = match c {
+            b'0' | b'a' | b'b' | b't' | b'\t' | b'n' | b'v' | b'f' | b'r' | b'e' | b' ' | b'"'
+            | b'/' | b'\\' | b'N' | b'_' | b'L' | b'P' | b'\n' | b'\r' => 0,
+            b'x' => 2,
+            b'u' => 4,
+            b'U' => 8,
+            _ => {
+                let shown = raw[i + 1..].chars().next().unwrap_or(' ');
+                return Some((
+                    i,
+                    format!(
+                        "unknown escape `\\{shown}` in a double-quoted scalar (YAML 1.2 \
+                         \u{a7}5.7): write `\\\\` for a backslash"
+                    ),
+                ));
+            }
+        };
+        let hex = bytes.get(i + 2..i + 2 + digits);
+        if !hex.is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit)) {
+            return Some((
+                i,
+                format!(
+                    "escape `\\{}` in a double-quoted scalar needs {digits} hex digits \
+                     (YAML 1.2 \u{a7}5.7)",
+                    c as char
+                ),
+            ));
+        }
+        i += 2 + digits;
+    }
+    None
 }
 
 struct Parser<'src> {
@@ -2983,5 +3107,72 @@ artifacts:
             assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
         }
         assert_eq!(value_of("k: a\n  b #c\nn: 1\n")["k"].as_str(), Some("a b"));
+    }
+
+    // ── #1251: double-quoted escapes ────────────────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn an_escape_yaml_does_not_define_is_an_error() {
+        for (src, at) in [
+            ("k: \"\\q\"\n", 4),
+            ("k: \"ok \\x4\"\n", 7),
+            ("k: \"\\u12\"\n", 4),
+            ("k: \"\\U0001F60\"\n", 4),
+            ("k: \"\\.\"\n", 4),
+            ("k: [a, \"\\q\"]\n", 8),
+            ("k: {a: 1, \"\\q\": 2}\n", 11),
+            ("a: 1\n\"\\q\": 2\n", 6),
+            ("- a\n- \"\\q\"\n", 7),
+            ("k: &x \"\\q\"\n", 7),
+            ("k:\n  \"\\q\"\n", 6),
+            ("\"\\q\"\n", 1),
+            ("k:\n  a: 1\n  \"\\q\": 2\n", 13),
+        ] {
+            let errs = parse(src).1;
+            assert!(
+                errs.iter()
+                    .any(|e| e.offset == at && e.message.contains("escape `\\")),
+                "{src:?}: {errs:?}"
+            );
+            assert!(crate::from_str::<crate::Value>(src).is_err(), "{src:?}");
+        }
+        assert_eq!(
+            errors_of("k: \"\\q\"\n"),
+            vec![
+                "unknown escape `\\q` in a double-quoted scalar (YAML 1.2 \u{a7}5.7): \
+                 write `\\\\` for a backslash"
+                    .to_string()
+            ]
+        );
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn every_yaml_escape_and_quote_outside_a_scalar_start_is_accepted() {
+        let all = "k: \"\\0\\a\\b\\t\\\t\\n\\v\\f\\r\\e\\ \\\"\\/\\\\\\N\\_\\L\\P\\x41\\u00e9\\U0001F600\"\n";
+        assert_eq!(errors_of(all), Vec::<String>::new());
+        assert_eq!(
+            value_of(all)["k"].as_str(),
+            Some("\0\u{07}\u{08}\t\t\n\u{0B}\u{0C}\r\u{1B} \"/\\\u{85}\u{A0}\u{2028}\u{2029}Aé😀")
+        );
+        for src in [
+            "k: a, \"\\q\"\n",
+            "k: say \"\\q\" now\n",
+            "k: |\n  \"\\q\"\n",
+            "k: v # \"\\q\"\n",
+            "k: '\\q'\n",
+            "k: \"a\\\n  b\"\n",
+            "k: \"\\\\q\"\n",
+            "- a\n  \"\\q\"\n",
+            "k: a\n  \"\\q\"\n",
+            "a \"\\q\": 1\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+        assert_eq!(
+            value_of("k: a, \"\\q\"\n")["k"].as_str(),
+            Some("a, \"\\q\"")
+        );
     }
 }
