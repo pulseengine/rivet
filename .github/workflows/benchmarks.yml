@@ -30,7 +30,10 @@ jobs:
   # light runner that ci.yml's detector and CI Gate use.
   changes:
     name: Detect changed areas
-    runs-on: ubuntu-24.04
+    # Fork PRs go to GitHub-hosted. This is routing, not a security boundary:
+    # a fork PR can edit this file; the smithy runner-group policy and fork-PR
+    # approval enforce isolation.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -50,6 +53,7 @@ jobs:
     name: Criterion Benchmarks
     needs: changes
     if: needs.changes.outputs.rust == 'true'
+    # Kept on hosted: compile-heavy cargo bench, too large for light (4 G).
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

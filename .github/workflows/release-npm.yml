@@ -49,6 +49,7 @@ jobs:
       (github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.conclusion == 'success')
+    # Kept on hosted: npm trusted publishing with provenance needs a GitHub-hosted runner.
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -166,6 +167,7 @@ jobs:
       (github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.conclusion == 'success')
+    # Kept on hosted: npm trusted publishing with provenance needs a GitHub-hosted runner.
     runs-on: ubuntu-24.04
     permissions:
       contents: read

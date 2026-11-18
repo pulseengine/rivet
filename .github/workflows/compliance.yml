@@ -45,6 +45,7 @@ on:
 jobs:
   compliance:
     name: Generate compliance report
+    # Kept on hosted: release-path evidence built on an ephemeral runner.
     runs-on: ubuntu-24.04
     outputs:
       archive-path: ${{ steps.report.outputs.archive-path }}
