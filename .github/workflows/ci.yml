@@ -427,7 +427,7 @@ jobs:
   traceability-hosted-fallback:
     name: Traceability (hosted fallback)
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -651,7 +651,7 @@ jobs:
     if: github.event_name != 'merge_group' && needs.changes.outputs.vscode == 'true'
     # Stays on ubuntu-latest: `xvfb-run` headless display + downloaded
     # VS Code Test environment expects sudo apt-get for system libs.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1662,7 +1662,7 @@ jobs:
     # rust-cpu saturation (2026-05-17 incident).
     # Stays on ubuntu-latest: kani-verifier bundles CBMC (~100 MB),
     # not pre-installed on smithy. Move once toolchains role ships kani.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true
     # 90, not 45: the PR path (`--only-codegen`) finishes in ~7.5 min, but the
     # push path verifies 27 harnesses and is documented above as exceeding 30.
@@ -1765,7 +1765,7 @@ jobs:
     # nix-installer broke on a version bump and chronically failed at install,
     # so this advisory job was perma-red regardless of the proofs. 16 GB on the
     # hosted runner is ample for the rivet Verus specs.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -1825,7 +1825,7 @@ jobs:
     # saturation (2026-05-17 incident).
     # Stays on ubuntu-latest: Rocq (Coq) install is heavy and
     # not pre-provisioned on smithy. Migrate once toolchains role ships it.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -1915,7 +1915,7 @@ jobs:
     # ephemeral, isolated build environment; a persistent self-hosted runner
     # does not satisfy that, so our provenance was L2 while the surrounding
     # claim implied L3. GitHub-hosted runners are torn down per job.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write

@@ -38,10 +38,10 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04
             archive: tar.gz
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04
             archive: tar.gz
             cross: true
           # #980: musl beside gnu — glibc 2.39 floor on the gnu assets
@@ -51,11 +51,11 @@ jobs:
           # gnu triple, so the musl archive fills the gnu-keyed slot in
           # the rolling layer per pulseengine/varve#175.
           - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04
             archive: tar.gz
             cross: true
           - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
+            os: ubuntu-24.04
             archive: tar.gz
             cross: true
           - target: x86_64-apple-darwin
@@ -148,7 +148,7 @@ jobs:
   # ── Docs-vs-reality gate (release-time rerun of the CI check) ─────────
   docs-check:
     name: Docs Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -160,7 +160,7 @@ jobs:
   # ── Baseline snapshot ─────────────────────────────────────────────────
   capture-snapshot:
     name: Capture baseline snapshot
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -201,7 +201,7 @@ jobs:
     # could disagree with the copy that ships as a release asset, which is the
     # drift REQ-327 exists to remove.
     needs: [build-release-note]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@stable
@@ -278,7 +278,7 @@ jobs:
   # it; the flag is a convenience, not a verdict that the failure is benign.
   build-test-evidence:
     name: Build test evidence
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true  # NB: doesn't block create-release; see note above.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -420,7 +420,7 @@ jobs:
   # separately published to the VS Code Marketplace.
   build-vsix:
     name: Build VS Code Extension VSIX
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -449,7 +449,7 @@ jobs:
   # with the tag it claims to describe.
   build-release-note:
     name: Generate release note (ASPICE 11-03)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -517,7 +517,7 @@ jobs:
       - build-vsix
       - docs-check
       - build-release-note
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -710,7 +710,7 @@ jobs:
   publish-vsix-marketplace:
     name: Publish VSIX to VS Code Marketplace
     needs: [create-release]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The VS Code Marketplace is a SEPARATE distribution channel (RELEASING.md):
     # a failure here (e.g. an expired VSCE PAT) must NOT fail the overall Release
     # run, because `release-npm.yml` triggers on `workflow_run.conclusion ==
@@ -744,7 +744,7 @@ jobs:
   publish-vsix-openvsx:
     name: Publish VSIX to Open VSX
     needs: [create-release]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     continue-on-error: true   # a separate channel; must not block release-npm.yml (see above)
     # Trusted publishing: Open VSX trusts this workflow file (and this
     # environment) by registration, and exchanges the job's OIDC token for a
