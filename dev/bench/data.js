@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794969712043,
+  "lastUpdate": 1794982516750,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "49699333+dependabot[bot]@users.noreply.github.com",
-            "name": "dependabot[bot]",
-            "username": "dependabot[bot]"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "1cf652fc60d455f90e58a7eb9db7260f7fca0881",
-          "message": "build(deps): bump vscode-languageclient to 11 in /vscode-rivet, require VS Code 1.91 (#1176)\n\nRebuilt on main after #1175, #1178 and #1180 merged; the lockfile is\nregenerated instead of hand-merged. Supersedes Dependabot's bump commit.\n\nvscode-languageclient 11 publishes its entry points only through package\n\"exports\", which the old node10 module resolution cannot see, so tsc failed\nwith TS2307 on 'vscode-languageclient/node'. Switch the extension to node16\nmodule resolution; package.json has no \"type\", so the output stays CommonJS.\n\nlanguageclient 11 also declares engines.vscode ^1.91.0. On VS Code 1.85.2\nthe client never started, and activation still succeeded because\nclient.start() is caught, so the extension lost its language server with no\nvisible error. Raise engines.vscode to ^1.91.0 to match and pin\n@types/vscode to ~1.91.0 so the API types never run ahead of the declared\nengine (vsce refuses that). Users on VS Code 1.85-1.90 keep the version they\nhave and stop receiving updates.\n\nConfirmed locally in a headless VS Code (Node 22, rivet pinned through\nrivet.binaryPath) with a probe test that requires rivet-sourced diagnostics;\nthe probe goes red when the binary refuses to start.\n\n\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\nCo-authored-by: Ralf Anton Beier <ralf_beier@me.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-07T16:40:20Z",
-          "tree_id": "d78a1775ab3468c752103089730bc9182a90ce3e",
-          "url": "https://github.com/pulseengine/rivet/commit/1cf652fc60d455f90e58a7eb9db7260f7fca0881"
-        },
-        "date": 1794079896094,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 69145,
-            "range": "± 239",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 686327,
-            "range": "± 3679",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16591745,
-            "range": "± 684015",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1485,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 18212,
-            "range": "± 22",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 276146,
-            "range": "± 751",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1540375,
-            "range": "± 16938",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 121447,
-            "range": "± 9726",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1384240,
-            "range": "± 13070",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 34085690,
-            "range": "± 813637",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 557863,
-            "range": "± 2488",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 16431388,
-            "range": "± 121215",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1185497853,
-            "range": "± 8079525",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3502,
-            "range": "± 7",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 40600,
-            "range": "± 105",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 621055,
-            "range": "± 2917",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 44939,
-            "range": "± 94",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 503321,
-            "range": "± 16728",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9999389,
-            "range": "± 1155407",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 790,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 10766,
-            "range": "± 17",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 200673,
-            "range": "± 1035",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 17433,
-            "range": "± 27",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 110821,
-            "range": "± 296",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1044644,
-            "range": "± 136681",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1034588,
             "range": "± 42342",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2f11728fec195892735972183c7090379029381e",
+          "message": "fix(yaml): report a tab that indents a block entry (#1277)\n\n* fix(yaml): report a tab that indents a block entry\n\n#1248: rivet accepted tab indentation and counted the tab as one column,\nso `\\ta: 1` and `a:` / `\\tb: 1` built structure an editor may show\ndifferently. YAML 1.2 §6.1 indents with spaces only.\n\nbump_line_indent consumes a line's leading whitespace and reports a tab\nin it when the line starts a block entry (`- ` or `key:`). A tab before\na flow collection or a next-line scalar is separation and stays allowed\n(yaml-test-suite 6CA3, Q5MG, DK95/00 caught a first, broader version).\nThe check runs where indentation is consumed: block mappings, block\nsequences, the root, and the \"value on the next line\" branches.\neat_trivia now treats whitespace at offset 0 as indentation too, as it\nalready did after a newline.\n\nThe suite rejects one more invalid case, so the ratchets move:\nINVALID_REJECTED 63 -> 64, INVALID_ACCEPTED 31 -> 30; MATCHED 134,\nwrong 0.\n\nConfirmed with: new tests a_tab_in_indentation_is_an_error (fails with\nthe check disabled) and tabs_outside_indentation_still_parse;\nYAML_TEST_SUITE at 6e6c296a with cargo nextest run --all --profile ci:\n2752 passed, exit 0; cargo +1.100.0 clippy --all-targets -D warnings\nexit 0; cargo fmt --check. rivet validate over 58 local pulseengine\ncheckouts: no tab-indentation errors, and the same files load as before.\n\nFixes: REQ-346\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* test(yaml): kill the tab-indentation PR-diff mutants\n\nPR-diff mutation testing left 4 mutants alive in code #1277 touched:\nthe Whitespace arm of eat_trivia, the Newline|Comment arm of\nparse_block_sequence, and `j += 1` in block_entry_at (as -= and *=).\n\nNew cases: a tab-indented `b : 1` (spaces before the colon) and a\ntab-indented key under a bare `-` must both be errors; a sequence item\nwhose mapping starts on the next line, a key with spaces and a comment\nbefore its nested mapping, and `... # end` after a document must parse\nwith their values intact.\n\nConfirmed with cargo mutants --in-diff -- --lib (the previous run:\n1 missed, 25 caught, 4 timeouts) and a hand-applied negative control on\nthe eat_trivia arm, which fails values_after_trivia_keep_their_nesting.\nnextest --profile ci with YAML_TEST_SUITE set: 2753 passed.\n\nVerifies: REQ-346\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T02:31:55Z",
+          "tree_id": "547afbefbc598adfa39cd2c594ea10fa87ca0cac",
+          "url": "https://github.com/pulseengine/rivet/commit/2f11728fec195892735972183c7090379029381e"
+        },
+        "date": 1794982515533,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 82710,
+            "range": "± 1443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 990114,
+            "range": "± 12681",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 12006439,
+            "range": "± 649900",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1603,
+            "range": "± 19",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 19687,
+            "range": "± 267",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 438241,
+            "range": "± 8401",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 78,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 78,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 78,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 2150746,
+            "range": "± 14644",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 179567,
+            "range": "± 2955",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 2085551,
+            "range": "± 19611",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27928877,
+            "range": "± 1087908",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 758287,
+            "range": "± 10054",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17713812,
+            "range": "± 196432",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1106049734,
+            "range": "± 17740619",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4066,
+            "range": "± 40",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 47998,
+            "range": "± 2684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 991058,
+            "range": "± 14338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 53039,
+            "range": "± 373",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 594884,
+            "range": "± 8043",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7580609,
+            "range": "± 118403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 966,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 12103,
+            "range": "± 112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 351087,
+            "range": "± 7323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 25598,
+            "range": "± 265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 181047,
+            "range": "± 3864",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1720101,
+            "range": "± 46749",
             "unit": "ns/iter"
           }
         ]
