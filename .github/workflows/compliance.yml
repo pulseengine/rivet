@@ -45,7 +45,7 @@ on:
 jobs:
   compliance:
     name: Generate compliance report
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       archive-path: ${{ steps.report.outputs.archive-path }}
       validation-result: ${{ steps.report.outputs.validation-result }}

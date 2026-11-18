@@ -43,7 +43,7 @@ concurrency:
 jobs:
   delta:
     name: Artifact delta
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # All user-derived fields are captured into env vars at job scope so
     # no `run:` step interpolates untrusted input into a shell context.
     # base.sha is a 40-char SHA (safe) but enving everything is the

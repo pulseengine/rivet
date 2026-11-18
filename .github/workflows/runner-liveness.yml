@@ -228,7 +228,7 @@ jobs:
                 # an unrelated running job.
                 echo "::notice::Run ${oldest_id} queued ${oldest_age}m behind runners that are demonstrably ALIVE — jobs requiring these labels are in progress right now. Saturation, not an outage. Queued: ${labels}" ;;
               hosted-starved)
-                problems+=("Run ${oldest_id} queued ${oldest_age}m — GITHUB-HOSTED starvation. Every queued job is \`ubuntu-latest\`; the self-hosted pool is irrelevant here and hosted capacity appears in the runners API at NO scope. Queued: ${labels}") ;;
+                problems+=("Run ${oldest_id} queued ${oldest_age}m — GITHUB-HOSTED starvation. Every queued job is GitHub-hosted; the self-hosted pool is irrelevant here and hosted capacity appears in the runners API at NO scope. Queued: ${labels}") ;;
               pool-offline)
                 problems+=("Run ${oldest_id} queued ${oldest_age}m — the self-hosted pool is OFFLINE (0 runners online). Queued: ${labels}") ;;
               label-saturated)
