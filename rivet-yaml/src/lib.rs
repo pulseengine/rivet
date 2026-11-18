@@ -17,6 +17,10 @@
 //! every YAML file and docs YAML block in this repository and agreed byte for
 //! byte; `tests/yaml_corpus.rs` keeps the round-trip and a golden of
 //! serde_yaml's emitter output.
+//!
+//! Scalars resolve by the YAML 1.2 core schema: `on`, `off`, `yes` and `no`
+//! are strings, not the YAML 1.1 booleans, so a GitHub workflow's `on:` is the
+//! string key `"on"`. A duplicate mapping key is an error, as GitHub treats it.
 
 #![forbid(unsafe_code)]
 

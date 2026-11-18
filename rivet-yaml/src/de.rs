@@ -369,6 +369,11 @@ impl Builder<'_> {
         let mut items = Vec::new();
         let mut plain = String::new();
         let mut plain_at = None;
+        // Line breaks since the last plain text of the current item. A plain
+        // scalar folds across lines (YAML 1.2 §6.5): one break is a space,
+        // each further blank line a `\n`. Every break and indent used to add
+        // its own space, so `[a\n  b]` read as "a  b" (#1252).
+        let mut breaks = 0usize;
         // An anchor names the item that follows it: (anchor text, that item's
         // index once pushed).
         let mut pending_anchor: Option<(String, usize)> = None;
@@ -394,12 +399,19 @@ impl Builder<'_> {
             match el {
                 rowan::NodeOrToken::Token(t) => match t.kind() {
                     SyntaxKind::PlainScalar => {
+                        if plain_at.is_some() {
+                            if breaks == 1 {
+                                plain.push(' ');
+                            } else {
+                                plain.extend(std::iter::repeat_n('\n', breaks.saturating_sub(1)));
+                            }
+                        }
+                        breaks = 0;
                         plain_at.get_or_insert(usize::from(t.text_range().start()));
                         plain.push_str(t.text());
                     }
-                    SyntaxKind::Whitespace | SyntaxKind::Newline if plain_at.is_some() => {
-                        plain.push(' ');
-                    }
+                    // Counted before an item too; its first text resets it.
+                    SyntaxKind::Newline => breaks = breaks.saturating_add(1),
                     SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar => {
                         flush(&mut plain, &mut plain_at, &mut items)?;
                         items.push(Node {
@@ -1146,5 +1158,55 @@ mod tests {
         assert_eq!(v("---\n...\n"), Value::Null);
         assert_eq!(v("...\n"), Value::Null);
         assert_eq!(v("a: 1\n...\n")["a"], Value::from(1u64));
+    }
+
+    /// GitHub workflows key their triggers with `on:`. YAML 1.1 read `on`,
+    /// `off`, `yes` and `no` as booleans; the 1.2 core schema this parser
+    /// follows keeps them strings, and GitHub rejects a duplicate key, as
+    /// this parser does.
+    // rivet: verifies REQ-346
+    #[test]
+    fn yaml_1_1_booleans_stay_strings_and_duplicate_keys_fail() {
+        let v: Value = from_str("on:\n  push: {}\nyes: y\noff: n\nno: [on]\n").unwrap();
+        let keys: Vec<_> = v.as_mapping().unwrap().keys().cloned().collect();
+        assert_eq!(
+            keys,
+            ["on", "yes", "off", "no"].map(Value::from).to_vec(),
+            "1.1 boolean words are string keys"
+        );
+        assert_eq!(v["no"][0], Value::from("on"), "and string values");
+        assert!(err("a: 1\nb: 2\na: 3\n").contains("duplicate entry with key \"a\""));
+    }
+
+    /// A plain scalar inside a flow collection folds across lines like any
+    /// other (#1252): one break is a space, each further blank line a `\n`.
+    /// In a flow mapping the next line used to start a new key.
+    #[test]
+    fn plain_scalars_in_flow_collections_fold_across_lines() {
+        let v = |src: &str| from_str::<Value>(src).unwrap();
+        assert_eq!(v("[a\n  b]\n")[0], Value::from("a b"));
+        assert_eq!(v("a: [x\n\n  y]\n")["a"][0], Value::from("x\ny"));
+        assert_eq!(v("a: [x\n\n\n  y]\n")["a"][0], Value::from("x\n\ny"));
+        let s = v("[a, b\n  c, d]\n");
+        assert_eq!(s[1], Value::from("b c"));
+        assert_eq!(s[2], Value::from("d"));
+        assert_eq!(v("[a\n]\n")[0], Value::from("a"));
+        assert_eq!(v("[a\nb]\n")[0], Value::from("a b"));
+        assert_eq!(v("[\n  a\n  b,\n  c\n]\n")[0], Value::from("a b"));
+        // Spaces inside a line and before a comma are kept as before.
+        let s = v("k: [a b,  c ]\n");
+        assert_eq!(s["k"][0], Value::from("a b"));
+        assert_eq!(s["k"][1], Value::from("c"));
+
+        let m = v("{ t: hello\n    world,\n  l: en }\n");
+        assert_eq!(m["t"], Value::from("hello world"));
+        assert_eq!(m["l"], Value::from("en"));
+        assert_eq!(m.as_mapping().map(|m| m.len()), Some(2));
+        assert_eq!(v("{a: x\n\n  y\n}\n")["a"], Value::from("x\ny"));
+        // A next line that starts `key:` is an entry of its own.
+        assert_eq!(v("{a: b\n c: d}\n")["c"], Value::from("d"));
+        assert_eq!(v("{a: b\n c : d}\n")["c"], Value::from("d"));
+        // A quoted value does not take the next line in.
+        assert_eq!(v("{a: \"q\",\n  b: 1}\n")["a"], Value::from("q"));
     }
 }
