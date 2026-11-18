@@ -262,8 +262,12 @@ fn merge_named_vec<T, F: Fn(&T) -> String>(dst: &mut Vec<T>, incoming: Vec<T>, n
     }
 }
 
+/// `#[non_exhaustive]` (REQ-418): a new schema key on a field is not an
+/// API break. Outside rivet-core, build one with `FieldDef::default()` and
+/// set the fields you need.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct FieldDef {
     pub name: String,
     #[serde(rename = "type")]
