@@ -1041,7 +1041,9 @@ impl<'src> Parser<'src> {
         // (`1.5`, `"text"`) or a flow collection as well as a block mapping or
         // sequence; reading every document as a mapping failed with "expected
         // ':' after mapping key".
-        if !self.at_eof() {
+        // `---` then `...` is an empty document, which is null like an empty
+        // file. Parsing a block mapping here read it as `{}` (#1255).
+        if !self.at_eof() && !self.at(SyntaxKind::DocumentEnd) {
             // The root may be indented (`  - id: H-1` under a comment line);
             // its column is the first token's, not 0. Indented blank and
             // comment lines before it are trivia, indentation included.

@@ -14,6 +14,7 @@
 - **YAML: `\f` decodes, and an escape YAML does not define is an error** (#1251). In a double-quoted scalar `\f` stayed as the two characters `\f`; it is now a form feed. An unknown escape (`\q`, `\.`) or `\x`, `\u`, `\U` without 2, 4 or 8 hex digits was kept literally and is now an error. A quote inside a plain scalar, block scalar or comment is text and is not checked. No local pulseengine checkout hits the new error.
 - **YAML: a tab before `#` starts a comment** (#1256). `a: v<TAB># c` read as `"v\t# c"`; a comment may follow a space or a tab, so it is now `"v"`.
 - **YAML: a leading byte order mark is not content** (#1253). A UTF-8 BOM ended up in the first key (`"\ufeffa"`), and before a sequence the document failed with `unexpected Dash`. The BOM stays in the syntax tree, so editing keeps it, but it is no longer part of any value or column.
+- **YAML: a document marker ends a root value** (#1255). `--- finale` followed by `...` read as `"finale ..."`, and `---` followed by `...` read as `{}`. They are now `"finale"` and null.
 
 ## [0.42.2] - 2026-11-13
 

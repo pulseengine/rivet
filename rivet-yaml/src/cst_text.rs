@@ -91,6 +91,19 @@ pub fn scalar_text(node: &SyntaxNode) -> Option<String> {
                                             }
                                             rowan::NodeOrToken::Token(lt)
                                                 if lt.kind() == SyntaxKind::Whitespace => {}
+                                            // A document marker on the next line
+                                            // ends the document, so it ends the
+                                            // scalar too: a root `finale` before
+                                            // `...` read as `finale ...` (#1255).
+                                            rowan::NodeOrToken::Token(lt)
+                                                if matches!(
+                                                    lt.kind(),
+                                                    SyntaxKind::DocumentEnd
+                                                        | SyntaxKind::DirectiveMarker
+                                                ) =>
+                                            {
+                                                break;
+                                            }
                                             // Resume at the next token. A comment
                                             // needs no guard here: resuming at one
                                             // reaches the `Comment => break` arm
