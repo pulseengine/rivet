@@ -148,6 +148,7 @@ jobs:
   # ── Docs-vs-reality gate (release-time rerun of the CI check) ─────────
   docs-check:
     name: Docs Check
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -160,6 +161,7 @@ jobs:
   # ── Baseline snapshot ─────────────────────────────────────────────────
   capture-snapshot:
     name: Capture baseline snapshot
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -201,6 +203,7 @@ jobs:
     # could disagree with the copy that ships as a release asset, which is the
     # drift REQ-327 exists to remove.
     needs: [build-release-note]
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -278,6 +281,7 @@ jobs:
   # it; the flag is a convenience, not a verdict that the failure is benign.
   build-test-evidence:
     name: Build test evidence
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     continue-on-error: true  # NB: doesn't block create-release; see note above.
     steps:
@@ -420,6 +424,7 @@ jobs:
   # separately published to the VS Code Marketplace.
   build-vsix:
     name: Build VS Code Extension VSIX
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -449,6 +454,7 @@ jobs:
   # with the tag it claims to describe.
   build-release-note:
     name: Generate release note (ASPICE 11-03)
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -517,6 +523,7 @@ jobs:
       - build-vsix
       - docs-check
       - build-release-note
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -710,6 +717,7 @@ jobs:
   publish-vsix-marketplace:
     name: Publish VSIX to VS Code Marketplace
     needs: [create-release]
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     # The VS Code Marketplace is a SEPARATE distribution channel (RELEASING.md):
     # a failure here (e.g. an expired VSCE PAT) must NOT fail the overall Release
@@ -744,6 +752,7 @@ jobs:
   publish-vsix-openvsx:
     name: Publish VSIX to Open VSX
     needs: [create-release]
+    # Kept on hosted: release jobs build, attest or publish on ephemeral GitHub-hosted runners.
     runs-on: ubuntu-24.04
     continue-on-error: true   # a separate channel; must not block release-npm.yml (see above)
     # Trusted publishing: Open VSX trusts this workflow file (and this

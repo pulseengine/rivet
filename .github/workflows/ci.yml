@@ -58,7 +58,7 @@ jobs:
   # yaml-lint) are deliberately NOT gated on this — they must run on artifact/doc PRs.
   changes:
     name: Detect changed areas
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
@@ -88,7 +88,7 @@ jobs:
     name: Format
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -127,7 +127,7 @@ jobs:
     name: Clippy
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -154,7 +154,7 @@ jobs:
     name: WASM seam build
     needs: changes
     if: needs.changes.outputs.wasm == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,7 +196,7 @@ jobs:
 
   yaml-lint:
     name: YAML Lint
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -267,6 +267,18 @@ jobs:
         run: bash tools/ci/detect-changes_test.sh
       - name: CI Gate skip-rule test (temper aggregate_accepts_skip)
         run: bash tools/ci/ci-gate-check_test.sh
+      # No fork pull request reaches a self-hosted runner: every self-hosted
+      # runs-on uses the fail-closed same-repository guard (ported from
+      # relay#689). The tests include a planted unguarded site in the real
+      # ci.yml, which must fail. Plain rustc, no compile of the workspace.
+      - name: Self-hosted fork guard tests
+        run: |
+          rustc --edition 2021 --test tools/ci/check-selfhosted-fork-guard.rs -o "$RUNNER_TEMP/csfg-test"
+          "$RUNNER_TEMP/csfg-test"
+      - name: Self-hosted fork guard
+        run: |
+          rustc --edition 2021 -O tools/ci/check-selfhosted-fork-guard.rs -o "$RUNNER_TEMP/csfg"
+          "$RUNNER_TEMP/csfg"
 
   # ── Schema version-bump advisory (#485) ───────────────────────────────
   # Warn (don't fail) when a PR changes a schema's rules but leaves its
@@ -276,7 +288,7 @@ jobs:
   # disciplined. PRs only (needs a base to diff against).
   schema-version-bump:
     name: Schema version bump
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     if: github.event_name == 'pull_request'
     timeout-minutes: 10
     steps:
@@ -290,7 +302,7 @@ jobs:
   # A real gate — no continue-on-error.  Budget <1 minute on cached runs.
   docs-check:
     name: Docs Check
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -322,7 +334,7 @@ jobs:
   # required is a repo-settings action that cannot live in this file.
   traceability:
     name: Traceability (rivet validate + commits)
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -427,6 +439,7 @@ jobs:
   traceability-hosted-fallback:
     name: Traceability (hosted fallback)
     if: github.event_name == 'push'
+    # Kept on hosted by design: this is the floor that still runs when the self-hosted pool is down.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -449,7 +462,7 @@ jobs:
     # `tests`, not `rust`: rivet's own tests read artifacts/, docs/, schemas/
     # and the rest of this repository, so a data-only change runs them too.
     if: needs.changes.outputs.tests == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     env:
       RIVET_ACTIONLINT: "1"
@@ -545,6 +558,7 @@ jobs:
     # with "Playwright does not support chromium on ubuntu26.04-x64",
     # so the E2E suite stopped running on every PR and on main. Remove
     # the pin once Playwright publishes a release that supports 26.04.
+    # Kept on hosted: Playwright browsers (browser dependency).
     runs-on: ubuntu-24.04
     # #822: worst observed run 17 min (typical 8-12 min). 30 min fails
     # 12x sooner than GitHub's 360-min default; a stalled package mirror
@@ -594,7 +608,7 @@ jobs:
     # — no `sudo`, no `apt-get` — which is what pins the genuinely-hosted jobs
     # here (playwright, vscode-extension, verus, rocq). `rust-cpu` because it
     # builds a release binary.
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -651,6 +665,7 @@ jobs:
     if: github.event_name != 'merge_group' && needs.changes.outputs.vscode == 'true'
     # Stays on ubuntu-latest: `xvfb-run` headless display + downloaded
     # VS Code Test environment expects sudo apt-get for system libs.
+    # Kept on hosted: runs VS Code under a display (browser/display dependency).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -706,7 +721,7 @@ jobs:
     # smithy's sccache-on-cc setup. smithy#91 preinstalls 0.22.2, which
     # parses them, so the install step below uses it and only builds when
     # the runner's copy is missing or older.
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -745,7 +760,7 @@ jobs:
     name: Cargo Deny (advisories, licenses, bans, sources)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -793,7 +808,7 @@ jobs:
     name: Semver Checks (rivet-core public API)
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -853,7 +868,7 @@ jobs:
     needs: [changes, test]
     # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
     if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -904,7 +919,7 @@ jobs:
     needs: changes
     # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
     if: github.event_name != 'merge_group' && github.event_name != 'schedule' && needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, lean-mem]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","lean-mem"]') || 'ubuntu-24.04' }}
     # Step-level 20 min already caps the miri run; job-level 30 covers
     # checkout/cache/toolchain-install so setup can't hang for hours.
     timeout-minutes: 30
@@ -959,7 +974,7 @@ jobs:
   miri-full:
     name: Miri (full, nightly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, linux, x64, lean-mem]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","lean-mem"]') || 'ubuntu-24.04' }}
     # Step-level 90 min already caps the full sweep; job-level 120 covers
     # setup so a wedged checkout/install can't inherit the 360-min default.
     timeout-minutes: 120
@@ -1004,7 +1019,7 @@ jobs:
     needs: changes
     # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
     if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1086,7 +1101,7 @@ jobs:
     # PR-diff job cannot judge it because the moved cst.rs counts as all-new.
     # Shards run `--lib` like the rest, so tests/yaml_test_suite.rs is not seen.
     if: github.event.schedule == '0 1 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.mutation_sweep)
-    runs-on: [self-hosted, linux, x64, lean-mem]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","lean-mem"]') || 'ubuntu-24.04' }}
     timeout-minutes: 75
     continue-on-error: true
     strategy:
@@ -1289,7 +1304,7 @@ jobs:
     needs: [changes, test]
     # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
     if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1434,7 +1449,7 @@ jobs:
     needs: [changes, test]
     # Advisory, not a CI Gate need: skipped in the merge queue (REQ-412).
     if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 45
     # ADVISORY — see the header comment above. Promote to a hard gate only
     # after diff-scoped rivet-core noise has been observed across a
@@ -1535,7 +1550,7 @@ jobs:
   fuzz:
     name: Fuzz Testing
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     continue-on-error: true
     timeout-minutes: 30
     steps:
@@ -1593,7 +1608,7 @@ jobs:
     # read is an exemption whose `notes` start "NOT REVIEWED" and say why.
     # Never certify to turn this green.
     if: github.event_name != 'merge_group' && needs.changes.outputs.tests == 'true'
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1662,6 +1677,7 @@ jobs:
     # rust-cpu saturation (2026-05-17 incident).
     # Stays on ubuntu-latest: kani-verifier bundles CBMC (~100 MB),
     # not pre-installed on smithy. Move once toolchains role ships kani.
+    # Kept on hosted: needs sudo (swap file) and the Kani/CBMC toolchain.
     runs-on: ubuntu-24.04
     continue-on-error: true
     # 90, not 45: the PR path (`--only-codegen`) finishes in ~7.5 min, but the
@@ -1765,6 +1781,7 @@ jobs:
     # nix-installer broke on a version bump and chronically failed at install,
     # so this advisory job was perma-red regardless of the proofs. 16 GB on the
     # hosted runner is ample for the rivet Verus specs.
+    # Kept on hosted: Bazel + Nix toolchain, installed with sudo.
     runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 20
@@ -1825,6 +1842,7 @@ jobs:
     # saturation (2026-05-17 incident).
     # Stays on ubuntu-latest: Rocq (Coq) install is heavy and
     # not pre-provisioned on smithy. Migrate once toolchains role ships it.
+    # Kept on hosted: Bazel + Nix toolchain, installed with sudo.
     runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 20
@@ -1878,7 +1896,7 @@ jobs:
     name: Proof trust ledger
     needs: changes
     if: needs.changes.outputs.proofs == 'true'
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1894,7 +1912,7 @@ jobs:
     name: MSRV (1.89)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
-    runs-on: [self-hosted, linux, x64, rust-cpu]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","rust-cpu"]') || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1915,6 +1933,7 @@ jobs:
     # ephemeral, isolated build environment; a persistent self-hosted runner
     # does not satisfy that, so our provenance was L2 while the surrounding
     # claim implied L3. GitHub-hosted runners are torn down per job.
+    # Kept on hosted: release-path evidence, and a full release build plus nextest is too large for light (4 G).
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -2039,7 +2058,7 @@ jobs:
     #
     # `light` rather than `rust-cpu`: this is a five-second script, and by the
     # time it runs its needs have finished, so the single light runner is free.
-    runs-on: [self-hosted, linux, x64, light]
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","light"]') || 'ubuntu-24.04' }}
     steps:
       # Sparse and credential-less: the gate reads only tools/ci, and the
       # verdict lives in a script so tools/ci/ci-gate-check_test.sh can hold

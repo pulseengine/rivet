@@ -43,6 +43,7 @@ concurrency:
 jobs:
   delta:
     name: Artifact delta
+    # Kept on hosted: mermaid-cli renders through headless Chromium (browser dependency), and the job holds a contents:write token.
     runs-on: ubuntu-24.04
     # All user-derived fields are captured into env vars at job scope so
     # no `run:` step interpolates untrusted input into a shell context.
