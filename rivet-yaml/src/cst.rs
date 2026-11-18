@@ -215,6 +215,10 @@ pub fn lex(source: &str) -> Vec<Token<'_>> {
 fn lex_with_hints(source: &str) -> (Vec<Token<'_>>, Vec<ParseError>) {
     let mut hints = Vec::new();
     let mut tokens = Vec::new();
+    // Open `[`/`{` minus closed. Brackets are tokens only in node position
+    // or as the bytes that end a plain scalar, so a `}` in `{{ x }}:y` text
+    // can only lower it, never raise it.
+    let mut flow_depth = 0usize;
     let bytes = source.as_bytes();
     let mut pos = 0;
 
@@ -307,7 +311,27 @@ fn lex_with_hints(source: &str) -> (Vec<Token<'_>>, Vec<ParseError>) {
             }
             // Colon: only a separator when followed by space, newline, or EOF
             b':' => {
-                if pos + 1 >= bytes.len()
+                // Inside a flow collection, after a JSON-like node (a quoted
+                // scalar, `]` or `}`), `:` is the value indicator even with no
+                // space after it (YAML 1.2 §7.4, c-ns-flow-map-adjacent-value):
+                // `{"a":1}` is a mapping. Lexed as text, `["a":1]` read as
+                // `["a", ":1"]` and `{"a":1}` failed (#1259).
+                // Spaces may separate the key from its `:` (`{"a" :1}`).
+                let after_json_node = tokens
+                    .iter()
+                    .rev()
+                    .find(|t| t.kind != SyntaxKind::Whitespace)
+                    .is_some_and(|t: &Token| {
+                        matches!(
+                            t.kind,
+                            SyntaxKind::SingleQuotedScalar
+                                | SyntaxKind::DoubleQuotedScalar
+                                | SyntaxKind::RBracket
+                                | SyntaxKind::RBrace
+                        )
+                    });
+                if (flow_depth > 0 && after_json_node)
+                    || pos + 1 >= bytes.len()
                     || bytes[pos + 1] == b' '
                     || bytes[pos + 1] == b'\t'
                     || bytes[pos + 1] == b'\n'
@@ -340,6 +364,7 @@ fn lex_with_hints(source: &str) -> (Vec<Token<'_>>, Vec<ParseError>) {
                     kind: SyntaxKind::LBracket,
                     text: &source[start..pos],
                 });
+                flow_depth += 1;
             }
             b']' => {
                 pos += 1;
@@ -347,6 +372,7 @@ fn lex_with_hints(source: &str) -> (Vec<Token<'_>>, Vec<ParseError>) {
                     kind: SyntaxKind::RBracket,
                     text: &source[start..pos],
                 });
+                flow_depth = flow_depth.saturating_sub(1);
             }
             // `{` and `}` mirror `[` and `]` exactly: unconditional single-byte
             // tokens. `}` already terminated a plain scalar before this and so
@@ -360,6 +386,7 @@ fn lex_with_hints(source: &str) -> (Vec<Token<'_>>, Vec<ParseError>) {
                     kind: SyntaxKind::LBrace,
                     text: &source[start..pos],
                 });
+                flow_depth += 1;
             }
             b'}' => {
                 pos += 1;
@@ -367,6 +394,7 @@ fn lex_with_hints(source: &str) -> (Vec<Token<'_>>, Vec<ParseError>) {
                     kind: SyntaxKind::RBrace,
                     text: &source[start..pos],
                 });
+                flow_depth = flow_depth.saturating_sub(1);
             }
             b'|' => {
                 pos += 1;
@@ -644,15 +672,36 @@ fn quoted_continuation(
     }
 }
 
+/// A block scalar header after `|` or `>`: at most one indentation digit 1-9
+/// and at most one chomping indicator, in either order (YAML 1.2 §8.1.1).
+/// `|0`, `|10` and `|++` were read without a diagnostic (#1258).
+fn valid_block_header(header: &str) -> bool {
+    let (mut digit, mut chomp) = (false, false);
+    for c in header.chars() {
+        match c {
+            '1'..='9' if !digit => digit = true,
+            '+' | '-' if !chomp => chomp = true,
+            _ => return false,
+        }
+    }
+    true
+}
+
 /// Advance past a plain (unquoted) scalar value.
 ///
-/// Stops at: newline, `#` preceded by space, `: ` (colon+space), `,`, `]`, `}`.
+/// Stops at: newline, `#` preceded by a space or tab, `: ` (colon+space), `,`, `]`, `}`.
 fn lex_plain_scalar(_source: &str, bytes: &[u8], start: usize) -> usize {
     let mut pos = start;
     while pos < bytes.len() {
         match bytes[pos] {
             b'\n' | b'\r' => break,
-            b'#' if pos > start && bytes[pos - 1] == b' ' => break,
+            // a comment needs white space before it, a space or a tab (#1256)
+            b'#' if bytes[start..pos]
+                .last()
+                .is_some_and(|c| matches!(c, b' ' | b'\t')) =>
+            {
+                break;
+            }
             b':' if pos + 1 < bytes.len()
                 && (bytes[pos + 1] == b' '
                     || bytes[pos + 1] == b'\n'
@@ -698,8 +747,16 @@ pub struct ParseError {
 /// Returns the green node and any parse errors. The tree is lossless:
 /// `SyntaxNode::new_root(green).text() == source`.
 pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
+    // A byte order mark is not content (YAML 1.2 §5.2). It stays in the tree,
+    // as the first token, so the tree is still lossless, but the lexer and
+    // the parser's column arithmetic never see it (#1253).
+    let (bom, source) = match source.strip_prefix('\u{feff}') {
+        Some(rest) => ("\u{feff}", rest),
+        None => ("", source),
+    };
     let (tokens, hints) = lex_with_hints(source);
     let mut parser = Parser::new(&tokens, source);
+    parser.bom = bom;
     parser.parse_root();
     let green = parser.builder.finish();
     let mut errors = parser.errors;
@@ -734,7 +791,134 @@ pub fn parse(source: &str) -> (rowan::GreenNode, Vec<ParseError>) {
         // error there, and the parser's own order is kept among its errors.
         errors.sort_by_key(|e| e.offset);
     }
+    for e in &mut errors {
+        e.offset += bom.len();
+    }
+    check_double_quoted_escapes(&green, &mut errors);
     (green, errors)
+}
+
+/// Report each double-quoted scalar escape that YAML 1.2 does not define
+/// (§5.7): an unknown letter (`\\q`), or `\\x`, `\\u`, `\\U` without 2, 4 or 8
+/// hex digits. They used to be kept literally with no diagnostic (#1251).
+/// Quote characters inside a block scalar or a comment are text, so only
+/// scalars outside block scalars are checked.
+fn check_double_quoted_escapes(green: &rowan::GreenNode, errors: &mut Vec<ParseError>) {
+    let root = SyntaxNode::new_root(green.clone());
+    let mut found = Vec::new();
+    for token in root
+        .descendants_with_tokens()
+        .filter_map(|e| e.into_token())
+        .filter(|t| t.kind() == SyntaxKind::DoubleQuotedScalar)
+    {
+        if token
+            .parent_ancestors()
+            .any(|n| n.kind() == SyntaxKind::BlockScalar)
+            || !starts_scalar(&token)
+        {
+            continue;
+        }
+        let start = usize::from(token.text_range().start());
+        if let Some((at, message)) = invalid_escape(token.text()) {
+            found.push(ParseError {
+                offset: start + at,
+                message,
+            });
+        }
+    }
+    if !found.is_empty() {
+        errors.extend(found);
+        errors.sort_by_key(|e| e.offset);
+    }
+}
+
+/// Whether a double-quoted token starts a scalar. The lexer also cuts a
+/// quote out of a plain scalar (`k: a, "\\q"` is the plain scalar
+/// `a, "\\q"`), and there the backslash is text.
+fn starts_scalar(token: &rowan::SyntaxToken<YamlLanguage>) -> bool {
+    let mut prev = token.prev_token();
+    while let Some(t) = &prev {
+        if !matches!(
+            t.kind(),
+            SyntaxKind::Newline | SyntaxKind::Whitespace | SyntaxKind::Comment | SyntaxKind::Anchor
+        ) {
+            break;
+        }
+        prev = t.prev_token();
+    }
+    let Some(prev) = prev else {
+        return true;
+    };
+    match prev.kind() {
+        SyntaxKind::Colon
+        | SyntaxKind::Dash
+        | SyntaxKind::LBracket
+        | SyntaxKind::LBrace
+        | SyntaxKind::DirectiveMarker => true,
+        // a comma separates nodes only inside a flow collection
+        SyntaxKind::Comma => token.parent_ancestors().any(|n| {
+            n.kind() == SyntaxKind::FlowSequence
+                || n.first_token()
+                    .is_some_and(|f| f.kind() == SyntaxKind::LBrace)
+        }),
+        // after other content: a new node unless that content is part of the
+        // same key, value or sequence item (a plain scalar the quote is in)
+        _ => {
+            let node = token.parent_ancestors().find(|n| {
+                matches!(
+                    n.kind(),
+                    SyntaxKind::Key | SyntaxKind::Value | SyntaxKind::SequenceItem
+                )
+            });
+            !node.is_some_and(|n| prev.parent_ancestors().any(|p| p == n))
+        }
+    }
+}
+
+/// The byte offset and diagnosis of the first escape in a double-quoted
+/// scalar (quotes included) that YAML 1.2 does not define.
+fn invalid_escape(raw: &str) -> Option<(usize, String)> {
+    let bytes = raw.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'\\' {
+            i += 1;
+            continue;
+        }
+        let Some(&c) = bytes.get(i + 1) else {
+            return None; // an unclosed scalar is reported elsewhere
+        };
+        let digits = match c {
+            b'0' | b'a' | b'b' | b't' | b'\t' | b'n' | b'v' | b'f' | b'r' | b'e' | b' ' | b'"'
+            | b'/' | b'\\' | b'N' | b'_' | b'L' | b'P' | b'\n' | b'\r' => 0,
+            b'x' => 2,
+            b'u' => 4,
+            b'U' => 8,
+            _ => {
+                let shown = raw[i + 1..].chars().next().unwrap_or(' ');
+                return Some((
+                    i,
+                    format!(
+                        "unknown escape `\\{shown}` in a double-quoted scalar (YAML 1.2 \
+                         \u{a7}5.7): write `\\\\` for a backslash"
+                    ),
+                ));
+            }
+        };
+        let hex = bytes.get(i + 2..i + 2 + digits);
+        if !hex.is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit)) {
+            return Some((
+                i,
+                format!(
+                    "escape `\\{}` in a double-quoted scalar needs {digits} hex digits \
+                     (YAML 1.2 \u{a7}5.7)",
+                    c as char
+                ),
+            ));
+        }
+        i += 2 + digits;
+    }
+    None
 }
 
 struct Parser<'src> {
@@ -749,6 +933,9 @@ struct Parser<'src> {
     byte_offset: usize,
     /// Source bytes for indent computation.
     source_bytes: &'src [u8],
+    /// A byte order mark that preceded `source_bytes`, put back into the tree
+    /// as the root's first token.
+    bom: &'src str,
 }
 
 impl<'src> Parser<'src> {
@@ -761,6 +948,7 @@ impl<'src> Parser<'src> {
             skipped: Vec::new(),
             byte_offset: 0,
             source_bytes: source.as_bytes(),
+            bom: "",
         }
     }
 
@@ -883,6 +1071,9 @@ impl<'src> Parser<'src> {
 
     fn parse_root(&mut self) {
         self.builder.start_node(SyntaxKind::Root.into());
+        if !self.bom.is_empty() {
+            self.builder.token(SyntaxKind::Whitespace.into(), self.bom);
+        }
         self.eat_trivia();
         // Skip document start marker if present
         if self.at(SyntaxKind::DirectiveMarker) {
@@ -893,7 +1084,9 @@ impl<'src> Parser<'src> {
         // (`1.5`, `"text"`) or a flow collection as well as a block mapping or
         // sequence; reading every document as a mapping failed with "expected
         // ':' after mapping key".
-        if !self.at_eof() {
+        // `---` then `...` is an empty document, which is null like an empty
+        // file. Parsing a block mapping here read it as `{}` (#1255).
+        if !self.at_eof() && !self.at(SyntaxKind::DocumentEnd) {
             // The root may be indented (`  - id: H-1` under a comment line);
             // its column is the first token's, not 0. Indented blank and
             // comment lines before it are trivia, indentation included.
@@ -918,11 +1111,14 @@ impl<'src> Parser<'src> {
                 Some(SyntaxKind::LBracket) => self.parse_flow_sequence(),
                 Some(SyntaxKind::LBrace) => self.parse_flow_mapping(),
                 Some(SyntaxKind::Alias) => self.bump(),
+                // A root block scalar (`--- |`); it used to be read as a
+                // mapping key and refused (#1259).
+                Some(SyntaxKind::Pipe | SyntaxKind::Gt) => self.parse_block_scalar(0),
                 Some(
                     SyntaxKind::PlainScalar
                     | SyntaxKind::SingleQuotedScalar
                     | SyntaxKind::DoubleQuotedScalar,
-                ) if !self.peek_colon_after_scalar() => self.parse_next_line_scalar(0),
+                ) if !self.peek_colon_after_scalar() => self.parse_next_line_scalar(None),
                 _ => self.parse_block_mapping(root_indent),
             }
             // Anything left but trivia and markers is content the root node
@@ -1099,6 +1295,10 @@ impl<'src> Parser<'src> {
                 | SyntaxKind::DoubleQuotedScalar
                 | SyntaxKind::Alias,
             ) => {
+                let quoted = matches!(
+                    self.current_kind(),
+                    Some(SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar)
+                );
                 self.check_after_quoted();
                 // Consume all tokens on this line as part of the value
                 while !self.at_eof()
@@ -1115,8 +1315,12 @@ impl<'src> Parser<'src> {
                 // are indented deeper than the entry and don't start a new
                 // mapping entry or sequence item.
                 while self.at(SyntaxKind::Newline) {
-                    if !self.is_plain_scalar_continuation(entry_indent) {
+                    if !self.is_plain_scalar_continuation(Some(entry_indent)) {
                         break;
+                    }
+                    self.check_comment_before_continuation();
+                    if quoted {
+                        self.check_line_after_quoted();
                     }
                     self.bump(); // newline
                     while !self.at_eof()
@@ -1170,7 +1374,7 @@ impl<'src> Parser<'src> {
                                 | SyntaxKind::SingleQuotedScalar
                                 | SyntaxKind::DoubleQuotedScalar,
                             ) if !self.peek_colon_after_scalar() => {
-                                self.parse_next_line_scalar(entry_indent);
+                                self.parse_next_line_scalar(Some(entry_indent));
                             }
                             _ => self.parse_block_mapping(child_indent),
                         }
@@ -1254,6 +1458,10 @@ impl<'src> Parser<'src> {
                         self.parse_block_mapping(self.current_indent());
                         let _ = item_indent;
                     } else {
+                        let quoted = matches!(
+                            self.current_kind(),
+                            Some(SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar)
+                        );
                         self.check_after_quoted();
                         // Consume all tokens on this line (handles commas in values)
                         while !self.at_eof()
@@ -1276,8 +1484,12 @@ impl<'src> Parser<'src> {
                         // here is the dash column, so the shared helper's
                         // strictly-deeper test correctly excludes sibling items.
                         while self.at(SyntaxKind::Newline) {
-                            if !self.is_plain_scalar_continuation(indent) {
+                            if !self.is_plain_scalar_continuation(Some(indent)) {
                                 break;
+                            }
+                            self.check_comment_before_continuation();
+                            if quoted {
+                                self.check_line_after_quoted();
                             }
                             self.bump(); // newline
                             while !self.at_eof()
@@ -1489,7 +1701,11 @@ impl<'src> Parser<'src> {
 
     /// A scalar that starts on the line after its key: the line, then any
     /// continuation lines indented deeper than the key.
-    fn parse_next_line_scalar(&mut self, entry_indent: usize) {
+    fn parse_next_line_scalar(&mut self, entry_indent: Option<usize>) {
+        let quoted = matches!(
+            self.current_kind(),
+            Some(SyntaxKind::SingleQuotedScalar | SyntaxKind::DoubleQuotedScalar)
+        );
         self.check_after_quoted();
         loop {
             while !self.at_eof() && !self.at(SyntaxKind::Newline) && !self.at(SyntaxKind::Comment) {
@@ -1501,8 +1717,57 @@ impl<'src> Parser<'src> {
             if !(self.at(SyntaxKind::Newline) && self.is_plain_scalar_continuation(entry_indent)) {
                 break;
             }
+            self.check_comment_before_continuation();
+            if quoted {
+                self.check_line_after_quoted();
+            }
             self.bump(); // newline
         }
+    }
+
+    /// At the Newline before a line that would continue a value which is a
+    /// quoted scalar. A quoted scalar ends at its closing quote, so the line
+    /// cannot belong to it, and the value builder took the quoted text and
+    /// dropped the line: `k: "q"` then `  more` read as `"q"` (#1259).
+    fn check_line_after_quoted(&mut self) {
+        // From the Newline here, past it and any blank lines and indentation.
+        let mut la = self.pos;
+        while self
+            .tokens
+            .get(la)
+            .is_some_and(|t| matches!(t.kind, SyntaxKind::Whitespace | SyntaxKind::Newline))
+        {
+            la += 1;
+        }
+        let offset = self.byte_offset
+            + self.tokens[self.pos..la]
+                .iter()
+                .map(|t| t.text.len())
+                .sum::<usize>();
+        self.errors.push(ParseError {
+            offset,
+            message: "a quoted value ends at its closing quote, so this line cannot \
+                      continue it: put the text inside the quotes"
+                .into(),
+        });
+    }
+
+    /// At the Newline before a plain-scalar continuation line: a comment
+    /// ends a plain scalar (YAML 1.2 §6.6), so a line after `one #c` cannot
+    /// continue it. The CST took the line in while the value stopped at the
+    /// comment, so `text: one #c\n  three` read as `one` and dropped `three`
+    /// without a diagnostic (#1249).
+    fn check_comment_before_continuation(&mut self) {
+        if self.pos == 0 || self.tokens[self.pos - 1].kind != SyntaxKind::Comment {
+            return;
+        }
+        self.errors.push(ParseError {
+            offset: self.byte_offset + self.tokens[self.pos].text.len(),
+            message: "a comment ends a plain scalar, so this line cannot continue the value \
+                      above it (YAML 1.2 §6.6): move the comment below the value, or join \
+                      the lines"
+                .into(),
+        });
     }
 
     /// A block scalar (`|` or `>`). Its content indentation is the explicit
@@ -1523,9 +1788,29 @@ impl<'src> Parser<'src> {
             self.current_kind(),
             Some(SyntaxKind::PlainScalar | SyntaxKind::Dash)
         ) {
+            let header = self.tokens[self.pos].text;
+            if !valid_block_header(header) {
+                self.errors.push(ParseError {
+                    offset: self.byte_offset,
+                    message: format!(
+                        "invalid block scalar header `{header}`: it takes at most one \
+                         indentation digit 1-9 and one chomping indicator `+` or `-` \
+                         (YAML 1.2 §8.1.1)"
+                    ),
+                });
+            }
             self.bump_as(SyntaxKind::PlainScalar); // chomp indicator like `|+`, `|-`, `|2`
         }
         if self.at(SyntaxKind::Comment) {
+            // `|#c` is not a comment: one needs white space before it (#1258).
+            if self.tokens[self.pos - 1].kind != SyntaxKind::Whitespace {
+                self.errors.push(ParseError {
+                    offset: self.byte_offset,
+                    message: "a comment after a block scalar header needs a space before it \
+                              (YAML 1.2 §6.6)"
+                        .into(),
+                });
+            }
             self.bump();
         }
 
@@ -1584,7 +1869,7 @@ impl<'src> Parser<'src> {
     /// external parser accepted — a regression in waiting for the read-path
     /// migration. Only previously-erroring input changes: a deeper-indented
     /// bare line after a blank line has no other valid reading.
-    fn is_plain_scalar_continuation(&self, entry_indent: usize) -> bool {
+    fn is_plain_scalar_continuation(&self, entry_indent: Option<usize>) -> bool {
         // self.pos should be at a Newline token
         let mut la = self.pos + 1;
         // Skip blank lines: a Newline, optionally preceded by whitespace.
@@ -1607,8 +1892,10 @@ impl<'src> Parser<'src> {
             la += 1;
         }
 
-        // Must be indented deeper than the mapping entry
-        if line_indent <= entry_indent {
+        // Must be indented deeper than the mapping entry. A root scalar has
+        // no entry (its parent indent is -1), so a line at column 0 continues
+        // it: `plain\nspans` is "plain spans" (#1259).
+        if entry_indent.is_some_and(|e| line_indent <= e) {
             return false;
         }
 
@@ -1624,6 +1911,9 @@ impl<'src> Parser<'src> {
             // one value into two, silently.
             SyntaxKind::Dash => true,
             SyntaxKind::Comment => false, // comment-only line
+            // `...` or `---` at column 0 ends the document, and the root
+            // scalar with it.
+            SyntaxKind::DocumentEnd | SyntaxKind::DirectiveMarker => false,
             SyntaxKind::PlainScalar
             | SyntaxKind::SingleQuotedScalar
             | SyntaxKind::DoubleQuotedScalar => {
@@ -2918,6 +3208,285 @@ artifacts:
             "a: 1\n... # end\n",
         ] {
             assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+    }
+
+    // ── #1249: a comment ends a plain scalar ────────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_line_after_a_comment_cannot_continue_a_plain_scalar() {
+        for src in [
+            "text: one #c\n  three\nnext: ok\n",
+            "k: a\n  b #c\n  d\n",
+            "k:\n  a #c\n  b\n",
+            "a:\n  - x #c\n    y\n",
+        ] {
+            let errs = errors_of(src);
+            assert!(
+                errs.iter()
+                    .any(|m| m.starts_with("a comment ends a plain scalar")),
+                "{src:?}: {errs:?}"
+            );
+            assert!(crate::from_str::<crate::Value>(src).is_err(), "{src:?}");
+        }
+        // the error points at the start of the line that tries to continue
+        let src = "text: one #c\n  three\nnext: ok\n";
+        let err = parse(src)
+            .1
+            .into_iter()
+            .find(|e| e.message.starts_with("a comment ends a plain scalar"))
+            .expect("the comment-continuation error");
+        assert_eq!(err.offset, src.find("  three").unwrap());
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_comment_after_a_whole_plain_scalar_is_fine() {
+        for src in [
+            "k: a #c\nn: 1\n",
+            "k: a\n  b\n  # c\nn: 1\n",
+            "k: a\n  b #c\nn: 1\n",
+            "- x #c\n- y\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+        assert_eq!(value_of("k: a\n  b #c\nn: 1\n")["k"].as_str(), Some("a b"));
+    }
+
+    // ── #1251: double-quoted escapes ────────────────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn an_escape_yaml_does_not_define_is_an_error() {
+        for (src, at) in [
+            ("k: \"\\q\"\n", 4),
+            ("k: \"ok \\x4\"\n", 7),
+            ("k: \"\\u12\"\n", 4),
+            ("k: \"\\U0001F60\"\n", 4),
+            ("k: \"\\.\"\n", 4),
+            ("k: [a, \"\\q\"]\n", 8),
+            ("k: {a: 1, \"\\q\": 2}\n", 11),
+            ("a: 1\n\"\\q\": 2\n", 6),
+            ("- a\n- \"\\q\"\n", 7),
+            ("k: &x \"\\q\"\n", 7),
+            ("k:\n  \"\\q\"\n", 6),
+            ("\"\\q\"\n", 1),
+            ("k:\n  a: 1\n  \"\\q\": 2\n", 13),
+        ] {
+            let errs = parse(src).1;
+            assert!(
+                errs.iter()
+                    .any(|e| e.offset == at && e.message.contains("escape `\\")),
+                "{src:?}: {errs:?}"
+            );
+            assert!(crate::from_str::<crate::Value>(src).is_err(), "{src:?}");
+        }
+        assert_eq!(
+            errors_of("k: \"\\q\"\n"),
+            vec![
+                "unknown escape `\\q` in a double-quoted scalar (YAML 1.2 \u{a7}5.7): \
+                 write `\\\\` for a backslash"
+                    .to_string()
+            ]
+        );
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn every_yaml_escape_and_quote_outside_a_scalar_start_is_accepted() {
+        let all = "k: \"\\0\\a\\b\\t\\\t\\n\\v\\f\\r\\e\\ \\\"\\/\\\\\\N\\_\\L\\P\\x41\\u00e9\\U0001F600\"\n";
+        assert_eq!(errors_of(all), Vec::<String>::new());
+        assert_eq!(
+            value_of(all)["k"].as_str(),
+            Some("\0\u{07}\u{08}\t\t\n\u{0B}\u{0C}\r\u{1B} \"/\\\u{85}\u{A0}\u{2028}\u{2029}Aé😀")
+        );
+        for src in [
+            "k: a, \"\\q\"\n",
+            "k: say \"\\q\" now\n",
+            "k: |\n  \"\\q\"\n",
+            "k: v # \"\\q\"\n",
+            "k: '\\q'\n",
+            "k: \"a\\\n  b\"\n",
+            "k: \"\\\\q\"\n",
+            "- a\n  \"\\q\"\n",
+            "k: a\n  \"\\q\"\n",
+            "a \"\\q\": 1\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+        assert_eq!(
+            value_of("k: a, \"\\q\"\n")["k"].as_str(),
+            Some("a, \"\\q\"")
+        );
+    }
+
+    // ── #1256: a tab before `#` starts a comment ────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_tab_before_a_hash_starts_a_comment() {
+        assert_eq!(value_of("a: v\t# c\n")["a"].as_str(), Some("v"));
+        assert_eq!(value_of("- v\t# c\n")[0].as_str(), Some("v"));
+        assert_eq!(value_of("a: [v\t# c\n  ]\n")["a"][0].as_str(), Some("v"));
+        // no white space before `#`: it is text
+        assert_eq!(value_of("a: v#c\n")["a"].as_str(), Some("v#c"));
+        assert_eq!(value_of("a: |\n  v\t# c\n")["a"].as_str(), Some("v\t# c\n"));
+    }
+
+    // ── #1253: a byte order mark is not content ─────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_leading_byte_order_mark_is_not_content() {
+        let v = value_of("\u{feff}a: 1\n");
+        assert_eq!(v["a"].as_i64(), Some(1));
+        let v = value_of("\u{feff}- a\n- b\n");
+        assert_eq!(v[1].as_str(), Some("b"));
+        let v = value_of("\u{feff}a: |\n  x\nb: 2\n");
+        assert_eq!(v["a"].as_str(), Some("x\n"));
+        assert_eq!(v["b"].as_i64(), Some(2));
+        assert_eq!(value_of("\u{feff}---\na: 1\n")["a"].as_i64(), Some(1));
+        // the tree keeps it, so it stays lossless
+        let src = "\u{feff}a: 1\n";
+        let (green, errors) = parse(src);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(SyntaxNode::new_root(green).text().to_string(), src);
+        // error offsets still point into the original text
+        let src = "\u{feff}a: 1\n b: 2\n";
+        let err = &parse(src).1[0];
+        assert_eq!(err.offset, src.find(" b").unwrap() + 1, "{err:?}");
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_json_like_key_takes_an_adjacent_colon_in_flow_only() {
+        use crate::Value;
+        let m = value_of("{\"a\":1,\"b\":[1,2]}\n");
+        assert_eq!(m["a"], Value::from(1u64));
+        assert_eq!(m["b"][1], Value::from(2u64));
+        assert_eq!(value_of("{'a':1}\n")["a"], Value::from(1u64));
+        assert_eq!(value_of("{\"a\" :1}\n")["a"], Value::from(1u64));
+        // `["a":1]` read as ["a", ":1"]; it must not be two strings now.
+        assert!(crate::from_str::<Value>("[\"a\":1]\n").map_or(true, |v| v[1] != ":1"));
+        // Outside a flow collection the rule does not apply: a `}` or a quote
+        // inside plain text is not a JSON-like node.
+        assert_eq!(
+            value_of("name: on {{ a }}:{{ b }}\n")["name"],
+            Value::from("on {{ a }}:{{ b }}")
+        );
+        assert_eq!(
+            value_of("name: say \"hi\":x\n")["name"],
+            Value::from("say \"hi\":x")
+        );
+        assert!(crate::from_str::<Value>("\"a\":1\n").is_err());
+        // Elsewhere `:` must be followed by white space, a break or the end to
+        // be the indicator; otherwise it is text.
+        assert_eq!(value_of("k:"), value_of("k:\n"));
+        assert!(crate::from_str::<Value>("k: a:").is_err());
+        assert_eq!(
+            value_of("k: http://h:80/p\n")["k"],
+            Value::from("http://h:80/p")
+        );
+        for src in ["\"a\": 1\n", "\"a\":\n  b: 1\n", "\"a\":", "'a' : 1\n"] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_root_block_scalar_is_read() {
+        use crate::Value;
+        assert_eq!(value_of("--- |\n  top\n"), Value::from("top\n"));
+        assert_eq!(value_of("|\n  top\n"), Value::from("top\n"));
+        assert_eq!(value_of("--- >\n  a\n  b\n"), Value::from("a b\n"));
+        assert_eq!(value_of("--- |-\n  x\n  y\n...\n"), Value::from("x\ny"));
+        assert_eq!(value_of("--- |2\n   x\n"), Value::from(" x\n"));
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_root_plain_scalar_continues_at_column_zero() {
+        use crate::Value;
+        assert_eq!(value_of("plain\nspans\n"), Value::from("plain spans"));
+        assert_eq!(
+            value_of("plain\nspans\n\nlines\n"),
+            Value::from("plain spans\nlines")
+        );
+        assert_eq!(value_of("--- a\nb\n"), Value::from("a b"));
+        assert_eq!(value_of("plain\n...\n"), Value::from("plain"));
+        assert_eq!(errors_of("plain\n...\n"), Vec::<String>::new());
+        assert!(!errors_of("plain\nkey: v\n").is_empty());
+        assert!(
+            errors_of("plain\n---\nx\n")
+                .iter()
+                .any(|m| m.contains("more than one document"))
+        );
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_line_cannot_continue_a_quoted_value() {
+        for src in [
+            "k: \"q\"\n  more\n",
+            "k: 'q'\n  more\n",
+            "- \"q\"\n\n  more\n",
+            "\"q\"\nmore\n",
+        ] {
+            let err = parse(src)
+                .1
+                .into_iter()
+                .find(|e| {
+                    e.message
+                        .starts_with("a quoted value ends at its closing quote")
+                })
+                .unwrap_or_else(|| panic!("{src:?}"));
+            assert_eq!(err.offset, src.find("more").unwrap(), "{src:?}");
+            assert!(crate::from_str::<crate::Value>(src).is_err(), "{src:?}");
+        }
+        for src in [
+            "k: \"q\"\nj: 1\n",
+            "- \"q\"\n- r\n",
+            "k: \"q\"  # c\n  # d\nj: 1\n",
+            "k: \"a\n  b\"\n",
+            "\"q\"\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_block_scalar_header_is_checked() {
+        for header in ["0", "10", "12", "++", "+-", "x", "1x"] {
+            let src = format!("k: |{header}\n  x\n");
+            let errs = errors_of(&src);
+            assert_eq!(
+                errs,
+                vec![format!(
+                    "invalid block scalar header `{header}`: it takes at most one \
+                     indentation digit 1-9 and one chomping indicator `+` or `-` \
+                     (YAML 1.2 §8.1.1)"
+                )],
+                "{src:?}"
+            );
+            assert_eq!(parse(&src).1[0].offset, 4, "{src:?}");
+        }
+        for src in ["k: |#c\n  x\n", "k: >#c\n  x\n"] {
+            let errs = parse(src).1;
+            assert_eq!(errs.len(), 1, "{src:?}: {errs:?}");
+            assert_eq!(
+                errs[0].message,
+                "a comment after a block scalar header needs a space before it (YAML 1.2 §6.6)"
+            );
+            assert_eq!(errs[0].offset, src.find('#').unwrap(), "{src:?}");
+        }
+        for src in ["k: | #c\n  x\n", "k: |- #c\n  x\n"] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+        for header in ["", "1", "9", "+", "-", "1-", "-1", "+9"] {
+            let src = format!("k: |{header}\n          x\n");
+            assert_eq!(errors_of(&src), Vec::<String>::new(), "{src:?}");
         }
     }
 }

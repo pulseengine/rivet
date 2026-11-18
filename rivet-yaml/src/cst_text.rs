@@ -91,6 +91,19 @@ pub fn scalar_text(node: &SyntaxNode) -> Option<String> {
                                             }
                                             rowan::NodeOrToken::Token(lt)
                                                 if lt.kind() == SyntaxKind::Whitespace => {}
+                                            // A document marker on the next line
+                                            // ends the document, so it ends the
+                                            // scalar too: a root `finale` before
+                                            // `...` read as `finale ...` (#1255).
+                                            rowan::NodeOrToken::Token(lt)
+                                                if matches!(
+                                                    lt.kind(),
+                                                    SyntaxKind::DocumentEnd
+                                                        | SyntaxKind::DirectiveMarker
+                                                ) =>
+                                            {
+                                                break;
+                                            }
                                             // Resume at the next token. A comment
                                             // needs no guard here: resuming at one
                                             // reaches the `Comment => break` arm
@@ -218,7 +231,8 @@ pub fn unquote_single_quoted(inner: &str) -> String {
 
 /// Process YAML double-quoted escape sequences, folding line breaks (REQ-364).
 ///
-/// Handles: `\\`, `\"`, `\n`, `\t`, `\r`, `\/`, `\0`, and `\uXXXX`.
+/// Decodes every YAML 1.2 escape (§5.7). The parser reports an escape that
+/// is not one of them (`check_double_quoted_escapes`); this keeps it literally.
 pub fn unescape_double_quoted(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars().peekable();
@@ -252,6 +266,7 @@ pub fn unescape_double_quoted(s: &str) -> String {
                 // `\` followed by a literal tab is a tab (YAML 1.2 `ns-esc-tab`).
                 Some('\t') => result.push('\t'),
                 Some('r') => result.push('\r'),
+                Some('f') => result.push('\u{0C}'), // form feed (#1251)
                 Some('/') => result.push('/'),
                 Some('0') => result.push('\0'),
                 Some('a') => result.push('\u{07}'), // bell
@@ -384,6 +399,20 @@ pub fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         });
 
     let body_lines: Vec<&str> = iter.collect();
+    // Whether the last line ends in a line break. At the end of input a
+    // content line may not, and then clip and keep have no final break to
+    // keep: `a: |\n  x` is "x", not "x\n" (YAML 1.2 §8.1.1.2, b-chomped-last
+    // accepts end of input; #1250). The break may be in the node text or the
+    // token after it. An unterminated last line of only spaces still counts
+    // as a line with its break, as yaml-test-suite L24T/01 and JEF9/02 expect.
+    let final_break = raw.ends_with('\n')
+        || block
+            .last_token()
+            .and_then(|t| t.next_token())
+            .is_some_and(|t| t.text().starts_with(['\n', '\r']))
+        || body_lines
+            .last()
+            .is_some_and(|l| l.trim_start_matches(' ').trim_end_matches('\r').is_empty());
     if body_lines.is_empty() {
         return Some(String::new());
     }
@@ -414,7 +443,7 @@ pub fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         })
         .collect();
 
-    Some(fold_and_chomp(&dedented, folded, chomp))
+    Some(fold_and_chomp(&dedented, folded, chomp, final_break))
 }
 
 /// The column of the collection a block scalar belongs to: the mapping
@@ -439,7 +468,8 @@ fn enclosing_column(block: &SyntaxNode) -> usize {
             column = column.saturating_add(t.text().len().saturating_sub(i + 1));
             break;
         }
-        column = column.saturating_add(t.text().len());
+        // a byte order mark before the first line is not a column (#1253)
+        column = column.saturating_add(t.text().trim_start_matches('\u{feff}').len());
         token = t.prev_token();
     }
     column
@@ -466,7 +496,10 @@ enum Chomp {
 /// * nothing — in that same folding case when blank lines DO separate them,
 ///   because each blank line contributes its own `\n` instead;
 /// * `\n` — in every other case, including all of `|`.
-fn fold_and_chomp(lines: &[&str], folded: bool, chomp: Chomp) -> String {
+///
+/// `final_break` is false when the last line ends at the end of input with no
+/// line break; clip and keep then have no final break to keep.
+fn fold_and_chomp(lines: &[&str], folded: bool, chomp: Chomp, final_break: bool) -> String {
     let more_indented = |l: &str| l.starts_with([' ', '\t']);
 
     let mut out = String::new();
@@ -511,6 +544,7 @@ fn fold_and_chomp(lines: &[&str], folded: bool, chomp: Chomp) -> String {
     }
     match chomp {
         Chomp::Strip => {}
+        Chomp::Clip | Chomp::Keep if !final_break => {}
         Chomp::Clip => out.push('\n'),
         Chomp::Keep => {
             out.push('\n');
@@ -572,5 +606,35 @@ mod tests {
         assert_eq!(block("k: |\n  x\n   \n"), "x\n \n");
         // A less-indented comment line ends the scalar.
         assert_eq!(block("a: |-\n  # text\n # Clip\nb: 1\n"), "# text");
+    }
+
+    // rivet: verifies REQ-346
+    /// At the end of input without a line break, clip and keep have no final
+    /// break to keep (YAML 1.2 §8.1.1.2, #1250).
+    #[test]
+    fn block_scalar_at_end_of_input_gains_no_line_break() {
+        assert_eq!(block("a: |\n  x"), "x");
+        assert_eq!(block("a: >\n  x"), "x");
+        assert_eq!(block("a: |+\n  x"), "x");
+        assert_eq!(block("a: |-\n  x"), "x");
+        assert_eq!(block("- |\n  x\n  y"), "x\ny");
+        // With the break, nothing changes.
+        assert_eq!(block("a: |\n  x\n"), "x\n");
+        assert_eq!(block("a: |+\n  x\n\n"), "x\n\n");
+        assert_eq!(block("a: |\n  x\nb: 1\n"), "x\n");
+        // An unterminated last line of spaces is still an empty line
+        // (yaml-test-suite L24T/01, JEF9/02).
+        assert_eq!(block("a: |\n  x\n  "), "x\n");
+        assert_eq!(block("a: |+\n  x\n  "), "x\n\n");
+        assert_eq!(block("foo: |\n  x\n   "), "x\n \n");
+    }
+
+    // rivet: verifies REQ-346
+    /// An explicit indentation indicator counts from the enclosing entry's
+    /// column, which a leading byte order mark does not shift (#1253).
+    #[test]
+    fn indentation_indicator_counts_from_the_enclosing_column() {
+        assert_eq!(block("a:\n  b: |1\n    x\n"), " x\n");
+        assert_eq!(block("\u{feff}a: |1\n   x\n"), "  x\n");
     }
 }

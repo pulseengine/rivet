@@ -1132,4 +1132,19 @@ mod tests {
             Value::from(1u64)
         );
     }
+
+    /// A document marker ends a root scalar, and an empty explicit document is
+    /// null (#1255). The scalar used to take `...` in as text, and `---` then
+    /// `...` read as an empty mapping.
+    #[test]
+    fn a_document_marker_ends_the_root_value() {
+        let v = |src: &str| from_str::<Value>(src).unwrap();
+        assert_eq!(v("--- finale\n...\n"), Value::from("finale"));
+        assert_eq!(v("finale\n...\n"), Value::from("finale"));
+        assert_eq!(v("one\n  two\n...\n"), Value::from("one two"));
+        assert_eq!(v("--- ~\n...\n"), Value::Null);
+        assert_eq!(v("---\n...\n"), Value::Null);
+        assert_eq!(v("...\n"), Value::Null);
+        assert_eq!(v("a: 1\n...\n")["a"], Value::from(1u64));
+    }
 }
