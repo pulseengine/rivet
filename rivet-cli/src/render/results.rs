@@ -180,8 +180,8 @@ pub(crate) fn render_verification_view(ctx: &RenderContext) -> String {
 
                     let latest_result = ctx
                         .result_store
-                        .latest_for(&bl.source)
-                        .map(|(_run, r)| (r.status.to_string(), r.status.clone()));
+                        .status_across_environments(&bl.source)
+                        .map(|status| (status.to_string(), status));
 
                     verifiers.push(VerifierInfo {
                         id: ver_artifact.id.clone(),

@@ -85,9 +85,7 @@ pub fn trace_test_results(
             if !seen.insert(bl.source.clone()) {
                 continue;
             }
-            let status = results
-                .latest_for(&bl.source)
-                .map(|(_, r)| r.status.clone());
+            let status = results.status_across_environments(&bl.source);
             out.push(ResultTraceNode {
                 artifact_id: bl.source.clone(),
                 via_target: current.clone(),
@@ -337,15 +335,20 @@ pub fn evidence_for(
             .into_iter()
             .map(|n| n.artifact_id),
     );
+    // One hit per (artifact, environment): a newer pass on one target must
+    // not replace a failure on another (#1241).
     let hits: Vec<EvidenceHit> = ids
         .iter()
-        .filter_map(|id| {
-            results.latest_for(id).map(|(meta, r)| EvidenceHit {
-                artifact_id: id.clone(),
-                run_id: meta.id.clone(),
-                environment: meta.environment.clone(),
-                status: r.status.clone(),
-            })
+        .flat_map(|id| {
+            results
+                .latest_per_environment(id)
+                .into_iter()
+                .map(|(meta, r)| EvidenceHit {
+                    artifact_id: id.clone(),
+                    run_id: meta.id.clone(),
+                    environment: meta.environment.clone(),
+                    status: r.status.clone(),
+                })
         })
         .collect();
     let state = if hits.iter().any(|h| h.status.is_fail()) {
@@ -740,5 +743,45 @@ mod tests {
             ev.passing().map(|h| h.run_id.as_str()).collect::<Vec<_>>(),
             ["new"]
         );
+    }
+
+    // rivet: verifies REQ-417
+    #[test]
+    fn a_newer_pass_on_one_environment_does_not_hide_a_failure_on_another() {
+        let mut rs = ResultStore::new();
+        rs.insert(run_at(
+            "ci-rpi5",
+            "2026-11-13T10:00:00Z",
+            Some("rpi5"),
+            &[("TEST-1", TestStatus::Fail)],
+        ));
+        rs.insert(run_at(
+            "ci-macos",
+            "2026-11-13T11:00:00Z",
+            Some("macos-arm64"),
+            &[("TEST-1", TestStatus::Pass)],
+        ));
+        let ev = evidence_for("REQ-1", &two_verifiers(), &rs, EVIDENCE_DEPTH);
+        assert_eq!(ev.state, EvidenceState::Failing, "hits: {:?}", ev.hits);
+        let mut runs: Vec<&str> = ev.hits.iter().map(|h| h.run_id.as_str()).collect();
+        runs.sort_unstable();
+        assert_eq!(runs, vec!["ci-macos", "ci-rpi5"]);
+
+        // The trace shows the failure too, so its verdict agrees.
+        let trace = trace_test_results("REQ-1", &two_verifiers(), &rs, EVIDENCE_DEPTH);
+        let t1 = trace.iter().find(|n| n.artifact_id == "TEST-1").unwrap();
+        assert_eq!(t1.status, Some(TestStatus::Fail));
+        assert_eq!(verdict(&trace), TraceVerdict::Failing);
+
+        // A newer pass on the failing environment itself clears it.
+        rs.insert(run_at(
+            "ci-rpi5-2",
+            "2026-11-13T12:00:00Z",
+            Some("rpi5"),
+            &[("TEST-1", TestStatus::Pass)],
+        ));
+        let ev = evidence_for("REQ-1", &two_verifiers(), &rs, EVIDENCE_DEPTH);
+        assert_eq!(ev.state, EvidenceState::Passing, "hits: {:?}", ev.hits);
+        assert_eq!(ev.hits.len(), 2, "hits: {:?}", ev.hits);
     }
 }

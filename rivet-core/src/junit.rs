@@ -559,6 +559,27 @@ fn suite_to_run_with_markers(
     }
 }
 
+/// Record where `runs` ran. The environment also goes into each run id, so
+/// importing the same JUnit file for two environments writes two results
+/// files instead of the second overwriting the first: the id is otherwise
+/// derived from the suite name and its outcomes alone (#1241).
+pub fn set_environment(runs: &mut [TestRun], environment: &str) {
+    let safe: String = environment
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    for run in runs {
+        run.run.environment = Some(environment.to_string());
+        run.run.id = format!("{}-{safe}", run.run.id);
+    }
+}
+
 fn case_to_result_with_markers(
     c: ParsedCase,
     markers: &[crate::test_scanner::TestMarker],
@@ -1006,5 +1027,20 @@ mod tests {
             runs[0].results[0].artifact,
             "mod::foo::tests.tests::my_test"
         );
+    }
+
+    // rivet: verifies REQ-417
+    #[test]
+    fn set_environment_records_it_and_keeps_run_ids_apart() {
+        let xml = r#"<testsuite name="suite" timestamp="2026-01-01T00:00:00Z"><testcase classname="c" name="t"/></testsuite>"#;
+        let mut a = parse_junit_xml_with_markers(xml, &[]).unwrap();
+        let mut b = a.clone();
+        let base = a[0].run.id.clone();
+        set_environment(&mut a, "rpi5");
+        set_environment(&mut b, "macos_arm64 x/y");
+        assert_eq!(a[0].run.environment.as_deref(), Some("rpi5"));
+        assert_eq!(a[0].run.id, format!("{base}-rpi5"));
+        assert_eq!(b[0].run.environment.as_deref(), Some("macos_arm64 x/y"));
+        assert_eq!(b[0].run.id, format!("{base}-macos_arm64-x-y"));
     }
 }

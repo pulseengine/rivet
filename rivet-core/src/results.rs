@@ -204,6 +204,39 @@ impl ResultStore {
         None
     }
 
+    /// The latest result for an artifact in each environment it ran in,
+    /// newest first. A run with no `environment` counts as one more
+    /// environment, so results files that never name one read as before.
+    ///
+    /// [`latest_for`](Self::latest_for) keeps one result across every run, so
+    /// a pass on `macos-arm64` at 11:00 replaced a failure on `rpi5` at 10:00
+    /// and the failure vanished from the evidence (#1241).
+    pub fn latest_per_environment(&self, artifact_id: &str) -> Vec<(&RunMetadata, &TestResult)> {
+        let mut seen: Vec<Option<&str>> = Vec::new();
+        let mut out = Vec::new();
+        for (meta, result) in self.history_for(artifact_id) {
+            let env = meta.environment.as_deref();
+            if !seen.contains(&env) {
+                seen.push(env);
+                out.push((meta, result));
+            }
+        }
+        out
+    }
+
+    /// One status for an artifact across environments: the newest failing
+    /// latest-per-environment result if there is one, else the newest result.
+    /// A view that shows a single status per artifact must not show a pass
+    /// that only one environment earned (#1241).
+    pub fn status_across_environments(&self, artifact_id: &str) -> Option<TestStatus> {
+        let latest = self.latest_per_environment(artifact_id);
+        latest
+            .iter()
+            .find(|(_, r)| r.status.is_fail())
+            .or_else(|| latest.first())
+            .map(|(_, r)| r.status.clone())
+    }
+
     /// All results for a specific artifact across all runs (newest first).
     pub fn history_for(&self, artifact_id: &str) -> Vec<(&RunMetadata, &TestResult)> {
         self.runs
@@ -391,6 +424,97 @@ mod tests {
     }
 
     // rivet: verifies REQ-009
+    fn env_run(id: &str, ts: &str, env: Option<&str>, status: TestStatus) -> TestRun {
+        TestRun {
+            run: RunMetadata {
+                id: id.into(),
+                timestamp: ts.into(),
+                source: None,
+                environment: env.map(String::from),
+                commit: None,
+            },
+            results: vec![TestResult {
+                artifact: "A-1".into(),
+                status,
+                duration: None,
+                message: None,
+                links: Vec::new(),
+            }],
+            source_file: None,
+        }
+    }
+
+    // rivet: verifies REQ-417
+    #[test]
+    fn latest_results_are_kept_per_environment() {
+        let mut store = ResultStore::new();
+        store.insert(env_run(
+            "r1",
+            "2026-01-01T00:00:00Z",
+            Some("rpi5"),
+            TestStatus::Fail,
+        ));
+        store.insert(env_run(
+            "r2",
+            "2026-01-02T00:00:00Z",
+            None,
+            TestStatus::Skip,
+        ));
+        store.insert(env_run(
+            "r3",
+            "2026-01-03T00:00:00Z",
+            Some("mac"),
+            TestStatus::Pass,
+        ));
+        store.insert(env_run(
+            "r4",
+            "2026-01-04T00:00:00Z",
+            Some("mac"),
+            TestStatus::Pass,
+        ));
+        let ids: Vec<&str> = store
+            .latest_per_environment("A-1")
+            .iter()
+            .map(|(m, _)| m.id.as_str())
+            .collect();
+        // newest first; one per environment; no environment is one more
+        assert_eq!(ids, vec!["r4", "r2", "r1"]);
+        assert!(store.latest_per_environment("B-1").is_empty());
+
+        // A failing environment wins over a newer pass elsewhere.
+        assert_eq!(
+            store.status_across_environments("A-1"),
+            Some(TestStatus::Fail)
+        );
+        // Without a failure, the newest result is the status.
+        let mut ok = ResultStore::new();
+        ok.insert(env_run(
+            "p1",
+            "2026-01-01T00:00:00Z",
+            Some("rpi5"),
+            TestStatus::Skip,
+        ));
+        ok.insert(env_run(
+            "p2",
+            "2026-01-02T00:00:00Z",
+            Some("mac"),
+            TestStatus::Pass,
+        ));
+        assert_eq!(ok.status_across_environments("A-1"), Some(TestStatus::Pass));
+        assert_eq!(ok.status_across_environments("B-1"), None);
+        // An error counts as a failure.
+        ok.insert(env_run(
+            "p0",
+            "2025-12-31T00:00:00Z",
+            Some("hw"),
+            TestStatus::Error,
+        ));
+        assert_eq!(
+            ok.status_across_environments("A-1"),
+            Some(TestStatus::Error)
+        );
+    }
+
     #[test]
     fn test_latest_for() {
         let mut store = ResultStore::new();

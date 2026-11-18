@@ -1190,6 +1190,13 @@ enum Command {
         /// Output directory for YAML files (default: results/)
         #[arg(long, default_value = "results")]
         output: PathBuf,
+
+        /// Where the tests ran (e.g. `rpi5`, `macos-arm64`), recorded as
+        /// `run.environment`. Readiness keeps the latest result per
+        /// environment, so a pass on one target does not hide a failure on
+        /// another. JUnit only.
+        #[arg(long)]
+        environment: Option<String>,
     },
 
     /// Print the next available ID for a given artifact type or prefix
@@ -3273,7 +3280,8 @@ fn run(cli: Cli) -> Result<bool> {
             format,
             file,
             output,
-        } => cmd_import_results(&cli, format, file, output),
+            environment,
+        } => cmd_import_results(&cli, format, file, output, environment.as_deref()),
         Command::NextId {
             target,
             r#type,
@@ -12233,9 +12241,13 @@ fn cmd_import_results(
     format: &str,
     file: &std::path::Path,
     output: &std::path::Path,
+    environment: Option<&str>,
 ) -> Result<bool> {
+    if environment.is_some() && format != "junit" {
+        anyhow::bail!("--environment applies to test results, which only the junit format imports");
+    }
     match format {
-        "junit" => cmd_import_results_junit(cli, file, output),
+        "junit" => cmd_import_results_junit(cli, file, output, environment),
         "needs-json" => cmd_import_results_needs_json(file, output),
         "reqif" => cmd_import_results_reqif(file, output),
         other => {
@@ -12299,6 +12311,7 @@ fn cmd_import_results_junit(
     cli: &Cli,
     file: &std::path::Path,
     output: &std::path::Path,
+    environment: Option<&str>,
 ) -> Result<bool> {
     use rivet_core::junit::{ImportSummary, parse_junit_xml_with_markers};
     use rivet_core::results::TestRunFile;
@@ -12327,8 +12340,11 @@ fn cmd_import_results_junit(
     let patterns = test_scanner::default_patterns();
     let markers = test_scanner::scan_source_files_in_project(&cli.project, &scan_paths, &patterns);
 
-    let runs = parse_junit_xml_with_markers(&xml, &markers)
+    let mut runs = parse_junit_xml_with_markers(&xml, &markers)
         .with_context(|| format!("failed to parse JUnit XML from {}", file.display()))?;
+    if let Some(env) = environment {
+        rivet_core::junit::set_environment(&mut runs, env);
+    }
 
     if runs.is_empty() {
         println!("No test suites found in {}", file.display());
