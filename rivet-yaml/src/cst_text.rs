@@ -384,6 +384,20 @@ pub fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         });
 
     let body_lines: Vec<&str> = iter.collect();
+    // Whether the last line ends in a line break. At the end of input a
+    // content line may not, and then clip and keep have no final break to
+    // keep: `a: |\n  x` is "x", not "x\n" (YAML 1.2 §8.1.1.2, b-chomped-last
+    // accepts end of input; #1250). The break may be in the node text or the
+    // token after it. An unterminated last line of only spaces still counts
+    // as a line with its break, as yaml-test-suite L24T/01 and JEF9/02 expect.
+    let final_break = raw.ends_with('\n')
+        || block
+            .last_token()
+            .and_then(|t| t.next_token())
+            .is_some_and(|t| t.text().starts_with(['\n', '\r']))
+        || body_lines
+            .last()
+            .is_some_and(|l| l.trim_start_matches(' ').trim_end_matches('\r').is_empty());
     if body_lines.is_empty() {
         return Some(String::new());
     }
@@ -414,7 +428,7 @@ pub fn block_scalar_text(value_node: &SyntaxNode) -> Option<String> {
         })
         .collect();
 
-    Some(fold_and_chomp(&dedented, folded, chomp))
+    Some(fold_and_chomp(&dedented, folded, chomp, final_break))
 }
 
 /// The column of the collection a block scalar belongs to: the mapping
@@ -466,7 +480,10 @@ enum Chomp {
 /// * nothing — in that same folding case when blank lines DO separate them,
 ///   because each blank line contributes its own `\n` instead;
 /// * `\n` — in every other case, including all of `|`.
-fn fold_and_chomp(lines: &[&str], folded: bool, chomp: Chomp) -> String {
+///
+/// `final_break` is false when the last line ends at the end of input with no
+/// line break; clip and keep then have no final break to keep.
+fn fold_and_chomp(lines: &[&str], folded: bool, chomp: Chomp, final_break: bool) -> String {
     let more_indented = |l: &str| l.starts_with([' ', '\t']);
 
     let mut out = String::new();
@@ -511,6 +528,7 @@ fn fold_and_chomp(lines: &[&str], folded: bool, chomp: Chomp) -> String {
     }
     match chomp {
         Chomp::Strip => {}
+        Chomp::Clip | Chomp::Keep if !final_break => {}
         Chomp::Clip => out.push('\n'),
         Chomp::Keep => {
             out.push('\n');
@@ -572,5 +590,26 @@ mod tests {
         assert_eq!(block("k: |\n  x\n   \n"), "x\n \n");
         // A less-indented comment line ends the scalar.
         assert_eq!(block("a: |-\n  # text\n # Clip\nb: 1\n"), "# text");
+    }
+
+    // rivet: verifies REQ-346
+    /// At the end of input without a line break, clip and keep have no final
+    /// break to keep (YAML 1.2 §8.1.1.2, #1250).
+    #[test]
+    fn block_scalar_at_end_of_input_gains_no_line_break() {
+        assert_eq!(block("a: |\n  x"), "x");
+        assert_eq!(block("a: >\n  x"), "x");
+        assert_eq!(block("a: |+\n  x"), "x");
+        assert_eq!(block("a: |-\n  x"), "x");
+        assert_eq!(block("- |\n  x\n  y"), "x\ny");
+        // With the break, nothing changes.
+        assert_eq!(block("a: |\n  x\n"), "x\n");
+        assert_eq!(block("a: |+\n  x\n\n"), "x\n\n");
+        assert_eq!(block("a: |\n  x\nb: 1\n"), "x\n");
+        // An unterminated last line of spaces is still an empty line
+        // (yaml-test-suite L24T/01, JEF9/02).
+        assert_eq!(block("a: |\n  x\n  "), "x\n");
+        assert_eq!(block("a: |+\n  x\n  "), "x\n\n");
+        assert_eq!(block("foo: |\n  x\n   "), "x\n \n");
     }
 }
