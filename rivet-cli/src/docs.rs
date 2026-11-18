@@ -2771,6 +2771,21 @@ fields:
     type: string
     allowed-values: [must, should, could, wont, urgent]
 ```
+
+## Severity and lists
+
+The diagnostic is a warning unless the field sets `allowed-values-severity:
+error`, which makes a value outside the set fail `rivet validate`. A field
+that holds a list is checked item by item, and each item outside the set is
+reported on its own:
+
+```yaml
+fields:
+  - name: serves
+    type: string
+    allowed-values: [O1, O2, O3, O4]
+    allowed-values-severity: error
+```
 "#;
 
 const DIAG_CARDINALITY_DOC: &str = r#"# Diagnostic: cardinality

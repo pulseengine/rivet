@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+### Added
+- **A schema field can make an unknown value fail validation, and list values are checked** (REQ-418). `allowed-values-severity: error` on a field turns a value outside `allowed-values` from a warning into an error. A field holding a list, such as `serves: [O1, O9]`, is now checked item by item; before, a list was never compared with the allowed set. This carries pulseengine.eu's North Star `serves:` link: a project schema adds `serves` to `feature` with the objective ids it accepts (see docs/schemas.md).
+
+### Changed
+- **`rivet_core::schema::FieldDef` is `#[non_exhaustive]`** (REQ-418). Adding `allowed-values-severity` broke struct literals outside rivet-core, so the workspace moves to 0.43.0, and future field keys will not break the API again. Build one with `FieldDef::default()` and set the fields you need.
+
 ### Fixed
 - **YAML: text after a closing quote is an error, not dropped** (#1246). `k: 'abc' def` read as `abc`, and `k: 'it's'` as `it`, with no diagnostic. A quoted value must now end its line, apart from spaces and a comment.
 - **YAML: a key at a column no mapping uses is an error, not moved** (#1247). A line dedented between two levels (`a:` / `  b: 1` / ` c: 2`) joined the outer mapping, and one indented past its siblings joined theirs, so a field moved to another parent with no diagnostic. The error is reported once per misplaced block. This also catches a more-indented `key: value` after a scalar line (#1249, first case). In every local pulseengine checkout the set of files that fail to load is unchanged; synth's already-broken files report fewer errors.

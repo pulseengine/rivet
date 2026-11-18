@@ -91,6 +91,8 @@ artifacts:
     links:
       - type: satisfies
         target: REQ-004
+      - type: satisfies
+        target: REQ-418
     fields:
       phase: phase-1
       baseline: v0.1.0

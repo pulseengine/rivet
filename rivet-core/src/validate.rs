@@ -831,93 +831,53 @@ pub fn validate_structural_with_externals_and_variant(
                 }
             }
 
-            // 3. Check allowed values
+            // 3. Check allowed values. A sequence is checked item by item
+            // (REQ-418): before, `serves: [O1, O9]` was never compared at all.
+            // The schema may raise a disallowed value to an error with
+            // `allowed-values-severity`.
             if let Some(allowed) = &field.allowed_values {
                 if let Some(value) = effective_fields.get(&field.name) {
-                    if let Some(s) = value.as_str() {
-                        // Value is already a YAML string — straightforward check
-                        if !allowed.iter().any(|a| a == s) {
-                            diagnostics.push(Diagnostic {
-                                source_file: None,
-                                line: None,
-                                column: None,
-                                severity: Severity::Warning,
-                                artifact_id: Some(artifact.id.clone()),
-                                rule: "allowed-values".to_string(),
-                                message: format!(
-                                    "field '{}' has value '{}', allowed: {:?}",
-                                    field.name, s, allowed
-                                ),
-                            });
-                        }
-                    } else if let Some(b) = value.as_bool() {
-                        // YAML 1.1 coerces yes/no/on/off/true/false to booleans.
-                        // Check canonical and common aliases against allowed values.
-                        let candidates: &[&str] = if b {
-                            &["true", "yes"]
-                        } else {
-                            &["false", "no"]
+                    let severity = field.allowed_values_severity.unwrap_or(Severity::Warning);
+                    let (items, in_sequence): (Vec<&rivet_yaml::Value>, bool) =
+                        match value.as_sequence() {
+                            Some(seq) => (seq.iter().collect(), true),
+                            None => (vec![value], false),
+                        };
+                    for item in items {
+                        let Some((shown, kind, candidates)) = allowed_value_candidates(item) else {
+                            continue;
                         };
                         if !candidates.iter().any(|c| allowed.iter().any(|a| a == c)) {
+                            let kind_note = if kind.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" ({kind})")
+                            };
+                            diagnostics.push(Diagnostic {
+                                source_file: None,
+                                line: None,
+                                column: None,
+                                severity,
+                                artifact_id: Some(artifact.id.clone()),
+                                rule: "allowed-values".to_string(),
+                                message: format!(
+                                    "field '{}' has value '{}'{}, allowed: {:?}",
+                                    field.name, shown, kind_note, allowed
+                                ),
+                            });
+                        }
+                        // Warn when field is declared as string but YAML coerced the value
+                        if !in_sequence && !kind.is_empty() && field.field_type == "string" {
                             diagnostics.push(Diagnostic {
                                 source_file: None,
                                 line: None,
                                 column: None,
                                 severity: Severity::Warning,
                                 artifact_id: Some(artifact.id.clone()),
-                                rule: "allowed-values".to_string(),
-                                message: format!(
-                                    "field '{}' has value '{}' (boolean), allowed: {:?}",
-                                    field.name, b, allowed
-                                ),
-                            });
-                        }
-                        // Warn when field is declared as string but YAML coerced the value
-                        if field.field_type == "string" {
-                            diagnostics.push(Diagnostic { source_file: None, line: None, column: None,
-                                severity: Severity::Warning,
-                                artifact_id: Some(artifact.id.clone()),
                                 rule: "yaml-type-coercion".to_string(),
                                 message: format!(
-                                    "field '{}' is declared as string but YAML parsed the value as boolean ({}); consider quoting it",
-                                    field.name, b
-                                ),
-                            });
-                        }
-                    } else if value.is_number() {
-                        // YAML coerces unquoted numbers (1.0, 42, etc.)
-                        let num_str = if let Some(u) = value.as_u64() {
-                            u.to_string()
-                        } else if let Some(i) = value.as_i64() {
-                            i.to_string()
-                        } else if let Some(f) = value.as_f64() {
-                            f.to_string()
-                        } else {
-                            format!("{:?}", value)
-                        };
-                        if !allowed.iter().any(|a| a == &num_str) {
-                            diagnostics.push(Diagnostic {
-                                source_file: None,
-                                line: None,
-                                column: None,
-                                severity: Severity::Warning,
-                                artifact_id: Some(artifact.id.clone()),
-                                rule: "allowed-values".to_string(),
-                                message: format!(
-                                    "field '{}' has value '{}' (number), allowed: {:?}",
-                                    field.name, num_str, allowed
-                                ),
-                            });
-                        }
-                        // Warn when field is declared as string but YAML coerced the value
-                        if field.field_type == "string" {
-                            diagnostics.push(Diagnostic { source_file: None, line: None, column: None,
-                                severity: Severity::Warning,
-                                artifact_id: Some(artifact.id.clone()),
-                                rule: "yaml-type-coercion".to_string(),
-                                message: format!(
-                                    "field '{}' is declared as string but YAML parsed the value as number ({}); consider quoting it",
-                                    field.name, num_str
+                                    "field '{}' is declared as string but YAML parsed the value as {} ({}); consider quoting it",
+                                    field.name, kind, shown
                                 ),
                             });
                         }
@@ -1566,65 +1526,35 @@ fn check_fields_against_type(
 
         // 2. allowed values (string, bool, and number forms — same shape
         // as validate_structural_with_externals; YAML may coerce values
-        // so we check against the canonical aliases).
+        // so we check against the canonical aliases). A sequence is
+        // checked item by item (REQ-418).
         if let Some(allowed) = &field.allowed_values {
             if let Some(value) = fields.get(&field.name) {
-                if let Some(s) = value.as_str() {
-                    if !allowed.iter().any(|a| a == s) {
-                        out.push(Diagnostic {
-                            source_file: None,
-                            line: None,
-                            column: None,
-                            severity: Severity::Warning,
-                            artifact_id: Some(artifact_id.to_string()),
-                            rule: format!("allowed-values{rule_suffix}"),
-                            message: format!(
-                                "field '{}' has value '{}'{msg_suffix}, allowed: {:?}",
-                                field.name, s, allowed
-                            ),
-                        });
-                    }
-                } else if let Some(b) = value.as_bool() {
-                    let candidates: &[&str] = if b {
-                        &["true", "yes"]
-                    } else {
-                        &["false", "no"]
+                let severity = field.allowed_values_severity.unwrap_or(Severity::Warning);
+                let items: Vec<&rivet_yaml::Value> = match value.as_sequence() {
+                    Some(seq) => seq.iter().collect(),
+                    None => vec![value],
+                };
+                for item in items {
+                    let Some((shown, kind, candidates)) = allowed_value_candidates(item) else {
+                        continue;
                     };
                     if !candidates.iter().any(|c| allowed.iter().any(|a| a == c)) {
+                        let kind_note = if kind.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" ({kind})")
+                        };
                         out.push(Diagnostic {
                             source_file: None,
                             line: None,
                             column: None,
-                            severity: Severity::Warning,
+                            severity,
                             artifact_id: Some(artifact_id.to_string()),
                             rule: format!("allowed-values{rule_suffix}"),
                             message: format!(
-                                "field '{}' has value '{}' (boolean){msg_suffix}, allowed: {:?}",
-                                field.name, b, allowed
-                            ),
-                        });
-                    }
-                } else if value.is_number() {
-                    let num_str = if let Some(u) = value.as_u64() {
-                        u.to_string()
-                    } else if let Some(i) = value.as_i64() {
-                        i.to_string()
-                    } else if let Some(f) = value.as_f64() {
-                        f.to_string()
-                    } else {
-                        format!("{:?}", value)
-                    };
-                    if !allowed.iter().any(|a| a == &num_str) {
-                        out.push(Diagnostic {
-                            source_file: None,
-                            line: None,
-                            column: None,
-                            severity: Severity::Warning,
-                            artifact_id: Some(artifact_id.to_string()),
-                            rule: format!("allowed-values{rule_suffix}"),
-                            message: format!(
-                                "field '{}' has value '{}' (number){msg_suffix}, allowed: {:?}",
-                                field.name, num_str, allowed
+                                "field '{}' has value '{}'{kind_note}{msg_suffix}, allowed: {:?}",
+                                field.name, shown, allowed
                             ),
                         });
                     }
@@ -1817,6 +1747,40 @@ pub fn validate_documents(doc_store: &DocumentStore, store: &Store) -> Vec<Diagn
     }
 
     diagnostics
+}
+
+/// What an allowed-values check compares for one scalar: the value as shown,
+/// the YAML type it was coerced to (empty for a string), and the spellings
+/// that count as a match. `None` for a mapping, a sequence or null.
+fn allowed_value_candidates(
+    value: &rivet_yaml::Value,
+) -> Option<(String, &'static str, Vec<String>)> {
+    if let Some(s) = value.as_str() {
+        return Some((s.to_string(), "", vec![s.to_string()]));
+    }
+    if let Some(b) = value.as_bool() {
+        // YAML 1.1 coerces yes/no/on/off/true/false to booleans.
+        let spellings = if b { ["true", "yes"] } else { ["false", "no"] };
+        return Some((
+            b.to_string(),
+            "boolean",
+            spellings.iter().map(|s| (*s).to_string()).collect(),
+        ));
+    }
+    if value.is_number() {
+        // YAML coerces unquoted numbers (1.0, 42, etc.)
+        let num_str = if let Some(u) = value.as_u64() {
+            u.to_string()
+        } else if let Some(i) = value.as_i64() {
+            i.to_string()
+        } else if let Some(f) = value.as_f64() {
+            f.to_string()
+        } else {
+            format!("{value:?}")
+        };
+        return Some((num_str.clone(), "number", vec![num_str]));
+    }
+    None
 }
 
 #[cfg(test)]
@@ -2480,6 +2444,7 @@ then:
                 required: false,
                 description: None,
                 allowed_values: Some(allowed.into_iter().map(String::from).collect()),
+                allowed_values_severity: None,
             }],
             link_fields: vec![],
             aspice_process: None,
@@ -3809,6 +3774,7 @@ then:
             required: true,
             description: None,
             allowed_values: None,
+            allowed_values_severity: None,
         }
     }
 
@@ -3893,6 +3859,7 @@ then:
             required: false,
             description: None,
             allowed_values: Some(vec!["ASIL_A".into(), "ASIL_B".into()]),
+            allowed_values_severity: None,
         }]);
 
         // Out-of-set value → emit "allowed-values".
@@ -3917,6 +3884,107 @@ then:
             0,
             "in-set value must not emit; replacing `==` with `!=` would \
              flip the per-item check and emit incorrectly",
+        );
+    }
+
+    /// A schema field like the North Star `serves:` link (REQ-418).
+    fn serves_field(severity: Option<Severity>) -> FieldDef {
+        FieldDef {
+            name: "serves".to_string(),
+            field_type: "list<string>".to_string(),
+            required: false,
+            description: None,
+            allowed_values: Some(vec!["O1".into(), "O2".into()]),
+            allowed_values_severity: severity,
+        }
+    }
+
+    fn with_serves(yaml: &str) -> Artifact {
+        let value: rivet_yaml::Value = rivet_yaml::from_str(yaml).unwrap();
+        make_artifact_with_yaml_field("A", "serves", value)
+    }
+
+    fn allowed_value_diags(diags: &[Diagnostic]) -> Vec<(Severity, String)> {
+        diags
+            .iter()
+            .filter(|d| d.rule.starts_with("allowed-values"))
+            .map(|d| (d.severity, d.message.clone()))
+            .collect()
+    }
+
+    // rivet: verifies REQ-418
+    #[test]
+    fn allowed_values_checks_each_item_of_a_sequence() {
+        let schema = schema_with_fields(vec![serves_field(None)]);
+        let bad = run_validate(&schema, with_serves("[O1, O9, true, 3]"), vec![]);
+        assert_eq!(
+            allowed_value_diags(&bad),
+            vec![
+                (
+                    Severity::Warning,
+                    "field 'serves' has value 'O9', allowed: [\"O1\", \"O2\"]".to_string()
+                ),
+                (
+                    Severity::Warning,
+                    "field 'serves' has value 'true' (boolean), allowed: [\"O1\", \"O2\"]"
+                        .to_string()
+                ),
+                (
+                    Severity::Warning,
+                    "field 'serves' has value '3' (number), allowed: [\"O1\", \"O2\"]".to_string()
+                ),
+            ]
+        );
+        let good = run_validate(&schema, with_serves("[O1, O2]"), vec![]);
+        assert_eq!(allowed_value_diags(&good), vec![]);
+        // A list is not a type mismatch for a list field, and its items are
+        // not reported as coerced strings.
+        assert_eq!(rule_count(&bad, "yaml-type-coercion"), 0);
+    }
+
+    // rivet: verifies REQ-418
+    #[test]
+    fn allowed_values_severity_error_fails_an_unknown_value_only() {
+        let schema = schema_with_fields(vec![serves_field(Some(Severity::Error))]);
+        // The planted bad value: an objective id the schema does not list.
+        let bad = run_validate(&schema, with_serves("O9"), vec![]);
+        assert_eq!(
+            allowed_value_diags(&bad),
+            vec![(
+                Severity::Error,
+                "field 'serves' has value 'O9', allowed: [\"O1\", \"O2\"]".to_string()
+            )]
+        );
+        let bad_item = run_validate(&schema, with_serves("[O2, O9]"), vec![]);
+        assert_eq!(allowed_value_diags(&bad_item).len(), 1);
+        assert_eq!(allowed_value_diags(&bad_item)[0].0, Severity::Error);
+        assert_eq!(
+            allowed_value_diags(&run_validate(&schema, with_serves("O2"), vec![])),
+            vec![]
+        );
+        // `serves:` is optional: an artifact without it gets no diagnostic.
+        let none = run_validate(&schema, minimal_artifact("A", "test"), vec![]);
+        assert_eq!(allowed_value_diags(&none), vec![]);
+        assert_eq!(rule_count(&none, "required-field"), 0);
+    }
+
+    // rivet: verifies REQ-418
+    #[test]
+    fn variant_overlay_checks_sequence_items_at_the_declared_severity() {
+        let schema = schema_with_fields(vec![serves_field(Some(Severity::Error))]);
+        let td = schema.artifact_types.get("test").unwrap();
+        let mut fields = BTreeMap::new();
+        fields.insert(
+            "serves".to_string(),
+            rivet_yaml::from_str::<rivet_yaml::Value>("[O1, O9]").unwrap(),
+        );
+        let out = check_fields_against_type("A", "test", None, None, &fields, td, "-v", " (v)");
+        assert_eq!(
+            allowed_value_diags(&out),
+            vec![(
+                Severity::Error,
+                "field 'serves' has value 'O9' (v), allowed: [\"O1\", \"O2\"]".to_string()
+            )]
         );
     }
 
@@ -5246,6 +5314,7 @@ then:
                 required: true,
                 description: None,
                 allowed_values: Some(vec!["must".into(), "should".into(), "could".into()]),
+                allowed_values_severity: None,
             }],
             link_fields: vec![],
             aspice_process: None,

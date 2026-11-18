@@ -2284,6 +2284,7 @@ mod tests {
                     "marginal".into(),
                     "negligible".into(),
                 ]),
+                allowed_values_severity: None,
             }],
             link_fields: vec![],
             aspice_process: None,

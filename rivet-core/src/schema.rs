@@ -262,8 +262,12 @@ fn merge_named_vec<T, F: Fn(&T) -> String>(dst: &mut Vec<T>, incoming: Vec<T>, n
     }
 }
 
+/// `#[non_exhaustive]` (REQ-418): a new schema key on a field is not an
+/// API break. Outside rivet-core, build one with `FieldDef::default()` and
+/// set the fields you need.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct FieldDef {
     pub name: String,
     #[serde(rename = "type")]
@@ -274,6 +278,14 @@ pub struct FieldDef {
     pub description: Option<String>,
     #[serde(default, rename = "allowed-values")]
     pub allowed_values: Option<Vec<String>>,
+    /// Severity of a value outside `allowed-values` (REQ-418). Absent means
+    /// warning, as before; `error` makes an unknown value fail validation.
+    #[serde(
+        default,
+        rename = "allowed-values-severity",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub allowed_values_severity: Option<Severity>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -2212,6 +2224,7 @@ mod tests {
                     required: false,
                     description: None,
                     allowed_values: None,
+                    allowed_values_severity: None,
                 })
                 .collect(),
             link_fields: link_fields
