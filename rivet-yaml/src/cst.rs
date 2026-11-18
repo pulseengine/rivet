@@ -1681,22 +1681,61 @@ impl<'src> Parser<'src> {
             Some(SyntaxKind::LBrace) => self.parse_flow_mapping(),
             Some(SyntaxKind::LBracket) => self.parse_flow_sequence(),
             _ => {
+                let plain = self.at(SyntaxKind::PlainScalar);
                 // Everything up to the entry boundary. Nested braces/brackets
                 // are handled above, so a bare `}` or `,` here really does end
                 // the entry.
-                while !self.at_eof()
-                    && !self.at(SyntaxKind::Comma)
-                    && !self.at(SyntaxKind::RBrace)
-                    && !self.at(SyntaxKind::Newline)
-                    && !self.at(SyntaxKind::Comment)
-                {
-                    self.bump();
+                loop {
+                    while !self.at_eof()
+                        && !self.at(SyntaxKind::Comma)
+                        && !self.at(SyntaxKind::RBrace)
+                        && !self.at(SyntaxKind::Newline)
+                        && !self.at(SyntaxKind::Comment)
+                    {
+                        self.bump();
+                    }
+                    // A plain value continues on the next line (YAML 1.2
+                    // §7.3.3) unless that line starts an entry of its own.
+                    // Ending it at the break read `{t: hello\n  world}` as
+                    // keys `t` and `world` (#1252).
+                    if !(plain && self.at(SyntaxKind::Newline) && self.flow_plain_continues()) {
+                        break;
+                    }
+                    while self.at(SyntaxKind::Newline) || self.at(SyntaxKind::Whitespace) {
+                        self.bump();
+                    }
                 }
             }
         }
         self.builder.finish_node(); // Value
 
         self.builder.finish_node(); // MappingEntry
+    }
+
+    /// At a Newline inside a flow mapping value: is the next non-blank line
+    /// more of the same plain scalar? Not when it closes the mapping, ends
+    /// the entry, is a comment, or starts `key:`.
+    fn flow_plain_continues(&self) -> bool {
+        let mut la = self.pos;
+        while self
+            .tokens
+            .get(la)
+            .is_some_and(|t| matches!(t.kind, SyntaxKind::Newline | SyntaxKind::Whitespace))
+        {
+            la += 1;
+        }
+        if self.tokens.get(la).map(|t| t.kind) != Some(SyntaxKind::PlainScalar) {
+            return false;
+        }
+        la += 1;
+        while self
+            .tokens
+            .get(la)
+            .is_some_and(|t| t.kind == SyntaxKind::Whitespace)
+        {
+            la += 1;
+        }
+        self.tokens.get(la).map(|t| t.kind) != Some(SyntaxKind::Colon)
     }
 
     /// A scalar that starts on the line after its key: the line, then any
