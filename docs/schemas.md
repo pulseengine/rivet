@@ -634,6 +634,33 @@ link-types:
     target-types: [safety-goal]
 ```
 
+A value outside `allowed-values` is a warning. Set `allowed-values-severity:
+error` on the field to make it fail validation instead. A field that holds a
+list is checked item by item.
+
+A project can add a field to a built-in type from its own schema file, since
+same-named artifact types merge. For example, a `north-star.yaml` in the
+project's own schemas directory, listed as `north-star` under `schemas:` in
+`rivet.yaml`, adds an
+optional `serves` field whose values must be known objective ids:
+
+```yaml
+schema:
+  name: north-star
+  version: "0.1.0"
+artifact-types:
+  - name: feature
+    description: Feature (adds the North Star objective it serves)
+    fields:
+      - name: serves
+        type: string
+        allowed-values: [O1, O2, O3, O4]
+        allowed-values-severity: error
+```
+
+An artifact then writes `serves: O2` or `serves: [O1, O3]`. Leaving
+`serves` out is allowed.
+
 Common link types (`satisfies`, `verifies`, `derives-from`, etc.) are inherited from the
 `common` schema and do not need to be redeclared.
 

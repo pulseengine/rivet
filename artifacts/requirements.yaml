@@ -10529,3 +10529,24 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-11-18T05:40:00Z
+
+  - id: REQ-418
+    type: requirement
+    title: "a schema field can make a value outside allowed-values fail validation, and a list field is checked item by item (North Star serves:)"
+    status: implemented
+    description: |-
+      pulseengine.eu defines North Star objectives O1-O4 and wants a feature or requirement to declare `serves: O2`, checked against the ids each repo pins in its own schema. Project schemas could already add a `serves` field with `allowed-values` to `feature` (same-named types merge), but a value outside the set was only a warning, so `rivet validate` passed, and a list value such as `serves: [O1, O9]` was never compared at all.
+
+      ACCEPTANCE: a schema field may set `allowed-values-severity` (info, warning or error); absent, a value outside `allowed-values` stays a warning as before. A field holding a sequence is checked item by item, in the default view and in variant overlays, and each item outside the set gets its own diagnostic at the field's severity. A missing optional field produces no diagnostic. With `allowed-values-severity: error`, a planted unknown objective id makes `rivet validate` exit non-zero.
+    tags: [schema, validation, north-star]
+    fields:
+      category: functional
+      priority: must
+      verification-criteria: "rivet-core unit tests in validate.rs: allowed_values_checks_each_item_of_a_sequence, allowed_values_severity_error_fails_an_unknown_value_only, variant_overlay_checks_sequence_items_at_the_declared_severity. CLI tests in rivet-cli/tests/allowed_values_severity.rs: a planted O9 (scalar and in a list) fails validate with an ERROR line; O2, [O1, O4] and no serves pass; without the severity key O9 stays a warning."
+    links:
+      - type: traces-to
+        target: REQ-004
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-18T11:30:00Z

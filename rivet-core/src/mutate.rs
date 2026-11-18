@@ -1239,6 +1239,7 @@ mod tests {
                         "should".to_string(),
                         "could".to_string(),
                     ]),
+                    allowed_values_severity: None,
                 }],
                 link_fields: vec![],
                 aspice_process: None,

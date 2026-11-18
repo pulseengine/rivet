@@ -274,6 +274,14 @@ pub struct FieldDef {
     pub description: Option<String>,
     #[serde(default, rename = "allowed-values")]
     pub allowed_values: Option<Vec<String>>,
+    /// Severity of a value outside `allowed-values` (REQ-418). Absent means
+    /// warning, as before; `error` makes an unknown value fail validation.
+    #[serde(
+        default,
+        rename = "allowed-values-severity",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub allowed_values_severity: Option<Severity>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -2212,6 +2220,7 @@ mod tests {
                     required: false,
                     description: None,
                     allowed_values: None,
+                    allowed_values_severity: None,
                 })
                 .collect(),
             link_fields: link_fields
