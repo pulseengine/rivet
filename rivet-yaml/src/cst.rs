@@ -837,7 +837,7 @@ impl<'src> Parser<'src> {
                     // (i.e., there's non-newline content before it on this line).
                     // If the previous token was a Newline, this whitespace is
                     // structurally significant (indent) — don't eat it here.
-                    if self.pos > 0 && self.tokens[self.pos - 1].kind == SyntaxKind::Newline {
+                    if self.pos == 0 || self.tokens[self.pos - 1].kind == SyntaxKind::Newline {
                         break; // This is line-leading indent — stop
                     }
                     self.bump();
@@ -910,9 +910,7 @@ impl<'src> Parser<'src> {
                 }
                 break;
             }
-            if self.at(SyntaxKind::Whitespace) {
-                self.bump();
-            }
+            self.bump_line_indent();
             let root_indent = self.current_indent();
             self.eat_anchor();
             match self.current_kind() {
@@ -983,9 +981,7 @@ impl<'src> Parser<'src> {
         loop {
             self.eat_trivia();
             // Consume line-leading whitespace (indent)
-            if self.at(SyntaxKind::Whitespace) {
-                self.bump();
-            }
+            self.bump_line_indent();
             if self.at_eof() {
                 break;
             }
@@ -1141,7 +1137,7 @@ impl<'src> Parser<'src> {
                     self.current_kind(),
                     Some(SyntaxKind::Newline | SyntaxKind::Comment | SyntaxKind::Whitespace)
                 ) {
-                    self.bump();
+                    self.bump_line_indent();
                 }
                 if !self.at_eof() {
                     let child_indent = self.current_indent();
@@ -1194,9 +1190,7 @@ impl<'src> Parser<'src> {
         self.builder.start_node(SyntaxKind::Sequence.into());
         loop {
             self.eat_trivia();
-            if self.at(SyntaxKind::Whitespace) {
-                self.bump();
-            }
+            self.bump_line_indent();
             // Comments at/above sequence indent are trivia — consume and retry
             if self.at(SyntaxKind::Comment) {
                 self.bump();
@@ -1304,7 +1298,7 @@ impl<'src> Parser<'src> {
                         self.current_kind(),
                         Some(SyntaxKind::Newline | SyntaxKind::Comment | SyntaxKind::Whitespace)
                     ) {
-                        self.bump();
+                        self.bump_line_indent();
                     }
                     if !self.at_eof() {
                         let child_indent = self.current_indent();
@@ -1644,6 +1638,54 @@ impl<'src> Parser<'src> {
                 true
             }
             _ => true, // other content tokens are continuations
+        }
+    }
+
+    /// Consume a line's leading whitespace. A tab in it, before a block
+    /// entry (`- ` or `key:`), is reported: YAML indents with spaces only (§6.1), and rivet
+    /// used to count the tab as one column, so the structure it built could
+    /// differ from what an editor shows (#1248). Blank and comment-only lines
+    /// may hold tabs.
+    fn bump_line_indent(&mut self) {
+        let Some(tok) = self.current() else { return };
+        if tok.kind != SyntaxKind::Whitespace {
+            if !matches!(tok.kind, SyntaxKind::Newline | SyntaxKind::Comment) {
+                return;
+            }
+            self.bump();
+            return;
+        }
+        let has_tab = tok.text.contains('\t');
+        let at_start = at_line_start(self.source_bytes, self.byte_offset);
+        if has_tab && at_start && self.block_entry_at(self.pos + 1) {
+            self.errors.push(ParseError {
+                offset: self.byte_offset,
+                message: "a tab in indentation: YAML indents with spaces only (YAML 1.2 \u{a7}6.1)"
+                    .into(),
+            });
+        }
+        self.bump();
+    }
+
+    /// Whether the token at `i` starts a block collection entry: a `-` item or
+    /// a `key:`. A tab before anything else on the line (a flow collection, a
+    /// scalar continuing a value) is separation, which YAML allows
+    /// (yaml-test-suite 6CA3, Q5MG, DK95/00).
+    fn block_entry_at(&self, i: usize) -> bool {
+        match self.tokens.get(i).map(|t| t.kind) {
+            Some(SyntaxKind::Dash) => true,
+            Some(
+                SyntaxKind::PlainScalar
+                | SyntaxKind::SingleQuotedScalar
+                | SyntaxKind::DoubleQuotedScalar,
+            ) => {
+                let mut j = i + 1;
+                while self.tokens.get(j).map(|t| t.kind) == Some(SyntaxKind::Whitespace) {
+                    j += 1;
+                }
+                self.tokens.get(j).map(|t| t.kind) == Some(SyntaxKind::Colon)
+            }
+            _ => false,
         }
     }
 
@@ -2814,5 +2856,68 @@ artifacts:
             value_of("a: multi\n  line plain\nb: 2\n")["a"].as_str(),
             Some("multi line plain")
         );
+    }
+
+    // ── #1248: tab indentation ──────────────────────────────────────
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_tab_in_indentation_is_an_error() {
+        for src in [
+            "\ta: 1\n",
+            "a:\n\tb: 1\n",
+            "a:\n  - x\n\t- y\n",
+            "a:\n \tb: 1\n",
+            // a key followed by spaces before its colon is still an entry
+            "a:\n\tb : 1\n",
+            // a sequence item whose value starts on the next line
+            "-\n\tb: 1\n",
+        ] {
+            let errs = errors_of(src);
+            assert!(
+                errs.iter().any(|m| m.starts_with("a tab in indentation")),
+                "{src:?}: {errs:?}"
+            );
+            assert!(crate::from_str::<crate::Value>(src).is_err(), "{src:?}");
+        }
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn tabs_outside_indentation_still_parse() {
+        for src in [
+            "a: 1\n\t# a comment indented with a tab\nb: 2\n",
+            "a: [1,\n\t2]\n",
+            "a: x\ty\n",
+            // tab before a flow collection or a next-line scalar is separation
+            "\t[\n\t]\n",
+            "\t{}\n",
+            "foo:\n\tbar\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
+        assert_eq!(value_of("a: x\ty\n")["a"].as_str(), Some("x\ty"));
+    }
+
+    // rivet: verifies REQ-346
+    #[test]
+    fn values_after_trivia_keep_their_nesting() {
+        // a sequence item whose mapping starts on the next line
+        let v = value_of("-\n  b: 1\n  c: 2\n- d\n");
+        assert_eq!(v[0]["b"].as_i64(), Some(1));
+        assert_eq!(v[0]["c"].as_i64(), Some(2));
+        assert_eq!(v[1].as_str(), Some("d"));
+        // spaces and a comment between a key and its nested mapping
+        let v = value_of("a:   # note\n  b: 1\nc: 2\n");
+        assert_eq!(v["a"]["b"].as_i64(), Some(1));
+        assert_eq!(v["c"].as_i64(), Some(2));
+        for src in [
+            "-\n  b: 1\n",
+            "a:   # note\n  b: 1\n",
+            "a:\n  b : 1\n",
+            "a: 1\n... # end\n",
+        ] {
+            assert_eq!(errors_of(src), Vec::<String>::new(), "{src:?}");
+        }
     }
 }
