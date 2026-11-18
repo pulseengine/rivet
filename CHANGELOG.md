@@ -18,6 +18,7 @@
 - **YAML: a line cannot continue a quoted value** (#1259). `k: "q"` followed by an indented `more` read as `"q"` and dropped `more`; it is now an error, at the root, under a key and in a sequence item.
 - **YAML: JSON-style flow mappings, root block scalars and root plain scalars that continue at column 0 are read** (#1259). `{"a":1}` (no space after a quoted key's `:`), `--- |` and `plain\nspans` were refused. `["a":1]` read as `["a", ":1"]`; it is now an error until single-pair flow entries are supported.
 - **YAML: invalid block scalar headers are errors** (#1258). `|0`, `|10`, `|--` and `|#c` were read without a diagnostic.
+- **Recorded results: a newer pass on one environment no longer hides a failure on another** (#1241). Readiness, `trace-results` and the results view kept one result per artifact across all runs, so a test failing on `rpi5` and passing later on `macos-arm64` read as passing, also under `release.require: results`. The latest result is now kept per `run.environment`; results files without one read as before. `rivet import-results --format junit --environment <name>` records where the tests ran. Declaring which environments a requirement must pass in is still open.
 
 ## [0.42.2] - 2026-11-13
 
