@@ -779,7 +779,7 @@ version = "0.11.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.quick-xml]]
-version = "0.41.0"
+version = "0.42.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.r-efi]]
