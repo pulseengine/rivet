@@ -13218,8 +13218,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         let result = lsp_hover(&params, &store);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::to_value(result)?),
-                            error: None,
+                            response_result: Ok(serde_json::to_value(result)?),
                         }))?;
                     }
                     "textDocument/definition" => {
@@ -13229,8 +13228,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         let result = lsp_goto_definition(&params, &store);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::to_value(result)?),
-                            error: None,
+                            response_result: Ok(serde_json::to_value(result)?),
                         }))?;
                     }
                     "textDocument/completion" => {
@@ -13240,8 +13238,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         let result = lsp_completion(&params, &store, &schema);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::to_value(result)?),
-                            error: None,
+                            response_result: Ok(serde_json::to_value(result)?),
                         }))?;
                     }
                     "textDocument/documentSymbol" => {
@@ -13257,8 +13254,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         let response = DocumentSymbolResponse::Nested(symbols);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::to_value(response)?),
-                            error: None,
+                            response_result: Ok(serde_json::to_value(response)?),
                         }))?;
                     }
                     "textDocument/codeAction" => {
@@ -13266,8 +13262,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         let actions = lsp_code_actions(&params);
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::to_value(actions)?),
-                            error: None,
+                            response_result: Ok(serde_json::to_value(actions)?),
                         }))?;
                     }
                     "rivet/render" => {
@@ -13327,14 +13322,13 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::json!({
+                            response_result: Ok(serde_json::json!({
                                 "html": result.html,
                                 "title": result.title,
                                 "sourceFile": result.source_file,
                                 "sourceLine": source_line,
                                 "seq": seq,
                             })),
-                            error: None,
                         }))?;
                     }
                     "rivet/treeData" => {
@@ -13457,8 +13451,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(response_value),
-                            error: None,
+                            response_result: Ok(response_value),
                         }))?;
                     }
                     "rivet/css" => {
@@ -13469,8 +13462,7 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
                         );
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::to_value(css)?),
-                            error: None,
+                            response_result: Ok(serde_json::to_value(css)?),
                         }))?;
                     }
                     "rivet/search" => {
@@ -13518,16 +13510,14 @@ fn cmd_lsp(cli: &Cli) -> Result<bool> {
 
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::json!({ "results": results })),
-                            error: None,
+                            response_result: Ok(serde_json::json!({ "results": results })),
                         }))?;
                     }
                     _ => {
                         eprintln!("rivet lsp: unhandled request: {method}");
                         connection.sender.send(Message::Response(Response {
                             id: req.id,
-                            result: Some(serde_json::Value::Null),
-                            error: None,
+                            response_result: Ok(serde_json::Value::Null),
                         }))?;
                     }
                 }
