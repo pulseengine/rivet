@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795033997030,
+  "lastUpdate": 1795058128455,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "fafe10cf2bff5541f3e4db79ea70c950a4e69d82",
-          "message": "ci(miri): skip the 8 manifest tests that outlast the full nightly sweep (#1203)\n\nThe full Miri nightly on 39d17c33 (run 42448316285) timed out at its 90-min\nstep limit with 884 of 910 tests passed. The manifest::tests added in #1160\nwere all still running past 960s:\n\n  kind_table_matches_schema, valid_entries_produce_no_diagnostics,\n  unknown_kind_is_an_error, kind_specific_fields_enums_and_locator_are_errors,\n  pin_shape_kind_and_value_are_checked, no_manifest_schema_means_no_checks,\n  partial_schema_still_checks_the_declared_type,\n  non_manifest_artifacts_are_ignored\n\nEach loads the embedded common schema; no_manifest_schema_means_no_checks\nloads only that and is just as slow, so the cost is schema parsing under the\ninterpreter, not the manifest checks. manifest.rs has no unsafe code, and\nthe parsing is already under Miri through the smaller tests. Add them to\nSLOW_UNDER_MIRI by exact name, as #1135 did for the earlier eight.\n\nA Miri-only smaller schema was considered and rejected: it would be a\nhand-kept copy of the shipped schema that can drift, and\nkind_table_matches_schema exists to check the real one. The tests still run\non every PR in the normal test job; after this they no longer run under\nMiri anywhere (the per-PR Miri job covers only sexpr:: and cst::).\n\n\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-08T08:57:27Z",
-          "tree_id": "d3ea6a3ab0bb9ff469673e392adf7f372c12768e",
-          "url": "https://github.com/pulseengine/rivet/commit/fafe10cf2bff5541f3e4db79ea70c950a4e69d82"
-        },
-        "date": 1794130709549,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 67427,
-            "range": "± 1670",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 675719,
-            "range": "± 3667",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 16027310,
-            "range": "± 902098",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1464,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 17762,
-            "range": "± 416",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 276723,
-            "range": "± 10986",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1531801,
-            "range": "± 25626",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 120296,
-            "range": "± 321",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1375028,
-            "range": "± 34192",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 20835962,
-            "range": "± 1544053",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 555318,
-            "range": "± 2190",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 15756346,
-            "range": "± 196165",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1179995174,
-            "range": "± 17073565",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3623,
-            "range": "± 8",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 40225,
-            "range": "± 159",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 619550,
-            "range": "± 13051",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 43856,
-            "range": "± 357",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 501172,
-            "range": "± 7967",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6380947,
-            "range": "± 595500",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 864,
-            "range": "± 18",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 11334,
-            "range": "± 136",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 198093,
-            "range": "± 4150",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 16912,
-            "range": "± 307",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 111391,
-            "range": "± 2677",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1039727,
-            "range": "± 46582",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1110065,
             "range": "± 7949",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7164bd3d4032b1438f5e26e8ab7b758196c1b25a",
+          "message": "ci: fail-closed fork guard on every self-hosted job, enforced by a checker (#1287)\n\n* ci: benchmarks' change detector on light; fail-closed fork guard; say why the rest stay hosted\n\nOwner decision (2026-11-18, relayed by pulseengine.eu): move every job\nthat does not need a GitHub-hosted image onto the self-hosted light pool,\nbehind the fail-closed fork guard. In rivet the light-shaped jobs (fmt,\nYAML lint, deny, audit, cargo-vet, trust ledger, CI Gate, the ci.yml\nchange detector) were already on light; the one left was benchmarks.yml's\nchange detector, which runs the same script.\n\ngate-probe and fix-hotspot switch from `head.repo.fork && hosted ||\nlight` to the same-repository form. A pull request reaches light only\nwhen its head repository is this one; a missing head repository (a\ndeleted fork) now routes to hosted instead of to light.\n\nEvery remaining ubuntu-24.04 job now carries the smithy playbook's\nkeep-on-hosted reason above its runs-on: sudo/Nix/Bazel (Kani, Verus,\nRocq), a browser (Playwright, VS Code, mermaid-cli in rivet-delta),\ncompile-heavy builds beyond light's 4 G, the deliberate hosted\ntraceability floor, and release jobs that build, attest or publish on\nephemeral hosted runners. actionlint reports the same 5 non-label\nfindings before and after.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: fail-closed fork guard on every self-hosted job, enforced by a checker\n\nOwner decision (2026-11-18, relayed by pulseengine.eu), opened as a\nsecurity fix: the 25 self-hosted runs-on sites in ci.yml named plain\nlabels, so a fork pull request a maintainer approved ran on the smithy\npool. Each now uses the same-repository guard; a fork PR, or one whose\nfork was deleted, runs on ubuntu-24.04 instead.\n\ntools/ci/check-selfhosted-fork-guard.rs is relay's checker (relay#689),\nwith rivet's pinned ubuntu-24.04 fallback (an unpinned ubuntu-latest\nfallback is rejected), an explicit exemption for runner-liveness.yml that\nholds only while that workflow runs on schedule and workflow_dispatch\nalone, and an optional workflows-dir argument. It runs in YAML Lint with\nplain rustc. Its tests include the negative control the owner asked for:\nthe real ci.yml with one guarded site planted back to a plain label list\nfails with exactly one violation. On origin/main's workflows the checker\nreports 27 violations (the 25 plain sites and the two fail-open forms);\non this branch it passes over 29 self-hosted lines in 10 workflows.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T21:36:37Z",
+          "tree_id": "44d362d04ee23057fea6fb6add93a53b748899bc",
+          "url": "https://github.com/pulseengine/rivet/commit/7164bd3d4032b1438f5e26e8ab7b758196c1b25a"
+        },
+        "date": 1795058127251,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 68296,
+            "range": "± 1165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 734482,
+            "range": "± 48098",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13023123,
+            "range": "± 463768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1515,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 17852,
+            "range": "± 63",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 287356,
+            "range": "± 7053",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 75,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 2022616,
+            "range": "± 127346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 132540,
+            "range": "± 8427",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1501164,
+            "range": "± 18351",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 23500771,
+            "range": "± 1404687",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 586038,
+            "range": "± 2441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 13261342,
+            "range": "± 165917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 890855546,
+            "range": "± 12106775",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3297,
+            "range": "± 142",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 35920,
+            "range": "± 1219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 647042,
+            "range": "± 5859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 46255,
+            "range": "± 458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 534974,
+            "range": "± 5459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 6775653,
+            "range": "± 388589",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 789,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11154,
+            "range": "± 97",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 199405,
+            "range": "± 11750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21321,
+            "range": "± 1112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 130206,
+            "range": "± 748",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1199217,
+            "range": "± 16436",
             "unit": "ns/iter"
           }
         ]
