@@ -101,7 +101,7 @@ tower-http = { version = "0.6", features = ["cors", "fs"] }
 urlencoding = "2"
 
 # XML (ReqIF)
-quick-xml = { version = "0.41", features = ["serialize", "overlapped-lists"] }
+quick-xml = { version = "0.42", features = ["serialize", "overlapped-lists"] }
 
 # WASM component model
 # 48.0.7 clears RUSTSEC-2026-0378/0379 (stream payload panic, aarch64

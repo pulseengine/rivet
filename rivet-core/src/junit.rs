@@ -173,14 +173,6 @@ struct ParsedSuite {
 
 // ── Parser ───────────────────────────────────────────────────────────────────
 
-/// Tracks what text-content context we are in.
-#[derive(Debug, PartialEq)]
-enum TextContext {
-    Failure,
-    Error,
-    None,
-}
-
 /// Parse JUnit XML and return one [`TestRun`] per `<testsuite>` element.
 ///
 /// Both `<testsuites>` wrappers and bare `<testsuite>` roots are accepted.
@@ -251,12 +243,18 @@ fn find_marker_for_case<'a>(
 
 fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    // No per-event trimming: a body is split at each entity, and trimming
+    // the pieces dropped the spaces around `&lt;`. The body is trimmed once,
+    // whole, when its element ends; no other text is read.
+    reader.config_mut().trim_text(false);
 
     let mut suites: Vec<ParsedSuite> = Vec::new();
     let mut current_suite: Option<ParsedSuite> = None;
     let mut current_case: Option<ParsedCase> = None;
-    let mut text_ctx = TextContext::None;
+    // A failure/error body arrives as several events: text, entity
+    // references (`&lt;` is its own event) and CDATA. Collected here and
+    // stored when the element ends.
+    let mut body_buf: Option<String> = None;
     let mut buf = Vec::new();
 
     // Helper closures as inline logic below.
@@ -281,7 +279,6 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
                             cases: Vec::new(),
                         });
                         current_case = None;
-                        text_ctx = TextContext::None;
                     }
                     "testcase" => {
                         // Commit any previous case
@@ -296,7 +293,6 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
                             body: None,
                             rivet_tc_id: None,
                         });
-                        text_ctx = TextContext::None;
                     }
                     "property" => {
                         // `<property name="rivet_tc_id" value="SYS-VER-058"/>`
@@ -320,7 +316,7 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
                                 message: attrs.get("message").cloned(),
                             };
                         }
-                        text_ctx = TextContext::Failure;
+                        body_buf = Some(String::new());
                     }
                     "error" => {
                         if let Some(ref mut c) = current_case {
@@ -328,7 +324,7 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
                                 message: attrs.get("message").cloned(),
                             };
                         }
-                        text_ctx = TextContext::Error;
+                        body_buf = Some(String::new());
                     }
                     "skipped" | "skip" => {
                         if let Some(ref mut c) = current_case {
@@ -340,18 +336,22 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
             }
 
             Ok(Event::End(ref e)) => {
-                let tag = std::str::from_utf8(e.local_name().as_ref())
-                    .unwrap_or("")
-                    .to_lowercase();
+                let tag = e.local_name().as_ref().to_lowercase();
                 match tag.as_str() {
                     "failure" | "error" => {
-                        text_ctx = TextContext::None;
+                        let text = body_buf.take().unwrap_or_default();
+                        let text = text.trim();
+                        if let Some(ref mut c) = current_case {
+                            if c.body.is_none() && !text.is_empty() {
+                                c.body = Some(text.to_string());
+                            }
+                        }
                     }
                     "testcase" => {
                         if let Some(c) = current_case.take() {
                             push_case(&mut current_suite, c);
                         }
-                        text_ctx = TextContext::None;
+                        body_buf = None; // an empty `<failure/>` never ends
                     }
                     "testsuite" => {
                         // Flush pending case first
@@ -361,36 +361,38 @@ fn parse_suites(xml: &str) -> Result<Vec<ParsedSuite>, Error> {
                         if let Some(s) = current_suite.take() {
                             suites.push(s);
                         }
-                        text_ctx = TextContext::None;
                     }
                     _ => {}
                 }
             }
 
-            Ok(Event::Text(ref e))
-                if text_ctx == TextContext::Failure || text_ctx == TextContext::Error =>
-            {
-                if let Some(ref mut c) = current_case {
-                    if c.body.is_none() {
-                        // quick-xml 0.41 (RUSTSEC-2026-0194/0195 fix) removed
-                        // `BytesText::unescape()`; it split into `decode()`
-                        // (bytes→str) + the standalone `escape::unescape`
-                        // (entity resolution). Preserve the old decode+unescape
-                        // behavior — JUnit failure/error bodies carry entities
-                        // like `&lt;`/`&amp;` in stack traces.
-                        let text = e
-                            .decode()
-                            .ok()
-                            .and_then(|d| {
-                                quick_xml::escape::unescape(&d)
-                                    .ok()
-                                    .map(|u| u.trim().to_string())
-                            })
-                            .unwrap_or_default();
-                        if !text.is_empty() {
-                            c.body = Some(text);
-                        }
+            // Inside a failure/error element `body_buf` is Some. quick-xml
+            // 0.42 holds text as `str`; `xml_content` applies XML 1.0
+            // line-end normalization.
+            Ok(Event::Text(ref e)) => {
+                if let Some(b) = body_buf.as_mut() {
+                    b.push_str(&e.xml_content(quick_xml::XmlVersion::Implicit1_0));
+                }
+            }
+
+            Ok(Event::GeneralRef(ref e)) => {
+                if let Some(b) = body_buf.as_mut() {
+                    if let Ok(Some(ch)) = e.resolve_char_ref() {
+                        b.push(ch);
+                    } else if let Some(s) = quick_xml::escape::resolve_xml_entity(e.as_ref()) {
+                        b.push_str(s);
+                    } else {
+                        // An entity XML does not predefine: keep it as written.
+                        b.push('&');
+                        b.push_str(e.as_ref());
+                        b.push(';');
                     }
+                }
+            }
+
+            Ok(Event::CData(ref e)) => {
+                if let Some(b) = body_buf.as_mut() {
+                    b.push_str(&e.xml_content(quick_xml::XmlVersion::Implicit1_0));
                 }
             }
 
@@ -417,16 +419,14 @@ fn push_case(suite: &mut Option<ParsedSuite>, case: ParsedCase) {
 }
 
 fn tag_name(e: &quick_xml::events::BytesStart<'_>) -> String {
-    std::str::from_utf8(e.local_name().as_ref())
-        .unwrap_or("")
-        .to_lowercase()
+    e.local_name().as_ref().to_lowercase()
 }
 
 fn collect_attrs(e: &quick_xml::events::BytesStart<'_>) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for attr in e.attributes().flatten() {
-        if let (Ok(key), Ok(val)) = (
-            std::str::from_utf8(attr.key.local_name().as_ref()),
+        if let (key, Ok(val)) = (
+            attr.key.local_name().as_ref(),
             // quick-xml 0.41 deprecated `unescape_value()` for
             // `normalized_value(version)` — the spec-compliant attribute-value
             // normalization (entity resolution + whitespace). JUnit XML is 1.0.
@@ -1067,5 +1067,33 @@ mod tests {
             assert_eq!(runs[0].run.id, before, "{bad} must not change the id");
             assert_eq!(runs[0].run.environment, None, "{bad} must not be recorded");
         }
+    }
+
+    /// A failure body keeps all its text, entities resolved: quick-xml
+    /// reports `&lt;` as its own event between two text events.
+    #[test]
+    fn failure_body_keeps_text_around_entities() {
+        let xml = r#"<testsuite name="s"><testcase classname="c" name="t"><failure message="m">expected a &lt; b &amp;&amp; c &#62; d</failure></testcase></testsuite>"#;
+        let suites = parse_suites(xml).unwrap();
+        assert_eq!(
+            suites[0].cases[0].body.as_deref(),
+            Some("expected a < b && c > d")
+        );
+        let cdata = r#"<testsuite name="s"><testcase classname="c" name="t"><error>
+  at x &lt;<![CDATA[ if a < b ]]>&gt; done
+</error></testcase></testsuite>"#;
+        assert_eq!(
+            parse_suites(cdata).unwrap()[0].cases[0].body.as_deref(),
+            Some("at x < if a < b > done")
+        );
+        // An empty or blank body stays None; a second failure in the same
+        // case does not replace the first body; text outside a failure, an
+        // unknown entity, and an empty `<failure/>` are not bodies.
+        let more = r#"<testsuite name="s"><testcase classname="c" name="a"><failure> </failure></testcase><testcase classname="c" name="b"><failure>first</failure><failure>second</failure>after</testcase><testcase classname="c" name="d"><failure/><system-out>log</system-out></testcase><testcase classname="c" name="e"><error>x &custom; y</error></testcase></testsuite>"#;
+        let cases = &parse_suites(more).unwrap()[0].cases;
+        assert_eq!(cases[0].body, None);
+        assert_eq!(cases[1].body.as_deref(), Some("first"));
+        assert_eq!(cases[2].body, None);
+        assert_eq!(cases[3].body.as_deref(), Some("x &custom; y"));
     }
 }
