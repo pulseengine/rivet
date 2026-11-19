@@ -36,7 +36,7 @@ first commit.
 {
   "command": "review-export",
   "commit": "<full 40-character sha of HEAD>",
-  "release": "v0.42.0",
+  "release": "v0.43.0",
   "since": null,
   "count": 1,
   "artifacts": [
@@ -45,7 +45,7 @@ first commit.
       "type": "requirement",
       "title": "Text-file-first artifact management",
       "status": "approved",
-      "release": "v0.42.0",
+      "release": "v0.43.0",
       "description": "Multi-line description, or null",
       "tags": ["core"],
       "fields": { "priority": "must" },
