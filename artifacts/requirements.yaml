@@ -10579,3 +10579,86 @@ artifacts:
       model: claude-opus-5-5
       timestamp: 2026-11-12T10:00:00Z
     release: v0.44.0
+
+  - id: REQ-419
+    type: requirement
+    title: "the rivet part of a consumer's evidence bundle can fail: rivet review verify re-checks a snapshot against its commit and its coverage (North Star O2, v0.44.0 bet 1)"
+    status: draft
+    description: |-
+      Serves North Star objective O2 (one-command evidence bundle), its guard: the verify command must fail when evidence is removed or altered. wohl's bundle verify.sh only checks that trace/coverage.json parses and trace-export.yaml is non-empty, so a trace at 0% coverage or from another commit passes. This moves the O2 guard, not the O2 count (1 of 2 today).
+
+      ACCEPTANCE (draft): rivet review verify <snapshot.json> --commit <sha> --coverage <coverage.json> (coverage mandatory) exits non-zero on four fixtures: a snapshot from another commit, an empty snapshot, an edited coverage file, and a snapshot whose commit field was edited while MANIFEST.sha256 was not re-hashed; it exits 0 on the untouched bundle. Precondition checked first: wohl's review export is non-empty. Done when wohl's verify.sh calls it and a third O2 negative control (trace from another commit, manifest re-hashed) goes red for wohl. KILL: drop it if wohl cannot produce a non-empty export without a whole-project mode.
+    tags: [north-star, evidence-bundle, review, plan-v0.44.0]
+    fields:
+      category: functional
+      priority: should
+    links:
+      - type: traces-to
+        target: REQ-416
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-20T00:00:00Z
+    release: v0.44.0
+
+  - id: REQ-420
+    type: requirement
+    title: "rivet's own proof checks are required: Kani, Verus, Rocq and the trust ledger feed CI Gate, and the ledger counts every kani::assume (North Star O3, v0.44.0 bet 2a)"
+    status: draft
+    description: |-
+      Serves North Star objective O3 (every verified claim is backed). O3 counts repositories whose proof check, with a kernel axiom audit and a trust-escape ledger, is a required check, and says the ledger counts input-narrowing assumptions. Today kani, verus, rocq and trust-ledger are outside CI Gate's needs, and the ledger scanner excludes kani::assume (29 uses in rivet-core/src/proofs.rs; the ledger has 3 rows).
+
+      ACCEPTANCE (draft): the four jobs are in CI Gate's needs and a failed or skipped proof job turns CI Gate red; the ledger lists exactly the kani::assume uses found by the scanner (29 at planning time) plus the existing rows. Separate probe PRs each turn CI Gate red: one Admitted without a ledger row, one kani::assume without a row, one broken proof, one new axiom caught by the kernel audit. Stretch: remove at least 3 kani::assume uses (the guard says the ledger may only shrink). KILL: make the Rocq dependency fetch hermetic first; if Rocq still fails for infrastructure reasons in more than 1 of the last 10 main runs, keep it out of needs and say so.
+    tags: [north-star, proofs, trust-ledger, ci, plan-v0.44.0]
+    fields:
+      category: non-functional
+      priority: should
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-20T00:00:00Z
+    release: v0.44.0
+
+  - id: REQ-421
+    type: requirement
+    title: "one trust-escape ledger format with a shrink-only check other proof repositories can run (North Star O3 enabler, v0.44.0 bet 2b)"
+    status: draft
+    description: |-
+      Serves North Star objective O3 as an enabler: rivet, spar and loom keep three ledger formats with three Python scanners, and no shared check enforces the O3 guard (entries may only shrink). This lets other repositories measure O3; it does not move the O3 count by itself, and O3 stays unmeasured until pulseengine.eu writes its indicator script.
+
+      ACCEPTANCE (draft): rivet check trust-ledger --base <ref> fails when an entry is added relative to <ref>, passes when entries are removed, and emits JSON counts by kind with input-narrowing assumptions as their own kind; it replaces the compare half of tools/ci/trust-ledger.py (no new Python). A seam issue names the format. KILL: drop the shared format if neither spar nor loom adopts it by the 2026.12 layer.
+    tags: [north-star, proofs, trust-ledger, plan-v0.44.0]
+    fields:
+      category: functional
+      priority: could
+    links:
+      - type: traces-to
+        target: REQ-420
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-20T00:00:00Z
+    release: v0.44.0
+
+  - id: REQ-422
+    type: requirement
+    title: "rivet's features declare which North Star objective they serve, checked at error severity with a drift check against north-star.toml (North Star enabler, v0.44.0 bet 4)"
+    status: draft
+    description: |-
+      Serves the North Star as an enabler for every objective: north-star.toml says repos validate a feature's serves field against the objective ids, with a generated allowed-values list and a drift check per repo. v0.43.0 shipped allowed-values-severity, but no repo uses it yet, rivet included (seam #1296).
+
+      ACCEPTANCE (draft): rivet's project schema declares serves on feature with allowed-values O1..O5 at severity error; a feature with serves: [O9] fails rivet validate with an error naming the allowed values, and serves: [O2] passes; a CI check fails when the allowed values differ from the ids in pulseengine.eu's north-star.toml at a pinned ref. KILL: none for the serves half (configuration); the REQ-318 half of this bet is gated on a named relay artifact recorded in the seam issue before any build.
+    tags: [north-star, schema, serves, plan-v0.44.0]
+    fields:
+      category: functional
+      priority: should
+    links:
+      - type: traces-to
+        target: REQ-418
+      - type: traces-to
+        target: REQ-318
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-20T00:00:00Z
+    release: v0.44.0
