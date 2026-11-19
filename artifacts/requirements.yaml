@@ -10578,4 +10578,4 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-11-12T10:00:00Z
-    release: v0.43.0
+    release: v0.44.0
