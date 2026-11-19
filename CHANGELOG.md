@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-11-19
+
+Results that say where they ran, schema fields that can refuse an unknown value, and a YAML parser that misreads less. A recorded result now names its environment, and a failure in one environment is no longer hidden by a newer pass in another. A schema field can make a value outside its allowed set fail validation, which is how pulseengine.eu's North Star `serves:` link is pinned per project. Fourteen YAML fixes, found by sieve, the yaml-test-suite and the org's own files, stop silent misreads and needless refusals.
+
+This release is wrong if `rivet validate` passes a project whose schema sets `allowed-values-severity: error` on a field while an artifact holds a value outside its `allowed-values`, as a scalar or as a list item; if `import-results --environment` writes two environments' results to one file; or if a yaml-test-suite case at the pinned commit that this release counts as matched parses to a different value.
+
 ### Added
 - **A schema field can make an unknown value fail validation, and list values are checked** (REQ-418). `allowed-values-severity: error` on a field turns a value outside `allowed-values` from a warning into an error. A field holding a list, such as `serves: [O1, O9]`, is now checked item by item; before, a list was never compared with the allowed set. This carries pulseengine.eu's North Star `serves:` link: a project schema adds `serves` to `feature` with the objective ids it accepts (see docs/schemas.md).
 
@@ -14,7 +20,7 @@
 ### Fixed
 - **YAML: a line holding only spaces between block entries is blank** (#1289). A whitespace-only line whose spaces reached the entries' indentation failed with `expected mapping key, found Some(Newline)`; PyYAML, yaml-rust2 and GitHub accept it, and two of kiln's workflows have it. Shallower, deeper and tab-holding blank lines between entries, at the root and in sequences, now read as blank too (yaml-test-suite H2RW, DK95/04 and DK95/05 now match). A tab where a block scalar's indentation goes is still refused (Y79Y/000).
 - **`import-results --environment` refuses a name that would collide** (REQ-417). The name goes into the results file name; characters other than letters, digits, `-` and `_` used to be replaced by `-`, so `hil bench` and `hil-bench` wrote the same file and the second import overwrote the first. Such names are now refused.
-- **JUnit import keeps the whole failure body** (REQ-009). A failure or error body was cut at its first entity: `expected a &lt; b` was recorded as `expected a`, because quick-xml reports an entity as its own event and only the first text event was kept, and per-event trimming dropped the spaces around it. The body now collects text, entity and CDATA events and is trimmed once when the element ends. Found while moving to quick-xml 0.42.
+- **JUnit import keeps the whole failure body** (#1291; extends REQ-009). A failure or error body was cut at its first entity: `expected a &lt; b` was recorded as `expected a`, because quick-xml reports an entity as its own event and only the first text event was kept, and per-event trimming dropped the spaces around it. The body now collects text, entity and CDATA events and is trimmed once when the element ends. Found while moving to quick-xml 0.42.
 - **YAML: text after a closing quote is an error, not dropped** (#1246). `k: 'abc' def` read as `abc`, and `k: 'it's'` as `it`, with no diagnostic. A quoted value must now end its line, apart from spaces and a comment.
 - **YAML: a key at a column no mapping uses is an error, not moved** (#1247). A line dedented between two levels (`a:` / `  b: 1` / ` c: 2`) joined the outer mapping, and one indented past its siblings joined theirs, so a field moved to another parent with no diagnostic. The error is reported once per misplaced block. This also catches a more-indented `key: value` after a scalar line (#1249, first case). In every local pulseengine checkout the set of files that fail to load is unchanged; synth's already-broken files report fewer errors.
 - **YAML: a tab indenting a block entry is an error** (#1248). `\ta: 1` and `a:` / `\tb: 1` were accepted with the tab counted as one column, so the structure could differ from what an editor shows. A tab before a flow collection or a scalar on a value's next line stays allowed, as YAML specifies. No local pulseengine checkout uses tab indentation.
@@ -27,8 +33,19 @@
 - **YAML: a line cannot continue a quoted value** (#1259). `k: "q"` followed by an indented `more` read as `"q"` and dropped `more`; it is now an error, at the root, under a key and in a sequence item.
 - **YAML: JSON-style flow mappings, root block scalars and root plain scalars that continue at column 0 are read** (#1259). `{"a":1}` (no space after a quoted key's `:`), `--- |` and `plain\nspans` were refused. `["a":1]` read as `["a", ":1"]`; it is now an error until single-pair flow entries are supported.
 - **YAML: invalid block scalar headers are errors** (#1258). `|0`, `|10`, `|--` and `|#c` were read without a diagnostic.
-- **Recorded results: a newer pass on one environment no longer hides a failure on another** (#1241). Readiness, `trace-results` and the results view kept one result per artifact across all runs, so a test failing on `rpi5` and passing later on `macos-arm64` read as passing, also under `release.require: results`. The latest result is now kept per `run.environment`; results files without one read as before. `rivet import-results --format junit --environment <name>` records where the tests ran. Declaring which environments a requirement must pass in is still open.
+- **Recorded results: a newer pass on one environment no longer hides a failure on another** (REQ-417, #1241). Readiness, `trace-results` and the results view kept one result per artifact across all runs, so a test failing on `rpi5` and passing later on `macos-arm64` read as passing, also under `release.require: results`. The latest result is now kept per `run.environment`; results files without one read as before. `rivet import-results --format junit --environment <name>` records where the tests ran. Declaring which environments a requirement must pass in is still open.
 - **YAML: plain scalars inside flow collections fold across lines** (#1252). `[a\n  b]` read as `"a  b"`, and in `{ t: hello\n    world }` the second line became a key `world`; they now read `"a b"` and `{t: "hello world"}`.
+
+### Security
+- **wasmtime 48.0.9** (GHSA-5m8g-xhq4-4h93, #1280). wasmtime is built only with the `wasm` feature, which the release binaries do not enable, so the published binaries never contained the affected code.
+- **chrono's RUSTSEC-2026-0543 (unmaintained) is recorded** in the cargo-deny configuration (#1276).
+
+### Dependencies
+- quick-xml 0.42 (#1291; names and text are `&str`), lsp-server 0.10 (#1292; `Response` carries one `response_result`), and minor bumps of thiserror, regex, serde, log, petgraph and the GitHub Actions in use (#1281, #1262, #1238, #1265, #1271, #1273, #1274, #1234, #1264).
+
+### CI
+- **No fork pull request reaches a self-hosted runner** (#1287). Every self-hosted job uses a fail-closed same-repository guard, and `tools/ci/check-selfhosted-fork-guard.rs` enforces it in YAML Lint, with a planted unguarded site as its negative control.
+- **GitHub-hosted jobs run on `ubuntu-24.04`**, not `ubuntu-latest` (#1283), and the compliance action is pinned to a commit, not `@main` (#1243).
 
 ## [0.42.2] - 2026-11-13
 
