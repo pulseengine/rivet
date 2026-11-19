@@ -20,6 +20,7 @@ rivet serve [-P PORT]       Start HTMX dashboard (default: 3000)
 rivet commits [--since N]   Commit-artifact traceability analysis
 rivet commit-msg-check F    Validate commit message trailers (hook)
 rivet impact --since REF    Change impact analysis (transitive)
+rivet review export --release V  Commit-pinned JSON snapshot of a release (rivet docs review-export)
 ```
 
 ## Query Commands

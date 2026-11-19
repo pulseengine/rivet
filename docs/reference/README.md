@@ -37,6 +37,7 @@ The documentation built into the `rivet` binary, one file per topic. `rivet docs
 - [`docs-check`](docs-check.md) — rivet docs check — invariant engine and embedded-doc checks
 - [`coverage-matrix`](coverage-matrix.md) — rivet coverage --matrix — V&V coverage view from repo-status artifacts
 - [`release-status`](release-status.md) — Release readiness — rivet release status
+- [`review-export`](review-export.md) — Review export — commit-pinned JSON snapshot of a release
 - [`tool-qualification`](tool-qualification.md) — Tool qualification dossier — rivet (ISO 26262-8 §11.4.7)
 
 ## Diagnostics

@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Added
+- **`rivet review export`** (REQ-416, #1227). `rivet review export --release vX --format json` emits a JSON snapshot of every artifact scoped to `vX` (the `rivet list --release` set) with id, type, title, status, release, description, tags, fields, links and provenance, pinned to the full `HEAD` sha in `commit`. A dirty working tree (any `git status --porcelain` entry, untracked files included) is refused with the dirty paths named. `--since <ref>` emits only the artifacts added, removed or changed for `vX` since `<ref>`, marked `change`, with `changed_fields` on changed ones. Shape: `rivet docs review-export`; contract: `schemas/json/review-export-output.schema.json`.
+
 ## [0.43.0] - 2026-11-19
 
 Results that say where they ran, schema fields that can refuse an unknown value, and a YAML parser that misreads less. A recorded result now names its environment, and a failure in one environment is no longer hidden by a newer pass in another. A schema field can make a value outside its allowed set fail validation, which is how pulseengine.eu's North Star `serves:` link is pinned per project. Fourteen YAML fixes, found by sieve, the yaml-test-suite and the org's own files, stop silent misreads and needless refusals.
