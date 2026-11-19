@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795086216495,
+  "lastUpdate": 1795109383713,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "49699333+dependabot[bot]@users.noreply.github.com",
-            "name": "dependabot[bot]",
-            "username": "dependabot[bot]"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "a9bb4cd2ccd8821a57eb005951e30be488139c75",
-          "message": "build(deps): migrate to sha2 0.11, unreviewed vet exemptions for its new crates (#1195)\n\nsha2 0.11 (via digest 0.11) returns a hybrid_array::Array that no longer\nimplements LowerHex, so format!(\"{:x}\", hasher.finalize()) stops\ncompiling. rivet_version::content_sha256 was a second copy of\ncited_source::sha256_hex differing only in that formatting; it now\ndelegates to it, so there is one hex encoder. The four cli_commands tests\nthat hashed with {:x} encode the bytes inline instead, so they still check\nthe hash independently of rivet's own helper.\n\nAlso refreshes fuzz/Cargo.lock to sha2 0.11.1 (what #1200 does).\n\nVet: sha2 0.11.1, digest 0.11.3, crypto-common 0.2.2, block-buffer\n0.12.1, hybrid-array 0.4.15 and const-oid 0.10.2 are exempted NOT\nREVIEWED. About 21600 lines including hybrid-array's unsafe code is too\nmuch to review honestly here; each exemption note says so.\n\nConfirmed locally with cargo fmt --check, cargo clippy --all-targets\n--workspace -D warnings, rivet-core lib tests (1416), cli_commands (274),\ncited_source_integration (13) and cargo vet --locked.\n\n\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\nCo-authored-by: Ralf Anton Beier <ralf_beier@me.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-08T12:53:25Z",
-          "tree_id": "b173639f31a9636478dfb92a35d8747be3aa663e",
-          "url": "https://github.com/pulseengine/rivet/commit/a9bb4cd2ccd8821a57eb005951e30be488139c75"
-        },
-        "date": 1794157608248,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 83605,
-            "range": "± 1216",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 845747,
-            "range": "± 3178",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12898774,
-            "range": "± 806243",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2102,
-            "range": "± 20",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26448,
-            "range": "± 90",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 413791,
-            "range": "± 2220",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 93,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1921007,
-            "range": "± 13493",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 158771,
-            "range": "± 5618",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1770491,
-            "range": "± 19280",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24158587,
-            "range": "± 1353715",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 727468,
-            "range": "± 9380",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17853637,
-            "range": "± 148915",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1360306576,
-            "range": "± 12828058",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4952,
-            "range": "± 13",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 68939,
-            "range": "± 395",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 897425,
-            "range": "± 3566",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 59455,
-            "range": "± 243",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 699033,
-            "range": "± 3101",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8105634,
-            "range": "± 215446",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1179,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15356,
-            "range": "± 79",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 370332,
-            "range": "± 1996",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 23971,
-            "range": "± 70",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 159222,
-            "range": "± 985",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1403551,
-            "range": "± 11537",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1111332,
             "range": "± 28116",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "593c0d325c66c2ffa622722bcacf6dda2ac02e6f",
+          "message": "build(deps): quick-xml 0.42; keep the whole JUnit failure body (#1291)\n\nReplaces Dependabot's #1269 (root) and #1272 (/fuzz), which failed to\ncompile: in quick-xml 0.42 names are `&str` (no from_utf8) and\nBytesText has no decode(). junit.rs is the only consumer that breaks;\nreqif.rs reads through serde.\n\nMoving the text handling surfaced a defect already on main with 0.41: a\nfailure or error body was cut at its first entity (`expected a &lt; b`\nstored as `expected a`), because quick-xml reports an entity as a\nGeneralRef event and only the first Text event was kept, and\ntrim_text(true) dropped the spaces around it. The body is now an\nOption<String> that is Some inside a failure/error element and collects\nText, GeneralRef (char refs and the predefined entities; others kept as\nwritten) and CData, trimmed once when the element ends. The now-unused\nTextContext enum is removed.\n\ncargo-vet: the quick-xml exemption moves from 0.41.0 to 0.42.0\n(unaudited, as for the previous bumps).\n\nImplements: REQ-009\nVerifies: REQ-009\n\n\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-19T13:12:39Z",
+          "tree_id": "bc1f6efd6856d6de6c2f1f3d39a18485fa314388",
+          "url": "https://github.com/pulseengine/rivet/commit/593c0d325c66c2ffa622722bcacf6dda2ac02e6f"
+        },
+        "date": 1795109382433,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 61609,
+            "range": "± 272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 731298,
+            "range": "± 2078",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 9534763,
+            "range": "± 166047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1240,
+            "range": "± 4",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 14402,
+            "range": "± 35",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 303035,
+            "range": "± 1320",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 54,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 54,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 54,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1983737,
+            "range": "± 6069",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 123891,
+            "range": "± 1839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1500339,
+            "range": "± 13768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 20867241,
+            "range": "± 164601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 557547,
+            "range": "± 1577",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 12669477,
+            "range": "± 47074",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 775204261,
+            "range": "± 9082886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 2960,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 31730,
+            "range": "± 239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 787477,
+            "range": "± 5602",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 42342,
+            "range": "± 179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 467539,
+            "range": "± 2312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 5745864,
+            "range": "± 34987",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 620,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 8368,
+            "range": "± 55",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 276268,
+            "range": "± 1388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20888,
+            "range": "± 79",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 122873,
+            "range": "± 826",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1090822,
+            "range": "± 10961",
             "unit": "ns/iter"
           }
         ]
