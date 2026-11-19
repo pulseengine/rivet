@@ -12343,7 +12343,7 @@ fn cmd_import_results_junit(
     let mut runs = parse_junit_xml_with_markers(&xml, &markers)
         .with_context(|| format!("failed to parse JUnit XML from {}", file.display()))?;
     if let Some(env) = environment {
-        rivet_core::junit::set_environment(&mut runs, env);
+        rivet_core::junit::set_environment(&mut runs, env).map_err(anyhow::Error::msg)?;
     }
 
     if runs.is_empty() {

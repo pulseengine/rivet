@@ -1025,7 +1025,16 @@ impl<'src> Parser<'src> {
                     // (i.e., there's non-newline content before it on this line).
                     // If the previous token was a Newline, this whitespace is
                     // structurally significant (indent) — don't eat it here.
-                    if self.pos == 0 || self.tokens[self.pos - 1].kind == SyntaxKind::Newline {
+                    // A line holding only spaces is blank, whatever its width
+                    // (#1289): eat it, so it neither sets an indent nor
+                    // reads as an entry.
+                    let blank_line = matches!(
+                        self.tokens.get(self.pos + 1).map(|t| t.kind),
+                        Some(SyntaxKind::Newline) | None
+                    );
+                    if (self.pos == 0 || self.tokens[self.pos - 1].kind == SyntaxKind::Newline)
+                        && !blank_line
+                    {
                         break; // This is line-leading indent — stop
                     }
                     self.bump();
@@ -1878,6 +1887,20 @@ impl<'src> Parser<'src> {
             let spaces = line.iter().take_while(|b| **b == b' ').count();
             let blank = line[spaces..].iter().all(|b| *b == b'\r');
             if !blank && spaces < content_indent {
+                // An empty line in a block scalar is spaces only before the
+                // content indent (§8.1.1.2); a tab there indents nothing. Now
+                // that a blank line between entries is skipped (#1289), this
+                // must be refused here or `foo: |` + a tab line passes.
+                if line[spaces..]
+                    .iter()
+                    .all(|b| matches!(b, b'\t' | b' ' | b'\r'))
+                {
+                    self.errors.push(ParseError {
+                        offset: line_start,
+                        message: "a tab cannot indent a block scalar's lines (YAML 1.2 §8.1.1.2)"
+                            .into(),
+                    });
+                }
                 break;
             }
             // Consume the whole line, its break included.

@@ -10519,7 +10519,7 @@ artifacts:
     fields:
       category: functional
       priority: must
-      verification-criteria: "rivet-core unit tests: results.rs latest_results_are_kept_per_environment (one per environment, newest first, no environment as its own, failure and error win), result_trace.rs a_newer_pass_on_one_environment_does_not_hide_a_failure_on_another (evidence, trace status and verdict fail; a newer pass on the same environment clears it), junit.rs set_environment_records_it_and_keeps_run_ids_apart. CLI tests in rivet-cli/tests/import_results_environment.rs: two imports with --environment give two results files and a failing trace verdict; --environment with reqif is refused."
+      verification-criteria: "rivet-core unit tests: results.rs latest_results_are_kept_per_environment (one per environment, newest first, no environment as its own, failure and error win), result_trace.rs a_newer_pass_on_one_environment_does_not_hide_a_failure_on_another (evidence, trace status and verdict fail; a newer pass on the same environment clears it), junit.rs set_environment_records_it_and_keeps_run_ids_apart and set_environment_refuses_a_name_that_would_collide. CLI tests in rivet-cli/tests/import_results_environment.rs: two imports with --environment give two results files and a failing trace verdict; one JUnit file imported for two environments writes two results files, and a name that would collide (`hil bench`) is refused and writes nothing; --environment with reqif is refused."
     links:
       - type: traces-to
         target: REQ-413

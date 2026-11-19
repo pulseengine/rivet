@@ -141,3 +141,41 @@ fn environment_is_refused_for_formats_that_import_artifacts() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+// rivet: verifies REQ-417
+#[test]
+fn one_junit_file_imported_for_two_environments_writes_two_results_files() {
+    let proj = tempfile::tempdir().unwrap();
+    let p = proj.path();
+    write_project(p);
+    let file = junit(p, "same.xml", "2026-11-13T10:00:00Z", false);
+    for env in ["rpi5", "macos-arm64"] {
+        let out = import(p, &file, env);
+        assert!(
+            out.status.success(),
+            "import {env}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let mut names: Vec<String> = std::fs::read_dir(p.join("results"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names.len(), 2, "one file per environment: {names:?}");
+    assert!(
+        names[0].ends_with("-macos-arm64.yaml") && names[1].ends_with("-rpi5.yaml"),
+        "{names:?}"
+    );
+
+    // A name that would have been rewritten into another one is refused, and
+    // writes nothing (`hil bench` used to become `hil-bench`).
+    let out = import(p, &file, "hil bench");
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("must be letters, digits, `-` and `_` only"),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(std::fs::read_dir(p.join("results")).unwrap().count(), 2);
+}
