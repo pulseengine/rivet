@@ -563,21 +563,27 @@ fn suite_to_run_with_markers(
 /// importing the same JUnit file for two environments writes two results
 /// files instead of the second overwriting the first: the id is otherwise
 /// derived from the suite name and its outcomes alone (#1241).
-pub fn set_environment(runs: &mut [TestRun], environment: &str) {
-    let safe: String = environment
-        .chars()
-        .map(|c| {
-            if c.is_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '-'
-            }
-        })
-        .collect();
+///
+/// The name goes into the id unchanged, so it may hold only letters, digits,
+/// `-` and `_`. Anything else is refused rather than replaced: replacing made
+/// `hil bench` and `hil-bench` the same id, and the second import overwrote
+/// the first (REQ-417).
+pub fn set_environment(runs: &mut [TestRun], environment: &str) -> Result<(), String> {
+    if environment.is_empty()
+        || !environment
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(format!(
+            "environment `{environment}` must be letters, digits, `-` and `_` only: it becomes \
+             part of the results file name, and other characters would make two names collide"
+        ));
+    }
     for run in runs {
         run.run.environment = Some(environment.to_string());
-        run.run.id = format!("{}-{safe}", run.run.id);
+        run.run.id = format!("{}-{environment}", run.run.id);
     }
+    Ok(())
 }
 
 fn case_to_result_with_markers(
@@ -1036,11 +1042,30 @@ mod tests {
         let mut a = parse_junit_xml_with_markers(xml, &[]).unwrap();
         let mut b = a.clone();
         let base = a[0].run.id.clone();
-        set_environment(&mut a, "rpi5");
-        set_environment(&mut b, "macos_arm64 x/y");
+        set_environment(&mut a, "rpi5").unwrap();
+        set_environment(&mut b, "macos_arm64-x").unwrap();
         assert_eq!(a[0].run.environment.as_deref(), Some("rpi5"));
         assert_eq!(a[0].run.id, format!("{base}-rpi5"));
-        assert_eq!(b[0].run.environment.as_deref(), Some("macos_arm64 x/y"));
-        assert_eq!(b[0].run.id, format!("{base}-macos_arm64-x-y"));
+        assert_eq!(b[0].run.environment.as_deref(), Some("macos_arm64-x"));
+        assert_eq!(b[0].run.id, format!("{base}-macos_arm64-x"));
+    }
+
+    /// A name that would have been rewritten is refused, and leaves the runs
+    /// untouched: `hil bench` used to become `hil-bench` and collide with it.
+    // rivet: verifies REQ-417
+    #[test]
+    fn set_environment_refuses_a_name_that_would_collide() {
+        let xml = r#"<testsuite name="suite" timestamp="2026-01-01T00:00:00Z"><testcase classname="c" name="t"/></testsuite>"#;
+        let mut runs = parse_junit_xml_with_markers(xml, &[]).unwrap();
+        let before = runs[0].run.id.clone();
+        for bad in ["hil bench", "a/b", "x.y", ""] {
+            let e = set_environment(&mut runs, bad).unwrap_err();
+            assert!(
+                e.contains("letters, digits, `-` and `_` only"),
+                "{bad}: {e}"
+            );
+            assert_eq!(runs[0].run.id, before, "{bad} must not change the id");
+            assert_eq!(runs[0].run.environment, None, "{bad} must not be recorded");
+        }
     }
 }

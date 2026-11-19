@@ -1160,6 +1160,41 @@ mod tests {
         assert_eq!(v("a: 1\n...\n")["a"], Value::from(1u64));
     }
 
+    /// A line holding only spaces (or tabs) between block entries is blank,
+    /// whatever its width (#1289): kiln's workflows have one at the entries'
+    /// indentation, which read as a missing key.
+    // rivet: verifies REQ-346
+    #[test]
+    fn a_whitespace_only_line_between_entries_is_blank() {
+        let v = |src: &str| from_str::<Value>(src).unwrap();
+        let ab = v("a: 1\nb: 2\n");
+        assert_eq!(v("a: 1\n \nb: 2\n"), ab, "root");
+        assert_eq!(v("a: 1\n  \t\nb: 2\n"), ab, "spaces and a tab");
+        assert_eq!(v("a: 1\n   "), v("a: 1\n"), "at the end of the file");
+        let jobs = v("jobs:\n  a: 1\n  b: 2\n");
+        assert_eq!(
+            v("jobs:\n  a: 1\n  \n  b: 2\n"),
+            jobs,
+            "at the entries' indent"
+        );
+        assert_eq!(v("jobs:\n  a: 1\n    \n  b: 2\n"), jobs, "deeper");
+        assert_eq!(
+            v("k:\n    x: 1\n  \n    y: 2\n")["k"]["y"],
+            Value::from(2u64),
+            "shallower"
+        );
+        assert_eq!(
+            v("s:\n  - a\n  \n  - b\n")["s"][1],
+            Value::from("b"),
+            "in a sequence"
+        );
+        // Inside a multi-line plain scalar it is a folded blank line.
+        assert_eq!(v("a: x\n  \n  y\n")["a"], Value::from("x\ny"));
+        // A block scalar keeps it, and refuses a tab where its indent goes.
+        assert_eq!(v("t: |\n  x\n  \n  y\n")["t"], Value::from("x\n\ny\n"));
+        assert!(err("foo: |\n\t\nbar: 1\n").contains("a tab cannot indent"));
+    }
+
     /// GitHub workflows key their triggers with `on:`. YAML 1.1 read `on`,
     /// `off`, `yes` and `no` as booleans; the 1.2 core schema this parser
     /// follows keeps them strings, and GitHub rejects a duplicate key, as
