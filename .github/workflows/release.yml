@@ -58,11 +58,9 @@ jobs:
             os: ubuntu-24.04
             archive: tar.gz
             cross: true
-          - target: x86_64-apple-darwin
-            # macos-14 is refused ("macos-14-arm64-us-default is not supported",
-            # v0.42.1 run 43332306438); macos-15-intel keeps this build native.
-            os: macos-15-intel
-            archive: tar.gz
+          # No x86_64-apple-darwin (Intel macOS) build from v0.43.1 on: the owner
+          # stopped Intel macOS builds fleet-wide on 2026-11-20. Intel Macs
+          # build from source.
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz

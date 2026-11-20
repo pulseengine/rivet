@@ -7,12 +7,15 @@
 
 ## [0.43.1] - 2026-11-20
 
-A security patch cut from `release/v0.43.x` (v0.43.0 plus this fix only); main carries the same fix and moves on to wasmtime 50.0.3 separately.
+A security patch cut from `release/v0.43.x` (v0.43.0 plus this fix, and no Intel macOS asset); main carries the same fix and moves on to wasmtime 50.0.3 separately.
 
 This release is wrong if `cargo deny check advisories` on its `Cargo.lock` reports RUSTSEC-2026-0587, or if its `Cargo.lock` differs from v0.43.0's in anything but the wasmtime-wasi 48.0.10 update and the rivet version.
 
 ### Security
 - **wasmtime-wasi 48.0.10 for RUSTSEC-2026-0587** (#1306). The update moves the wasmtime, wiggle and pulley crates to 48.0.10 and cranelift to 0.135.10. Release binaries are built without the `wasm` feature and contain no wasmtime; the fix matters to builds with `--features wasm`.
+
+### Removed
+- **No x86_64-apple-darwin (Intel macOS) assets from this release on.** Intel Mac users: build from source (`cargo install --locked --git https://github.com/pulseengine/rivet --tag v0.43.1 rivet-cli`). The npm package no longer lists `@pulseengine/rivet-darwin-x64`.
 
 ## [0.43.0] - 2026-11-19
 
