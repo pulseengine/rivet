@@ -92,6 +92,7 @@ pub mod sql;
 pub mod store;
 pub mod templates;
 pub mod test_scanner;
+pub mod trust_ledger;
 pub mod validate;
 pub mod variant_emit;
 pub mod verification_evidence;

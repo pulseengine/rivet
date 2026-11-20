@@ -5,7 +5,42 @@
 # A new escape fails CI until it is added here, with its reason in the
 # source next to it. Removing an escape needs no edit here first.
 #
+# `rivet check trust-ledger` (REQ-421, format: pulseengine/rivet#1300) reads
+# the same file, also counts every `kani::assume` (kind kani-assume: each
+# narrows a harness's input range, which North Star O3 counts), and fails on
+# a stale row of a kind it scans. trust-ledger.py ignores the kani-assume
+# rows, which its comparison reports as entries it no longer finds.
+#
 # section	file	kind	name
 source	proofs/rocq/Schema.v	admitted	vmodel_chain_two_steps
 source	rivet-core/src/verus_specs.rs	assume	lemma_build_yields_symmetric
 kernel	-	axiom	proofs.rocq.Schema.vmodel_chain_two_steps
+source	rivet-core/src/proofs.rs	kani-assume	arb_expr
+source	rivet-core/src/proofs.rs	kani-assume	arb_expr
+source	rivet-core/src/proofs.rs	kani-assume	proof_artifact_diff_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_artifact_diff_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_cardinality_exhaustive
+source	rivet-core/src/proofs.rs	kani-assume	proof_cardinality_exhaustive
+source	rivet-core/src/proofs.rs	kani-assume	proof_compute_coverage_report_bounds
+source	rivet-core/src/proofs.rs	kani-assume	proof_coverage_percentage_bounds
+source	rivet-core/src/proofs.rs	kani-assume	proof_coverage_percentage_bounds
+source	rivet-core/src/proofs.rs	kani-assume	proof_expand_artifact_range_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_expand_artifact_range_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_extract_artifact_ids_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_extract_artifact_ids_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_next_id_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_parse_artifact_ref_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_parse_artifact_ref_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_parse_commit_type_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_parse_commit_type_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_parse_trailers_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_parse_trailers_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_prefix_for_type_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_render_markdown_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_render_markdown_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_store_insert_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_store_insert_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_store_insert_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_store_insert_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_strip_html_tags_no_panic
+source	rivet-core/src/proofs.rs	kani-assume	proof_strip_html_tags_no_panic

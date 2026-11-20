@@ -25,4 +25,5 @@ pub mod docs;
 pub mod gaps_json;
 pub mod review_signoff;
 pub mod sources;
+pub mod trust_ledger;
 pub mod verification_evidence;
