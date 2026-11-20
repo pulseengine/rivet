@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+### Removed
+- **No x86_64-apple-darwin (Intel macOS) assets from this release on. Intel Mac users: build from source (`cargo install --locked --git https://github.com/pulseengine/rivet --tag <tag> rivet-cli`).** The release matrix, the npm platform package `@pulseengine/rivet-darwin-x64` and the compliance action's Intel macOS download are gone. An Intel Mac cannot run the aarch64 build; Rosetta 2 translates x86_64 on Apple Silicon, not the reverse. On an Apple Silicon Mac running an x64 Node under Rosetta 2, use an arm64 Node and the darwin-arm64 build. `npm install @pulseengine/rivet` on darwin-x64 now stops with "unsupported platform" instead of trying a download that would 404; the compliance action does the same on an Intel macOS runner. Earlier releases keep their Intel macOS assets.
+
 ### Added
 - **`rivet review export`** (REQ-416, #1227). `rivet review export --release vX --format json` emits a JSON snapshot of every artifact scoped to `vX` (the `rivet list --release` set) with id, type, title, status, release, description, tags, fields, links and provenance, pinned to the full `HEAD` sha in `commit`. A dirty working tree (any `git status --porcelain` entry, untracked files included) is refused with the dirty paths named. `--since <ref>` emits only the artifacts added, removed or changed for `vX` since `<ref>`, marked `change`, with `changed_fields` on changed ones. Shape: `rivet docs review-export`; contract: `schemas/json/review-export-output.schema.json`.
 
