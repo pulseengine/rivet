@@ -37,7 +37,7 @@ bindings::export!(Component with_types_in bindings);
 //
 // Only the fields the prefixing path touches. Anything else (e.g.
 // `attribute-schema`, an unknown future field) round-trips as a
-// `serde_yaml::Value` so the rewriter is forward-compatible without
+// `rivet_yaml::Value` so the rewriter is forward-compatible without
 // pulling in the full rivet-core type set.
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -54,7 +54,7 @@ struct FeatureModelYaml {
         rename = "attribute-schema",
         skip_serializing_if = "BTreeMap::is_empty"
     )]
-    attribute_schema: BTreeMap<String, serde_yaml::Value>,
+    attribute_schema: BTreeMap<String, rivet_yaml::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -66,7 +66,7 @@ struct FeatureYaml {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     children: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    attributes: BTreeMap<String, serde_yaml::Value>,
+    attributes: BTreeMap<String, rivet_yaml::Value>,
 }
 
 // ── Pure prefixing (mirrored from rivet-core/src/feature_model.rs) ───────
@@ -76,9 +76,9 @@ fn prefix_features_impl(model_yaml: &str, prefix: &str) -> Result<String, String
         return Err("prefix must be non-empty".into());
     }
     let raw: FeatureModelYaml =
-        serde_yaml::from_str(model_yaml).map_err(|e| format!("parse feature-model YAML: {e}"))?;
+        rivet_yaml::from_str(model_yaml).map_err(|e| format!("parse feature-model YAML: {e}"))?;
     let prefixed = prefix_model_yaml(raw, prefix);
-    serde_yaml::to_string(&prefixed).map_err(|e| format!("emit feature-model YAML: {e}"))
+    rivet_yaml::to_string(&prefixed).map_err(|e| format!("emit feature-model YAML: {e}"))
 }
 
 fn prefix_model_yaml(raw: FeatureModelYaml, prefix: &str) -> FeatureModelYaml {

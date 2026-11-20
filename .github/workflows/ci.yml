@@ -803,6 +803,14 @@ jobs:
         # else gated advisories either (cargo-audit runs outside CI Gate's
         # needs), so a tree failing `cargo deny check advisories` merged clean.
         run: cargo deny check advisories bans licenses sources
+      # Lockfile sweep (owner-approved 2026-11-20): every Cargo workspace
+      # root's Cargo.lock is committed, not gitignored and current (`cargo
+      # metadata --locked`), so the unlocked cargo commands in this workflow
+      # resolve exactly the committed lock; nested locks (fuzz/,
+      # compose-witness/) pass `cargo deny check advisories`; MODULE.bazel.lock
+      # and the npm lockfiles are committed. Fails closed below 3 roots.
+      - name: Every lockfile binds the build
+        run: tools/ci/lockfiles-check.sh
 
   # ── Public API stability (semver drift gate) ────────────────────────
   # Runs only on pull_request so main can move freely between tags.
