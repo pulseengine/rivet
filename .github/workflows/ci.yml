@@ -542,8 +542,8 @@ jobs:
     # REQ-412: runs only when its inputs changed (`changes.outputs.e2e`;
     # push, schedule and dispatch always run it) and never in the merge
     # queue, where nothing reads it. `needs: changes` puts this hosted job
-    # behind the self-hosted light runner for the short detector job; it
-    # is advisory, so that can delay it but gates nothing.
+    # behind the self-hosted light runner for the short detector job. It is
+    # a CI Gate need (REQ-420), so a failure blocks the merge.
     needs: changes
     if: github.event_name != 'merge_group' && needs.changes.outputs.e2e == 'true'
     # Decoupled from `test` (#299): Playwright runs the release binary
@@ -1658,17 +1658,17 @@ jobs:
           command: cargo vet --locked
 
   # ── Kani bounded model checking ────────────────────────────────────
-  # Not yet a hard gate: the 27-harness suite exceeds the 30-minute budget.
-  # Either needs scoping (run a subset on PRs, full suite nightly) or
-  # harness-by-harness unwind tuning. TODO: flip to hard gate once a
-  # PR-sized subset completes in <20 min.
+  # A CI Gate need since v0.44.0 (REQ-420). Pull requests run
+  # `--only-codegen` (~7.5 min): the harnesses must compile, but a proof that
+  # no longer holds is caught only by the full 27-harness run on push to main,
+  # schedule and dispatch (all green on the 10 main runs before this change).
   kani:
     name: Kani Proofs
     # REQ-412: runs only when its inputs changed (`changes.outputs.rust`;
     # push, schedule and dispatch always run it) and never in the merge
     # queue, where nothing reads it. `needs: changes` puts this hosted job
-    # behind the self-hosted light runner for the short detector job; it
-    # is advisory, so that can delay it but gates nothing.
+    # behind the self-hosted light runner for the short detector job. It is
+    # a CI Gate need (REQ-420), so a failure blocks the merge.
     needs: changes
     if: github.event_name != 'merge_group' && needs.changes.outputs.rust == 'true'
     # Decoupled from `test` (#299): Kani harnesses are bounded model
@@ -1679,7 +1679,6 @@ jobs:
     # not pre-installed on smithy. Move once toolchains role ships kani.
     # Kept on hosted: needs sudo (swap file) and the Kani/CBMC toolchain.
     runs-on: ubuntu-24.04
-    continue-on-error: true
     # 90, not 45: the PR path (`--only-codegen`) finishes in ~7.5 min, but the
     # push path verifies 27 harnesses and is documented above as exceeding 30.
     # Both main pushes on 2026-09-23 were CANCELLED at exactly 45:00 with
@@ -1754,20 +1753,15 @@ jobs:
           args: '-p rivet-core -Z unstable-options --harness-timeout 3m'
 
   # ── Verus SMT verification ──────────────────────────────────────────
-  # Toolchain + workspace are now correct (rules_verus@fc7b636 past the
-  # CcInfo bump; root MODULE.bazel lets //verus see //rivet-core/src).
-  # But the specs themselves fail verification ("FAIL in 0.1s" — Verus
-  # rejects at least one proof obligation). That's a genuine SMT result,
-  # not a plumbing issue, and it needs spec-level work separate from
-  # the CI hard-gate PR. Soft-gate with a clear TODO until the specs
-  # are green under the unified workspace.
+  # A CI Gate need since v0.44.0 (REQ-420): the specs verify (every step
+  # green on the 10 main runs before this change), so a failure blocks.
   verus:
     name: Verus Proofs
     # REQ-412: runs only when its inputs changed (`changes.outputs.proofs`;
     # push, schedule and dispatch always run it) and never in the merge
     # queue, where nothing reads it. `needs: changes` puts this hosted job
-    # behind the self-hosted light runner for the short detector job; it
-    # is advisory, so that can delay it but gates nothing.
+    # behind the self-hosted light runner for the short detector job. It is
+    # a CI Gate need (REQ-420), so a failure blocks the merge.
     needs: changes
     if: github.event_name != 'merge_group' && needs.changes.outputs.proofs == 'true'
     # Decoupled from `test` (mirrors `rocq`, #299): Verus runs the proof specs
@@ -1783,7 +1777,6 @@ jobs:
     # hosted runner is ample for the rivet Verus specs.
     # Kept on hosted: Bazel + Nix toolchain, installed with sudo.
     runs-on: ubuntu-24.04
-    continue-on-error: true
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1821,12 +1814,10 @@ jobs:
           if-no-files-found: warn
 
   # ── Rocq metamodel proofs ─────────────────────────────────────────
-  # Not yet a hard gate: the proofs were written against an older Rocq and
-  # hit multiple 9.0.1 compatibility issues (length/++ scope resolution —
-  # fixed; `apply` constructor inference — fixed via `eapply`; `No such
-  # contradiction` on some destructures — unfixed; vmodel_chain_two_steps
-  # has a real proof gap, currently Admitted with note). Needs systematic
-  # port. TODO: flip to hard gate after the Rocq 9 port PR.
+  # A CI Gate need since v0.44.0 (REQ-420): the proofs and the coqchk kernel
+  # audit passed every step on the 10 main runs before this change, with no
+  # fetch failure. If the smpl download flakes again (Bazel network timeout,
+  # not a proof break), re-run the job; making the fetch hermetic is the fix.
   rocq:
     name: Rocq Proofs
     # REQ-412: runs only when its inputs changed (`changes.outputs.proofs`;
@@ -1844,7 +1835,6 @@ jobs:
     # not pre-provisioned on smithy. Migrate once toolchains role ships it.
     # Kept on hosted: Bazel + Nix toolchain, installed with sudo.
     runs-on: ubuntu-24.04
-    continue-on-error: true
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1890,7 +1880,7 @@ jobs:
   # Verus external_body/assume/assume_specification/admit (kani::assume is a
   # harness precondition and is not counted). tools/ci/trust-ledger.py scans
   # them and fails on one that proofs/trust-ledger.tsv lacks; removals pass.
-  # Advisory: not a CI Gate need. Plain Python, so it runs on the light pool
+  # A CI Gate need (REQ-420). Plain Python, so it runs on the light pool
   # without Bazel and reports even when the Rocq or Verus build is red.
   trust-ledger:
     name: Proof trust ledger
@@ -2043,6 +2033,13 @@ jobs:
       - traceability
       - wasm-seam
       - supply-chain
+      # v0.44.0 bet 2a (REQ-420, owner-approved 2026-11-20): the proof jobs.
+      # Each skips only for a reason ci-gate-check.sh records (its detector
+      # output false, or the merge queue for kani/verus/rocq).
+      - kani
+      - verus
+      - rocq
+      - trust-ledger
     # Self-hosted, deliberately. This job is a `jq` read of `toJSON(needs)` —
     # a sparse checkout of tools/ci, no toolchain, no sudo — and every one of the
     # twelve jobs above runs on the self-hosted pool. Its availability was
