@@ -2434,6 +2434,41 @@ enum CheckAction {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+
+    /// Compare the trust escapes in the proof sources with the ledger
+    /// (REQ-421). Scans Rocq (Admitted, Axiom, Parameter, Conjecture,
+    /// Admit Obligations), Verus (external_body, assume_specification,
+    /// assume, admit) and Kani (`kani::assume` in any
+    /// Rust file, kind `kani-assume`). Fails on an escape the ledger lacks
+    /// and on a row of a scanned kind the scan no longer finds; rows of
+    /// other kinds (another repo's detector) are counted, not compared.
+    /// `--base <ref>`
+    /// also fails when the ledger gained entries since that ref (entries
+    /// may only shrink); `--kernel <file>` compares `coqchk -o` output with
+    /// the ledger's kernel rows. Format: pulseengine/rivet#1300.
+    TrustLedger {
+        /// Ledger path, relative to the project directory.
+        #[arg(long, default_value = "proofs/trust-ledger.tsv")]
+        ledger: String,
+
+        /// Do not scan the sources: the ledger is written by another
+        /// repo's detector. Only parse it, count rows per kind, and apply
+        /// `--base` and `--kernel`.
+        #[arg(long)]
+        no_scan: bool,
+
+        /// Git ref whose ledger this one must not grow beyond.
+        #[arg(long)]
+        base: Option<String>,
+
+        /// `coqchk -o` output to compare with the ledger's kernel rows.
+        #[arg(long)]
+        kernel: Option<PathBuf>,
+
+        /// Output format: "text" (default) or "json".
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 /// Does the raw argv request JSON output (`--format json` / `-f json` in any
@@ -3315,6 +3350,20 @@ fn run(cli: Cli) -> Result<bool> {
             } => cmd_check_sources(&cli, *update, *apply, *strict, *min, format),
             CheckAction::AiDefectsOpen { format } => cmd_check_ai_defects_open(&cli, format),
             CheckAction::Docs { strict, format } => cmd_check_docs(&cli, *strict, format),
+            CheckAction::TrustLedger {
+                ledger,
+                no_scan,
+                base,
+                kernel,
+                format,
+            } => cmd_check_trust_ledger(
+                &cli,
+                ledger,
+                *no_scan,
+                base.as_deref(),
+                kernel.as_deref(),
+                format,
+            ),
         },
         #[cfg(feature = "wasm")]
         Command::Import {
@@ -11834,6 +11883,24 @@ fn cmd_check_docs(cli: &Cli, strict: bool, format: &str) -> Result<bool> {
     } else {
         Ok(true)
     }
+}
+
+fn cmd_check_trust_ledger(
+    cli: &Cli,
+    ledger: &str,
+    no_scan: bool,
+    base: Option<&str>,
+    kernel: Option<&std::path::Path>,
+    format: &str,
+) -> Result<bool> {
+    validate_format(format, &["text", "json"])?;
+    let report = check::trust_ledger::compute(&cli.project, ledger, no_scan, base, kernel)?;
+    if format == "json" {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print!("{}", check::trust_ledger::render_text(&report));
+    }
+    Ok(report.pass)
 }
 
 struct ProjectContext {
