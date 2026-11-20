@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+## [0.43.1] - 2026-11-20
+
+A security patch cut from `release/v0.43.x` (v0.43.0 plus this fix only); main carries the same fix and moves on to wasmtime 50.0.3 separately.
+
+This release is wrong if `cargo deny check advisories` on its `Cargo.lock` reports RUSTSEC-2026-0587, or if its `Cargo.lock` differs from v0.43.0's in anything but the wasmtime-wasi 48.0.10 update and the rivet version.
+
+### Security
+- **wasmtime-wasi 48.0.10 for RUSTSEC-2026-0587** (#1306). The update moves the wasmtime, wiggle and pulley crates to 48.0.10 and cranelift to 0.135.10. Release binaries are built without the `wasm` feature and contain no wasmtime; the fix matters to builds with `--features wasm`.
+
 ## [0.43.0] - 2026-11-19
 
 Results that say where they ran, schema fields that can refuse an unknown value, and a YAML parser that misreads less. A recorded result now names its environment, and a failure in one environment is no longer hidden by a newer pass in another. A schema field can make a value outside its allowed set fail validation, which is how pulseengine.eu's North Star `serves:` link is pinned per project. Fourteen YAML fixes, found by sieve, the yaml-test-suite and the org's own files, stop silent misreads and needless refusals.
