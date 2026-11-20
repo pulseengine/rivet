@@ -384,6 +384,21 @@ jobs:
       # steps above already built, so no extra compile cost.
       - name: rivet check verification-evidence (REQ-290)
         run: cargo run --release -p rivet-cli -- check verification-evidence
+      # REQ-420/REQ-421: every trust escape in the proof sources, kani::assume
+      # included, has a ledger row and every scanned-kind row still matches
+      # an escape; on a pull request the ledger may not grow relative to the
+      # merge base (entries may only shrink).
+      - name: rivet check trust-ledger (REQ-420, REQ-421)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA}" ]; then
+            base="$(git merge-base "${BASE_SHA}" HEAD)"
+            cargo run --release -q -p rivet-cli -- check trust-ledger --base "${base}"
+          else
+            cargo run --release -q -p rivet-cli -- check trust-ledger
+          fi
       # Gate 2: no ORPHAN commits and no BROKEN trailer refs introduced by
       # THIS PR. Scoped to the PR's own commits (base..HEAD). NOT `--strict`,
       # which promotes whole-store "artifact has no commit coverage" findings
