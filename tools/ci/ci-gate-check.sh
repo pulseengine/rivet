@@ -23,6 +23,8 @@ skip_output() {
     fmt | clippy | msrv | deny | semver-checks) echo rust ;;
     test | supply-chain) echo tests ;;
     wasm-seam) echo wasm ;;
+    kani) echo rust ;;
+    verus | rocq | trust-ledger) echo proofs ;;
   esac
 }
 # job -> events its `if:` excludes, space-separated
@@ -30,6 +32,7 @@ skip_events() {
   case "$1" in
     semver-checks) echo "push merge_group schedule workflow_dispatch" ;;
     supply-chain) echo "merge_group" ;;
+    kani | verus | rocq) echo "merge_group" ;;
   esac
 }
 
