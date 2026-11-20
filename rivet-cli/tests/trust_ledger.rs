@@ -99,6 +99,7 @@ fn harness(n: usize) -> String {
 
 const ROW: &str = "source\tsrc/harness.rs\tkani-assume\th\n";
 
+// rivet: verifies REQ-421
 #[test]
 fn a_ledger_that_lists_every_escape_passes_with_counts_by_kind() {
     let dir = project(&harness(2), &ROW.repeat(2));
@@ -110,6 +111,7 @@ fn a_ledger_that_lists_every_escape_passes_with_counts_by_kind() {
     assert_eq!(v["source"]["in_ledger"], 2);
 }
 
+// rivet: verifies REQ-421
 #[test]
 fn an_escape_the_ledger_lacks_fails_and_is_named() {
     let dir = project(&harness(2), ROW);
@@ -124,6 +126,7 @@ fn an_escape_the_ledger_lacks_fails_and_is_named() {
     assert!(text.ends_with("trust-ledger: FAIL\n"), "{text}");
 }
 
+// rivet: verifies REQ-421
 #[test]
 fn a_stale_row_of_a_scanned_kind_fails() {
     let dir = project(&harness(1), &ROW.repeat(2));
@@ -133,6 +136,7 @@ fn a_stale_row_of_a_scanned_kind_fails() {
     assert_eq!(v["source"]["new"].as_array().unwrap().len(), 0);
 }
 
+// rivet: verifies REQ-421
 #[test]
 fn rows_of_another_repos_kinds_are_carried_not_compared() {
     let ledger = format!("{ROW}source\tsrc/harness.rs\tkani-unwind=4\th\n");
@@ -143,6 +147,7 @@ fn rows_of_another_repos_kinds_are_carried_not_compared() {
     assert_eq!(v["ledger_by_kind"]["source/kani-unwind=4"], 1);
 }
 
+// rivet: verifies REQ-421
 #[test]
 fn base_fails_when_the_ledger_grew_and_passes_when_it_shrank() {
     let dir = project(&harness(1), ROW);
@@ -225,6 +230,7 @@ fn a_malformed_ledger_line_is_an_error_naming_the_line() {
     assert!(err.contains("line 2: expected 4"), "{err}");
 }
 
+// rivet: verifies REQ-421
 #[test]
 fn no_scan_counts_a_foreign_ledger_and_still_applies_base() {
     // Names that rivet's scanner would not produce (a macro-qualified name),
