@@ -13,9 +13,10 @@ function runRivet() {
     binaryPath = getBinaryPath();
   } catch (err) {
     console.error("Error resolving rivet binary:", err.message);
+    if (/^unsupported platform/.test(err.message)) process.exit(1);
     console.error("");
     console.error("Your platform may not be supported. Supported targets:");
-    console.error("  - darwin-arm64, darwin-x64");
+    console.error("  - darwin-arm64 (Intel macOS: use Rosetta 2 with the arm64 build)");
     console.error("  - linux-arm64, linux-x64");
     console.error("  - win32-x64");
     console.error("");

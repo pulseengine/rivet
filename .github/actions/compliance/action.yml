@@ -168,7 +168,7 @@ runs:
           case "${OS}-${ARCH}" in
             linux-x86_64)  TARGET="x86_64-unknown-linux-gnu" ;;
             linux-aarch64) TARGET="aarch64-unknown-linux-gnu" ;;
-            darwin-x86_64) TARGET="x86_64-apple-darwin" ;;
+            darwin-x86_64) echo "Unsupported platform: darwin-x86_64 (Intel macOS). rivet ships no x86_64-apple-darwin build; use an Apple Silicon or Linux runner, or rivet-version: source."; exit 1 ;;
             darwin-arm64)  TARGET="aarch64-apple-darwin" ;;
             *) echo "Unsupported platform: ${OS}-${ARCH}"; exit 1 ;;
           esac

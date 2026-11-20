@@ -9,6 +9,23 @@
 const os = require("os");
 const path = require("path");
 
+// Intel macOS has no build from v0.43.1 on (owner decision, 2026-11-20).
+const UNSUPPORTED_MESSAGE =
+  "unsupported platform: darwin-x64. rivet ships no x86_64-apple-darwin " +
+  "(Intel macOS) build from v0.43.1 on. On an Apple Silicon Mac running an " +
+  "x64 Node under Rosetta 2, use an arm64 Node and the darwin-arm64 build. " +
+  "On an Intel Mac, build from source: cargo install --locked --git " +
+  `https://github.com/pulseengine/rivet --tag v${require("./package.json").version} rivet-cli`
+
+/**
+ * Throws the unsupported-platform error for platforms rivet ships no build for.
+ */
+function assertSupported(platform = os.platform(), arch = os.arch()) {
+  if (platform === "darwin" && arch === "x64") {
+    throw new Error(UNSUPPORTED_MESSAGE);
+  }
+}
+
 /**
  * Map (process.platform, process.arch) to the matching @pulseengine platform
  * package name. Throws for unsupported combinations so the caller can surface
@@ -17,6 +34,7 @@ const path = require("path");
 function getPlatformPackageName() {
   const platform = os.platform();
   const arch = os.arch();
+  assertSupported(platform, arch);
 
   let platformName;
   switch (platform) {
@@ -56,6 +74,7 @@ function getPlatformPackageName() {
 function getBinaryPath() {
   const platform = os.platform();
   const binaryName = platform === "win32" ? "rivet.exe" : "rivet";
+  assertSupported();
 
   try {
     const platformPackage = getPlatformPackageName();
@@ -79,6 +98,7 @@ function getPlatformInfo() {
 }
 
 module.exports = {
+  assertSupported,
   getPlatformPackageName,
   getBinaryPath,
   getPlatformInfo,

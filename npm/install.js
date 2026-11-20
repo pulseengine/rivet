@@ -17,7 +17,15 @@ const fs = require("fs");
 const https = require("https");
 const { execFileSync } = require("child_process");
 
-const { getPlatformPackageName } = require("./index.js");
+const { assertSupported, getPlatformPackageName } = require("./index.js");
+
+// A platform with no build fails here, clearly, instead of a download 404.
+try {
+  assertSupported();
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
 
 // Fast path: platform package resolved => nothing to do.
 try {
