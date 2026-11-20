@@ -15,7 +15,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # release/v0.43.x (v0.43.1): PRs against the release branch run the
+    # same checks, so the tag goes on a head whose pull_request runs passed.
+    branches: [main, 'release/**']
   # MERGE QUEUE (REQ-412). `CI Gate` is the only required context, so this
   # workflow must run on the queue's merge_group event, or a queued PR waits
   # for a check that never reports. In a queue run the `changes` job diffs
