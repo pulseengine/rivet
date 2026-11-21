@@ -107,6 +107,17 @@ test_previous_published_tag() {
   unset -f release_published
   # shellcheck source=/dev/null
   . "$HERE/release-note.sh"
+
+  # The real release_published on a runner without gh: unknown, so the walk
+  # fails instead of skipping every tag back to the first release.
+  local nogh
+  nogh="$(mktemp -d)"
+  ln -s "$(command -v git)" "$nogh/git"
+  rc=0
+  out="$(PATH="$nogh" GITHUB_REPOSITORY=o/r previous_published_tag v0.38.0 2>/dev/null)" || rc=$?
+  check "no gh on the runner fails" "1" "$rc"
+  check "  and prints no tag" "" "$out"
+  rm -rf "$nogh"
   cd "$HERE" || return
   rm -rf "$repo"
 }

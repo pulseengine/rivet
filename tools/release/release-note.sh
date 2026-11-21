@@ -31,6 +31,9 @@ previous_release_tag() {
 # would widen the note's commit range silently.
 release_published() {
   local out
+  # The job runs on GitHub-hosted ubuntu-24.04, which ships gh. A runner
+  # without gh (the self-hosted pools have none) is unknown, not unpublished.
+  command -v gh >/dev/null 2>&1 || return 2
   if out="$(gh api "repos/${GITHUB_REPOSITORY:?}/releases/tags/$1" --jq '.draft' 2>&1)"; then
     [ "$out" = false ] && return 0
     return 1
