@@ -75,7 +75,7 @@ test_previous_release_tag() {
 }
 
 # ── previous_published_tag ────────────────────────────────────────────────
-# rivet: verifies REQ-423
+# rivet: verifies REQ-369
 test_previous_published_tag() {
   echo "previous_published_tag:"
   local repo out rc

@@ -181,7 +181,7 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "etch"
-version = "0.43.2"
+version = "0.43.3"
 dependencies = [
  "petgraph",
 ]
@@ -532,7 +532,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "rivet-core"
-version = "0.43.2"
+version = "0.43.3"
 dependencies = [
  "anyhow",
  "etch",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-yaml"
-version = "0.43.2"
+version = "0.43.3"
 dependencies = [
  "indexmap",
  "itoa",

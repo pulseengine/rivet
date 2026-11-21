@@ -58,7 +58,7 @@ jobs:
             os: ubuntu-24.04
             archive: tar.gz
             cross: true
-          # No x86_64-apple-darwin (Intel macOS) build from v0.43.2 on: the owner
+          # No x86_64-apple-darwin (Intel macOS) build from v0.43.3 on: the owner
           # stopped Intel macOS builds fleet-wide on 2026-11-20. Intel Macs
           # build from source.
           - target: aarch64-apple-darwin
@@ -483,8 +483,8 @@ jobs:
           # having never run once.
           . tools/release/release-note.sh
           # The predecessor is the last tag users received: a tag whose
-          # release run never published (v0.43.1) is skipped, so v0.43.2's
-          # note runs from v0.43.0 and lists the fix it ships.
+          # release run never published (v0.43.1, v0.43.2) is skipped, so
+          # v0.43.3's note runs from v0.43.0 and lists the fix it ships.
           PREV="$(previous_published_tag "$VERSION")"
           if [ -n "$PREV" ]; then
             echo "::notice::Generating release note for $VERSION since $PREV"
