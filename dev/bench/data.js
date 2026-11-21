@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795267960205,
+  "lastUpdate": 1795283218140,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "49699333+dependabot[bot]@users.noreply.github.com",
-            "name": "dependabot[bot]",
-            "username": "dependabot[bot]"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "296f6b6c91869074c11ba4cbacd39fc4f4824d0f",
-          "message": "build(deps): bump softprops/action-gh-release (#1214)\n\nBumps the github-actions-all group with 1 update: [softprops/action-gh-release](https://github.com/softprops/action-gh-release).\n\n\nUpdates `softprops/action-gh-release` from 3.0.3 to 3.0.4\n- [Release notes](https://github.com/softprops/action-gh-release/releases)\n- [Changelog](https://github.com/softprops/action-gh-release/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/softprops/action-gh-release/compare/efb35369e0ad2afab669f228072c1b0d510eae64...8a0cd651e5b2365bd640854a3fa5dfc70e4875f3)\n\n---\nupdated-dependencies:\n- dependency-name: softprops/action-gh-release\n  dependency-version: 3.0.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions-all\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-          "timestamp": "2026-11-09T04:48:14Z",
-          "tree_id": "83376e88ac89b8bf238a3da56fcbd9d7a56d8f05",
-          "url": "https://github.com/pulseengine/rivet/commit/296f6b6c91869074c11ba4cbacd39fc4f4824d0f"
-        },
-        "date": 1794201170586,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85195,
-            "range": "± 276",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 854570,
-            "range": "± 16734",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15118761,
-            "range": "± 802782",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2176,
-            "range": "± 68",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 25888,
-            "range": "± 517",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 413528,
-            "range": "± 2494",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 93,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1954079,
-            "range": "± 21556",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 159800,
-            "range": "± 1966",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1812019,
-            "range": "± 14955",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 32512296,
-            "range": "± 1098505",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 759666,
-            "range": "± 4306",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 18796805,
-            "range": "± 330437",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1352409192,
-            "range": "± 11218800",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4895,
-            "range": "± 14",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 67452,
-            "range": "± 550",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 885769,
-            "range": "± 23744",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 56254,
-            "range": "± 427",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 663292,
-            "range": "± 4728",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 12247428,
-            "range": "± 291269",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1167,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15602,
-            "range": "± 155",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 380672,
-            "range": "± 17174",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 24421,
-            "range": "± 74",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 162859,
-            "range": "± 835",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1517530,
-            "range": "± 25038",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1119026,
             "range": "± 13854",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "49699333+dependabot[bot]@users.noreply.github.com",
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "296e5a5583b56cd5b6726c302c46243f2ab17b3a",
+          "message": "build(deps): bump the github-actions-all group with 2 updates (#1310)\n\nBumps the github-actions-all group with 2 updates: [taiki-e/install-action](https://github.com/taiki-e/install-action) and [pulseengine/temper/.github/actions/gate-probe](https://github.com/pulseengine/temper).\n\n\nUpdates `taiki-e/install-action` from 2.90.3 to 2.90.5\n- [Release notes](https://github.com/taiki-e/install-action/releases)\n- [Changelog](https://github.com/taiki-e/install-action/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/taiki-e/install-action/compare/cfdb7ed4ccc7c7dce37759eae89dc5674b469b39...ab49d3c64680143e184118bed66a46419fc15519)\n\nUpdates `pulseengine/temper/.github/actions/gate-probe` from 03a53ca7dc3ac604252abcb70b267cd9f8ef623e to 08817a347e2df6166a7a6bd67e4639f7ba5998dd\n- [Release notes](https://github.com/pulseengine/temper/releases)\n- [Changelog](https://github.com/pulseengine/temper/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/pulseengine/temper/compare/03a53ca7dc3ac604252abcb70b267cd9f8ef623e...08817a347e2df6166a7a6bd67e4639f7ba5998dd)\n\n---\nupdated-dependencies:\n- dependency-name: taiki-e/install-action\n  dependency-version: 2.90.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: github-actions-all\n- dependency-name: pulseengine/temper/.github/actions/gate-probe\n  dependency-version: '08817a347e2df6166a7a6bd67e4639f7ba5998dd'\n  dependency-type: direct:production\n  dependency-group: github-actions-all\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-11-21T14:52:46Z",
+          "tree_id": "ab07e20256e0bbe666101c62f4628e9b8d2b716d",
+          "url": "https://github.com/pulseengine/rivet/commit/296e5a5583b56cd5b6726c302c46243f2ab17b3a"
+        },
+        "date": 1795283217277,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 68110,
+            "range": "± 2217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 736283,
+            "range": "± 4687",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 14070638,
+            "range": "± 861052",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1451,
+            "range": "± 16",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 17914,
+            "range": "± 151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 275660,
+            "range": "± 4019",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 76,
+            "range": "± 1",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 76,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 76,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 2046971,
+            "range": "± 10058",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 131475,
+            "range": "± 1500",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1502701,
+            "range": "± 25035",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 25198172,
+            "range": "± 987593",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 575301,
+            "range": "± 11712",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 12649875,
+            "range": "± 203986",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 824913369,
+            "range": "± 7151204",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3506,
+            "range": "± 94",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 35730,
+            "range": "± 261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 632403,
+            "range": "± 5816",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 47786,
+            "range": "± 476",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 534957,
+            "range": "± 4950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 6921094,
+            "range": "± 364217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 835,
+            "range": "± 9",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11000,
+            "range": "± 344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 196029,
+            "range": "± 714",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21026,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 122938,
+            "range": "± 376",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1118955,
+            "range": "± 24622",
             "unit": "ns/iter"
           }
         ]
