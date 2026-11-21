@@ -74,6 +74,43 @@ test_previous_release_tag() {
   rm -rf "$repo"
 }
 
+# ── previous_published_tag ────────────────────────────────────────────────
+# rivet: verifies REQ-423
+test_previous_published_tag() {
+  echo "previous_published_tag:"
+  local repo out rc
+  repo="$(make_repo)"
+  cd "$repo" || return
+
+  # A stub GitHub: v0.34.0 was tagged but never published (the v0.43.1 case).
+  # shellcheck disable=SC2329 # invoked indirectly by previous_published_tag
+  release_published() {
+    case "$1" in
+      "$UNKNOWN_TAG") return 2 ;;
+      v0.34.0) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  UNKNOWN_TAG=none
+
+  check "an unpublished predecessor is skipped" "v0.33.1" "$(previous_published_tag v0.38.0 2>/dev/null)"
+  check "a published predecessor is kept" "v0.33.0" "$(previous_published_tag v0.33.1 2>/dev/null)"
+  check "first release has no predecessor" "" "$(previous_published_tag v0.33.0 2>/dev/null)"
+
+  # Unknown must fail, not skip: skipping would silently widen the range.
+  UNKNOWN_TAG=v0.34.0
+  rc=0
+  out="$(previous_published_tag v0.38.0 2>/dev/null)" || rc=$?
+  check "unreadable release state fails" "1" "$rc"
+  check "  and prints no tag" "" "$out"
+
+  unset -f release_published
+  # shellcheck source=/dev/null
+  . "$HERE/release-note.sh"
+  cd "$HERE" || return
+  rm -rf "$repo"
+}
+
 # ── compose_release_body ──────────────────────────────────────────────────
 # rivet: verifies REQ-369
 test_compose_release_body() {
@@ -132,6 +169,7 @@ test_body_carries_note() {
 }
 
 test_previous_release_tag
+test_previous_published_tag
 test_compose_release_body
 test_body_carries_note
 
