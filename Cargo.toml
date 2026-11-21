@@ -180,7 +180,7 @@ pulldown-cmark = { version = "0.12", default-features = false, features = ["html
 # Use gluesql-core + the memory storage directly; the umbrella `gluesql` crate
 # pulls every storage backend (sled/parquet/mongo/redis/…) and a C compiler.
 gluesql-core = "0.19"
-gluesql_memory_storage = "0.19"
+gluesql_memory_storage = "0.20"
 # block_on bridge for gluesql's async execute API (no runtime needed).
 futures = "0.3"
 
