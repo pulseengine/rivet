@@ -27,9 +27,14 @@ claude mcp add rivet npx -y @pulseengine/rivet mcp
 
 ## Supported platforms
 
-- `darwin-arm64`, `darwin-x64`
+- `darwin-arm64`
 - `linux-arm64`, `linux-x64`
 - `win32-x64`
+
+Intel macOS (`darwin-x64`) has no build from v0.44.0 on, and installing on
+it fails with "unsupported platform". On an Intel Mac, build from source. On
+an Apple Silicon Mac running an x64 Node under Rosetta 2, switch to an arm64
+Node.
 
 Binaries are pre-built and published alongside each GitHub release at
 <https://github.com/pulseengine/rivet/releases>.

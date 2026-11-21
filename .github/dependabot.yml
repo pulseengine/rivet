@@ -74,12 +74,6 @@ updates:
     labels:
       - dependencies
   - package-ecosystem: npm
-    directory: /platform-packages/darwin-x64
-    schedule:
-      interval: weekly
-    labels:
-      - dependencies
-  - package-ecosystem: npm
     directory: /platform-packages/linux-arm64
     schedule:
       interval: weekly
