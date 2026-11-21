@@ -129,6 +129,63 @@ fn the_floor_rejects_the_affected_and_accepts_the_patched_versions() {
     assert_eq!(locked_versions(lock, "wasmtime-wasi"), vec![(48, 0, 5)]);
 }
 
+/// RUSTSEC-2026-0587 (GHSA-f2pq-268w-886c, a WASI filesystem sandbox escape
+/// on Windows through a drive-prefixed path component) affects wasmtime-wasi
+/// only. Its patched ranges at or above 48 are `>=48.0.10, <49.0.0`,
+/// `>=49.0.7, <50.0.0` and `>=50.0.3`; the 36.x backport is below the 48.0.7
+/// floor above and is rejected here too (REQ-423).
+fn is_patched_0587(v: (u64, u64, u64)) -> bool {
+    match v {
+        (48, 0, p) => p >= 10,
+        (48, _, _) => true,
+        (49, 0, p) => p >= 7,
+        (49, _, _) => true,
+        (50, 0, p) => p >= 3,
+        (major, _, _) => major >= 50,
+    }
+}
+
+// rivet: verifies REQ-423
+#[test]
+fn wasmtime_wasi_is_outside_rustsec_2026_0587() {
+    let lock_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../Cargo.lock");
+    let lock = std::fs::read_to_string(&lock_path).expect("workspace Cargo.lock");
+    let versions = locked_versions(&lock, "wasmtime-wasi");
+    assert!(
+        !versions.is_empty(),
+        "wasmtime-wasi not found in Cargo.lock: the floor would pass vacuously"
+    );
+    for v in versions {
+        assert!(
+            is_patched_0587(v),
+            "wasmtime-wasi {}.{}.{} is affected by RUSTSEC-2026-0587; the patched ranges \
+             are >=48.0.10,<49.0.0, >=49.0.7,<50.0.0 and >=50.0.3",
+            v.0,
+            v.1,
+            v.2
+        );
+    }
+}
+
+// rivet: verifies REQ-423
+#[test]
+fn the_0587_floor_rejects_the_affected_and_accepts_the_patched_versions() {
+    for affected in [(48, 0, 9), (48, 0, 7), (49, 0, 6), (50, 0, 2), (36, 0, 22)] {
+        assert!(!is_patched_0587(affected), "{affected:?} must be rejected");
+    }
+    for patched in [
+        (48, 0, 10),
+        (48, 1, 0),
+        (49, 0, 7),
+        (49, 1, 0),
+        (50, 0, 3),
+        (50, 1, 0),
+        (51, 0, 0),
+    ] {
+        assert!(is_patched_0587(patched), "{patched:?} must be accepted");
+    }
+}
+
 /// RUSTSEC-2026-0308 (salsa use-after-free) is fixed in salsa 0.28.5. rivet
 /// shares salsa types with spar, so the fix needs ONE salsa in the tree: two
 /// versions would mean spar and rivet-core disagree on the types (REQ-376).

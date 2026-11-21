@@ -47,9 +47,9 @@ release_published() {
 # previous_published_tag <version>
 #
 # The nearest preceding tag ON THIS HISTORY that users actually received: a
-# tag with no published GitHub release is skipped. v0.43.1 was tagged, its
-# release run failed, and nothing was published; v0.43.2 is the first release
-# users see with v0.43.1's changes, so its note must run from v0.43.0. Fails
+# tag with no published GitHub release is skipped. v0.43.1 and v0.43.2 were
+# tagged, their release runs failed, and nothing was published; v0.43.3 is the
+# first release users see with their changes, so its note runs from v0.43.0. Fails
 # (exit 1, nothing on stdout) when a tag's release state cannot be read.
 previous_published_tag() {
   local ref="$1" tag rc
