@@ -24,6 +24,48 @@ previous_release_tag() {
   git describe --tags --abbrev=0 "${1}^" 2>/dev/null || true
 }
 
+# release_published <tag>
+#
+# 0 when <tag> has a published (non-draft) GitHub release, 1 when it has
+# none, 2 when GitHub cannot be read. Unknown is never read as "none": that
+# would widen the note's commit range silently.
+release_published() {
+  local out
+  # The job runs on GitHub-hosted ubuntu-24.04, which ships gh. A runner
+  # without gh (the self-hosted pools have none) is unknown, not unpublished.
+  command -v gh >/dev/null 2>&1 || return 2
+  if out="$(gh api "repos/${GITHUB_REPOSITORY:?}/releases/tags/$1" --jq '.draft' 2>&1)"; then
+    [ "$out" = false ] && return 0
+    return 1
+  fi
+  case "$out" in
+    *"Not Found"* | *"HTTP 404"*) return 1 ;;
+  esac
+  return 2
+}
+
+# previous_published_tag <version>
+#
+# The nearest preceding tag ON THIS HISTORY that users actually received: a
+# tag with no published GitHub release is skipped. v0.43.1 was tagged, its
+# release run failed, and nothing was published; v0.43.2 is the first release
+# users see with v0.43.1's changes, so its note must run from v0.43.0. Fails
+# (exit 1, nothing on stdout) when a tag's release state cannot be read.
+previous_published_tag() {
+  local ref="$1" tag rc
+  while :; do
+    tag="$(previous_release_tag "$ref")"
+    [ -n "$tag" ] || return 0
+    rc=0
+    release_published "$tag" || rc=$?
+    case "$rc" in
+      0) echo "$tag"; return 0 ;;
+      1) echo "::notice::skipping $tag: no published GitHub release" >&2; ref="$tag" ;;
+      *) echo "::error::cannot tell whether $tag has a published GitHub release" >&2; return 1 ;;
+    esac
+  done
+}
+
 # compose_release_body <note-file> <generated-notes>
 #
 # The trace-derived note first, then GitHub's generated pull-request list under

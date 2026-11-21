@@ -5,9 +5,9 @@
 
 ## [Unreleased]
 
-## [0.43.1] - 2026-11-20
+## [0.43.2] - 2026-11-21
 
-A security patch cut from `release/v0.43.x` (v0.43.0 plus this fix, and no Intel macOS asset); main carries the same fix and moves on to wasmtime 50.0.3 separately.
+A security patch cut from `release/v0.43.x` (v0.43.0 plus this fix, and no Intel macOS asset); main carries the same fix and moves on to wasmtime 50.0.3 separately. The tag v0.43.1 exists but was never published: its release run built every target and stopped at the release note, because no artifact was scoped to the release, so no GitHub Release, npm package or VSIX carries 0.43.1. Tags stay immutable, so the same content ships as 0.43.2 with REQ-423 scoped to it.
 
 This release is wrong if `cargo deny check advisories` on its `Cargo.lock` reports RUSTSEC-2026-0587, or if its `Cargo.lock` differs from v0.43.0's in anything but the wasmtime-wasi 48.0.10 update and the rivet version.
 
@@ -15,7 +15,7 @@ This release is wrong if `cargo deny check advisories` on its `Cargo.lock` repor
 - **wasmtime-wasi 48.0.10 for RUSTSEC-2026-0587** (#1306). The update moves the wasmtime, wiggle and pulley crates to 48.0.10 and cranelift to 0.135.10. Release binaries are built without the `wasm` feature and contain no wasmtime; the fix matters to builds with `--features wasm`.
 
 ### Removed
-- **No x86_64-apple-darwin (Intel macOS) assets from this release on.** Intel Mac users: build from source (`cargo install --locked --git https://github.com/pulseengine/rivet --tag v0.43.1 rivet-cli`). The npm package no longer lists `@pulseengine/rivet-darwin-x64` and refuses darwin-x64 with this advice; the compliance action refuses an Intel macOS runner.
+- **No x86_64-apple-darwin (Intel macOS) assets from this release on.** Intel Mac users: build from source (`cargo install --locked --git https://github.com/pulseengine/rivet --tag v0.43.2 rivet-cli`). The npm package no longer lists `@pulseengine/rivet-darwin-x64` and refuses darwin-x64 with this advice; the compliance action refuses an Intel macOS runner.
 
 ## [0.43.0] - 2026-11-19
 

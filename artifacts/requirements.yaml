@@ -10554,3 +10554,22 @@ artifacts:
       model: claude-opus-5-5
       timestamp: 2026-11-18T11:30:00Z
     release: v0.43.0
+
+  - id: REQ-423
+    type: requirement
+    title: "wasmtime-wasi 48.0.9 (rivet-core's wasm feature) is affected by RUSTSEC-2026-0587; v0.43.2 ships the 48.0.10 fix from a release branch"
+    status: implemented
+    release: v0.43.2
+    description: "RUSTSEC-2026-0587 (GHSA-f2pq-268w-886c) is a WASI filesystem sandbox escape on Windows through a drive-prefixed path component, fixed in wasmtime-wasi 48.0.10. rivet v0.43.0 resolves 48.0.9. SCOPE: as for REQ-402, wasmtime is an optional dependency behind rivet-core's wasm feature and release binaries are built without it, so the advisory reaches source builds with --features wasm and library users of rivet-core with that feature. The owner chose a patch release cut from a release branch (release/v0.43.x from v0.43.0) instead of from main, so v0.43.2 carries only this fix and its packaging. The tag v0.43.1 was cut from the same content and never published (its release run failed at the release note because no artifact was scoped to it); tags stay immutable, so the release is v0.43.2. ACCEPTANCE: v0.43.2's Cargo.lock resolves wasmtime-wasi >= 48.0.10; cargo deny check advisories, which analyses all features (REQ-402), passes on it; and its Cargo.lock differs from v0.43.0's only in the wasmtime 48.0.10 crate set and the rivet version. IMPLEMENTED: #1306 on main, cherry-picked to release/v0.43.x in #1308; the CI Deny job passed on the release-branch head."
+    tags: [security, dependencies, wasm]
+    fields:
+      category: functional
+      priority: must
+      corrective: true
+    links:
+      - type: refines
+        target: REQ-402
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-21T08:30:00Z
