@@ -58,7 +58,7 @@ jobs:
             os: ubuntu-24.04
             archive: tar.gz
             cross: true
-          # No x86_64-apple-darwin (Intel macOS) build from v0.43.1 on: the owner
+          # No x86_64-apple-darwin (Intel macOS) build from v0.43.2 on: the owner
           # stopped Intel macOS builds fleet-wide on 2026-11-20. Intel Macs
           # build from source.
           - target: aarch64-apple-darwin

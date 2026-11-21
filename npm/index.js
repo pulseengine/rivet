@@ -9,10 +9,10 @@
 const os = require("os");
 const path = require("path");
 
-// Intel macOS has no build from v0.43.1 on (owner decision, 2026-11-20).
+// Intel macOS has no build from v0.43.2 on (owner decision, 2026-11-20).
 const UNSUPPORTED_MESSAGE =
   "unsupported platform: darwin-x64. rivet ships no x86_64-apple-darwin " +
-  "(Intel macOS) build from v0.43.1 on. On an Apple Silicon Mac running an " +
+  "(Intel macOS) build from v0.43.2 on. On an Apple Silicon Mac running an " +
   "x64 Node under Rosetta 2, use an arm64 Node and the darwin-arm64 build. " +
   "On an Intel Mac, build from source: cargo install --locked --git " +
   `https://github.com/pulseengine/rivet --tag v${require("./package.json").version} rivet-cli`
