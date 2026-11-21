@@ -4,10 +4,12 @@ version: 2
 # one PR per directory. (Learned from loom/witness/mcp/relay/rules_wasm_component,
 # where one release arrived as 4-8 PRs.)
 updates:
+  # PAUSED 2026-11-21 under the fleet CI hold; restore the previous limits when it lifts.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     labels:
       - dependencies
     groups:
@@ -25,6 +27,7 @@ updates:
       - /rivet-core
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     labels:
       - dependencies
     groups:
@@ -50,6 +53,7 @@ updates:
     directory: /npm
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     # The platform packages are rivet's own release artifacts: release-npm.yml
     # sets their versions at publish time, so the committed pins are not bumped.
     ignore:
@@ -60,6 +64,7 @@ updates:
     directory: /vscode-rivet
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     labels:
       - dependencies
     # @types/vscode must not exceed engines.vscode (^1.91.0), or vsce
@@ -71,11 +76,13 @@ updates:
     directory: /platform-packages/darwin-arm64
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     labels:
       - dependencies
   - package-ecosystem: npm
     directory: /platform-packages/linux-arm64
     schedule:
       interval: weekly
+    open-pull-requests-limit: 0
     labels:
       - dependencies
