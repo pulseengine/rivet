@@ -4,4 +4,3 @@ out/
 voices/
 # Node deps for the standalone capture.
 node_modules/
-package-lock.json

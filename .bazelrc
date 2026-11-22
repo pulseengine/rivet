@@ -1,0 +1,5 @@
+# Bazel refuses to change MODULE.bazel.lock (lockfile sweep 2026-11-20): a
+# MODULE.bazel edit needs `bazel mod deps --lockfile_mode=update` and the
+# regenerated lock in the same commit. tools/ci/lockfiles-check.sh checks
+# this line is present.
+common --lockfile_mode=error

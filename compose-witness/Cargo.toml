@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
+rivet-yaml = { path = "../rivet-yaml" }
 
 [package.metadata.component]
 package = "pulseengine:compose-witness"
