@@ -64,7 +64,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88
+        with:
+          toolchain: 1.100.0
       - uses: Swatinem/rust-cache@v2
 
       - uses: pulseengine/rivet/.github/actions/compliance@main
