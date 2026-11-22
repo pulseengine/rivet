@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795283218140,
+  "lastUpdate": 1795326682334,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "b33c7b83c624fb68af5c3f55306df127d1e462ed",
-          "message": "build(deps): openssl 0.10.80 for three RustSec advisories; rmcp advisory assessed not applicable (#1220)\n\nCargo Deny (a CI Gate need) has been red on main and on every PR since\nfour new advisories were published:\n\n- RUSTSEC-2026-0474, -0476, -0477 (openssl 0.10.78: non-UTF-8 &str from\n  X509Ref::ocsp_responders; AES key-wrap-with-padding buffer overflows in\n  cipher_update and cipher_update_inplace). Fixed in 0.10.80. openssl is\n  pinned to exactly 0.10.80 and openssl-sys to 0.9.116, the newest versions\n  Bytecode Alliance's imported cargo-vet audits cover (0.10.78 -> 0.10.80,\n  0.9.114 -> 0.9.116); `cargo vet` refreshed imports.lock with those four\n  audits and nothing else, so no unreviewed code enters. 0.10.82 would add\n  ~1400 unaudited lines for no further fix.\n\n- RUSTSEC-2026-0462 (rmcp 1.5.0: unbounded body buffering in the\n  Streamable HTTP clients). Fixed only in rmcp 3.9.0, two major versions\n  away. rivet enables neither affected feature\n  (transport-streamable-http-client-reqwest / -unix-socket); measured with\n  `cargo tree -e features -i rmcp`. Ignored in deny.toml with the\n  assessment, the reason not to upgrade now, a re-check trigger and a\n  2027-02-01 date, and in the audit step alongside it, as that step's\n  comment requires.\n\nConfirmed locally: cargo deny check advisories bans licenses sources (0.20.2,\nCI's version) all ok; cargo audit --ignore RUSTSEC-2026-0462 exits 0 (7\nallowed warnings, unchanged); cargo vet --locked succeeds; actionlint clean.\nOn macOS native-tls uses Security.framework, so the openssl build itself is\nexercised only by Linux CI.\n\n\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-10T21:43:24Z",
-          "tree_id": "5cf2dd9ea89a594ce492d0ce8cc76f7a647a2b96",
-          "url": "https://github.com/pulseengine/rivet/commit/b33c7b83c624fb68af5c3f55306df127d1e462ed"
-        },
-        "date": 1794355673509,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 68811,
-            "range": "± 573",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 689806,
-            "range": "± 21858",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15814470,
-            "range": "± 1473963",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1479,
-            "range": "± 43",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 17865,
-            "range": "± 265",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 275994,
-            "range": "± 5608",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 75,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1558258,
-            "range": "± 20075",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 118340,
-            "range": "± 561",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1371713,
-            "range": "± 16416",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 24888725,
-            "range": "± 1972344",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 545498,
-            "range": "± 3418",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 12853084,
-            "range": "± 431660",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 862238429,
-            "range": "± 11264840",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3604,
-            "range": "± 212",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 40021,
-            "range": "± 662",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 615150,
-            "range": "± 10028",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 43390,
-            "range": "± 109",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 494501,
-            "range": "± 11406",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6729542,
-            "range": "± 708577",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 800,
-            "range": "± 23",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 11226,
-            "range": "± 29",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 201379,
-            "range": "± 8123",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 17466,
-            "range": "± 63",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 113749,
-            "range": "± 3266",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1031732,
-            "range": "± 80074",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1118955,
             "range": "± 24622",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "bc26179fee460bdfecc0e6baf7bbe10868b8d9d0",
+          "message": "ci: pin every third-party action to a full commit SHA (#1303)\n\n* ci: pin every third-party action to a full commit SHA\n\nThe org will require SHA-pinned actions; this pins the 29 references that\nstill used a ref name and adds a version comment to the one pin that lacked\none. Each SHA was resolved from upstream with git ls-remote:\n\n- dtolnay/rust-toolchain@stable (26) and @1.89.0 (1): the head of the\n  branch of that name, since the branch name selects the toolchain;\n  39008827 (stable) and d92bbbb0 (1.89.0).\n- bazel-contrib/setup-bazel@0.19.2 (2): the commit the annotated tag points\n  to, f34d6a05, not the tag object e1614ab8.\n- pulseengine/temper gate-probe, already pinned to 03a53ca7: temper has no\n  release tags, so the comment names main, 2026-11-11, temper#90.\n\nEvery uses: line in .github/workflows and .github/actions now reads\nowner/action@<40-hex> # <version>, local ./ actions aside. The README\nexamples in .github/actions/compliance are documentation for consumers and\nkeep their ref names.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci(release): pin Rust 1.100.0 on the SHA-pinned toolchain action\n\nSame change as release/v0.43.x (#1322): the five release.yml toolchain\nsteps use dtolnay/rust-toolchain@fa04a145 with toolchain: 1.100.0, so\nmain and the release branch carry one pin. Owner fleet rule 2026-11-21.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T04:35:28Z",
+          "tree_id": "f3ea89d6bd547bc782570d1b12c7e4c08db79d79",
+          "url": "https://github.com/pulseengine/rivet/commit/bc26179fee460bdfecc0e6baf7bbe10868b8d9d0"
+        },
+        "date": 1795326680206,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 82858,
+            "range": "± 693",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 942141,
+            "range": "± 11694",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 15525652,
+            "range": "± 497401",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1570,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 19157,
+            "range": "± 162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 327056,
+            "range": "± 3391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 76,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 76,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 2639117,
+            "range": "± 17101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 174492,
+            "range": "± 1233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1980625,
+            "range": "± 10969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 36197816,
+            "range": "± 886909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 737743,
+            "range": "± 7538",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 17030390,
+            "range": "± 214259",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1059379363,
+            "range": "± 4442866",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3926,
+            "range": "± 26",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 42134,
+            "range": "± 273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 936021,
+            "range": "± 7255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 54845,
+            "range": "± 467",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 576400,
+            "range": "± 3059",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8069040,
+            "range": "± 429832",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1076,
+            "range": "± 7",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11836,
+            "range": "± 99",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 339991,
+            "range": "± 2872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 29239,
+            "range": "± 194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 171880,
+            "range": "± 1262",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1541468,
+            "range": "± 19475",
             "unit": "ns/iter"
           }
         ]
