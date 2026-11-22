@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795334618170,
+  "lastUpdate": 1795344218109,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "08db01fd43956d53edc45817a7fc8c2a4cbe3884",
-          "message": "ci: ledger of proof trust escapes, and a coqchk axiom check in Rocq Proofs (#1222)\n\n* ci: ledger of proof trust escapes, and a coqchk axiom check in Rocq Proofs\n\nproofs/trust-ledger.tsv lists every statement rivet's provers accept\nwithout checking: today one Rocq Admitted (Schema.v\nvmodel_chain_two_steps) and one Verus assume (verus_specs.rs\nlemma_build_yields_symmetric). tools/ci/trust-ledger.py scans Rocq\nAdmitted, Admit Obligations, Axiom, Parameter and Conjecture (comments\nstripped, nested) and Verus external_body, assume_specification,\nassume and admit in files containing verus!. kani::assume is a harness\nprecondition and is not counted. A new escape fails; a vanished one is\nreported and passes. The new \"Proof trust ledger\" job runs it plus a\n6-case self-test on the light pool. It is not a CI Gate need.\n\nThe Rocq Proofs job gains a kernel step. tools/ci/rocq-coqchk.py reads\nthe coqc actions from bazel aquery, runs coqchk -o over every .vo under\nthe project load paths with the same -Q pairs, and trust-ledger.py\nkernel fails on an axiom without a kernel row or on any \"relying on\"\nflag. The job stays continue-on-error.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: coqchk summary check fails on any block other than Axioms that is not <none>\n\nThe first CI run showed coqchk 9.0 prints \"Inductives whose positivity is\nassumed\" and two Theory lines; the parser only checked \"relying on\"\nblocks, so an assumed-positive inductive or an impredicative Set would\nhave passed. Every non-axiom block must now read <none>, and Theory lines\nmust be \"Set is predicative\" or \"Rewrite rules are not allowed\". Two\nself-test cases cover it.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: NEGATIVE CONTROL, revert before merge: one Verus external_body and one Rocq Axiom\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: revert the negative control commit 03a65abc\n\nTrace: skip\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: keep the ledger self-test's expected ::error:: lines out of the job log\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-11T17:14:15Z",
-          "tree_id": "41e92baf66a84da8554ef9392423d5138b36c74a",
-          "url": "https://github.com/pulseengine/rivet/commit/08db01fd43956d53edc45817a7fc8c2a4cbe3884"
-        },
-        "date": 1794419899977,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 84499,
-            "range": "± 2505",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 865694,
-            "range": "± 25936",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 17949496,
-            "range": "± 1111173",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1915,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 24183,
-            "range": "± 383",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 394415,
-            "range": "± 2618",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 97,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 97,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1998776,
-            "range": "± 11445",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 157921,
-            "range": "± 8262",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1817736,
-            "range": "± 18165",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 28958889,
-            "range": "± 1778459",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 724854,
-            "range": "± 3882",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 17362847,
-            "range": "± 195882",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1217284360,
-            "range": "± 22107709",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4717,
-            "range": "± 104",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 52459,
-            "range": "± 238",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 793407,
-            "range": "± 6704",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 59640,
-            "range": "± 438",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 698575,
-            "range": "± 7693",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 9305866,
-            "range": "± 1013303",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1195,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 14962,
-            "range": "± 162",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 270315,
-            "range": "± 2393",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 22205,
-            "range": "± 498",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 145357,
-            "range": "± 1820",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1323977,
-            "range": "± 32729",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1128268,
             "range": "± 13381",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6ef8887cbd03612fe8da3d447c7aa42450926a88",
+          "message": "ci: every lockfile binds the build; CI pins Rust 1.100.0 (#1323)\n\n* ci: every lockfile binds the build, and nested locks are audited\n\nLockfile sweep, owner-approved 2026-11-20 (relayed by pulseengine.eu).\n\n- tools/ci/lockfiles-check.sh, a step in the Cargo Deny job (a CI Gate\n  need): every Cargo workspace root found from the committed Cargo.toml\n  files (., fuzz, compose-witness) has a committed, unignored Cargo.lock\n  that `cargo metadata --locked` accepts, so the ~50 unlocked cargo\n  commands in CI resolve exactly the committed lock. Nested locks pass\n  `cargo deny check advisories` with the root deny.toml. Fails closed\n  below 3 roots. Also checks MODULE.bazel.lock and the npm lockfiles.\n- MODULE.bazel.lock committed (Bazel 9.3.3, `bazel mod deps\n  --lockfile_mode=update`); .bazelversion pins 9.3.3, the version CI ran\n  unpinned; .bazelrc sets `common --lockfile_mode=error`.\n- tools/intro-video: package-lock.json was gitignored; now committed.\n- release.yml: `cargo install cross` gains --locked.\n- The new audit found two advisories: fuzz/Cargo.lock crossbeam-epoch\n  0.9.18 (RUSTSEC-2026-0204) -> 0.9.21; compose-witness unsafe-libyaml\n  (RUSTSEC-2024-0449) via serde_yaml, replaced by rivet-yaml as the root\n  workspace did in #1085. The component builds (cargo component build\n  --release) and returns byte-identical output to the serde_yaml build on\n  sample models; only parse-error wording differs.\n\nLocal negative controls: an out-of-date fuzz/Cargo.lock and a gitignored\nnpm lock each make the script exit 1.\n\nRefs: REQ-347\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: CI pins Rust 1.100.0 like release.yml\n\nThe 22 dtolnay/rust-toolchain steps in ci.yml (19), benchmarks.yml,\ncompliance.yml and rivet-delta.yml were SHA-pinned to the action's\nstable branch (39008827, b725eda5) with no toolchain input, so they\ninstalled whatever stable was current. They now use the master commit\nfa04a145 that release.yml uses, with toolchain: 1.100.0; existing\ncomponents and targets are kept. The compliance action's README\nexample shows the same pin instead of @stable. The dated nightly jobs\nand the MSRV job (1.89.0) are unchanged; no toolchain canary yet.\n\nOwner fleet rule extension, 2026-11-21, relayed by pulseengine.eu: CI\npins the exact release toolchain too.\n\nConfirmed with: no rust-toolchain@39008827/b725eda5 left in\n.github/workflows; every workflow parses; actionlint reports the same\n6 findings as main.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T08:52:26Z",
+          "tree_id": "7cb6789e5d3c9bf7b7c9919fe6c5e246c5f85c1e",
+          "url": "https://github.com/pulseengine/rivet/commit/6ef8887cbd03612fe8da3d447c7aa42450926a88"
+        },
+        "date": 1795344216268,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 68786,
+            "range": "± 919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 743314,
+            "range": "± 31368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 16686431,
+            "range": "± 2029567",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1502,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 18110,
+            "range": "± 339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 287121,
+            "range": "± 2179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 74,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 75,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 2044921,
+            "range": "± 5787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 132026,
+            "range": "± 873",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1493748,
+            "range": "± 25642",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 27410393,
+            "range": "± 2168922",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 576122,
+            "range": "± 7552",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 12603204,
+            "range": "± 193378",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 820157594,
+            "range": "± 9218997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 3288,
+            "range": "± 42",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 35987,
+            "range": "± 973",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 639273,
+            "range": "± 2339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 46460,
+            "range": "± 440",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 530644,
+            "range": "± 2816",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 7127263,
+            "range": "± 449500",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 853,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 11395,
+            "range": "± 55",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 202451,
+            "range": "± 1874",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20584,
+            "range": "± 298",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 121445,
+            "range": "± 814",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1120279,
+            "range": "± 29552",
             "unit": "ns/iter"
           }
         ]
