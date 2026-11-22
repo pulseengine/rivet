@@ -1736,16 +1736,11 @@ jobs:
     # not pre-installed on smithy. Move once toolchains role ships kani.
     # Kept on hosted: needs sudo (swap file) and the Kani/CBMC toolchain.
     runs-on: ubuntu-24.04
-    # 90, not 45: the PR path (`--only-codegen`) finishes in ~7.5 min, but the
-    # push path verifies 27 harnesses and is documented above as exceeding 30.
-    # Both main pushes on 2026-09-23 were CANCELLED at exactly 45:00 with
-    # `cargo kani` never reaching a proof. Installation is not the cost —
-    # measured at ~3 s for `cargo install` plus ~12 s for `cargo-kani setup`,
-    # so caching the toolchain would buy nothing.
-    # 120: the full path gives each of the 27 harnesses at most 3 minutes
-    # (REQ-391), so it ends in ~81 min of proofs plus setup instead of being
-    # cancelled inside its first harness.
-    timeout-minutes: 120
+    # 30: every run verifies the one default harness (REQ-391); the job takes
+    # 2-3 min on main (install ~15 s, compile ~2 min, verify ~3 s), and
+    # --harness-timeout bounds the harness at 3 min. The earlier 120 budgeted
+    # 27 harnesses that no CI run has verified since they were parked.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # REQ-391 / #839: kani-compiler peaks at ~11.8 GB resident on rivet-core
@@ -1781,30 +1776,22 @@ jobs:
       #
       # 0.67.0 is the release before that ICE. Raise it deliberately, after
       # checking a run, rather than by letting `latest` move on its own.
-      # PR runs: smoke-test only (--only-codegen, ~5 min). Full Kani
-      # runs on push to main (still 45 min budget). The 27-harness
-      # full suite was overrunning the 45 min budget mid-unwind.
-      - if: github.event_name == 'pull_request'
-        uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1 @ 2026-09-20
-        with:
-          kani-version: '0.67.0'
-          args: '-p rivet-core --only-codegen'
-      # ONE invocation on push, not two. The action's last step is literally
-      # `${{ inputs.command }} ${{ inputs.args }}`, so with no `args` it ran
-      # `cargo-kani` over the WHOLE WORKSPACE itself — and the job then ran
-      # `cargo kani -p rivet-core` again as a separate step. The first
-      # invocation alone exhausted the budget, which is why the proofs never
-      # started. Scope it to rivet-core and run it once.
+      # ONE invocation for every event (PR, push to main, schedule, dispatch),
+      # scoped to rivet-core. The action's last step is literally
+      # `${{ inputs.command }} ${{ inputs.args }}`; with no `args` it would run
+      # `cargo-kani` over the whole workspace.
       #
-      # REQ-391: every main run was cancelled inside its FIRST harness
-      # (proof_strip_html_tags_no_panic, whose CBMC formula does not solve),
-      # so the other 26 never ran and nobody knew their Linux verdicts.
+      # It VERIFIES the default harness set; it does not stop at codegen. That
+      # set is one harness, proof_coverage_percentage_bounds: the other 26 are
+      # parked behind cfg(kani_slow) (REQ-391), which no CI job enables, so no
+      # CI run checks them and they are not verification evidence. Until
+      # 2026-11-22 the PR path ran `--only-codegen`, so a false harness passed
+      # a PR's Kani job (probe #1326, run 45008893517). Verifying costs ~3 s on
+      # top of the ~2 min compile (main run 45008617007: 3.3 s).
+      #
       # --harness-timeout reports a harness that exceeds 3 minutes as a
-      # failure and moves on. The nightly runs this path too: before, every
-      # Kani step was skipped on `schedule`, and the job reported a vacuous
-      # success in 0.1 min.
-      - if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1 @ 2026-09-20
+      # failure and moves on (REQ-391).
+      - uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # v1 @ 2026-09-20
         with:
           kani-version: '0.67.0'
           args: '-p rivet-core -Z unstable-options --harness-timeout 3m'
