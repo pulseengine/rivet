@@ -477,6 +477,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
       - name: Generate release note
+        env:
+          # previous_published_tag reads each candidate tag's GitHub release.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF#refs/tags/}"
@@ -488,7 +491,10 @@ jobs:
           # shell here is unreachable by any pull request and would ship
           # having never run once.
           . tools/release/release-note.sh
-          PREV="$(previous_release_tag "$VERSION")"
+          # The predecessor is the last tag users received: a tag whose
+          # release run never published (v0.43.1, v0.43.2) is skipped, so
+          # v0.43.3's note runs from v0.43.0 and lists the fix it ships.
+          PREV="$(previous_published_tag "$VERSION")"
           if [ -n "$PREV" ]; then
             echo "::notice::Generating release note for $VERSION since $PREV"
             cargo run --release -p rivet-cli -- release notes "$VERSION" --since "$PREV" > "$OUT"
