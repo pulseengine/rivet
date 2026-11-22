@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795326682334,
+  "lastUpdate": 1795334618170,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "3120a389a6e177145d6b166e199b3a46c14b113b",
-          "message": "ci: run temper's gate probe on pull requests (report-only) (#1219)\n\n* ci: run temper's gate probe on pull requests (report-only)\n\nAdds .github/workflows/gate-probe.yml, which runs temper's gate-probe\naction pinned to a57e81353acfad05bf1e4cf635281a7562253d36 (the merge of\ntemper#87, main green). The action runs tools/ci/detect-changes.sh on the\ncontrol paths in .github/gate-probe.json plus temper's defaults and fails\nif a declared output (tests, wasm) fails open or a negative control comes\nback true.\n\nFollows temper's workflow rules: pull_request only (never\npull_request_target), no path filter, no `if:`, no continue-on-error,\ncontents: read, credential-less checkout. Report-only: it is not a\nrequired check; that is a later per-repo step after the owner approves.\n\nConfirmed by running temper's gate_probe.py at that SHA against current\nmain: exit 0, \"every detector fails closed\" (5 controls closed, 2 negative\ncontrols non-code). actionlint clean apart from custom runner labels.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci(gate-probe): route fork PRs to a hosted runner\n\nThe probe executes the pull request's own detector script, and the\nself-hosted runner group accepts public repositories, so a fork PR would\nrun untrusted code on the self-hosted hosts after a single mistaken fork\napproval. Fork PRs now run on ubuntu-latest; same-repo PRs stay on the\nlight self-hosted runner, the same routing spar, meld, gale, varve and\nrelay use. The job still runs on every PR, so it cannot be skipped.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: pin temper gate-probe to 308848d1\n\ntemper 308848d1 is one commit after a57e8135 on main, with all 8 check\nruns green (run 42897869007). It removes tracked __pycache__ bytecode\nfrom the distributed action and adds a fork-routing rule for public\nrepos; gate_probe.py itself is unchanged. rivet's runs-on already routes\nfork PRs to ubuntu-latest, so the new rule accepts this workflow.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-11T00:16:43Z",
-          "tree_id": "c1b4216fc96902000deef012d0a255647286a7ec",
-          "url": "https://github.com/pulseengine/rivet/commit/3120a389a6e177145d6b166e199b3a46c14b113b"
-        },
-        "date": 1794363660152,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 53487,
-            "range": "± 1126",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 640097,
-            "range": "± 11290",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12157794,
-            "range": "± 1010129",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1142,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 13781,
-            "range": "± 421",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 253953,
-            "range": "± 10453",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 51,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 50,
-            "range": "± 4",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 55,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1320739,
-            "range": "± 49581",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 116841,
-            "range": "± 1352",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1312358,
-            "range": "± 31808",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 25034969,
-            "range": "± 3374090",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 461260,
-            "range": "± 11272",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 11464984,
-            "range": "± 377322",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 664697363,
-            "range": "± 20511247",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3146,
-            "range": "± 175",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 33892,
-            "range": "± 619",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 540200,
-            "range": "± 12130",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 33744,
-            "range": "± 545",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 369904,
-            "range": "± 9946",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 7248335,
-            "range": "± 1229132",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 544,
-            "range": "± 19",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 7639,
-            "range": "± 91",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 133643,
-            "range": "± 3949",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 14111,
-            "range": "± 1227",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 93737,
-            "range": "± 3023",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 857253,
-            "range": "± 28905",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1541468,
             "range": "± 19475",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fce7fd2f7af3260aa7f16068e7d9adb392ae7013",
+          "message": "ci: Kani, Verus, Rocq and the trust ledger join CI Gate (v0.44.0 bet 2a) (#1305)\n\n* ci: Kani, Verus, Rocq and the trust ledger join CI Gate (v0.44.0 bet 2a)\n\nThe owner approved bet 2a on 2026-11-20 (notice 20261119T231817-1ad860,\napprove-all). The four proof jobs become CI Gate needs and kani, verus and\nrocq lose continue-on-error, so a failed proof or ledger check blocks the\nmerge.\n\nThe plan's kill condition held: on the 10 main CI runs before this change,\nevery step of the three proof jobs succeeded (Kani's full 27-harness path,\nVerus, Rocq with the coqchk kernel audit), with no fetch failure.\n\nci-gate-check.sh accepts a proof job's skip only for a recorded reason:\nkani when the detector says rust=false, verus/rocq/trust-ledger when it\nsays proofs=false, and kani/verus/rocq in the merge queue, where their\nif: excludes them. trust-ledger has no event exclusion. Eleven new cases\nin ci-gate-check_test.sh; with the new skip rules deleted, the two\nskip-acceptance cases fail.\n\nPull requests still run Kani with --only-codegen, so the gate makes the\nharnesses compile; a Kani proof that no longer holds is caught by the\nfull run on push to main. The job comments say so.\n\nImplements: REQ-420\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* ci: the traceability job runs rivet check trust-ledger, shrink-only on PRs\n\nThe gated traceability job already builds rivet, so it runs the full\nledger check (kani::assume included) on every event, and on a pull\nrequest with --base at the merge base, so a PR that adds a ledger row\nfails CI Gate. Locally on this branch: PASS with 0 entries added; with\none extra row appended, FAIL with \"1 entry added\".\n\nImplements: REQ-420\nRefs: REQ-421\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T06:31:09Z",
+          "tree_id": "f92ffe91027326631a0728d2c63eb0a18d37ae68",
+          "url": "https://github.com/pulseengine/rivet/commit/fce7fd2f7af3260aa7f16068e7d9adb392ae7013"
+        },
+        "date": 1795334617039,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 61435,
+            "range": "± 186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 721504,
+            "range": "± 2044",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 9628874,
+            "range": "± 224457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1180,
+            "range": "± 6",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 14306,
+            "range": "± 73",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 374534,
+            "range": "± 2733",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 54,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 55,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 55,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1991412,
+            "range": "± 7552",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 127360,
+            "range": "± 296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1550753,
+            "range": "± 24009",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 21183198,
+            "range": "± 413473",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 543996,
+            "range": "± 2930",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 11645385,
+            "range": "± 59587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 692275935,
+            "range": "± 3299468",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 2961,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 31642,
+            "range": "± 217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 778336,
+            "range": "± 4540",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 41722,
+            "range": "± 158",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 464978,
+            "range": "± 1092",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 5788678,
+            "range": "± 38356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 634,
+            "range": "± 3",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 8430,
+            "range": "± 59",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 276475,
+            "range": "± 2074",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 21567,
+            "range": "± 276",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 126066,
+            "range": "± 390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1128268,
+            "range": "± 13381",
             "unit": "ns/iter"
           }
         ]
