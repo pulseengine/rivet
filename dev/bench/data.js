@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795373840554,
+  "lastUpdate": 1795564412398,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "8ca4ecaf15f7ab4b16d8ba0808e8a78b84976501",
-          "message": "build(deps): spar 0.48.1 and salsa 0.28.5 together; RUSTSEC-2026-0308 fixed (#1226)\n\nrivet-core shares salsa types with spar-hir and spar-analysis, so salsa\ncould only move when spar did (REQ-376). spar 0.48.1 uses salsa 0.28.5;\nrivet moves both pins together and the tree keeps one salsa.\n\nsalsa 0.28.0 made tracked functions and input getters return references\nby default (salsa#1216). The 17 tracked functions in db.rs take\nreturns(clone), which keeps their owned results and behaviour. Four\ncall sites adapt to by-reference input getters (copy the SourceFile id,\nclone an Artifact, clone the file Vec, compare a path by reference), and\nseven needless borrows go.\n\nRUSTSEC-2026-0308 is fixed in 0.28.5, so its deny.toml ignore and\nassessment are removed. dependency_floors.rs gains a test that fails if\nCargo.lock resolves salsa below 0.28.5 or two salsas, plus a test of\nthat check against old, split and missing salsa. REQ-376 moves from\nproposed to implemented.\n\ncargo-vet: the salsa, salsa-macros, salsa-macro-rules, hashlink and\nintrusive-collections exemptions move to the new versions and typeid\nis added, all marked NOT REVIEWED with the delta size, as their\npredecessors were exemptions too; memoffset left the tree. fuzz's lock\nmoves salsa likewise and keeps syn 3.0.9 as in the workspace lock.\n\nConfirmed with: cargo nextest --all --profile ci 2741 passed;\nrivet-core lib 1416 passed; clippy --all-targets -D warnings clean with\ndefault and all features; cargo deny check and cargo vet --locked pass;\nthe traceability ratchet adds 0 findings; spar-wasm at 0.48.1 pulls no\nhighs or good_lp for wasm32-wasip2.\n\nImplements: REQ-029\nFixes: REQ-376\nVerifies: REQ-376\n\n\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-12T06:18:44Z",
-          "tree_id": "b30c7e57883d99aeb270b9a6093bc0ae65e7c885",
-          "url": "https://github.com/pulseengine/rivet/commit/8ca4ecaf15f7ab4b16d8ba0808e8a78b84976501"
-        },
-        "date": 1794468258534,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 67423,
-            "range": "± 5488",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 692673,
-            "range": "± 16572",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 15327309,
-            "range": "± 545922",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 1451,
-            "range": "± 23",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 17918,
-            "range": "± 39",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 276586,
-            "range": "± 2726",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 76,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 76,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 76,
-            "range": "± 3",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1558116,
-            "range": "± 34175",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 120162,
-            "range": "± 794",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1368233,
-            "range": "± 15146",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 27810826,
-            "range": "± 1840833",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 549937,
-            "range": "± 5576",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 14937653,
-            "range": "± 1351923",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 998431263,
-            "range": "± 15094505",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 3599,
-            "range": "± 16",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 39647,
-            "range": "± 529",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 606200,
-            "range": "± 1879",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 45455,
-            "range": "± 545",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 523692,
-            "range": "± 8930",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 6430821,
-            "range": "± 189825",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 807,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 11558,
-            "range": "± 282",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 200051,
-            "range": "± 2832",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 17330,
-            "range": "± 364",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 111884,
-            "range": "± 1515",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1029298,
-            "range": "± 64963",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1631076,
             "range": "± 18253",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0be207c96ae585cdfa7748f52bbbc7fd10bba52a",
+          "message": "ci(release): the release note runs from the last published tag (#1325)\n\nCarries the v0.43.x fix to main (#1318). release-note.sh gains\nrelease_published and previous_published_tag: walking back from the\nnew tag, a predecessor whose GitHub release is missing or still a\ndraft is skipped, and a predecessor whose state cannot be read (no gh,\nan API error) fails the step rather than guessing. release.yml's\nGenerate release note step uses it, with GH_TOKEN for the API read.\nWithout it, v0.43.3's note would have run from the unpublished v0.43.2\nand listed nothing users had not received.\n\nrelease-note_test.sh covers: unpublished predecessor skipped, published\nkept, first release empty, unreadable state fails with no output, and a\nrunner without gh fails. Same code as tag v0.43.3, whose Release run\n44949910277 used it.\n\nRefs: REQ-369\n\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T22:27:26Z",
+          "tree_id": "d69a6fed90fa4b3363fb89ba62732909075a212f",
+          "url": "https://github.com/pulseengine/rivet/commit/0be207c96ae585cdfa7748f52bbbc7fd10bba52a"
+        },
+        "date": 1795564411340,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 61425,
+            "range": "± 243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 744944,
+            "range": "± 3543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 9908989,
+            "range": "± 93600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 1240,
+            "range": "± 5",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 14436,
+            "range": "± 23",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 352572,
+            "range": "± 23394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 59,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 59,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 58,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 1976424,
+            "range": "± 3092",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 127342,
+            "range": "± 183",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1530912,
+            "range": "± 14929",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 21417241,
+            "range": "± 44170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 540969,
+            "range": "± 1329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 11697627,
+            "range": "± 78764",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 671770084,
+            "range": "± 3031903",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 2964,
+            "range": "± 18",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 32950,
+            "range": "± 201",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 761891,
+            "range": "± 5317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 43717,
+            "range": "± 116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 456650,
+            "range": "± 6724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 5815438,
+            "range": "± 16808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 590,
+            "range": "± 2",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 9041,
+            "range": "± 44",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 286250,
+            "range": "± 1211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 20904,
+            "range": "± 191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 125153,
+            "range": "± 437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1126032,
+            "range": "± 9337",
             "unit": "ns/iter"
           }
         ]
