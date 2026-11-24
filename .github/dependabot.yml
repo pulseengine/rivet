@@ -1,23 +1,28 @@
 version: 2
-# One PR per logical release across all directories: version-locked families
-# (wasm-tools, wasmtime) and all github-actions pins in / must not split into
-# one PR per directory. (Learned from loom/witness/mcp/relay/rules_wasm_component,
-# where one release arrived as 4-8 PRs.)
+# Grouped monthly updates (fleet template, owner decision 2026-11-21).
+# One entry per ecosystem, its directories in one `directories:` list, so a
+# release opens one PR and not one per directory. Every entry runs monthly
+# (the 1st, 02:00 UTC), keeps at most 2 PRs open, and waits 7 days after a
+# release (cooldown). Lockstep groups come first because Dependabot puts a
+# dependency in the FIRST group it matches; then one minor-patch group.
+# Majors stay ungrouped, one PR each, so a breaking change is read on its own.
+# Security updates ignore the schedule and the limit.
 updates:
-  # PAUSED 2026-11-21 under the fleet CI hold; restore the previous limits when it lifts.
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
+      interval: monthly
+      time: "02:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
     groups:
       github-actions-all:
         patterns:
           - "*"
-  # One cargo entry over every directory, so a grouped release opens one PR
-  # and not one per directory.
   - package-ecosystem: cargo
     directories:
       - /
@@ -26,8 +31,12 @@ updates:
       - /rivet-cli
       - /rivet-core
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
+      interval: monthly
+      time: "02:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
     groups:
@@ -49,40 +58,36 @@ updates:
       spar:
         patterns:
           - "spar-*"
+      minor-patch:
+        update-types:
+          - minor
+          - patch
   - package-ecosystem: npm
-    directory: /npm
+    directories:
+      - /npm
+      - /vscode-rivet
+      - /platform-packages/darwin-arm64
+      - /platform-packages/linux-arm64
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
-    # The platform packages are rivet's own release artifacts: release-npm.yml
-    # sets their versions at publish time, so the committed pins are not bumped.
+      interval: monthly
+      time: "02:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    labels:
+      - dependencies
     ignore:
+      # /npm: the platform packages are rivet's own release artifacts;
+      # release-npm.yml sets their versions at publish time, so the committed
+      # pins are not bumped.
       - dependency-name: "@pulseengine/rivet-*"
-    labels:
-      - dependencies
-  - package-ecosystem: npm
-    directory: /vscode-rivet
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
-    labels:
-      - dependencies
-    # @types/vscode must not exceed engines.vscode (^1.91.0), or vsce
-    # refuses to package. Raise both together, by hand.
-    ignore:
+      # /vscode-rivet: @types/vscode must not exceed engines.vscode (^1.91.0),
+      # or vsce refuses to package. Raise both together, by hand.
       - dependency-name: "@types/vscode"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
-  - package-ecosystem: npm
-    directory: /platform-packages/darwin-arm64
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
-    labels:
-      - dependencies
-  - package-ecosystem: npm
-    directory: /platform-packages/linux-arm64
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
-    labels:
-      - dependencies
+    groups:
+      minor-patch:
+        update-types:
+          - minor
+          - patch
