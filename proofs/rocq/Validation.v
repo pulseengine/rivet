@@ -202,3 +202,8 @@ Proof.
       * simpl. apply le_n_S. exact IH.
     + simpl. apply le_S. exact IH.
 Qed.
+
+(* PLANTED negative control (probe PR #1326, never merged): a proof that
+   does not check. reflexivity cannot prove 1 = 2, so coqc must fail. *)
+Lemma probe_broken_proof : 1 = 2.
+Proof. reflexivity. Qed.
