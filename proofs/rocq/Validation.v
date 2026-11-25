@@ -203,7 +203,7 @@ Proof.
     + simpl. apply le_S. exact IH.
 Qed.
 
-(* PLANTED negative control (probe PR #1326, never merged): a proof that
-   does not check. reflexivity cannot prove 1 = 2, so coqc must fail. *)
-Lemma probe_broken_proof : 1 = 2.
-Proof. reflexivity. Qed.
+(* PLANTED negative control (probe PR #1326, never merged): an axiom with a
+   source row in proofs/trust-ledger.tsv but no kernel row, so only the
+   coqchk kernel comparison in the Rocq Proofs job should fail. *)
+Axiom probe_planted_axiom : forall n : nat, n = n.

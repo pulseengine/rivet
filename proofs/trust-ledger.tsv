@@ -13,6 +13,7 @@
 #
 # section	file	kind	name
 source	proofs/rocq/Schema.v	admitted	vmodel_chain_two_steps
+source	proofs/rocq/Validation.v	axiom	probe_planted_axiom
 source	rivet-core/src/verus_specs.rs	assume	lemma_build_yields_symmetric
 kernel	-	axiom	proofs.rocq.Schema.vmodel_chain_two_steps
 source	rivet-core/src/proofs.rs	kani-assume	arb_expr
