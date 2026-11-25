@@ -45,7 +45,7 @@ jobs:
       # REQ-267: the same dated nightly as ci.yml's nightly jobs; `cargo fuzz`
       # below uses it as the default (no `+nightly`, which would bypass it).
       - name: Install nightly toolchain
-        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # SHA-pinned (REQ-267)
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # SHA-pinned (REQ-267)
         with:
           toolchain: nightly-2026-07-11
 
