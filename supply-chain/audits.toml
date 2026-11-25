@@ -30,3 +30,15 @@ who = "Ralf Anton Beier <ralf_beier@me.com>"
 criteria = "safe-to-deploy"
 delta = "2.14.0 -> 2.14.2"
 notes = "Library diff read in full. The only unsafe code (raw-pointer get_disjoint_mut / get_disjoint_opt_mut) is moved, not new: from map/slice.rs into map/disjoint.rs with the same bounds and duplicate-index checks before any dereference. Other changes: shared assert_index_lt/le helpers for bounds checks, an equal() fast path when Q = K, macro hygiene (no shadowing const CAP) and const-initialisable empty *_with_default! macros, lint table renames. No new dependencies, no process, network or filesystem access. Review assisted by Claude Code."
+
+[[audits.serial_test]]
+who = "Ralf Anton Beier <ralf_beier@me.com>"
+criteria = "safe-to-run"
+delta = "3.5.0 -> 4.0.1"
+notes = "Diff read in full. Only Cargo.toml/Cargo.toml.orig (rust-version 1.68 -> 1.93.1, serial_test_derive ~3.5.0 -> ~4.0.1) and README (MSRV text). No source changes, no unsafe, no build script, no process, network or filesystem access. Review assisted by Claude Code."
+
+[[audits.serial_test_derive]]
+who = "Ralf Anton Beier <ralf_beier@me.com>"
+criteria = "safe-to-run"
+delta = "3.5.0 -> 4.0.1"
+notes = "Diff read in full. syn 2 -> 3 and prettyplease 0.2 -> 0.3 (dev) in Cargo.toml, rust-version 1.68 -> 1.93.1, README MSRV text. The only src change is in a test helper (unparse): the syn::File literal gains frontmatter: None for syn 3. Proc-macro expansion unchanged; no unsafe, no build script, no process, network or filesystem access. Review assisted by Claude Code."
