@@ -10665,3 +10665,45 @@ artifacts:
       model: claude-opus-5-5
       timestamp: 2026-11-20T00:00:00Z
     release: v0.44.0
+  - id: REQ-423
+    type: requirement
+    title: "A test result records the product variant it ran on, and per-variant coverage and release checks count only results from that variant"
+    status: draft
+    description: |-
+      Owner decision 2026-11-25 (pulseengine/rivet#1341): product variants span components; design only until reviewed. Today RunMetadata (rivet-core/src/results.rs) carries id, timestamp, source, environment and commit, and import-results has no --variant, so coverage --variant and release check --variant scope which artifacts count but accept evidence from any variant: a test that passed only on variant A verifies the requirement for variant B too. REQ-417 already keeps a pass in one environment from hiding a fail in another; this extends the same rule to variants. Extends draft REQ-045 (per-variant validation and coverage) with the evidence half.
+
+      ACCEPTANCE (draft): RunMetadata gains an optional variant and rivet import-results takes --variant, exiting non-zero when the name does not resolve in the feature model. coverage --variant X and release check --variant X count only results from runs tagged X; a requirement bound to several variants needs a passing latest result on each. A run with no variant counts for every variant only when the project config says so (default off). Negative control: a requirement bound to variants A and B with a passing result only from a run tagged A is cuttable for A and not for B.
+    tags: [variants, results, verification-evidence]
+    fields:
+      category: functional
+      priority: should
+    links:
+      - type: traces-to
+        target: REQ-045
+      - type: traces-to
+        target: REQ-417
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-25T00:00:00Z
+  - id: REQ-424
+    type: requirement
+    title: "Components in one repo release and tag independently, and a product release names the component releases it includes"
+    status: draft
+    description: |-
+      Owner decision 2026-11-25 (pulseengine/rivet#1342): a component release is gated on the component's own artifacts and evidence only; product-level integration evidence is checked at the product release; design only until reviewed. Today Artifact.release is a free-form label, one project has one project.version and one release gate, and no artifact names a component, so a monorepo cannot release a subcomponent on its own or say that product v3.0 includes component A at v2.1. The design reuses externals (path plus prefix:ID), baseline-style git tags and the release gate rather than a new directive.
+
+      ACCEPTANCE (draft): a components block in rivet.yaml names each component's path and prefix. rivet release check <ver> --component A reads only A's artifacts and evidence and, once cuttable, the release tag is A/v<ver>. A product release declares its composition (component to release version); rivet release check for the product requires each named component tag to exist, each component to have been cuttable at that tag, and the product's own artifacts to be ready. Negative controls: a composition naming a missing component tag fails; one naming a component release that was not cuttable at its tag fails; a component check does not read another component's artifacts.
+    tags: [release, components, monorepo]
+    fields:
+      category: functional
+      priority: should
+    links:
+      - type: traces-to
+        target: REQ-254
+      - type: traces-to
+        target: REQ-423
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-25T00:00:00Z
