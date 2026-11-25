@@ -10707,3 +10707,62 @@ artifacts:
       created-by: ai-assisted
       model: claude-opus-5-5
       timestamp: 2026-11-25T00:00:00Z
+  - id: REQ-425
+    type: requirement
+    title: "A status claim (verified, accepted) fails validate when the evidence it asserts is absent, and status changes are checked against what rivet verify records"
+    status: draft
+    description: |-
+      Raised 2026-11-25 (pulseengine/rivet#1344). REQ-381 stops rivet's writers from setting verified, but a hand edit of the YAML is never checked: a verified requirement with no verifies link, marker or result passes rivet validate (requirement-verification is a warning) and release status; accepted is reachable from draft through rivet modify; no transition is checked. On rivet's own data (main 6e1b1b54) 0 of 117 verified/accepted artifacts have an incoming verifies link, all 106 verified rest on source markers (14 only in .sh/.yml files), none has a recorded result, and rivet.yaml has no release block.
+
+      ACCEPTANCE (draft): the dev schema makes verified or accepted imply a verifies backlink or a test-item marker at error severity; validate --new-since <ref> reports a status raised to verified/accepted without the change rivet verify makes, and any downgrade; rivet's own rivet.yaml sets release require: results with CI junit imported. Negative controls: a hand-edited verified with no evidence fails validate; a verified with a failing latest result fails release status; a draft to accepted edit is reported by --new-since.
+    tags: [status, verification-evidence, release]
+    fields:
+      category: functional
+      priority: must
+    links:
+      - type: traces-to
+        target: REQ-381
+      - type: traces-to
+        target: REQ-413
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-25T00:00:00Z
+  - id: REQ-426
+    type: requirement
+    title: "rivet reports which link types and fields no rule governs, explains per link which rule governs it, and the shipped schemas constrain verifies and depends-on endpoints"
+    status: draft
+    description: |-
+      Raised 2026-11-25 (pulseengine/rivet#1345). Validate catches unknown link types and out-of-schema targets, but a link type no rule requires is never checked and undeclared fields are info only. On rivet's own data (2033 links, 47 link types) 482 links have no endpoint constraint, 850 have an unchecked target type, 18 link types are in no traceability rule (12 of them carrying 468 links), 10 declared link types are unused, and 58 field uses are undeclared. No command shows this.
+
+      ACCEPTANCE (draft): rivet schema validate (or a schema coverage subcommand) lists link types in no rule or required link-field, link types with no endpoint restriction and declared-but-unused types; validate --explain <ID> names the governing rule or "none" per outgoing link and field; the dev schema restricts verifies and depends-on endpoints and rejects self-links. Negative controls: on a fixture with one governed and one ungoverned link type the report lists only the ungoverned one; a verifies self-link fails validate.
+    tags: [schema, validation, links]
+    fields:
+      category: functional
+      priority: should
+    links:
+      - type: traces-to
+        target: REQ-401
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-25T00:00:00Z
+  - id: REQ-427
+    type: requirement
+    title: "A rivet upgrade cannot change a project's validation silently: schema rule changes bump the schema version, coded rules are pinnable, and release notes list validation changes"
+    status: draft
+    description: |-
+      Raised 2026-11-25 (pulseengine/rivet#1346). schema-pins (REQ-249) compare schema versions. Across 27 releases (v0.25.0 to main, 781 release-to-release schema comparisons) two schema changes shipped without a version bump (ordeal-certificate v0.38.0 to v0.39.0, safety-case v0.34.0 to v0.35.0), because the schema-version-bump CI check is warn-only. The larger channel is coded rules: rivet-core/src/validate.rs went from 15 to 18 rule ids (field-type-mismatch v0.40.0, link-type-restriction v0.41.0, discharge-stale v0.42.0), which ship with the binary and cannot be pinned or re-levelled per project; the only levers are pinning rivet itself and validate --new-since.
+
+      ACCEPTANCE (draft): schema-version-bump fails CI on a rule change without a version bump; each release that adds or changes a rule lists it under "Validation changes" in its notes; a project can hold coded rules at a level (rules introduced after it report at info) or override their severity by rule id (decision pending). Negative controls: a schema rule change without a version bump fails CI; a project held at an older level does not get a newly added coded rule as a warning or error.
+    tags: [schema, validation, release, upgrade]
+    fields:
+      category: functional
+      priority: should
+    links:
+      - type: traces-to
+        target: REQ-249
+    provenance:
+      created-by: ai-assisted
+      model: claude-opus-5-5
+      timestamp: 2026-11-25T00:00:00Z
