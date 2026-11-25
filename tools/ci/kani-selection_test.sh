@@ -41,9 +41,9 @@ harnesses="$(awk '
 ' "$PROOFS")"
 
 echo "proofs.rs harness selection"
-check "harness count (28 in total, probe plant included)" "28" "$(printf '%s\n' "$harnesses" | grep -c .)"
+check "harness count (27 in total)" "27" "$(printf '%s\n' "$harnesses" | grep -c .)"
 check "parked behind cfg(kani_slow)" "26" "$(printf '%s\n' "$harnesses" | grep -c '^parked ')"
-check "the default run, plus the probe plant" "$(printf 'active proof_coverage_percentage_bounds\nactive probe_planted_kani_failure')" \
+check "the only harness in the default run" "active proof_coverage_percentage_bounds" \
   "$(printf '%s\n' "$harnesses" | grep '^active ')"
 check "every kani::proof is accounted for" \
   "$(grep -c '#\[kani::proof\]' "$PROOFS")" "$(printf '%s\n' "$harnesses" | grep -c .)"

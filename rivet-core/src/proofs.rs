@@ -1113,14 +1113,4 @@ mod proofs {
             );
         }
     }
-
-    /// PLANTED negative control (probe PR, never merged): must fail.
-    #[kani::proof]
-    fn probe_planted_kani_failure() {
-        let x: u8 = kani::any();
-        kani::assert(
-            x != 7,
-            "planted: CI Gate must fail on a failing Kani harness",
-        );
-    }
 }
