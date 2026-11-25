@@ -118,7 +118,7 @@ and re-arms only when the pool next transitions.
 The action lives on the runner host, not this repo — outside this
 repo's write surface. The steps every operator needs:
 
-1. `ssh` to the runner host (`pulseengine-ci-<NN>`).
+1. `ssh` to a runner host in the affected pool (the self-hosted `light` or `rust-cpu` label; the operator inventory names the hosts).
 2. Check the runner-agent service status:
    `systemctl --user status actions.runner.pulseengine-rivet.<host>.service`
    (or `github-runner@<name>` per the host's install layout).

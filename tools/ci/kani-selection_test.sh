@@ -55,14 +55,14 @@ args="$(printf '%s\n' "$job" | grep -E '^[[:space:]]+args:' | sed -E "s/^[[:spac
 
 echo "ci.yml kani job"
 check "job found" "1" "$(printf '%s\n' "$job" | grep -c '^  kani:')"
-check "two kani invocations" "2" "$(printf '%s\n' "$args" | grep -c .)"
-check "PR path is codegen only" "-p rivet-core --only-codegen" \
-  "$(printf '%s\n' "$args" | grep -- '--only-codegen')"
-check "push path bounds each harness at 3m" "-p rivet-core -Z unstable-options --harness-timeout 3m" \
-  "$(printf '%s\n' "$args" | grep -v -- '--only-codegen')"
+check "one kani invocation, for every event" "1" "$(printf '%s\n' "$args" | grep -c .)"
+check "it verifies, bounding each harness at 3m" "-p rivet-core -Z unstable-options --harness-timeout 3m" "$args"
+check "no codegen-only path" "0" "$(printf '%s\n' "$job" | grep -c -- '--only-codegen')"
+check "the kani step has no event condition" "0" \
+  "$(printf '%s\n' "$job" | awk '/^      - if:/ {i=1; next} i && /kani-github-action/ {print; i=0; next} {i=0}' | grep -c .)"
 check "job never enables cfg(kani_slow)" "0" "$(printf '%s\n' "$job" | grep -c 'kani_slow')"
 check "job never sets RUSTFLAGS" "0" "$(printf '%s\n' "$job" | grep -c 'RUSTFLAGS')"
-check "kani version pinned" "2" "$(printf '%s\n' "$job" | grep -c "kani-version: '0\.67\.0'")"
+check "kani version pinned" "1" "$(printf '%s\n' "$job" | grep -c "kani-version: '0\.67\.0'")"
 check "swap step precedes the kani steps" "1" \
   "$(printf '%s\n' "$job" | awk '/kani\.swap/ {s=NR} /kani-github-action/ && !k {k=NR} END {print (s && k && s < k) ? 1 : 0}')"
 
