@@ -17,14 +17,13 @@
 //! apply via the indentation-safe `modify_artifact_in_file` editor (no allowlist
 //! drop). Writes to `fields`/`links` and `INSERT`/`DELETE` are refused.
 //!
-//! gluesql's `execute` is async; it is bridged into these sync functions with
-//! `futures::executor::block_on` (no async runtime required).
+//! gluesql 0.20's `execute` is synchronous, so these functions call it
+//! directly (no async runtime or executor).
 
 #![cfg(feature = "sql")]
 
 use crate::mutate::ModifyParams;
 use crate::store::Store;
-use futures::executor::block_on;
 use gluesql_core::prelude::{Glue, Payload, Value};
 use gluesql_memory_storage::MemoryStorage;
 
@@ -174,7 +173,8 @@ pub fn plan_write(store: &Store, sql: &str) -> Result<Vec<PlannedWrite>, String>
     let fields_before = snapshot(&mut glue, "SELECT artifact_id, key, value FROM fields")?;
     let links_before = snapshot(&mut glue, "SELECT source, link_type, target FROM links")?;
 
-    block_on(glue.execute(sql)).map_err(|e| format!("SQL write failed: {e}"))?;
+    glue.execute(sql)
+        .map_err(|e| format!("SQL write failed: {e}"))?;
 
     if snapshot(&mut glue, "SELECT artifact_id, key, value FROM fields")? != fields_before {
         return Err("writes to `fields` are not supported in this slice (UPDATE artifacts SET status/title/description only); mapping SQL field writes to set-field is a follow-up".into());
@@ -270,7 +270,7 @@ fn first_word_upper(sql: &str) -> String {
 /// Build a fresh in-memory gluesql db and populate it from the store.
 fn staging(store: &Store) -> Result<Glue<MemoryStorage>, String> {
     let mut glue = Glue::new(MemoryStorage::default());
-    block_on(glue.execute(&build_setup_sql(store)))
+    glue.execute(build_setup_sql(store))
         .map_err(|e| format!("building SQL staging tables failed: {e}"))?;
     Ok(glue)
 }
@@ -381,7 +381,8 @@ fn select(
     glue: &mut Glue<MemoryStorage>,
     sql: &str,
 ) -> Result<(Vec<String>, Vec<Vec<Value>>), String> {
-    let payload = block_on(glue.execute(sql))
+    let payload = glue
+        .execute(sql)
         .map_err(|e| e.to_string())?
         .into_iter()
         .next()

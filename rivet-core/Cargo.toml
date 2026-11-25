@@ -17,7 +17,7 @@ aadl = ["dep:spar-hir", "dep:spar-analysis"]
 # REQ-229 / DD-068 / REQ-231: SQL query facade over the artifact store. Kept in
 # `default` so `rivet sql` ships, but gated so the minimal `--no-default-features`
 # build (REQ-202) excludes it. Engine is gluesql-core (pure Rust) — no SQLite C.
-sql = ["dep:gluesql-core", "dep:gluesql_memory_storage", "dep:futures"]
+sql = ["dep:gluesql-core", "dep:gluesql_memory_storage"]
 
 [dependencies]
 serde = { workspace = true }
@@ -39,7 +39,6 @@ etch = { path = "../etch" }
 # gluesql-core: pure-Rust SQL engine (no bundled SQLite C).
 gluesql-core = { workspace = true, optional = true }
 gluesql_memory_storage = { workspace = true, optional = true }
-futures = { workspace = true, optional = true }
 
 # OSLC client (optional, behind "oslc" feature)
 reqwest = { workspace = true, optional = true }
