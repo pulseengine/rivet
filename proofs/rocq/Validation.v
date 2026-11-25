@@ -202,8 +202,3 @@ Proof.
       * simpl. apply le_n_S. exact IH.
     + simpl. apply le_S. exact IH.
 Qed.
-
-(* PLANTED negative control (probe PR #1326, never merged): an Admitted
-   with no proofs/trust-ledger.tsv row. CI Gate must fail. *)
-Lemma probe_planted_admitted : 1 = 2.
-Admitted.

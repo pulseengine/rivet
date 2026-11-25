@@ -1008,6 +1008,9 @@ mod proofs {
         // Insert 0..2 artifacts with known prefix
         let n: usize = kani::any();
         kani::assume(n <= 2);
+        // PLANTED negative control (probe PR #1326, never merged): a
+        // kani::assume with no proofs/trust-ledger.tsv row.
+        kani::assume(n != 3);
         for i in 0..n {
             let id = match i {
                 0 => "REQ-001",
