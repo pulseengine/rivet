@@ -15,10 +15,15 @@ name: Runner Liveness
 #   2. Runner list — best-effort. `GET /repos/{repo}/actions/runners` needs the
 #      `administration` permission, which is NOT a grantable `GITHUB_TOKEN`
 #      scope, so the default token gets 403 (and an org-level pool returns empty
-#      anyway). A failed lookup yields the `runners-unknown` classification: the
+#      anyway). The stall classifier therefore reads the ORG list
+#      (`GET /orgs/pulseengine/actions/runners`) with a short-lived token from
+#      the pulseengine-runner-liveness GitHub App, whose only permission is
+#      organization_self_hosted_runners: read (secrets RUNNER_LIVENESS_APP_ID
+#      and RUNNER_LIVENESS_APP_KEY). If the token cannot be minted, or the
+#      lookup fails, the result is the `runners-unknown` classification: the
 #      queued-age alarm still fires, but NO cause is named, because none can be
-#      observed without the runner list. Wire a PAT into `GH_TOKEN` if a hard
-#      runner count is wanted. The queued-age signal above is the real alarm.
+#      observed without the runner list. The queued-age signal above is the
+#      real alarm.
 #
 #      This paragraph used to claim a failed/empty lookup was "logged and
 #      SKIPPED rather than raised as a false alarm". It was not: the code
@@ -35,8 +40,8 @@ on:
 permissions:
   actions: read # list workflow runs (queued-age check — the authoritative signal)
   issues: write # open / update / close the tracking issue
-  # NB: listing self-hosted runners needs the `administration` scope, which is
-  # not grantable to GITHUB_TOKEN — that check is best-effort and self-skips.
+  # NB: listing self-hosted runners needs a permission GITHUB_TOKEN cannot
+  # have; the org list is read with the runner-liveness App token instead.
 
 concurrency:
   group: runner-liveness
@@ -101,10 +106,27 @@ jobs:
             exit 1
           }
           gh --version | head -1
+      # Org runner list (REQ-342). GITHUB_TOKEN cannot read it, so a GitHub
+      # App (pulseengine-runner-liveness, permission
+      # organization_self_hosted_runners: read and nothing else) mints a
+      # short-lived token for that one call. continue-on-error keeps the probe
+      # fail-closed: if minting fails, RUNNER_LIST_TOKEN is empty, the lookup
+      # falls back to GITHUB_TOKEN, and a stall still reports `runners-unknown`
+      # and fails the run, exactly as before this token existed.
+      - name: Mint org runner-read token
+        id: runner_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ secrets.RUNNER_LIVENESS_APP_ID }}
+          private-key: ${{ secrets.RUNNER_LIVENESS_APP_KEY }}
+          owner: pulseengine
+          permission-organization-self-hosted-runners: read
       - name: Probe runner pool and queued runs
         id: probe
         env:
           GH_TOKEN: ${{ github.token }}
+          RUNNER_LIST_TOKEN: ${{ steps.runner_token.outputs.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -162,9 +184,12 @@ jobs:
             # online=12 busy=7 and four `lean-mem` shards were simply queued
             # behind four busy `lean-mem` runners. The lookup needs the
             # `administration` scope, which is NOT grantable to GITHUB_TOKEN,
-            # so this fails on every scheduled probe.
+            # so the call uses the App token minted above when there is one.
+            if [ -z "${RUNNER_LIST_TOKEN:-}" ]; then
+              echo "::warning::no App token for the org runner list (mint step failed or secrets missing); falling back to GITHUB_TOKEN, which cannot read it"
+            fi
             set +e
-            runners_raw=$(gh api "orgs/${REPO%%/*}/actions/runners" --paginate 2>/dev/null)
+            runners_raw=$(GH_TOKEN="${RUNNER_LIST_TOKEN:-$GH_TOKEN}" gh api "orgs/${REPO%%/*}/actions/runners" --paginate 2>/dev/null)
             runners_rc=$?
             set -e
             # Checking the exit code and emptiness is not enough: `gh api` can
