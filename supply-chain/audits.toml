@@ -31,6 +31,12 @@ criteria = "safe-to-deploy"
 delta = "2.14.0 -> 2.14.2"
 notes = "Library diff read in full. The only unsafe code (raw-pointer get_disjoint_mut / get_disjoint_opt_mut) is moved, not new: from map/slice.rs into map/disjoint.rs with the same bounds and duplicate-index checks before any dereference. Other changes: shared assert_index_lt/le helpers for bounds checks, an equal() fast path when Q = K, macro hygiene (no shadowing const CAP) and const-initialisable empty *_with_default! macros, lint table renames. No new dependencies, no process, network or filesystem access. Review assisted by Claude Code."
 
+[[audits.pulldown-cmark]]
+who = "Ralf Anton Beier <ralf_beier@me.com>"
+criteria = "safe-to-deploy"
+delta = "0.12.2 -> 0.13.6"
+notes = "Library diff read in full (src/lib.rs, parse.rs, firstpass.rs, scanners.rs, html.rs, tree.rs, main.rs, build.rs); tests/ and examples/ skimmed. New syntax (superscript, subscript, wikilinks; definition-list and footnote changes) is gated behind Options that rivet does not set (rivet enables TABLES, STRIKETHROUGH, TASKLISTS). No new Event carries raw HTML; the HTML writer adds only literal <sub>/<sup>. Tight lists become a TightParagraph node instead of tree surgery. A task-list marker may now be followed by any ASCII whitespace. Scanner rewrites replace slice indexing with bytes.get() and slice patterns, removing panic paths; upstream adds regression tests for crashes including issue 1084 (TASKLISTS + STRIKETHROUGH, rivet's option set) and 1142 (multibyte offsets). The only change inside the existing unsafe SIMD process_mask replaces wrapping_shr with a bounded shift (break when shift >= 32). No new unsafe, no new dependencies (bitflags, memchr already used), build.rs only generates tests under the gen-tests feature, no process, network or filesystem access in the library. Review assisted by Claude Code."
+
 [[audits.serial_test]]
 who = "Ralf Anton Beier <ralf_beier@me.com>"
 criteria = "safe-to-run"
