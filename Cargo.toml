@@ -177,7 +177,7 @@ wasmtime-wasi = "50.0.3"
 rowan = { git = "https://github.com/pulseengine/rowan.git", branch = "fix/miri-soundness-v3" }
 
 # Markdown rendering
-pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 
 # SQL facade over the artifact store (REQ-229 / DD-068 / REQ-231). gluesql-core
 # is pure Rust (sqlparser + execution engine) — NO bundled SQLite C compile.
