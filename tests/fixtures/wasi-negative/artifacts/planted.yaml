@@ -1,0 +1,13 @@
+artifacts:
+  - id: WNEG-REQ-001
+    type: requirement
+    title: The wasm build loads artifacts
+    status: draft
+
+  - id: WNEG-VER-001
+    type: verification
+    title: Planted broken artifact
+    status: draft
+    links:
+      - type: verifies
+        target: WNEG-REQ-404
