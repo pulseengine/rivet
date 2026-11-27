@@ -18,7 +18,7 @@ path = "src/main.rs"
 # traceability core (parser + validate + list + commit checks). `serve` embeds
 # an MCP HTTP endpoint (`crate::mcp::RivetServer`), so it enables `mcp`.
 [features]
-default = ["serve", "mcp", "lsp"]
+default = ["serve", "mcp", "lsp", "aadl"]
 mcp = ["dep:rmcp", "dep:tokio"]
 serve = ["mcp", "dep:axum", "dep:tower-http", "dep:notify"]
 # `lsp` enables `serve`: the LSP hover-preview reuses the shared HTML renderer
@@ -27,9 +27,14 @@ serve = ["mcp", "dep:axum", "dep:tower-http", "dep:notify"]
 # is tracked as #104; until then lsp ⊇ serve.
 lsp = ["serve", "dep:lsp-server", "dep:lsp-types"]
 wasm = ["rivet-core/wasm"]
+# rivet-core's `aadl` default, passed through so `--no-default-features` on
+# rivet-cli drops it too: it pulls spar and its C++ solver (highs-sys), which
+# does not build for wasm32-wasip2 without wasi-sdk. `sql` (gluesql, pure
+# Rust) stays on unconditionally because `rivet sql` calls it ungated.
+aadl = ["rivet-core/aadl"]
 
 [dependencies]
-rivet-core = { path = "../rivet-core" }
+rivet-core = { path = "../rivet-core", default-features = false, features = ["rowan-yaml", "sql"] }
 clap = { workspace = true }
 serde = { workspace = true }
 anyhow = { workspace = true }

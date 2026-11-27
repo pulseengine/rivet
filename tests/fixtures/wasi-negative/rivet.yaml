@@ -1,0 +1,15 @@
+# Negative control for the wasm32-wasip2 validate oracle (ci.yml, WASM seam).
+# The one verification links to a requirement that does not exist, so
+# `rivet validate` must FAIL and name the planted dangling link. If the wasm
+# build ever stops loading artifacts or links, the positive run alone could
+# still pass vacuously; this run would not.
+project:
+  name: wasi-negative
+  version: "0.1.0"
+  schemas:
+    - common
+    - dev
+
+sources:
+  - path: artifacts
+    format: generic-yaml

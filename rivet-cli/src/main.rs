@@ -135,6 +135,11 @@ fn build_version() -> &'static str {
 /// or `%LOCALAPPDATA%` on Windows).  The HTTP request has a 3-second
 /// timeout so it never blocks startup.
 fn check_for_updates() {
+    // A WASI component can spawn neither the thread nor `curl`; std's
+    // `thread::spawn` panics there, which would abort every `rivet validate`.
+    if cfg!(target_os = "wasi") {
+        return;
+    }
     std::thread::spawn(|| {
         // Resolve platform cache directory without the `dirs` crate.
         let cache_dir = if cfg!(target_os = "windows") {
