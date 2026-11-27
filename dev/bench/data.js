@@ -1,200 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795705644521,
+  "lastUpdate": 1795795806390,
   "repoUrl": "https://github.com/pulseengine/rivet",
   "entries": {
     "Rivet Criterion Benchmarks": [
-      {
-        "commit": {
-          "author": {
-            "email": "ralf_beier@me.com",
-            "name": "Ralf Anton Beier",
-            "username": "avrabe"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": false,
-          "id": "a712e840b213825922066021e526968bec9a3e72",
-          "message": "ci(release): macos-15-intel for x86_64-apple-darwin; release v0.42.2 (#1240)\n\n* ci(release): build x86_64-apple-darwin on macos-15-intel\n\nThe v0.42.1 release run (43332306438) was cancelled because GitHub no\nlonger accepts the macos-14 label: the job was refused 2 s after creation\nwith \"The configuration 'macos-14-arm64-us-default' is not supported\".\nCreate GitHub Release needs every build, so it was skipped and v0.42.1\npublished nothing. The other 8 builds, the VSIX, the release note and the\ncompliance report all succeeded in that run.\n\nmacos-15-intel is GitHub's x86_64 macOS image, so the build stays native\nand no step changes. release.yml runs only on a tag, so this label is\nfirst exercised by the next tag push.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* chore(release): v0.42.2 in place of the unpublished v0.42.1\n\nThe v0.42.1 tag runs the release.yml stored in that tag, which still\nnames macos-14, so the runner fix only takes effect on a new tag.\n\n- Version 0.42.2 in Cargo.toml, both lockfiles and the vscode package.\n- The 12 artifacts scoped to v0.42.1 move to v0.42.2 (rivet release\n  move), since the release note is generated from the tagged scope.\n- CHANGELOG [0.42.2]: says v0.42.0 and v0.42.1 published nothing, adds\n  \"Fixed in 0.42.2\", and keeps the 0.42.1 fix marked not published.\n\nConfirmed with changelog-drift.py v0.42.2 exit 0 (12 delivered, none\nundocumented or unclaimed); rivet release status v0.42.2 Cuttable; rivet\nvalidate PASS; rivet docs check 0 violations (binary rebuilt at 0.42.2);\ntraceability-ratchet.py against origin/main 0 new.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
-          "timestamp": "2026-11-13T05:50:24Z",
-          "tree_id": "6c9d238a16e7d75f79a7af148abbd3cdf8fb1b08",
-          "url": "https://github.com/pulseengine/rivet/commit/a712e840b213825922066021e526968bec9a3e72"
-        },
-        "date": 1794554780645,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "store_insert/100",
-            "value": 85411,
-            "range": "± 2281",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/1000",
-            "value": 848583,
-            "range": "± 8781",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_insert/10000",
-            "value": 12906355,
-            "range": "± 873773",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/100",
-            "value": 2216,
-            "range": "± 47",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/1000",
-            "value": 26979,
-            "range": "± 496",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_lookup/10000",
-            "value": 426275,
-            "range": "± 1716",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/100",
-            "value": 94,
-            "range": "± 1",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/1000",
-            "value": 94,
-            "range": "± 0",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "store_by_type/10000",
-            "value": 94,
-            "range": "± 2",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "schema_load_and_merge",
-            "value": 1922471,
-            "range": "± 106780",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/100",
-            "value": 160222,
-            "range": "± 3833",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/1000",
-            "value": 1814630,
-            "range": "± 44190",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "link_graph_build/10000",
-            "value": 25733610,
-            "range": "± 1177810",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/100",
-            "value": 733287,
-            "range": "± 4628",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/1000",
-            "value": 18071405,
-            "range": "± 281120",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "validate/10000",
-            "value": 1417524135,
-            "range": "± 13061905",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/100",
-            "value": 4859,
-            "range": "± 282",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/1000",
-            "value": 68108,
-            "range": "± 719",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "traceability_matrix/10000",
-            "value": 895551,
-            "range": "± 8895",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/100",
-            "value": 60190,
-            "range": "± 675",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/1000",
-            "value": 691853,
-            "range": "± 3144",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "diff/10000",
-            "value": 8310201,
-            "range": "± 439107",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/100",
-            "value": 1205,
-            "range": "± 16",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/1000",
-            "value": 15208,
-            "range": "± 110",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "query/10000",
-            "value": 376048,
-            "range": "± 4953",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/10",
-            "value": 25309,
-            "range": "± 991",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/100",
-            "value": 172709,
-            "range": "± 2433",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "document_parse/1000",
-            "value": 1616184,
-            "range": "± 26938",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -5759,6 +5567,198 @@ window.BENCHMARK_DATA = {
             "name": "document_parse/1000",
             "value": 1109836,
             "range": "± 13717",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ralf_beier@me.com",
+            "name": "Ralf Anton Beier",
+            "username": "avrabe"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1372fec88bb243bb20f407527ff03e6f95a701e2",
+          "message": "ci: run rivet validate as a wasm32-wasip2 component under wasmtime (#1355)\n\n* ci: run rivet validate as a wasm32-wasip2 component under wasmtime\n\nThe WASM seam job now builds `rivet-cli --no-default-features` for\nwasm32-wasip2 and runs plain `rivet validate` under wasmtime 50.0.3, the\nversion rivet-core embeds (Cargo.lock), installed from the release\ntarball with a pinned sha256.\n\n- Positive: rivet's own project must exit 0 and print `Result: PASS`.\n  Locally the component's output is byte-identical to the native\n  minimal build, which is identical to the full default build\n  (21 documents, PASS with 858 warnings).\n- Negative control: tests/fixtures/wasi-negative plants a verification\n  whose `verifies` link targets a missing requirement. The component\n  must exit exactly 1 (not a trap's 134, not a boundary-rewritten\n  code) and print that dangling-link diagnostic. With the link repaired\n  the step fails, so the control can go red.\n\nTwo changes make the minimal build a wasip2 build:\n- rivet-cli takes rivet-core with default-features = false and passes\n  `aadl` through its own default. `--no-default-features` therefore\n  drops spar and its C++ solver (highs-sys), which does not build for\n  wasip2 without wasi-sdk. `sql` (gluesql, pure Rust) stays on because\n  `rivet sql` calls it ungated. A default build enables the same\n  rivet-core features as before.\n- check_for_updates returns early on WASI: std's thread::spawn panics\n  there and the check shells out to curl, so every `rivet validate`\n  aborted with a wasm trap.\n\nConfirmed with cargo fmt --check, cargo clippy --all-targets -D warnings,\ncargo clippy -p rivet-cli --no-default-features -D warnings, and the new\nstep run locally against the macOS build.\n\nImplements: REQ-202\nRefs: REQ-268\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n* docs: README footer names PulseEngine a WebAssembly Component Model engine\n\nOrg-wide footer wording decided by the owner on 2026-11-27. Only the README.md footer line changes.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_015HMQUV3u86jN2hmCtXNTc9\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T13:49:53Z",
+          "tree_id": "ebccbeb9d0167c43ea5ed3abcfe94dc11acdbe9a",
+          "url": "https://github.com/pulseengine/rivet/commit/1372fec88bb243bb20f407527ff03e6f95a701e2"
+        },
+        "date": 1795795804902,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "store_insert/100",
+            "value": 86108,
+            "range": "± 2153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/1000",
+            "value": 889222,
+            "range": "± 10631",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_insert/10000",
+            "value": 13990615,
+            "range": "± 689727",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/100",
+            "value": 2122,
+            "range": "± 11",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/1000",
+            "value": 27577,
+            "range": "± 506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_lookup/10000",
+            "value": 445310,
+            "range": "± 3284",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/100",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/1000",
+            "value": 96,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "store_by_type/10000",
+            "value": 95,
+            "range": "± 0",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "schema_load_and_merge",
+            "value": 2530394,
+            "range": "± 16715",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/100",
+            "value": 170285,
+            "range": "± 2671",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/1000",
+            "value": 1894944,
+            "range": "± 18142",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "link_graph_build/10000",
+            "value": 28425495,
+            "range": "± 864927",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/100",
+            "value": 750159,
+            "range": "± 7109",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/1000",
+            "value": 19149784,
+            "range": "± 402724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "validate/10000",
+            "value": 1441479954,
+            "range": "± 16247035",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/100",
+            "value": 4446,
+            "range": "± 153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/1000",
+            "value": 62371,
+            "range": "± 1027",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "traceability_matrix/10000",
+            "value": 899014,
+            "range": "± 18818",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/100",
+            "value": 62938,
+            "range": "± 530",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/1000",
+            "value": 696502,
+            "range": "± 6862",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "diff/10000",
+            "value": 8933829,
+            "range": "± 406160",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/100",
+            "value": 1062,
+            "range": "± 13",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/1000",
+            "value": 16322,
+            "range": "± 200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "query/10000",
+            "value": 356234,
+            "range": "± 1847",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/10",
+            "value": 29892,
+            "range": "± 131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/100",
+            "value": 191979,
+            "range": "± 1928",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "document_parse/1000",
+            "value": 1684202,
+            "range": "± 23428",
             "unit": "ns/iter"
           }
         ]
