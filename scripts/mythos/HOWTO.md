@@ -171,7 +171,7 @@ sentence, do not soften.
 
 ## 4. Run the pipeline
 
-From a Claude Code session in `/Users/r/git/pulseengine/rivet`:
+From a Claude Code session at the rivet repo root:
 
 1. `Read scripts/mythos/rank.md` → JSON ranking of rivet-core + rivet-cli
    sources. Save to `.rivet/mythos/ranking.json`.

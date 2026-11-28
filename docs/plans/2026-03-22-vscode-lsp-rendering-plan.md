@@ -197,12 +197,12 @@ mod render;
 
 Verify it compiles:
 
-Run: `cd /Volumes/Home/git/sdlc && cargo check -p rivet-cli 2>&1 | head -20`
+Run: `cargo check -p rivet-cli 2>&1 | head -20`
 Expected: compiles (warnings OK, no errors)
 
 - [ ] **Step 6: Run existing tests to verify no breakage**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo test -p rivet-cli 2>&1 | tail -10`
+Run: `cargo test -p rivet-cli 2>&1 | tail -10`
 Expected: all tests pass
 
 - [ ] **Step 7: Commit**
@@ -267,7 +267,7 @@ fn stats_partial(state: &AppState) -> String {
 
 - [ ] **Step 3: Verify serve still works**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo test -p rivet-cli 2>&1 | tail -10`
+Run: `cargo test -p rivet-cli 2>&1 | tail -10`
 Expected: all tests pass
 
 - [ ] **Step 4: Commit**
@@ -355,7 +355,7 @@ pub(crate) async fn artifact_preview(
 
 - [ ] **Step 3: Verify**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo test -p rivet-cli 2>&1 | tail -10`
+Run: `cargo test -p rivet-cli 2>&1 | tail -10`
 Expected: all tests pass
 
 - [ ] **Step 4: Commit**
@@ -432,7 +432,7 @@ pub(crate) async fn stpa_view(
 
 - [ ] **Step 4: Verify**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo test -p rivet-cli 2>&1 | tail -10`
+Run: `cargo test -p rivet-cli 2>&1 | tail -10`
 Expected: all tests pass
 
 - [ ] **Step 5: Commit**
@@ -476,7 +476,7 @@ pub(crate) use crate::render::styles::*;
 
 - [ ] **Step 3: Verify**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo check -p rivet-cli && cargo test -p rivet-cli 2>&1 | tail -10`
+Run: `cargo check -p rivet-cli && cargo test -p rivet-cli 2>&1 | tail -10`
 Expected: compiles, all tests pass
 
 - [ ] **Step 4: Commit**
@@ -547,10 +547,10 @@ connection.sender.send(Message::Notification(changed_notification))?;
 
 - [ ] **Step 4: Verify**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo check -p rivet-cli 2>&1 | head -20`
+Run: `cargo check -p rivet-cli 2>&1 | head -20`
 Expected: compiles
 
-Run: `cd /Volumes/Home/git/sdlc && cargo test -p rivet-cli 2>&1 | tail -10`
+Run: `cargo test -p rivet-cli 2>&1 | tail -10`
 Expected: all tests pass
 
 - [ ] **Step 5: Commit**
@@ -646,7 +646,7 @@ See the spec's `rivet/treeData` response format for the expected JSON structure.
 
 - [ ] **Step 5: Verify**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo check -p rivet-cli 2>&1 | head -20`
+Run: `cargo check -p rivet-cli 2>&1 | head -20`
 Expected: compiles
 
 - [ ] **Step 6: Commit**
@@ -707,7 +707,7 @@ Remove `simpleBrowser.api.open` usage.
 
 - [ ] **Step 5: Verify TypeScript compiles**
 
-Run: `cd /Volumes/Home/git/sdlc/vscode-rivet && npm run compile 2>&1 | tail -10`
+Run: `cd vscode-rivet && npm run compile 2>&1 | tail -10`
 Expected: compiles
 
 - [ ] **Step 6: Commit**
@@ -756,7 +756,7 @@ client.onNotification('rivet/artifactsChanged', (params: any) => {
 
 - [ ] **Step 3: Verify TypeScript compiles**
 
-Run: `cd /Volumes/Home/git/sdlc/vscode-rivet && npm run compile 2>&1 | tail -10`
+Run: `cd vscode-rivet && npm run compile 2>&1 | tail -10`
 Expected: compiles
 
 - [ ] **Step 4: Commit**
@@ -803,7 +803,7 @@ Ensure all commands are declared in `contributes.commands`:
 
 - [ ] **Step 4: Verify**
 
-Run: `cd /Volumes/Home/git/sdlc/vscode-rivet && npm run compile 2>&1 | tail -10`
+Run: `cd vscode-rivet && npm run compile 2>&1 | tail -10`
 Expected: compiles
 
 - [ ] **Step 5: Commit**
@@ -834,17 +834,17 @@ then sends `shutdown`/`exit`.
 
 - [ ] **Step 2: Run full Rust test suite**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo test 2>&1 | tail -20`
+Run: `cargo test 2>&1 | tail -20`
 Expected: all tests pass, no regressions
 
 - [ ] **Step 3: Run clippy**
 
-Run: `cd /Volumes/Home/git/sdlc && cargo clippy -p rivet-cli -- -D warnings 2>&1 | tail -20`
+Run: `cargo clippy -p rivet-cli -- -D warnings 2>&1 | tail -20`
 Expected: no warnings
 
 - [ ] **Step 4: Compile VS Code extension**
 
-Run: `cd /Volumes/Home/git/sdlc/vscode-rivet && npm run compile 2>&1 | tail -10`
+Run: `cd vscode-rivet && npm run compile 2>&1 | tail -10`
 Expected: compiles cleanly
 
 - [ ] **Step 5: Manual smoke test checklist**

@@ -2602,7 +2602,7 @@ artifacts:
       covered'. By contrast, rivet stats (lines 5919-5923) sums per-
       type counts ensuring each artifact is counted once.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       cli/src/render/stats.rs:237-252
 
       Acceptance:
@@ -2648,7 +2648,7 @@ artifacts:
       10-artifact project where all artifacts satisfy both of 2 rules
       would report coverage total=20, stats total=10.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       cli/src/main.rs:6094
 
       Acceptance:
@@ -2690,7 +2690,7 @@ artifacts:
       IDs will be classified as 'broken' by commits but valid by
       validate.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       cli/src/main.rs:10328-10335
 
       Acceptance:
@@ -2739,7 +2739,7 @@ artifacts:
       if it's looking at a cached clone or an uncommitted working
       tree.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       core/src/externals.rs:302-317
 
       Acceptance:
@@ -2792,7 +2792,7 @@ artifacts:
       reading rivet.lock thinks that SHA is canonical, when really
       it's just the working tree state.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       core/src/externals.rs:104 + rivet-cli/src/main.rs:10934
 
       Acceptance:
@@ -2833,7 +2833,7 @@ artifacts:
       l.link_type, l.target)`. The leading `/` makes the link absolute
       to site root, not relative to current page.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       cli/src/main.rs:7543
 
       Acceptance:
@@ -2870,7 +2870,7 @@ artifacts:
       replace(from=".", to="-") }}/">`. The leading `/` makes this
       absolute.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       cli/src/main.rs:7713
 
       Acceptance:
@@ -2907,7 +2907,7 @@ artifacts:
       ctx.context.port. This tag appears in every artifact page's
       <head> regardless of whether it's served or exported.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       cli/src/render/artifacts.rs:540-546
 
       Acceptance:
@@ -2946,7 +2946,7 @@ artifacts:
       `format!("[{id}](/{prefix}/artifacts/{target_slug}/)")` for Zola
       doc links.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       core/src/document.rs:1131,1135
 
       Acceptance:
@@ -2989,7 +2989,7 @@ artifacts:
       [val-1, val-2, val-3] where val-2 is undefined produces
       status="val-1, val-3" with no error or warning.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       core/src/reqif.rs:909-918
 
       Acceptance:
@@ -3029,7 +3029,7 @@ artifacts:
       with whatever was parsed. If 10 out of 20 files fail, the report
       shows a total equal to only the 10 that succeeded.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       core/src/reqif.rs:700-706
 
       Acceptance:
@@ -3068,7 +3068,7 @@ artifacts:
       to a git repo in an unknown/inconsistent state, but no error is
       returned to the caller.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       core/src/externals.rs:210-217
 
       Acceptance:
@@ -3108,7 +3108,7 @@ artifacts:
       partial/inconsistent state without the original cleanup issue
       being surfaced to the caller.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       core/src/externals.rs:147-151
 
       Acceptance:
@@ -3149,7 +3149,7 @@ artifacts:
       (required field), but no validation error is raised during
       import.
 
-      Location: /Users/r/git/pulseengine/rivet/rivet-
+      Location: rivet-
       core/src/reqif.rs:939-945
 
       Acceptance:

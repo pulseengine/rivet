@@ -80,7 +80,7 @@ synth_one() { # $1=text $2=outfile.wav
       need node
       need ffprobe
       local url model voice body
-      url="${SPEACHES_URL:-http://192.168.178.28:8000}"
+      url="${SPEACHES_URL:?set SPEACHES_URL to the Speaches server, e.g. http://speaches.local:8000}"
       model="${SPEACHES_MODEL:-speaches-ai/Kokoro-82M-v1.0-ONNX}"
       voice="${SPEACHES_VOICE:-af_nicole}"
       # Build the JSON body with node so the narration text is safely escaped

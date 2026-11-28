@@ -8,7 +8,7 @@ tags: [docs, audit, dogfood, governance, snapshot]
 
 # docs/ audit — first pass
 
-**Scope.** Independent classification of every markdown file under `/Users/r/git/pulseengine/rivet/docs/` against three criteria — useful / done-vs-planned / still-true — requested by the project lead on 2026-05-19 (the verbatim ask is captured in `artifacts/cross-git-investigation.yaml` under REQ-074).
+**Scope.** Independent classification of every markdown file under `docs/` against three criteria — useful / done-vs-planned / still-true — requested by the project lead on 2026-05-19 (the verbatim ask is captured in `artifacts/cross-git-investigation.yaml` under REQ-074).
 
 **Method.** Independent AI subagent reading each file + cross-checking against the v0.10.1 binary surface (commit `4354d99a`) + git-log for last-touched date. No edits made; this is a read-only audit.
 
@@ -156,11 +156,11 @@ docs/
 
 ### Key file paths referenced
 
-- `/Users/r/git/pulseengine/rivet/rivet-cli/src/main.rs:224-1080` — current command enum (the v0.10.1 surface)
-- `/Users/r/git/pulseengine/rivet/rivet-cli/src/main.rs:1633-1717` — current `CheckAction` (5 oracles, not 3)
-- `/Users/r/git/pulseengine/rivet/rivet-core/src/formats/` — only `aadl`, `generic`, `needs_json` adapters shipped (no doorstop/sdoc)
-- `/Users/r/git/pulseengine/rivet/schemas/` — 28 schema files (not 5, not 27)
-- `/Users/r/git/pulseengine/rivet/Cargo.toml:14` — MSRV is 1.89 (docs say 1.85 in two places)
+- `rivet-cli/src/main.rs:224-1080` — current command enum (the v0.10.1 surface)
+- `rivet-cli/src/main.rs:1633-1717` — current `CheckAction` (5 oracles, not 3)
+- `rivet-core/src/formats/` — only `aadl`, `generic`, `needs_json` adapters shipped (no doorstop/sdoc)
+- `schemas/` — 28 schema files (not 5, not 27)
+- `Cargo.toml:14` — MSRV is 1.89 (docs say 1.85 in two places)
 
 ## What this audit does NOT do
 

@@ -12,8 +12,8 @@
 
 ## Two repos
 
-- **spar** (`/Volumes/Home/git/pulseengine/spar`, branch: `feat/serde-json-integration`)
-- **rivet** (`/Volumes/Home/git/sdlc`, branch: `feat/aadl-integration`)
+- **spar** (`../spar`, branch: `feat/serde-json-integration`)
+- **rivet** (`.`, branch: `feat/aadl-integration`)
 
 ---
 

@@ -21,7 +21,7 @@ The salsa 0.26 database is already functional:
 
 ### What exists in spar (reference architecture)
 
-Spar's LSP at `/Volumes/Home/git/pulseengine/spar/crates/spar-cli/src/lsp.rs` uses:
+Spar's LSP at `../spar/crates/spar-cli/src/lsp.rs` uses:
 
 - **`lsp-server` 0.7 + `lsp-types` 0.97** (synchronous, single-threaded event loop on stdin/stdout)
 - **`ServerState`** struct holding: `documents` (open file contents), `item_trees` (parsed HIR per file), `global_scope` (workspace-wide name resolution), `open_files` list
