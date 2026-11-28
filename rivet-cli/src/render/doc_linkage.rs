@@ -405,7 +405,7 @@ mod source_group_link_tests {
 mod sublabel_tests {
     use super::doc_sublabel;
 
-    // rivet: verifies REQ-400
+    // rivet: verifies REQ-400, REQ-428
     #[test]
     fn multibyte_character_across_the_cut_does_not_panic() {
         // #1360's title: the em-dash is bytes 26..29, so the old `&s[..28]`
@@ -415,7 +415,7 @@ mod sublabel_tests {
         assert_eq!(doc_sublabel(title, 3), "scry remediation guidance — ...");
     }
 
-    // rivet: verifies REQ-400
+    // rivet: verifies REQ-400, REQ-428
     #[test]
     fn cut_counts_characters_and_keeps_short_labels_whole() {
         // 30 characters exactly stays whole, even when it is more than 30 bytes.

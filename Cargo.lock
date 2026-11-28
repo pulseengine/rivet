@@ -1055,7 +1055,7 @@ dependencies = [
 
 [[package]]
 name = "etch"
-version = "0.43.3"
+version = "0.43.4"
 dependencies = [
  "petgraph 0.8.3",
 ]
@@ -3038,7 +3038,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-cli"
-version = "0.43.3"
+version = "0.43.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -3066,7 +3066,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-core"
-version = "0.43.3"
+version = "0.43.4"
 dependencies = [
  "anyhow",
  "criterion",
@@ -3102,7 +3102,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-yaml"
-version = "0.43.3"
+version = "0.43.4"
 dependencies = [
  "indexmap 2.14.2",
  "itoa",

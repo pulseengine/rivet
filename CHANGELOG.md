@@ -5,6 +5,15 @@
 
 ## [Unreleased]
 
+## [0.43.4] - 2026-11-28
+
+A bug-fix patch cut from `release/v0.43.x`: v0.43.3 plus the fix for #1360. main carries the same fix.
+
+This release is wrong if `rivet export --format html` exits non-zero on a project whose only change from a passing project is a document title with a multi-byte character, or if its `Cargo.lock` differs from v0.43.3's in anything but the rivet version.
+
+### Fixed
+- **`rivet export --format html` no longer panics on a multi-byte character in a document title** (REQ-428, #1360). The doc-linkage view shortened a document's label (`title (N refs)`) by cutting it at byte 28. When that byte fell inside a multi-byte character such as an em-dash, the export panicked and exited 101, so the compliance action produced no evidence bundle. The label is now cut after 28 characters.
+
 ## [0.43.3] - 2026-11-21
 
 A security patch cut from `release/v0.43.x` (v0.43.0 plus this fix, and no Intel macOS asset); main carries the same fix and moves on to wasmtime 50.0.3 separately. The tags v0.43.1 and v0.43.2 exist but were never published: both release runs built every target and stopped at the release note, so no GitHub Release, npm package or VSIX carries 0.43.1 or 0.43.2. v0.43.1 had no artifact scoped to it. v0.43.2's note exits non-zero by design while a scoped artifact is not verified, and REQ-423 was only implemented. Tags stay immutable, so the same content ships as 0.43.3 with REQ-423 verified by a lockfile floor test.
@@ -16,9 +25,6 @@ This release is wrong if `cargo deny check advisories` on its `Cargo.lock` repor
 
 ### Removed
 - **No x86_64-apple-darwin (Intel macOS) assets from this release on.** Intel Mac users: build from source (`cargo install --locked --git https://github.com/pulseengine/rivet --tag v0.43.3 rivet-cli`). The npm package no longer lists `@pulseengine/rivet-darwin-x64` and refuses darwin-x64 with this advice; the compliance action refuses an Intel macOS runner.
-
-### Fixed
-- **`rivet export --format html` no longer panics on a multi-byte character in a document title** (REQ-400, #1360). The doc-linkage view shortened a document's label (`title (N refs)`) by cutting it at byte 28. When that byte fell inside a multi-byte character such as an em-dash, the export panicked and exited 101, so the compliance action produced no evidence bundle. The label is now cut after 28 characters.
 
 ## [0.43.0] - 2026-11-19
 
