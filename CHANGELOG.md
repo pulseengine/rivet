@@ -7,9 +7,12 @@
 
 ## [0.43.4] - 2026-11-28
 
-A bug-fix patch cut from `release/v0.43.x`: v0.43.3 plus the fix for #1360. main carries the same fix.
+A bug-fix patch cut from `release/v0.43.x`: v0.43.3 plus the fix for #1360 and url 2.5.9 for RUSTSEC-2026-0592. main carries both.
 
-This release is wrong if `rivet export --format html` exits non-zero on a project whose only change from a passing project is a document title with a multi-byte character, or if its `Cargo.lock` differs from v0.43.3's in anything but the rivet version.
+This release is wrong if `rivet export --format html` exits non-zero on a project whose only change from a passing project is a document title with a multi-byte character, if `cargo deny check advisories` on its `Cargo.lock` reports RUSTSEC-2026-0592, or if its `Cargo.lock` differs from v0.43.3's in anything but the url 2.5.9 / form_urlencoded 1.2.3 update and the rivet version.
+
+### Security
+- **url update for RUSTSEC-2026-0592** (#1327). `Url::origin()` overflowed the stack on nested `blob:` URLs. The update moves url to 2.5.9 and form_urlencoded to 1.2.3, cherry-picked from main; Cargo Deny and the RustSec audit reject 2.5.8.
 
 ### Fixed
 - **`rivet export --format html` no longer panics on a multi-byte character in a document title** (REQ-428, #1360). The doc-linkage view shortened a document's label (`title (N refs)`) by cutting it at byte 28. When that byte fell inside a multi-byte character such as an em-dash, the export panicked and exited 101, so the compliance action produced no evidence bundle. The label is now cut after 28 characters.
