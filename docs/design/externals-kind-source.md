@@ -8,7 +8,7 @@
 
 **Status**: design proposal, surface change to rivet-core externals loader
 **Originating context**: eclipse-score-fork workspace at
-`/Users/r/git/pulseengine/eclipse-score-fork/` declares 58 upstream
+`eclipse-score-fork/` (a local checkout) declares 58 upstream
 eclipse-score repos as `externals:` so `rivet sync` + `rivet.lock`
 pin them reproducibly. Eclipse repos are not rivet projects — they
 have no `rivet.yaml`. Today this produces 58 WARN lines per
@@ -157,7 +157,7 @@ serde default `Rivet`, deserialisation, schema doc.
 
 ## Where this lands in the wider ecosystem
 
-The eclipse-score-fork at `/Users/r/git/pulseengine/eclipse-score-fork/`
+The eclipse-score-fork at `eclipse-score-fork/` (a local checkout)
 is the first realistic consumer: 58 externals with `kind: source`
 turns the cosmetic 58-WARN noise into clean output AND makes the
 "rivet eats its own dogfood for cross-repo pinning" story complete.
