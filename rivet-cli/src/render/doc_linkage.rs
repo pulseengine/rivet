@@ -183,14 +183,10 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
                     "source-group"
                 };
                 let sublabel = if doc_ids.contains(label) {
-                    doc_infos.iter().find(|d| d.id == *label).map(|d| {
-                        let s = format!("{} ({} refs)", d.title, d.artifact_ids.len());
-                        if s.len() > 30 {
-                            format!("{}...", &s[..28])
-                        } else {
-                            s
-                        }
-                    })
+                    doc_infos
+                        .iter()
+                        .find(|d| d.id == *label)
+                        .map(|d| doc_sublabel(&d.title, d.artifact_ids.len()))
                 } else {
                     source_groups
                         .iter()
@@ -337,6 +333,20 @@ pub(crate) fn render_doc_linkage_view(ctx: &RenderContext) -> String {
     html
 }
 
+/// A document node's sublabel: `title (N refs)`, cut to 28 characters plus
+/// `...` when longer than 30. #1360: the cut was a byte slice (`&s[..28]`),
+/// which panicked when byte 28 fell inside a multi-byte character such as an
+/// em-dash, so `rivet export --format html` exited 101.
+fn doc_sublabel(title: &str, refs: usize) -> String {
+    let s = format!("{title} ({refs} refs)");
+    if s.chars().count() > 30 {
+        let cut: String = s.chars().take(28).collect();
+        format!("{cut}...")
+    } else {
+        s
+    }
+}
+
 /// #956: the graph library gives every node `data-href = base_url/id`, so a
 /// source-directory node (`artifacts/`) linked to `/documents/artifacts`, a
 /// document that does not exist; clicking it was a 404 on the dashboard and a
@@ -388,5 +398,33 @@ mod source_group_link_tests {
             "{out}"
         );
         assert!(!out.contains("/documents/artifacts"), "{out}");
+    }
+}
+
+#[cfg(test)]
+mod sublabel_tests {
+    use super::doc_sublabel;
+
+    // rivet: verifies REQ-400
+    #[test]
+    fn multibyte_character_across_the_cut_does_not_panic() {
+        // #1360's title: the em-dash is bytes 26..29, so the old `&s[..28]`
+        // panicked inside it.
+        let title = "scry remediation guidance — advisory schema";
+        assert_eq!(title.find('—'), Some(26));
+        assert_eq!(doc_sublabel(title, 3), "scry remediation guidance — ...");
+    }
+
+    // rivet: verifies REQ-400
+    #[test]
+    fn cut_counts_characters_and_keeps_short_labels_whole() {
+        // 30 characters exactly stays whole, even when it is more than 30 bytes.
+        let title = "äöüäöüäöüäöüäöüäöüä"; // 19 chars + " (1 refs)" = 28
+        assert_eq!(doc_sublabel(title, 1), "äöüäöüäöüäöüäöüäöüä (1 refs)");
+        let title = "äöüäöüäöüäöüäöüäöüäöü"; // 21 chars + " (1 refs)" = 30
+        assert_eq!(doc_sublabel(title, 1), "äöüäöüäöüäöüäöüäöüäöü (1 refs)");
+        // 31 characters: cut to 28 characters plus "...".
+        let title = "abcdefghijklmnopqrstuv"; // 22 + 9 = 31
+        assert_eq!(doc_sublabel(title, 1), "abcdefghijklmnopqrstuv (1 re...");
     }
 }

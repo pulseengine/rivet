@@ -17,6 +17,9 @@ This release is wrong if `cargo deny check advisories` on its `Cargo.lock` repor
 ### Removed
 - **No x86_64-apple-darwin (Intel macOS) assets from this release on.** Intel Mac users: build from source (`cargo install --locked --git https://github.com/pulseengine/rivet --tag v0.43.3 rivet-cli`). The npm package no longer lists `@pulseengine/rivet-darwin-x64` and refuses darwin-x64 with this advice; the compliance action refuses an Intel macOS runner.
 
+### Fixed
+- **`rivet export --format html` no longer panics on a multi-byte character in a document title** (REQ-400, #1360). The doc-linkage view shortened a document's label (`title (N refs)`) by cutting it at byte 28. When that byte fell inside a multi-byte character such as an em-dash, the export panicked and exited 101, so the compliance action produced no evidence bundle. The label is now cut after 28 characters.
+
 ## [0.43.0] - 2026-11-19
 
 Results that say where they ran, schema fields that can refuse an unknown value, and a YAML parser that misreads less. A recorded result now names its environment, and a failure in one environment is no longer hidden by a newer pass in another. A schema field can make a value outside its allowed set fail validation, which is how pulseengine.eu's North Star `serves:` link is pinned per project. Fourteen YAML fixes, found by sieve, the yaml-test-suite and the org's own files, stop silent misreads and needless refusals.
